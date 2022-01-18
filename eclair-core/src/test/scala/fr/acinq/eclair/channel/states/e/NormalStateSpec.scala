@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.e
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
@@ -37,8 +37,8 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
-import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, HtlcSuccessTx, weight2fee}
-import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
+import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -2741,7 +2741,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //    condition between his HTLC-success and Alice's HTLC-timeout
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
@@ -2774,7 +2774,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //    condition between his HTLC-success and Alice's HTLC-timeout
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = false)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
@@ -2807,7 +2807,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //    condition between his HTLC-success and Alice's HTLC-timeout
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
@@ -2928,14 +2928,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv WatchFundingSpentTriggered (their commit w/ htlc)") { f =>
     import f._
 
-    val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
-    val (ra2, htlca2) = addHtlc(100000000 msat, alice, bob, alice2bob, bob2alice)
+    val (ra1, htlca1) = addHtlc(250000000 msat, CltvExpiryDelta(50), alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(100000000 msat, CltvExpiryDelta(60), alice, bob, alice2bob, bob2alice)
     val (ra3, htlca3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice)
-    val (rb1, htlcb1) = addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob)
-    val (rb2, htlcb2) = addHtlc(55000000 msat, bob, alice, bob2alice, alice2bob)
+    val (rb1, htlcb1) = addHtlc(50000000 msat, CltvExpiryDelta(55), bob, alice, bob2alice, alice2bob)
+    val (rb2, htlcb2) = addHtlc(55000000 msat, CltvExpiryDelta(65), bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
-    fulfillHtlc(1, ra2, bob, alice, bob2alice, alice2bob)
-    fulfillHtlc(0, rb1, alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlca2.id, ra2, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlcb1.id, rb1, alice, bob, alice2bob, bob2alice)
 
     // at this point here is the situation from alice pov and what she should do when bob publishes his commit tx:
     // balances :
@@ -2956,16 +2956,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // in response to that, alice publishes her claim txs
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     // in addition to her main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
-      assert(claimHtlcTx.txIn.size == 1)
-      assert(claimHtlcTx.txOut.size == 1)
-      Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      claimHtlcTx.txOut.head.amount
+      assert(claimHtlcTx.txInfo.tx.txIn.size == 1)
+      assert(claimHtlcTx.txInfo.tx.txOut.size == 1)
+      Transaction.correctlySpends(claimHtlcTx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      claimHtlcTx.txInfo.tx.txOut.head.amount
     }).sum
     // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
     assert(amountClaimed === 814880.sat)
+
+    // alice sets the confirmation targets to the HTLC expiry
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcSuccessTx, _) => (tx.htlcId, tx.confirmBefore.toLong) }.toMap === Map(htlcb1.id -> htlcb1.cltvExpiry.toLong))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _) => (tx.htlcId, tx.confirmBefore.toLong) }.toMap === Map(htlca1.id -> htlca1.cltvExpiry.toLong, htlca2.id -> htlca2.cltvExpiry.toLong))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.txid)
@@ -3008,14 +3012,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv WatchFundingSpentTriggered (their *next* commit w/ htlc)") { f =>
     import f._
 
-    val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
-    val (ra2, htlca2) = addHtlc(100000000 msat, alice, bob, alice2bob, bob2alice)
+    val (ra1, htlca1) = addHtlc(250000000 msat, CltvExpiryDelta(24), alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(100000000 msat, CltvExpiryDelta(30), alice, bob, alice2bob, bob2alice)
     val (ra3, htlca3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice)
     val (rb1, htlcb1) = addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob)
     val (rb2, htlcb2) = addHtlc(55000000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
-    fulfillHtlc(1, ra2, bob, alice, bob2alice, alice2bob)
-    fulfillHtlc(0, rb1, alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlca2.id, ra2, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlcb1.id, rb1, alice, bob, alice2bob, bob2alice)
     // alice sign but we intercept bob's revocation
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
@@ -3043,16 +3047,19 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // in response to that, alice publishes her claim txs
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
-      assert(claimHtlcTx.txIn.size == 1)
-      assert(claimHtlcTx.txOut.size == 1)
-      Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      claimHtlcTx.txOut.head.amount
+      assert(claimHtlcTx.txInfo.tx.txIn.size == 1)
+      assert(claimHtlcTx.txInfo.tx.txOut.size == 1)
+      Transaction.correctlySpends(claimHtlcTx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      claimHtlcTx.txInfo.tx.txOut.head.amount
     }).sum
     // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
     assert(amountClaimed === 822310.sat)
+
+    // alice sets the confirmation targets to the HTLC expiry
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _) => (tx.htlcId, tx.confirmBefore.toLong) }.toMap === Map(htlca1.id -> htlca1.cltvExpiry.toLong, htlca2.id -> htlca2.cltvExpiry.toLong))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.txid) // claim-main
@@ -3260,7 +3267,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(getHtlcTimeoutTxs(localCommitPublished).length === 2)
     assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
 
-    // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+    // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     // so we expect 4 transactions:
     // - 1 tx to claim the main delayed output
     // - 3 txs for each htlc
@@ -3290,6 +3297,71 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimHtlcDelayedTx.txid)
     }
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 3)
+    alice2blockchain.expectNoMessage(1 second)
+  }
+
+  test("recv Error (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val (ra1, htlca1) = addHtlc(250000000 msat, CltvExpiryDelta(20), alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(100000000 msat, CltvExpiryDelta(25), alice, bob, alice2bob, bob2alice)
+    val (ra3, htlca3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice)
+    val (rb1, htlcb1) = addHtlc(50000000 msat, CltvExpiryDelta(30), bob, alice, bob2alice, alice2bob)
+    val (rb2, htlcb2) = addHtlc(55000000 msat, CltvExpiryDelta(35), bob, alice, bob2alice, alice2bob)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlcb1.id, rb1, alice, bob, alice2bob, bob2alice)
+
+    // an error occurs and alice publishes her commit tx
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    alice ! Error(ByteVector32.Zeroes, "oops")
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
+    assert(aliceCommitTx.txOut.size == 8) // two main outputs, two anchors and 4 pending htlcs
+    awaitCond(alice.stateName == CLOSING)
+
+    val localAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(localAnchor.txInfo.confirmBefore.toLong === htlca1.cltvExpiry.toLong) // the target is set to match the first htlc that expires
+    val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
+    // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
+    val htlcConfirmationTargets = Seq(
+      alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 1
+      alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 2
+      alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 3
+    ).map(p => p.txInfo.asInstanceOf[HtlcTx].htlcId -> p.txInfo.confirmBefore.toLong).toMap
+    assert(htlcConfirmationTargets === Map(htlcb1.id -> htlcb1.cltvExpiry.toLong, htlca1.id -> htlca1.cltvExpiry.toLong, htlca2.id -> htlca2.cltvExpiry.toLong))
+
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === aliceCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid)
+    val watchedOutputs = Seq(
+      alice2blockchain.expectMsgType[WatchOutputSpent], // htlc 1
+      alice2blockchain.expectMsgType[WatchOutputSpent], // htlc 2
+      alice2blockchain.expectMsgType[WatchOutputSpent], // htlc 3
+      alice2blockchain.expectMsgType[WatchOutputSpent], // htlc 4
+      alice2blockchain.expectMsgType[WatchOutputSpent], // local anchor
+    ).map(w => OutPoint(w.txId.reverse, w.outputIndex)).toSet
+    val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    assert(watchedOutputs === localCommitPublished.htlcTxs.keySet + localAnchor.txInfo.input.outPoint)
+    alice2blockchain.expectNoMessage(1 second)
+  }
+
+  test("recv Error (anchor outputs zero fee htlc txs without htlcs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    // an error occurs and alice publishes her commit tx
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    alice ! Error(ByteVector32.Zeroes, "oops")
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
+    assert(aliceCommitTx.txOut.size == 4) // two main outputs and two anchors
+    awaitCond(alice.stateName == CLOSING)
+
+    val currentBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
+    val blockTargets = alice.underlyingActor.nodeParams.onChainFeeConf.feeTargets
+    val localAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    // When there are no pending HTLCs, there is no rush to get the commit tx confirmed
+    assert(localAnchor.txInfo.confirmBefore.toLong === currentBlockHeight + blockTargets.commitmentWithoutHtlcsBlockTarget)
+    val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === aliceCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === localAnchor.input.index)
     alice2blockchain.expectNoMessage(1 second)
   }
 

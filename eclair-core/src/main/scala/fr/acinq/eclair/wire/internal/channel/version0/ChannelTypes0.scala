@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.{Feature, Features, channel}
+import fr.acinq.eclair.{BlockHeight, Feature, Features, channel}
 import scodec.bits.BitVector
 
 private[channel] object ChannelTypes0 {
@@ -57,8 +57,8 @@ private[channel] object ChannelTypes0 {
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
       val claimMainDelayedOutputTxNew = claimMainDelayedOutputTx.map(tx => ClaimLocalDelayedOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val htlcSuccessTxsNew = htlcSuccessTxs.map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, 0))
-      val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0))
+      val htlcSuccessTxsNew = htlcSuccessTxs.map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, 0, BlockHeight(0)))
+      val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
       val htlcTxsNew = (htlcSuccessTxsNew ++ htlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
       val claimHtlcDelayedTxsNew = claimHtlcDelayedTxs.map(tx => {
         val htlcTx = htlcTxs.find(_.txid == tx.txIn.head.outPoint.txid)
@@ -77,8 +77,8 @@ private[channel] object ChannelTypes0 {
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
       val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val claimHtlcSuccessTxsNew = claimHtlcSuccessTxs.map(tx => LegacyClaimHtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, 0))
-      val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0))
+      val claimHtlcSuccessTxsNew = claimHtlcSuccessTxs.map(tx => LegacyClaimHtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
+      val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
       val claimHtlcTxsNew = (claimHtlcSuccessTxsNew ++ claimHtlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
       channel.RemoteCommitPublished(commitTx, claimMainOutputTxNew, claimHtlcTxsNew, Nil, irrevocablySpentNew)
     }

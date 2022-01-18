@@ -18,7 +18,6 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
-import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -42,7 +41,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   val feeConfNoMismatch = OnChainFeeConf(
-    FeeTargets(6, 2, 2, 6),
+    FeeTargets(6, 2, 12, 2, 6),
     new TestFeeEstimator(),
     closeOnOfflineMismatch = false,
     1.0,

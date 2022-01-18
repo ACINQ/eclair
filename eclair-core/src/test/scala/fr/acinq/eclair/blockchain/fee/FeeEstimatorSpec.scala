@@ -17,10 +17,9 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.SatoshiLong
-import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.channel.ChannelTypes
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.{TestFeeEstimator, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 class FeeEstimatorSpec extends AnyFunSuite {
@@ -28,7 +27,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
   val defaultFeerateTolerance = FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat), DustTolerance(15000 sat, closeOnUpdateFeeOverflow = false))
 
   test("should update fee when diff ratio exceeded") {
-    val feeConf = OnChainFeeConf(FeeTargets(1, 1, 1, 1), new TestFeeEstimator(), closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(FeeTargets(1, 1, 1, 1, 1), new TestFeeEstimator(), closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1000 sat)))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(900 sat)))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1100 sat)))
@@ -39,7 +38,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
   test("get commitment feerate") {
     val feeEstimator = new TestFeeEstimator()
     val channelType = ChannelTypes.Standard
-    val feeConf = OnChainFeeConf(FeeTargets(1, 2, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(FeeTargets(1, 2, 6, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(5000 sat)))
     assert(feeConf.getCommitmentFeerate(randomKey().publicKey, channelType, 100000 sat, None) === FeeratePerKw(5000 sat))
@@ -54,7 +53,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
     val defaultMaxCommitFeerate = defaultFeerateTolerance.anchorOutputMaxCommitFeerate
     val overrideNodeId = randomKey().publicKey
     val overrideMaxCommitFeerate = defaultMaxCommitFeerate * 2
-    val feeConf = OnChainFeeConf(FeeTargets(1, 2, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
+    val feeConf = OnChainFeeConf(FeeTargets(1, 2, 6, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2, mempoolMinFee = FeeratePerKw(250 sat)))
     assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs, 100000 sat, None) === defaultMaxCommitFeerate / 2)

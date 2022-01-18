@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -62,8 +62,9 @@ object CommonCodecs {
 
   val feeratePerKw: Codec[FeeratePerKw] = uint32.xmapc(l => FeeratePerKw(Satoshi(l)))(_.toLong)
 
-  val cltvExpiry: Codec[CltvExpiry] = uint32.xmapc(CltvExpiry)((_: CltvExpiry).toLong)
-  val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)((_: CltvExpiryDelta).toInt)
+  val blockHeight: Codec[BlockHeight] = uint32.xmapc(BlockHeight)(_.toLong)
+  val cltvExpiry: Codec[CltvExpiry] = uint32.xmapc(CltvExpiry)(_.toLong)
+  val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)(_.toInt)
 
   // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs
   // this codec will fail if the amount does not fit on 32 bits

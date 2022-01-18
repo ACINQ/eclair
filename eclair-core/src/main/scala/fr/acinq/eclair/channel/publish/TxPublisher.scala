@@ -24,10 +24,9 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
-import fr.acinq.eclair.{Logs, NodeParams}
+import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
 import java.util.UUID
 import scala.concurrent.duration.DurationLong
@@ -51,7 +50,7 @@ object TxPublisher {
   // +---------+   |             +--------------------+
   //               | PublishTx   |    TxPublisher     |
   //               +------------>| - stores txs and   |---+                      +-----------------+
-  //                             |   deadlines        |   | create child actor   |    TxPublish    |
+  //                             |   block targets    |   | create child actor   |    TxPublish    |
   //                             | - create child     |   | ask it to publish    | - preconditions |
   //                             |   actors that fund |   | at a given feerate   | - (funding)     |
   //                             |   and publish txs  |   +--------------------->| - (signing)     |
@@ -80,6 +79,9 @@ object TxPublisher {
    * Publish a fully signed transaction without modifying it.
    * NB: the parent tx should only be provided when it's being concurrently published, it's unnecessary when it is
    * confirmed or when the tx has a relative delay.
+   *
+   * @param fee the fee that we're actually paying: it must be set to the mining fee, unless our peer is paying it (in
+   *            which case it must be set to zero here).
    */
   case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[ByteVector32]) extends PublishTx
   object PublishFinalTx {
@@ -148,6 +150,41 @@ object TxPublisher {
     // @formatter:on
   }
 
+  // @formatter:off
+  sealed trait PublishAttempt {
+    def id: UUID
+    def cmd: PublishTx
+  }
+  case class FinalAttempt(id: UUID, cmd: PublishFinalTx, actor: ActorRef[FinalTxPublisher.Command]) extends PublishAttempt
+  case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, confirmBefore: BlockHeight, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
+  // @formatter:on
+
+  /**
+   * There can be multiple attempts to spend the same [[OutPoint]].
+   * Only one of them will work, but we keep track of all of them.
+   * There is only one [[ReplaceableAttempt]] because we will replace the existing attempt instead of creating a new one.
+   */
+  case class PublishAttempts(finalAttempts: Seq[FinalAttempt], replaceableAttempt_opt: Option[ReplaceableAttempt]) {
+    val attempts: Seq[PublishAttempt] = finalAttempts ++ replaceableAttempt_opt.toSeq
+    val count: Int = attempts.length
+
+    def add(finalAttempt: FinalAttempt): PublishAttempts = copy(finalAttempts = finalAttempts :+ finalAttempt)
+
+    def remove(id: UUID): (Seq[PublishAttempt], PublishAttempts) = {
+      val (removed, remaining) = finalAttempts.partition(_.id == id)
+      replaceableAttempt_opt match {
+        case Some(replaceableAttempt) if replaceableAttempt.id == id => (removed :+ replaceableAttempt, PublishAttempts(remaining, None))
+        case _ => (removed, PublishAttempts(remaining, replaceableAttempt_opt))
+      }
+    }
+
+    def isEmpty: Boolean = replaceableAttempt_opt.isEmpty && finalAttempts.isEmpty
+  }
+
+  object PublishAttempts {
+    val empty: PublishAttempts = PublishAttempts(Nil, None)
+  }
+
   def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, factory: ChildFactory): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
@@ -163,63 +200,58 @@ object TxPublisher {
 private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFactory, context: ActorContext[TxPublisher.Command], timers: TimerScheduler[TxPublisher.Command]) {
 
   import TxPublisher._
-  import nodeParams.onChainFeeConf.{feeEstimator, feeTargets}
 
   private val log = context.log
 
-  // @formatter:off
-  private sealed trait PublishAttempt {
-    def id: UUID
-    def cmd: PublishTx
-  }
-  private case class FinalAttempt(id: UUID, cmd: PublishFinalTx, actor: ActorRef[FinalTxPublisher.Command]) extends PublishAttempt
-  private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, feerate: FeeratePerKw, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
-  // @formatter:on
-
-  private def run(pending: Map[OutPoint, Seq[PublishAttempt]], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
+  private def run(pending: Map[OutPoint, PublishAttempts], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
     Behaviors.receiveMessage {
       case cmd: PublishFinalTx =>
-        val attempts = pending.getOrElse(cmd.input, Seq.empty)
-        val alreadyPublished = attempts.exists {
-          case a: FinalAttempt => a.cmd.tx.txid == cmd.tx.txid
-          case _ => false
-        }
+        val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
+        val alreadyPublished = attempts.finalAttempts.exists(_.cmd.tx.txid == cmd.tx.txid)
         if (alreadyPublished) {
           log.info("not publishing {} txid={} spending {}:{}, publishing is already in progress", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index)
           Behaviors.same
         } else {
           val publishId = UUID.randomUUID()
-          log.info("publishing {} txid={} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index, publishId, attempts.length)
+          log.info("publishing {} txid={} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index, publishId, attempts.count)
           val actor = factory.spawnFinalTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
           actor ! FinalTxPublisher.Publish(context.self, cmd)
-          run(pending + (cmd.input -> attempts.appended(FinalAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
+          run(pending + (cmd.input -> attempts.add(FinalAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
         }
 
       case cmd: PublishReplaceableTx =>
-        val targetFeerate = feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
-        val attempts = pending.getOrElse(cmd.input, Seq.empty)
-        val alreadyPublished = attempts.exists {
-          // If there is already an attempt at spending this outpoint with a higher feerate, there is no point in publishing again.
-          case a: ReplaceableAttempt => targetFeerate <= a.feerate
-          case _ => false
-        }
-        if (alreadyPublished) {
-          log.info("not publishing replaceable {} spending {}:{} with feerate={}, publishing is already in progress", cmd.desc, cmd.input.txid, cmd.input.index, targetFeerate)
-          Behaviors.same
-        } else {
-          val publishId = UUID.randomUUID()
-          log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.length)
-          val actor = factory.spawnReplaceableTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
-          actor ! ReplaceableTxPublisher.Publish(context.self, cmd, targetFeerate)
-          run(pending + (cmd.input -> attempts.appended(ReplaceableAttempt(publishId, cmd, targetFeerate, actor))), retryNextBlock, channelInfo)
+        val proposedConfirmationTarget = cmd.txInfo.confirmBefore
+        val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
+        attempts.replaceableAttempt_opt match {
+          case Some(currentAttempt) =>
+            if (currentAttempt.cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript) != cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript)) {
+              log.error("replaceable {} sends to a different address than the previous attempt, this should not happen: proposed={}, previous={}", currentAttempt.cmd.desc, cmd.txInfo, currentAttempt.cmd.txInfo)
+            }
+            val currentConfirmationTarget = currentAttempt.confirmBefore
+            if (currentConfirmationTarget <= proposedConfirmationTarget) {
+              log.info("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
+              Behaviors.same
+            } else {
+              log.info("replaceable {} spending {}:{} has new confirmation target={} (previous={})", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
+              currentAttempt.actor ! ReplaceableTxPublisher.UpdateConfirmationTarget(proposedConfirmationTarget)
+              val attempts2 = attempts.copy(replaceableAttempt_opt = Some(currentAttempt.copy(confirmBefore = proposedConfirmationTarget)))
+              run(pending + (cmd.input -> attempts2), retryNextBlock, channelInfo)
+            }
+          case None =>
+            val publishId = UUID.randomUUID()
+            log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.count)
+            val actor = factory.spawnReplaceableTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
+            actor ! ReplaceableTxPublisher.Publish(context.self, cmd)
+            val attempts2 = attempts.copy(replaceableAttempt_opt = Some(ReplaceableAttempt(publishId, cmd, proposedConfirmationTarget, actor)))
+            run(pending + (cmd.input -> attempts2), retryNextBlock, channelInfo)
         }
 
       case result: PublishTxResult => result match {
         case TxConfirmed(cmd, _) =>
-          pending.get(cmd.input).foreach(stopAttempts)
+          pending.get(cmd.input).foreach(a => stopAttempts(a.attempts))
           run(pending - cmd.input, retryNextBlock, channelInfo)
         case TxRejected(id, cmd, reason) =>
-          val (rejectedAttempts, remainingAttempts) = pending.getOrElse(cmd.input, Seq.empty).partition(_.id == id)
+          val (rejectedAttempts, remainingAttempts) = pending.getOrElse(cmd.input, PublishAttempts.empty).remove(id)
           stopAttempts(rejectedAttempts)
           val pending2 = if (remainingAttempts.isEmpty) pending - cmd.input else pending + (cmd.input -> remainingAttempts)
           reason match {
@@ -237,9 +269,17 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               val retryNextBlock2 = if (retry) retryNextBlock ++ rejectedAttempts.map(_.cmd) else retryNextBlock
               run(pending2, retryNextBlock2, channelInfo)
             case TxRejectedReason.ConflictingTxUnconfirmed =>
-              // Our transaction was replaced by a transaction that pays more fees, so it doesn't make sense to retry now.
-              // We will automatically retry with a higher fee if we get close to the deadline.
-              run(pending2, retryNextBlock, channelInfo)
+              cmd match {
+                case _: PublishFinalTx =>
+                  // Our transaction is not replaceable, and the mempool contains a transaction that pays more fees, so
+                  // it doesn't make sense to retry, we will keep getting rejected.
+                  run(pending2, retryNextBlock, channelInfo)
+                case _: PublishReplaceableTx =>
+                  // The mempool contains a transaction that pays more fees, but as we get closer to the confirmation
+                  // target, we will try to publish with higher fees, so if the conflicting transaction doesn't confirm,
+                  // we should be able to replace it before we reach the confirmation target.
+                  run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelInfo)
+              }
             case TxRejectedReason.ConflictingTxConfirmed =>
               // Our transaction was double-spent by a competing transaction that has been confirmed, so it doesn't make
               // sense to retry.

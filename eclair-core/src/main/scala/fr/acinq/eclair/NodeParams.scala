@@ -317,6 +317,7 @@ object NodeParams extends Logging {
     val feeTargets = FeeTargets(
       fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
       commitmentBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment"),
+      commitmentWithoutHtlcsBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment-without-htlcs"),
       mutualCloseBlockTarget = config.getInt("on-chain-fees.target-blocks.mutual-close"),
       claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
     )

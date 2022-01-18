@@ -54,7 +54,10 @@ object FinalTxPublisher {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
-          new FinalTxPublisher(nodeParams, bitcoinClient, watcher, context, timers, loggingInfo).start()
+          Behaviors.receiveMessagePartial {
+            case Publish(replyTo, cmd) => new FinalTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, loggingInfo).checkTimeLocks()
+            case Stop => Behaviors.stopped
+          }
         }
       }
     }
@@ -63,6 +66,8 @@ object FinalTxPublisher {
 }
 
 private class FinalTxPublisher(nodeParams: NodeParams,
+                               replyTo: ActorRef[TxPublisher.PublishTxResult],
+                               cmd: TxPublisher.PublishFinalTx,
                                bitcoinClient: BitcoinCoreClient,
                                watcher: ActorRef[ZmqWatcher.Command],
                                context: ActorContext[FinalTxPublisher.Command],
@@ -73,25 +78,16 @@ private class FinalTxPublisher(nodeParams: NodeParams,
 
   private val log = context.log
 
-  def start(): Behavior[Command] = {
+  def checkTimeLocks(): Behavior[Command] = {
+    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
+    timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.tx, cmd.desc)
     Behaviors.receiveMessagePartial {
-      case Publish(replyTo, cmd) => checkTimeLocks(replyTo, cmd)
+      case TimeLocksOk => checkParentPublished()
       case Stop => Behaviors.stopped
     }
   }
 
-  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishFinalTx): Behavior[Command] = {
-    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
-    timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.tx, cmd.desc)
-    Behaviors.receiveMessagePartial {
-      case TimeLocksOk => checkParentPublished(replyTo, cmd)
-      case Stop =>
-        timeLocksChecker ! TxTimeLocksMonitor.Stop
-        Behaviors.stopped
-    }
-  }
-
-  def checkParentPublished(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishFinalTx): Behavior[Command] = {
+  def checkParentPublished(): Behavior[Command] = {
     cmd.parentTx_opt match {
       case Some(parentTxId) =>
         context.self ! CheckParentTx
@@ -103,33 +99,35 @@ private class FinalTxPublisher(nodeParams: NodeParams,
               case Failure(reason) => UnknownFailure(reason)
             }
             Behaviors.same
-          case ParentTxOk => publish(replyTo, cmd)
+          case ParentTxOk => publish()
           case ParentTxMissing =>
             log.debug("parent tx is missing, retrying after delay...")
             timers.startSingleTimer(CheckParentTx, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
             Behaviors.same
           case UnknownFailure(reason) =>
             log.error("could not check parent tx", reason)
-            sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
+            sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
           case Stop => Behaviors.stopped
         }
-      case None => publish(replyTo, cmd)
+      case None => publish()
     }
   }
 
-  def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishFinalTx): Behavior[Command] = {
+  def publish(): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, cmd.desc, cmd.fee)
     Behaviors.receiveMessagePartial {
-      case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, cmd.tx))
-      case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) => sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
-      case Stop =>
-        txMonitor ! MempoolTxMonitor.Stop
-        Behaviors.stopped
+      case WrappedTxResult(txResult) =>
+        txResult match {
+          case _: MempoolTxMonitor.IntermediateTxResult => Behaviors.same
+          case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
+          case MempoolTxMonitor.TxDeeplyBuried(tx) => sendResult(TxPublisher.TxConfirmed(cmd, tx))
+        }
+      case Stop => Behaviors.stopped
     }
   }
 
-  def sendResult(replyTo: ActorRef[TxPublisher.PublishTxResult], result: TxPublisher.PublishTxResult): Behavior[Command] = {
+  def sendResult(result: TxPublisher.PublishTxResult): Behavior[Command] = {
     replyTo ! result
     Behaviors.receiveMessagePartial {
       case Stop => Behaviors.stopped

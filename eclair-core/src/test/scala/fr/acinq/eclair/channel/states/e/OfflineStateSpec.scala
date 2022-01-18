@@ -20,7 +20,7 @@ import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -529,7 +529,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     disconnect(alice, bob)
 

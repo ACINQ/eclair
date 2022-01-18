@@ -21,14 +21,12 @@ import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentBlockCount
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.publish
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, InputInfo}
-import fr.acinq.eclair.{NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -37,11 +35,7 @@ import scala.concurrent.duration.DurationInt
 
 class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(nodeParams: NodeParams, txPublisher: ActorRef[TxPublisher.Command], factory: TestProbe, probe: TestProbe) {
-    def setFeerate(feerate: FeeratePerKw): Unit = {
-      nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(feerate))
-    }
-  }
+  case class FixtureParam(nodeParams: NodeParams, txPublisher: ActorRef[TxPublisher.Command], factory: TestProbe, probe: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(max = 30 seconds) {
@@ -107,40 +101,46 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("publish replaceable tx") { f =>
     import f._
 
-    f.setFeerate(FeeratePerKw(750 sat))
+    val confirmBefore = BlockHeight(nodeParams.currentBlockHeight + 12)
     val input = OutPoint(randomBytes32(), 3)
-    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null)
+    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), confirmBefore), null)
     txPublisher ! cmd
     val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     val p = child.expectMsgType[ReplaceableTxPublisher.Publish]
     assert(p.cmd === cmd)
-    assert(p.targetFeerate === FeeratePerKw(750 sat))
   }
 
   test("publish replaceable tx duplicate") { f =>
     import f._
 
-    f.setFeerate(FeeratePerKw(750 sat))
+    val confirmBefore = BlockHeight(nodeParams.currentBlockHeight + 12)
     val input = OutPoint(randomBytes32(), 3)
-    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null)
+    val anchorTx = ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), confirmBefore)
+    val cmd = PublishReplaceableTx(anchorTx, null)
     txPublisher ! cmd
-    val child1 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
-    val p1 = child1.expectMsgType[ReplaceableTxPublisher.Publish]
-    assert(p1.cmd === cmd)
-    assert(p1.targetFeerate === FeeratePerKw(750 sat))
+    val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
+    assert(child.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
 
-    // We ignore duplicates that use a lower feerate:
-    f.setFeerate(FeeratePerKw(700 sat))
-    txPublisher ! cmd
+    // We ignore duplicates that don't use a more aggressive confirmation target:
+    txPublisher ! PublishReplaceableTx(anchorTx, null)
+    child.expectNoMessage(100 millis)
+    factory.expectNoMessage(100 millis)
+    val cmdHigherTarget = cmd.copy(txInfo = anchorTx.copy(confirmBefore = confirmBefore + 1))
+    txPublisher ! cmdHigherTarget
+    child.expectNoMessage(100 millis)
     factory.expectNoMessage(100 millis)
 
-    // But we retry publishing if the feerate is greater than previous attempts:
-    f.setFeerate(FeeratePerKw(1000 sat))
-    txPublisher ! cmd
-    val child2 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
-    val p2 = child2.expectMsgType[ReplaceableTxPublisher.Publish]
-    assert(p2.cmd === cmd)
-    assert(p2.targetFeerate === FeeratePerKw(1000 sat))
+    // But we update the confirmation target when it is more aggressive than previous attempts:
+    val cmdLowerTarget = cmd.copy(txInfo = anchorTx.copy(confirmBefore = confirmBefore - 6))
+    txPublisher ! cmdLowerTarget
+    child.expectMsg(ReplaceableTxPublisher.UpdateConfirmationTarget(confirmBefore - 6))
+    factory.expectNoMessage(100 millis)
+
+    // And we update our internal threshold accordingly:
+    val cmdInBetween = cmd.copy(txInfo = anchorTx.copy(confirmBefore = confirmBefore - 3))
+    txPublisher ! cmdInBetween
+    child.expectNoMessage(100 millis)
+    factory.expectNoMessage(100 millis)
   }
 
   test("stop publishing attempts when transaction confirms") { f =>
@@ -159,7 +159,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned].actor
     attempt2.expectMsgType[FinalTxPublisher.Publish]
 
-    val cmd3 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null)
+    val cmd3 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), BlockHeight(nodeParams.currentBlockHeight)), null)
     txPublisher ! cmd3
     val attempt3 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     attempt3.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -181,7 +181,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt1 = factory.expectMsgType[FinalTxPublisherSpawned]
     attempt1.actor.expectMsgType[FinalTxPublisher.Publish]
 
-    val cmd2 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null)
+    val cmd2 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), BlockHeight(nodeParams.currentBlockHeight)), null)
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -198,29 +198,22 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("publishing attempt fails (not enough funds)") { f =>
     import f._
 
-    f.setFeerate(FeeratePerKw(600 sat))
+    val target = BlockHeight(nodeParams.currentBlockHeight + 12)
     val input = OutPoint(randomBytes32(), 7)
     val paymentHash = randomBytes32()
-    val cmd1 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null)
-    txPublisher ! cmd1
+    val cmd = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, target), null)
+    txPublisher ! cmd
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]
 
-    f.setFeerate(FeeratePerKw(750 sat))
-    val cmd2 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null)
-    txPublisher ! cmd2
-    val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
-    attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]
-
-    txPublisher ! TxRejected(attempt2.id, cmd2, CouldNotFund)
-    attempt2.actor.expectMsg(ReplaceableTxPublisher.Stop)
-    attempt1.actor.expectNoMessage(100 millis) // this error doesn't impact other publishing attempts
+    txPublisher ! TxRejected(attempt1.id, cmd, CouldNotFund)
+    attempt1.actor.expectMsg(ReplaceableTxPublisher.Stop)
 
     // We automatically retry the failed attempt once a new block is found (we may have more funds now):
     factory.expectNoMessage(100 millis)
     system.eventStream.publish(CurrentBlockCount(8200))
-    val attempt3 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
-    assert(attempt3.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd2)
+    val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
+    assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
   }
 
   test("publishing attempt fails (transaction skipped)") { f =>
@@ -250,7 +243,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
   }
 
-  test("publishing attempt fails (unconfirmed conflicting transaction)") { f =>
+  test("publishing attempt fails (unconfirmed conflicting raw transaction)") { f =>
     import f._
 
     val tx = Transaction(2, TxIn(OutPoint(randomBytes32(), 1), Nil, 0) :: Nil, Nil, 0)
@@ -265,6 +258,26 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We don't retry, even after a new block has been found:
     system.eventStream.publish(CurrentBlockCount(8200))
     factory.expectNoMessage(100 millis)
+  }
+
+  test("publishing attempt fails (unconfirmed conflicting replaceable transaction)") { f =>
+    import f._
+
+    val input = OutPoint(randomBytes32(), 7)
+    val paymentHash = randomBytes32()
+    val cmd = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, BlockHeight(nodeParams.currentBlockHeight)), null)
+    txPublisher ! cmd
+    val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
+    attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]
+
+    txPublisher ! TxRejected(attempt1.id, cmd, ConflictingTxUnconfirmed)
+    attempt1.actor.expectMsg(ReplaceableTxPublisher.Stop)
+    factory.expectNoMessage(100 millis)
+
+    // We retry when a new block is found:
+    system.eventStream.publish(CurrentBlockCount(nodeParams.currentBlockHeight + 1))
+    val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
+    assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
   }
 
   test("publishing attempt fails (confirmed conflicting transaction)") { f =>
@@ -299,6 +312,48 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We don't retry, even after a new block has been found:
     system.eventStream.publish(CurrentBlockCount(8200))
     factory.expectNoMessage(100 millis)
+  }
+
+  test("update publishing attempts") { _ =>
+    {
+      // No attempts.
+      val attempts = PublishAttempts.empty
+      assert(attempts.isEmpty)
+      assert(attempts.count === 0)
+      assert(attempts.attempts.isEmpty)
+      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
+    }
+    {
+      // Only final attempts.
+      val attempt1 = FinalAttempt(UUID.randomUUID(), null, null)
+      val attempt2 = FinalAttempt(UUID.randomUUID(), null, null)
+      val attempts = PublishAttempts.empty.add(attempt1).add(attempt2)
+      assert(!attempts.isEmpty)
+      assert(attempts.count === 2)
+      assert(attempts.replaceableAttempt_opt.isEmpty)
+      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
+      assert(attempts.remove(attempt1.id) === (Seq(attempt1), PublishAttempts(Seq(attempt2), None)))
+    }
+    {
+      // Only replaceable attempts.
+      val attempt = ReplaceableAttempt(UUID.randomUUID(), null, BlockHeight(0), null)
+      val attempts = PublishAttempts(Nil, Some(attempt))
+      assert(!attempts.isEmpty)
+      assert(attempts.count === 1)
+      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
+      assert(attempts.remove(attempt.id) === (Seq(attempt), PublishAttempts.empty))
+    }
+    {
+      // Mix of final and replaceable attempts with the same id.
+      val attempt1 = ReplaceableAttempt(UUID.randomUUID(), null, BlockHeight(0), null)
+      val attempt2 = FinalAttempt(attempt1.id, null, null)
+      val attempt3 = FinalAttempt(UUID.randomUUID(), null, null)
+      val attempts = PublishAttempts(Seq(attempt2), Some(attempt1)).add(attempt3)
+      assert(!attempts.isEmpty)
+      assert(attempts.count === 3)
+      assert(attempts.remove(attempt3.id) === (Seq(attempt3), PublishAttempts(Seq(attempt2), Some(attempt1))))
+      assert(attempts.remove(attempt1.id) === (Seq(attempt2, attempt1), PublishAttempts(Seq(attempt3), None)))
+    }
   }
 
 }

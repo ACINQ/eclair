@@ -100,7 +100,8 @@ object Transactions {
     def input: InputInfo
     def desc: String
     def tx: Transaction
-    def fee: Satoshi = input.txOut.amount - tx.txOut.map(_.amount).sum
+    def amountIn: Satoshi = input.txOut.amount
+    def fee: Satoshi = amountIn - tx.txOut.map(_.amount).sum
     def minRelayFee: Satoshi = {
       val vsize = (tx.weight() + 3) / 4
       Satoshi(FeeratePerKw.MinimumRelayFeeRate * vsize / 1000)
@@ -108,9 +109,24 @@ object Transactions {
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
   }
-  sealed trait ReplaceableTransactionWithInputInfo extends TransactionWithInputInfo
+  sealed trait ReplaceableTransactionWithInputInfo extends TransactionWithInputInfo {
+    /** Block before which the transaction must be confirmed. */
+    def confirmBefore: BlockHeight
+  }
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "commit-tx" }
+  /**
+   * It's important to note that htlc transactions with the default commitment format are not actually replaceable: only
+   * anchor outputs htlc transactions are replaceable. We should have used different types for these different kinds of
+   * htlc transactions, but we introduced that before implementing the replacement strategy.
+   * Unfortunately, if we wanted to change that, we would have to update the codecs and implement a migration of channel
+   * data, which isn't trivial, so we chose to temporarily live with that inconsistency (and have the transaction
+   * replacement logic abort when non-anchor outputs htlc transactions are provided).
+   * Ideally, we'd like to implement a dynamic commitment format upgrade mechanism and depreciate the pre-anchor outputs
+   * format soon, which will get rid of this inconsistency.
+   * The next time we introduce a new type of commitment, we should avoid repeating that mistake and define separate
+   * types right from the start.
+   */
   sealed trait HtlcTx extends ReplaceableTransactionWithInputInfo {
     def htlcId: Long
     override def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
@@ -121,15 +137,15 @@ object Transactions {
       }
     }
   }
-  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long) extends HtlcTx { override def desc: String = "htlc-success" }
-  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long) extends HtlcTx { override def desc: String = "htlc-timeout" }
+  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmBefore: BlockHeight) extends HtlcTx { override def desc: String = "htlc-success" }
+  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmBefore: BlockHeight) extends HtlcTx { override def desc: String = "htlc-timeout" }
   case class HtlcDelayedTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "htlc-delayed" }
   sealed trait ClaimHtlcTx extends ReplaceableTransactionWithInputInfo { def htlcId: Long }
-  case class LegacyClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
-  case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
-  case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-timeout" }
+  case class LegacyClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmBefore: BlockHeight) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
+  case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmBefore: BlockHeight) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
+  case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmBefore: BlockHeight) extends ClaimHtlcTx { override def desc: String = "claim-htlc-timeout" }
   sealed trait ClaimAnchorOutputTx extends TransactionWithInputInfo
-  case class ClaimLocalAnchorOutputTx(input: InputInfo, tx: Transaction) extends ClaimAnchorOutputTx with ReplaceableTransactionWithInputInfo { override def desc: String = "local-anchor" }
+  case class ClaimLocalAnchorOutputTx(input: InputInfo, tx: Transaction, confirmBefore: BlockHeight) extends ClaimAnchorOutputTx with ReplaceableTransactionWithInputInfo { override def desc: String = "local-anchor" }
   case class ClaimRemoteAnchorOutputTx(input: InputInfo, tx: Transaction) extends ClaimAnchorOutputTx { override def desc: String = "remote-anchor" }
   sealed trait ClaimRemoteCommitMainOutputTx extends TransactionWithInputInfo
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends ClaimRemoteCommitMainOutputTx { override def desc: String = "remote-main" }
@@ -452,7 +468,7 @@ object Transactions {
         txOut = TxOut(amount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))) :: Nil,
         lockTime = htlc.cltvExpiry.toLong
       )
-      Right(HtlcTimeoutTx(input, tx, htlc.id))
+      Right(HtlcTimeoutTx(input, tx, htlc.id, BlockHeight(htlc.cltvExpiry.toLong)))
     }
   }
 
@@ -479,7 +495,7 @@ object Transactions {
         txOut = TxOut(amount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))) :: Nil,
         lockTime = 0
       )
-      Right(HtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id))
+      Right(HtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, BlockHeight(htlc.cltvExpiry.toLong)))
     }
   }
 
@@ -520,23 +536,20 @@ object Transactions {
     } match {
       case Some(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-        val sequence = commitmentFormat match {
-          case DefaultCommitmentFormat => 0xffffffffL // RBF disabled
-          case _: AnchorOutputsCommitmentFormat => 1 // txs have a 1-block delay to allow CPFP carve-out on anchors
-        }
+        // unsigned tx
         val tx = Transaction(
           version = 2,
-          txIn = TxIn(input.outPoint, ByteVector.empty, sequence) :: Nil,
+          txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
           txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
           lockTime = 0)
-        val weight = addSigs(ClaimHtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id), PlaceHolderSig, ByteVector32.Zeroes).tx.weight()
+        val weight = addSigs(ClaimHtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, BlockHeight(htlc.cltvExpiry.toLong)), PlaceHolderSig, ByteVector32.Zeroes).tx.weight()
         val fee = weight2fee(feeratePerKw, weight)
         val amount = input.txOut.amount - fee
         if (amount < localDustLimit) {
           Left(AmountBelowDustLimit)
         } else {
           val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(ClaimHtlcSuccessTx(input, tx1, htlc.paymentHash, htlc.id))
+          Right(ClaimHtlcSuccessTx(input, tx1, htlc.paymentHash, htlc.id, BlockHeight(htlc.cltvExpiry.toLong)))
         }
       case None => Left(OutputNotFound)
     }
@@ -564,14 +577,14 @@ object Transactions {
           txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
           txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
           lockTime = htlc.cltvExpiry.toLong)
-        val weight = addSigs(ClaimHtlcTimeoutTx(input, tx, htlc.id), PlaceHolderSig).tx.weight()
+        val weight = addSigs(ClaimHtlcTimeoutTx(input, tx, htlc.id, BlockHeight(htlc.cltvExpiry.toLong)), PlaceHolderSig).tx.weight()
         val fee = weight2fee(feeratePerKw, weight)
         val amount = input.txOut.amount - fee
         if (amount < localDustLimit) {
           Left(AmountBelowDustLimit)
         } else {
           val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(ClaimHtlcTimeoutTx(input, tx1, htlc.id))
+          Right(ClaimHtlcTimeoutTx(input, tx1, htlc.id, BlockHeight(htlc.cltvExpiry.toLong)))
         }
       case None => Left(OutputNotFound)
     }
@@ -684,8 +697,8 @@ object Transactions {
     }
   }
 
-  def makeClaimLocalAnchorOutputTx(commitTx: Transaction, localFundingPubkey: PublicKey): Either[TxGenerationSkipped, ClaimLocalAnchorOutputTx] = {
-    makeClaimAnchorOutputTx(commitTx, localFundingPubkey).map { case (input, tx) => ClaimLocalAnchorOutputTx(input, tx) }
+  def makeClaimLocalAnchorOutputTx(commitTx: Transaction, localFundingPubkey: PublicKey, confirmBefore: BlockHeight): Either[TxGenerationSkipped, ClaimLocalAnchorOutputTx] = {
+    makeClaimAnchorOutputTx(commitTx, localFundingPubkey).map { case (input, tx) => ClaimLocalAnchorOutputTx(input, tx, confirmBefore) }
   }
 
   def makeClaimRemoteAnchorOutputTx(commitTx: Transaction, remoteFundingPubkey: PublicKey): Either[TxGenerationSkipped, ClaimRemoteAnchorOutputTx] = {

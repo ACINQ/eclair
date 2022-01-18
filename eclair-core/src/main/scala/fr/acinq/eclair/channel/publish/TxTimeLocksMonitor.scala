@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.publish
 
 import akka.actor.typed.eventstream.EventStream
-import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.NodeParams
@@ -26,6 +26,9 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.transactions.Scripts
+
+import scala.concurrent.duration.DurationLong
+import scala.util.Random
 
 /**
  * Created by t-bast on 10/06/2021.
@@ -43,34 +46,35 @@ object TxTimeLocksMonitor {
   sealed trait Command
   case class CheckTx(replyTo: ActorRef[TimeLocksOk], tx: Transaction, desc: String) extends Command
   private case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
+  private case object CheckRelativeTimeLock extends Command
   private case class ParentTxConfirmed(parentTxId: ByteVector32) extends Command
-  case object Stop extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
-      Behaviors.withMdc(loggingInfo.mdc()) {
-        new TxTimeLocksMonitor(nodeParams, watcher, context).start()
+      Behaviors.withTimers { timers =>
+        Behaviors.withMdc(loggingInfo.mdc()) {
+          Behaviors.receiveMessagePartial {
+            case cmd: CheckTx => new TxTimeLocksMonitor(nodeParams, cmd, watcher, context, timers).checkAbsoluteTimeLock()
+          }
+        }
       }
     }
   }
 
 }
 
-private class TxTimeLocksMonitor(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], context: ActorContext[TxTimeLocksMonitor.Command]) {
+private class TxTimeLocksMonitor(nodeParams: NodeParams,
+                                 cmd: TxTimeLocksMonitor.CheckTx,
+                                 watcher: ActorRef[ZmqWatcher.Command],
+                                 context: ActorContext[TxTimeLocksMonitor.Command],
+                                 timers: TimerScheduler[TxTimeLocksMonitor.Command]) {
 
   import TxTimeLocksMonitor._
 
   private val log = context.log
 
-  def start(): Behavior[Command] = {
-    Behaviors.receiveMessagePartial {
-      case cmd: CheckTx => checkAbsoluteTimeLock(cmd)
-      case Stop => Behaviors.stopped
-    }
-  }
-
-  def checkAbsoluteTimeLock(cmd: CheckTx): Behavior[Command] = {
+  def checkAbsoluteTimeLock(): Behavior[Command] = {
     val blockCount = nodeParams.currentBlockHeight
     val cltvTimeout = Scripts.cltvTimeout(cmd.tx)
     if (blockCount < cltvTimeout) {
@@ -81,20 +85,19 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams, watcher: ActorRef[ZmqWa
         case WrappedCurrentBlockCount(currentBlockCount) =>
           if (cltvTimeout <= currentBlockCount) {
             context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
-            checkRelativeTimeLocks(cmd)
+            timers.startSingleTimer(CheckRelativeTimeLock, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
+            Behaviors.same
           } else {
             Behaviors.same
           }
-        case Stop =>
-          context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
-          Behaviors.stopped
+        case CheckRelativeTimeLock => checkRelativeTimeLocks()
       }
     } else {
-      checkRelativeTimeLocks(cmd)
+      checkRelativeTimeLocks()
     }
   }
 
-  def checkRelativeTimeLocks(cmd: CheckTx): Behavior[Command] = {
+  def checkRelativeTimeLocks(): Behavior[Command] = {
     val csvTimeouts = Scripts.csvTimeouts(cmd.tx)
     if (csvTimeouts.nonEmpty) {
       val watchConfirmedResponseMapper: ActorRef[WatchParentTxConfirmedTriggered] = context.messageAdapter(w => ParentTxConfirmed(w.tx.txid))
@@ -103,29 +106,28 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams, watcher: ActorRef[ZmqWa
           log.info("{} has a relative timeout of {} blocks, watching parentTxId={}", cmd.desc, csvTimeout, parentTxId)
           watcher ! WatchParentTxConfirmed(watchConfirmedResponseMapper, parentTxId, minDepth = csvTimeout)
       }
-      waitForParentsToConfirm(cmd, csvTimeouts.keySet)
+      waitForParentsToConfirm(csvTimeouts.keySet)
     } else {
-      notifySender(cmd)
+      notifySender()
     }
   }
 
-  def waitForParentsToConfirm(cmd: CheckTx, parentTxIds: Set[ByteVector32]): Behavior[Command] = {
+  def waitForParentsToConfirm(parentTxIds: Set[ByteVector32]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case ParentTxConfirmed(parentTxId) =>
         log.info("parent tx of {} has been confirmed (parent txid={})", cmd.desc, parentTxId)
         val remainingParentTxIds = parentTxIds - parentTxId
         if (remainingParentTxIds.isEmpty) {
           log.info("all parent txs of {} have been confirmed", cmd.desc)
-          notifySender(cmd)
+          notifySender()
         } else {
           log.debug("some parent txs of {} are still unconfirmed (parent txids={})", cmd.desc, remainingParentTxIds.mkString(","))
-          waitForParentsToConfirm(cmd, remainingParentTxIds)
+          waitForParentsToConfirm(remainingParentTxIds)
         }
-      case Stop => Behaviors.stopped
     }
   }
 
-  def notifySender(cmd: CheckTx): Behavior[Command] = {
+  def notifySender(): Behavior[Command] = {
     log.debug("time locks satisfied for {}", cmd.desc)
     cmd.replyTo ! TimeLocksOk()
     Behaviors.stopped

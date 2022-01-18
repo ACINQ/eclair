@@ -50,20 +50,6 @@ object TestConstants {
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2500 sat)
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
-  class TestFeeEstimator extends FeeEstimator {
-    private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
-
-    // @formatter:off
-    override def getFeeratePerKb(target: Int): FeeratePerKB = FeeratePerKB(currentFeerates.feePerBlock(target))
-    override def getFeeratePerKw(target: Int): FeeratePerKw = currentFeerates.feePerBlock(target)
-    override def getMempoolMinFeeratePerKw(): FeeratePerKw = currentFeerates.mempoolMinFee
-    // @formatter:on
-
-    def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
-      currentFeerates = feeratesPerKw
-    }
-  }
-
   case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
     val mandatory = 50000
@@ -83,7 +69,6 @@ object TestConstants {
     "blockstream.info",
     "mempool.space"
   )
-
 
   object Alice {
     val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
@@ -117,7 +102,7 @@ object TestConstants {
       dustLimit = 1100 sat,
       maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeTargets = FeeTargets(6, 2, 36, 12, 18),
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
@@ -250,7 +235,7 @@ object TestConstants {
       dustLimit = 1000 sat,
       maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeTargets = FeeTargets(6, 2, 36, 12, 18),
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,

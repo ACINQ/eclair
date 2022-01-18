@@ -211,17 +211,27 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("paymentHash", JString(x.paymentHash.toString())),
-    JField("htlcId", JLong(x.htlcId))
+    JField("htlcId", JLong(x.htlcId)),
+    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
   ))
   case x: HtlcTimeoutTx => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
-    JField("htlcId", JLong(x.htlcId))
+    JField("htlcId", JLong(x.htlcId)),
+    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
+  ))
+  case x: ClaimHtlcSuccessTx => JObject(List(
+    JField("txid", JString(x.tx.txid.toHex)),
+    JField("tx", JString(x.tx.toString())),
+    JField("paymentHash", JString(x.paymentHash.toString())),
+    JField("htlcId", JLong(x.htlcId)),
+    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
   ))
   case x: ClaimHtlcTx => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
-    JField("htlcId", JLong(x.htlcId))
+    JField("htlcId", JLong(x.htlcId)),
+    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
   ))
   case x: ClosingTx =>
     val txFields = List(
@@ -238,6 +248,11 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
         JObject(txFields :+ toLocalField)
       case None => JObject(txFields)
     }
+  case x: ReplaceableTransactionWithInputInfo => JObject(List(
+    JField("txid", JString(x.tx.txid.toHex)),
+    JField("tx", JString(x.tx.toString())),
+    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
+  ))
   case x: TransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString()))

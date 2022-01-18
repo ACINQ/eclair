@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, HtlcSuccessTx, HtlcTimeoutTx, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -752,12 +752,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (remote commit) followed by CMD_FULFILL_HTLC") { f =>
     import f._
     // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
-    val (r1, htlc1) = addHtlc(110000000 msat, bob, alice, bob2alice, alice2bob)
+    val (r1, htlc1) = addHtlc(110000000 msat, CltvExpiryDelta(48), bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     relayerA.expectMsgType[RelayForward]
 
     // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
-    val (_, htlc2) = addHtlc(95000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(95000000 msat, CltvExpiryDelta(144), alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig] // We stop here: Alice sent her CommitSig, but doesn't hear back from Bob.
 
@@ -775,7 +775,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === closingState.claimMainOutputTx.get.tx)
     val claimHtlcSuccessTx = getClaimHtlcSuccessTxs(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get).head.tx
     Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === claimHtlcSuccessTx)
+    val publishHtlcSuccessTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishHtlcSuccessTx.txInfo.tx === claimHtlcSuccessTx)
+    assert(publishHtlcSuccessTx.txInfo.confirmBefore.toLong === htlc1.cltvExpiry.toLong)
 
     // Alice resets watches on all relevant transactions.
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
@@ -800,7 +802,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     // alice sends an htlc to bob
-    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlca) = addHtlc(50000000 msat, CltvExpiryDelta(24), alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
@@ -816,7 +818,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we should re-publish unconfirmed transactions
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === claimMain.tx))
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === htlcTimeoutTx.tx)
+    val publishHtlcTimeoutTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishHtlcTimeoutTx.txInfo.tx === htlcTimeoutTx.tx)
+    assert(publishHtlcTimeoutTx.txInfo.confirmBefore.toLong === htlca.cltvExpiry.toLong)
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
     assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === htlcTimeoutTx.input.outPoint.index)
   }
@@ -919,12 +923,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (next remote commit) followed by CMD_FULFILL_HTLC") { f =>
     import f._
     // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
-    val (r1, htlc1) = addHtlc(110000000 msat, bob, alice, bob2alice, alice2bob)
+    val (r1, htlc1) = addHtlc(110000000 msat, CltvExpiryDelta(64), bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     relayerA.expectMsgType[RelayForward]
 
     // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
-    val (_, htlc2) = addHtlc(95000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(95000000 msat, CltvExpiryDelta(32), alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
@@ -946,8 +950,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === closingState.claimMainOutputTx.get.tx)
     val claimHtlcSuccessTx = getClaimHtlcSuccessTxs(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get).head.tx
     Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === claimHtlcSuccessTx)
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === claimHtlcTimeoutTx)
+    val publishHtlcSuccessTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishHtlcSuccessTx.txInfo.tx === claimHtlcSuccessTx)
+    assert(publishHtlcSuccessTx.txInfo.confirmBefore.toLong === htlc1.cltvExpiry.toLong)
+    val publishHtlcTimeoutTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishHtlcTimeoutTx.txInfo.tx === claimHtlcTimeoutTx)
+    assert(publishHtlcTimeoutTx.txInfo.confirmBefore.toLong === htlc2.cltvExpiry.toLong)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === closingState.claimMainOutputTx.get.tx.txid)

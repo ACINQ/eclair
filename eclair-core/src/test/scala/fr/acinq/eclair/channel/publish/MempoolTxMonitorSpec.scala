@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.publish.MempoolTxMonitor.{Publish, Stop, TxConfirmed, TxRejected}
+import fr.acinq.eclair.channel.publish.MempoolTxMonitor._
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.{TransactionConfirmed, TransactionPublished}
@@ -81,14 +81,20 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 50 sat)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
+    // NB: we don't really generate a block, we're testing the case where the tx is still in the mempool.
+    system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
+    probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(probe)))
+    probe.expectNoMessage(100 millis)
+
     assert(TestConstants.Alice.nodeParams.minDepthBlocks > 1)
     generateBlocks(1)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
+    probe.expectMsg(TxRecentlyConfirmed(tx.txid, 1))
     probe.expectNoMessage(100 millis) // we wait for more than one confirmation to protect against reorgs
 
     generateBlocks(TestConstants.Alice.nodeParams.minDepthBlocks - 1)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
-    probe.expectMsg(TxConfirmed)
+    probe.expectMsg(TxDeeplyBuried(tx))
   }
 
   test("transaction confirmed after replacing existing mempool transaction") {
@@ -105,7 +111,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     generateBlocks(TestConstants.Alice.nodeParams.minDepthBlocks)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
-    probe.expectMsg(TxConfirmed)
+    probe.expectMsg(TxDeeplyBuried(tx2))
   }
 
   test("publish failed (conflicting mempool transaction)") {
@@ -118,7 +124,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 7_500 sat, 0, 0)
     monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, "test-tx", 25 sat)
-    probe.expectMsg(TxRejected(ConflictingTxUnconfirmed))
+    probe.expectMsg(TxRejected(tx2.txid, ConflictingTxUnconfirmed))
   }
 
   test("publish failed (conflicting confirmed transaction)") {
@@ -132,7 +138,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 15_000 sat, 0, 0)
     monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, "test-tx", 10 sat)
-    probe.expectMsg(TxRejected(ConflictingTxConfirmed))
+    probe.expectMsg(TxRejected(tx2.txid, ConflictingTxConfirmed))
   }
 
   test("publish failed (unconfirmed parent, wallet input doesn't exist)") {
@@ -142,7 +148,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
     val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomBytes32(), 13), Nil, 0)))
     monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, "test-tx", 10 sat)
-    probe.expectMsg(TxRejected(WalletInputGone))
+    probe.expectMsg(TxRejected(txUnknownInput.txid, WalletInputGone))
   }
 
   test("publish failed (confirmed parent, wallet input doesn't exist)") {
@@ -155,7 +161,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
     val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomBytes32(), 13), Nil, 0)))
     monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, "test-tx", 10 sat)
-    probe.expectMsg(TxRejected(WalletInputGone))
+    probe.expectMsg(TxRejected(txUnknownInput.txid, WalletInputGone))
   }
 
   test("publish failed (wallet input spent by conflicting confirmed transaction)") {
@@ -170,7 +176,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx = createSpendManyP2WPKH(Seq(parentTx, walletTx), priv, priv.publicKey, 5_000 sat, 0, 0)
     monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 10 sat)
-    probe.expectMsg(TxRejected(WalletInputGone))
+    probe.expectMsg(TxRejected(tx.txid, WalletInputGone))
   }
 
   test("publish succeeds then transaction is replaced by an unconfirmed tx") {
@@ -187,7 +193,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     // When a new block is found, we detect that the transaction has been replaced.
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
-    probe.expectMsg(TxRejected(ConflictingTxUnconfirmed))
+    probe.expectMsg(TxRejected(tx1.txid, ConflictingTxUnconfirmed))
   }
 
   test("publish succeeds then transaction is replaced by a confirmed tx") {
@@ -205,7 +211,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     // When a new block is found, we detect that the transaction has been replaced.
     generateBlocks(1)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
-    probe.expectMsg(TxRejected(ConflictingTxConfirmed))
+    probe.expectMsg(TxRejected(tx1.txid, ConflictingTxConfirmed))
   }
 
   test("publish succeeds then wallet input disappears") {
@@ -229,7 +235,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     // When a new block is found, we detect that the transaction has been evicted.
     generateBlocks(1)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
-    probe.expectMsg(TxRejected(WalletInputGone))
+    probe.expectMsg(TxRejected(tx.txid, WalletInputGone))
   }
 
   test("emit transaction events") {
@@ -254,21 +260,6 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(TestConstants.Alice.nodeParams.minDepthBlocks)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
     eventListener.expectMsg(TransactionConfirmed(txPublished.channelId, txPublished.remoteNodeId, tx))
-  }
-
-  test("stop actor before transaction confirms") {
-    val f = createFixture()
-    import f._
-
-    val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 10 sat)
-    waitTxInMempool(bitcoinClient, tx.txid, probe)
-
-    probe.watch(monitor.toClassic)
-    probe.expectNoMessage(100 millis)
-
-    monitor ! Stop
-    probe.expectTerminated(monitor.toClassic, max = 5 seconds)
   }
 
 }
