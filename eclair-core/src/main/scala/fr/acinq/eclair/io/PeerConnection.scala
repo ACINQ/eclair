@@ -18,7 +18,6 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
-import com.google.common.util.concurrent.RateLimiter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
@@ -62,8 +61,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   import PeerConnection._
 
-  val incomingRateLimiter: RateLimiter = RateLimiter.create(conf.maxOnionMessagesPerSecond)
-  val outgoingRateLimiter: RateLimiter = RateLimiter.create(conf.maxOnionMessagesPerSecond)
+  val incomingRateLimiter: RateLimiter = new RateLimiter(conf.maxOnionMessagesPerSecond)
+  val outgoingRateLimiter: RateLimiter = new RateLimiter(conf.maxOnionMessagesPerSecond)
 
   startWith(BEFORE_AUTH, Nothing)
 
@@ -527,7 +526,7 @@ object PeerConnection {
                   pingDisconnect: Boolean,
                   maxRebroadcastDelay: FiniteDuration,
                   killIdleDelay: FiniteDuration,
-                  maxOnionMessagesPerSecond: Double)
+                  maxOnionMessagesPerSecond: Int)
 
   // @formatter:off
 

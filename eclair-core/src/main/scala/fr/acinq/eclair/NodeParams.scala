@@ -461,7 +461,7 @@ object NodeParams extends Logging {
         pingDisconnect = config.getBoolean("peer-connection.ping-disconnect"),
         maxRebroadcastDelay = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS), // it makes sense to not delay rebroadcast by more than the rebroadcast period
         killIdleDelay = FiniteDuration(config.getDuration("onion-messages.kill-transient-connection-after").getSeconds, TimeUnit.SECONDS),
-        maxOnionMessagesPerSecond = config.getDouble("onion-messages.max-per-peer-per-second")
+        maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second")
       ),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
