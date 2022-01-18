@@ -177,32 +177,56 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
   private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, confirmBefore: BlockHeight, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
   // @formatter:on
 
-  private def run(pending: Map[OutPoint, Seq[PublishAttempt]], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
+  /**
+   * There can be multiple attempts to spend the same [[OutPoint]].
+   * Only one of them will work, but we keep track of all of them.
+   * There is only one [[ReplaceableAttempt]] because we will replace the existing attempt instead of creating a new one.
+   */
+  private case class PublishAttempts(finalAttempts: Seq[FinalAttempt], replaceableAttempt_opt: Option[ReplaceableAttempt]) {
+    val attempts: Seq[PublishAttempt] = finalAttempts ++ replaceableAttempt_opt.toSeq
+    val count: Int = attempts.length
+
+    def add(finalAttempt: FinalAttempt): PublishAttempts = copy(finalAttempts = finalAttempts :+ finalAttempt)
+
+    def remove(id: UUID): (Seq[PublishAttempt], PublishAttempts) = {
+      val (removed, remaining) = finalAttempts.partition(_.id == id)
+      replaceableAttempt_opt match {
+        case Some(replaceableAttempt) if replaceableAttempt.id == id => (removed :+ replaceableAttempt, PublishAttempts(remaining, None))
+        case _ => (removed, PublishAttempts(remaining, replaceableAttempt_opt))
+      }
+    }
+
+    def isEmpty: Boolean = replaceableAttempt_opt.isEmpty && finalAttempts.isEmpty
+  }
+
+  private object PublishAttempts {
+    val empty: PublishAttempts = PublishAttempts(Nil, None)
+  }
+
+  private def run(pending: Map[OutPoint, PublishAttempts], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
     Behaviors.receiveMessage {
       case cmd: PublishFinalTx =>
-        val attempts = pending.getOrElse(cmd.input, Seq.empty)
-        val alreadyPublished = attempts.exists {
-          case a: FinalAttempt => a.cmd.tx.txid == cmd.tx.txid
-          case _ => false
-        }
+        val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
+        val alreadyPublished = attempts.finalAttempts.exists(_.cmd.tx.txid == cmd.tx.txid)
         if (alreadyPublished) {
           log.info("not publishing {} txid={} spending {}:{}, publishing is already in progress", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index)
           Behaviors.same
         } else {
           val publishId = UUID.randomUUID()
-          log.info("publishing {} txid={} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index, publishId, attempts.length)
+          log.info("publishing {} txid={} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index, publishId, attempts.count)
           val actor = factory.spawnFinalTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
           actor ! FinalTxPublisher.Publish(context.self, cmd)
-          run(pending + (cmd.input -> attempts.appended(FinalAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
+          run(pending + (cmd.input -> attempts.add(FinalAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
         }
 
       case cmd: PublishReplaceableTx =>
         val proposedConfirmationTarget = cmd.txInfo.confirmBefore
-        val attempts = pending.getOrElse(cmd.input, Seq.empty)
-        attempts.collectFirst {
-          case a: ReplaceableAttempt => a
-        } match {
+        val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
+        attempts.replaceableAttempt_opt match {
           case Some(currentAttempt) =>
+            if (currentAttempt.cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript) != cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript)) {
+              log.error("replaceable {} sends to a different address than the previous attempt, this should not happen: proposed={}, previous={}", currentAttempt.cmd.desc, cmd.txInfo, currentAttempt.cmd.txInfo)
+            }
             val currentConfirmationTarget = currentAttempt.confirmBefore
             if (currentConfirmationTarget <= proposedConfirmationTarget) {
               log.info("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
@@ -210,23 +234,24 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
             } else {
               log.info("replaceable {} spending {}:{} has new confirmation target={} (previous={})", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
               currentAttempt.actor ! ReplaceableTxPublisher.UpdateConfirmationTarget(proposedConfirmationTarget)
-              val attempts2 = attempts.filterNot(_.isInstanceOf[ReplaceableAttempt]).appended(currentAttempt.copy(confirmBefore = proposedConfirmationTarget))
+              val attempts2 = attempts.copy(replaceableAttempt_opt = Some(currentAttempt.copy(confirmBefore = proposedConfirmationTarget)))
               run(pending + (cmd.input -> attempts2), retryNextBlock, channelInfo)
             }
           case None =>
             val publishId = UUID.randomUUID()
-            log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.length)
+            log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.count)
             val actor = factory.spawnReplaceableTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
             actor ! ReplaceableTxPublisher.Publish(context.self, cmd)
-            run(pending + (cmd.input -> attempts.appended(ReplaceableAttempt(publishId, cmd, proposedConfirmationTarget, actor))), retryNextBlock, channelInfo)
+            val attempts2 = attempts.copy(replaceableAttempt_opt = Some(ReplaceableAttempt(publishId, cmd, proposedConfirmationTarget, actor)))
+            run(pending + (cmd.input -> attempts2), retryNextBlock, channelInfo)
         }
 
       case result: PublishTxResult => result match {
         case TxConfirmed(cmd, _) =>
-          pending.get(cmd.input).foreach(stopAttempts)
+          pending.get(cmd.input).foreach(a => stopAttempts(a.attempts))
           run(pending - cmd.input, retryNextBlock, channelInfo)
         case TxRejected(id, cmd, reason) =>
-          val (rejectedAttempts, remainingAttempts) = pending.getOrElse(cmd.input, Seq.empty).partition(_.id == id)
+          val (rejectedAttempts, remainingAttempts) = pending.getOrElse(cmd.input, PublishAttempts.empty).remove(id)
           stopAttempts(rejectedAttempts)
           val pending2 = if (remainingAttempts.isEmpty) pending - cmd.input else pending + (cmd.input -> remainingAttempts)
           reason match {

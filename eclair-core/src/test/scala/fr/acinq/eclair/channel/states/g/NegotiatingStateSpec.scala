@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ClosingSignedTlv.FeeRange
 import fr.acinq.eclair.wire.protocol.{ClosingSigned, Error, Shutdown, TlvStream, Warning}
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -89,7 +89,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
   }
 
-  def setFeerate(feeEstimator: TestConstants.TestFeeEstimator, feerate: FeeratePerKw, minFeerate: FeeratePerKw = FeeratePerKw(250 sat)): Unit = {
+  def setFeerate(feeEstimator: TestFeeEstimator, feerate: FeeratePerKw, minFeerate: FeeratePerKw = FeeratePerKw(250 sat)): Unit = {
     feeEstimator.setFeerate(FeeratesPerKw.single(feerate).copy(mempoolMinFee = minFeerate, blocks_1008 = minFeerate))
   }
 

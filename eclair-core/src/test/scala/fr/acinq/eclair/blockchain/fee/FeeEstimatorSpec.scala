@@ -17,10 +17,9 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.SatoshiLong
-import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.channel.ChannelTypes
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.{TestFeeEstimator, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 class FeeEstimatorSpec extends AnyFunSuite {

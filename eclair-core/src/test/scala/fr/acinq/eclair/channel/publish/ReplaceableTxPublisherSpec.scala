@@ -22,7 +22,6 @@ import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, SatoshiLong, Transaction}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
-import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -36,7 +35,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -107,7 +106,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
-  private def withFixture(utxos: Seq[BtcAmount], channelType: SupportedChannelType, testFun: Fixture => Any): Unit = {
+  private def withFixture(utxos: Seq[BtcAmount], channelType: SupportedChannelType)(testFun: Fixture => Any): Unit = {
     // Create a unique wallet for this test and ensure it has some btc.
     val testId = UUID.randomUUID()
     val walletRpcClient = createWallet(s"lightning-$testId")
@@ -169,7 +168,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("commit tx feerate high enough, not spending anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val commitFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.commitTxFeerate
@@ -180,11 +179,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd === anchorTx)
       assert(result.reason === TxSkipped(retryNextBlock = true))
-    })
+    }
   }
 
   test("commit tx confirmed, not spending anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
@@ -197,11 +196,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd === anchorTx)
       assert(result.reason === TxSkipped(retryNextBlock = false))
-    })
+    }
   }
 
   test("commit tx feerate high enough and commit tx confirmed, not spending anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val commitFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.commitTxFeerate
@@ -215,11 +214,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd === anchorTx)
       assert(result.reason === TxSkipped(retryNextBlock = false))
-    })
+    }
   }
 
   test("remote commit tx confirmed, not spending anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
@@ -233,11 +232,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd === anchorTx)
       assert(result.reason === TxSkipped(retryNextBlock = false))
-    })
+    }
   }
 
   test("remote commit tx published, not spending anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
@@ -252,11 +251,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // When the remote commit tx is still unconfirmed, we want to retry in case it is evicted from the mempool and our
       // commit is then published.
       assert(result.reason === TxSkipped(retryNextBlock = true))
-    })
+    }
   }
 
   test("remote commit tx replaces local commit tx, not spending anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
@@ -281,11 +280,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd === anchorTx)
       assert(result.reason === WalletInputGone)
-    })
+    }
   }
 
   test("not enough funds to increase commit tx feerate") {
-    withFixture(Seq(10.5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(10.5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       // close channel and wait for the commit tx to be published, anchor will not be published because we don't have enough funds
@@ -300,11 +299,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // When the remote commit tx is still unconfirmed, we want to retry in case it is evicted from the mempool and our
       // commit is then published.
       assert(result.reason === CouldNotFund)
-    })
+    }
   }
 
   test("commit tx feerate too low, spending anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -330,11 +329,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result.cmd === anchorTx)
       assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.tx.txid))
       assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
-    })
+    }
   }
 
   test("commit tx not published, publishing it and spending anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 32)
@@ -358,7 +357,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result.cmd === anchorTx)
       assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.tx.txid))
       assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
-    })
+    }
   }
 
   test("commit tx feerate too low, spending anchor outputs with multiple wallet inputs") {
@@ -370,7 +369,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       22000 sat,
       15000 sat
     )
-    withFixture(utxos, ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(utxos, ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target than what's provided.
@@ -394,11 +393,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.tx.txid))
       assert(result.tx.txIn.length > 2) // we added more than 1 wallet input
       assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
-    })
+    }
   }
 
   test("commit tx fees not increased when confirmation target is far and feerate hasn't changed") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -417,11 +416,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectNoMessage(500 millis)
       val mempoolTxs2 = getMempool()
       assert(mempoolTxs.map(_.txid).toSet === mempoolTxs2.map(_.txid).toSet)
-    })
+    }
   }
 
   test("commit tx not confirming, lowering anchor output amount") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -448,11 +447,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val targetFee = Transactions.weight2fee(newFeerate, mempoolTxs2.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs2.map(_.fees).sum
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
-    })
+    }
   }
 
   test("commit tx not confirming, adding other wallet inputs") {
-    withFixture(Seq(10.5 millibtc, 5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(10.5 millibtc, 5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -480,11 +479,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs2.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs2.map(_.fees).sum
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
-    })
+    }
   }
 
   test("commit tx not confirming, not enough funds to increase fees") {
-    withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -506,11 +505,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectMsgType[NotifyNodeOperator]
       val mempoolTxs2 = getMempool()
       assert(mempoolTxs1.map(_.txid).toSet === mempoolTxs2.map(_.txid).toSet)
-    })
+    }
   }
 
   test("commit tx not confirming, cannot use new unconfirmed inputs to increase fees") {
-    withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -537,11 +536,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectMsgType[NotifyNodeOperator]
       val mempoolTxs2 = getMempool()
       assert(mempoolTxs1.map(_.txid).toSet + walletTx.txid === mempoolTxs2.map(_.txid).toSet)
-    })
+    }
   }
 
   test("commit tx not confirming, updating confirmation target") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -573,11 +572,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val targetFee2 = Transactions.weight2fee(feerateHigh, mempoolTxs2.map(_.weight).sum.toInt)
       val actualFee2 = mempoolTxs2.map(_.fees).sum
       assert(targetFee2 * 0.9 <= actualFee2 && actualFee2 <= targetFee2 * 1.1, s"actualFee=$actualFee2 targetFee=$targetFee2")
-    })
+    }
   }
 
   test("unlock utxos when anchor tx cannot be published") {
-    withFixture(Seq(500 millibtc, 200 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc, 200 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(3000 sat)
@@ -605,11 +604,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       generateBlocks(5)
       system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
       assert(probe.expectMsgType[TxConfirmed].cmd === anchorTx)
-    })
+    }
   }
 
   test("unlock anchor utxos when stopped before completion") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(3000 sat)
@@ -624,11 +623,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // we unlock utxos before stopping
       publisher ! Stop
       awaitCond(getLocks(probe, walletRpcClient).isEmpty)
-    })
+    }
   }
 
   test("remote commit tx confirmed, not publishing htlc tx") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       // Add htlcs in both directions and ensure that preimages are available.
@@ -671,7 +670,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result2.cmd === htlcTimeout)
       assert(result2.reason === ConflictingTxConfirmed)
       htlcTimeoutPublisher ! Stop
-    })
+    }
   }
 
   def closeChannelWithHtlcs(f: Fixture, confirmHtlcBefore: BlockHeight): (Transaction, PublishReplaceableTx, PublishReplaceableTx) = {
@@ -717,7 +716,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("not enough funds to increase htlc tx feerate") {
-    withFixture(Seq(10.5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(10.5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, htlcSuccess, _) = closeChannelWithHtlcs(f, aliceBlockHeight())
@@ -731,7 +730,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result.cmd === htlcSuccess)
       assert(result.reason === CouldNotFund)
       htlcSuccessPublisher ! Stop
-    })
+    }
   }
 
   private def testPublishHtlcSuccess(f: Fixture, commitTx: Transaction, htlcSuccess: PublishReplaceableTx, targetFeerate: FeeratePerKw): Transaction = {
@@ -784,7 +783,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("htlc tx feerate high enough, not adding wallet inputs") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputs, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputs) { f =>
       import f._
 
       val currentFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.commitTxFeerate
@@ -796,11 +795,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, currentFeerate)
       assert(htlcTimeout.txInfo.fee > 0.sat)
       assert(htlcTimeoutTx.txIn.length === 1)
-    })
+    }
   }
 
   test("htlc tx feerate too low, adding wallet inputs") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputs, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputs) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
@@ -811,11 +810,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcSuccessTx.txIn.length > 1)
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, targetFeerate)
       assert(htlcTimeoutTx.txIn.length > 1)
-    })
+    }
   }
 
   test("htlc tx feerate zero, adding wallet inputs") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
@@ -828,11 +827,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcTimeout.txInfo.fee === 0.sat)
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, targetFeerate)
       assert(htlcTimeoutTx.txIn.length > 1)
-    })
+    }
   }
 
   test("htlc tx feerate zero, high commit feerate, adding wallet inputs") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val commitFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.commitTxFeerate
@@ -845,7 +844,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcTimeout.txInfo.fee === 0.sat)
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, targetFeerate)
       assert(htlcTimeoutTx.txIn.length > 1)
-    })
+    }
   }
 
   test("htlc tx feerate too low, adding multiple wallet inputs") {
@@ -864,7 +863,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       5200 sat,
       5100 sat
     )
-    withFixture(utxos, ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(utxos, ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(8_000 sat)
@@ -875,11 +874,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcSuccessTx.txIn.length > 2)
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, targetFeerate)
       assert(htlcTimeoutTx.txIn.length > 2)
-    })
+    }
   }
 
   test("htlc success tx not confirming, lowering output amount") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val initialFeerate = FeeratePerKw(15_000 sat)
@@ -904,11 +903,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcSuccessInputs1 === htlcSuccessInputs2)
       val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx2.weight.toInt)
       assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx2.fees && htlcSuccessTx2.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx2.fees} targetFee=$htlcSuccessTargetFee")
-    })
+    }
   }
 
   test("htlc success tx not confirming, adding other wallet inputs") {
-    withFixture(Seq(10.2 millibtc, 2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(10.2 millibtc, 2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val initialFeerate = FeeratePerKw(15_000 sat)
@@ -933,11 +932,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcSuccessInputs1 !== htlcSuccessInputs2)
       val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx2.weight.toInt)
       assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx2.fees && htlcSuccessTx2.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx2.fees} targetFee=$htlcSuccessTargetFee")
-    })
+    }
   }
 
   test("htlc success tx confirmation target reached, increasing fees") {
-    withFixture(Seq(50 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(50 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val initialFeerate = FeeratePerKw(10_000 sat)
@@ -958,11 +957,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
         assert(htlcSuccessTx.fees < bumpedHtlcSuccessTx.fees)
         htlcSuccessTx = bumpedHtlcSuccessTx
       })
-    })
+    }
   }
 
   test("htlc timeout tx not confirming, increasing fees") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val feerate = FeeratePerKw(15_000 sat)
@@ -989,11 +988,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // Once the confirmation target is reach, we should raise the feerate by at least 20% at every block.
       val htlcTimeoutTargetFee = Transactions.weight2fee(feerate * 1.2, htlcTimeoutTx2.weight.toInt)
       assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx2.fees && htlcTimeoutTx2.fees <= htlcTimeoutTargetFee * 1.1, s"actualFee=${htlcTimeoutTx2.fees} targetFee=$htlcTimeoutTargetFee")
-    })
+    }
   }
 
   test("unlock utxos when htlc tx cannot be published") {
-    withFixture(Seq(500 millibtc, 200 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc, 200 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(5_000 sat)
@@ -1024,11 +1023,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
       assert(probe.expectMsgType[TxConfirmed].cmd === htlcSuccess)
       publisher1 ! Stop
-    })
+    }
   }
 
   test("unlock htlc utxos when stopped before completion") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       setFeerate(FeeratePerKw(5_000 sat))
@@ -1041,11 +1040,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // We unlock utxos before stopping.
       publisher ! Stop
       awaitCond(getLocks(probe, walletRpcClient).isEmpty)
-    })
+    }
   }
 
   test("local commit tx confirmed, not publishing claim htlc tx") {
-    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       // Add htlcs in both directions and ensure that preimages are available.
@@ -1087,7 +1086,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result2.cmd === claimHtlcTimeout)
       assert(result2.reason === ConflictingTxConfirmed)
       claimHtlcTimeoutPublisher ! Stop
-    })
+    }
   }
 
   def remoteCloseChannelWithHtlcs(f: Fixture, confirmHtlcBefore: BlockHeight): (Transaction, PublishReplaceableTx, PublishReplaceableTx) = {
@@ -1182,7 +1181,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("claim htlc tx feerate high enough, not changing output amount") {
-    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val currentFeerate = alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(2)
@@ -1193,11 +1192,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val claimHtlcTimeoutTx = testPublishClaimHtlcTimeout(f, remoteCommitTx, claimHtlcTimeout, currentFeerate)
       assert(claimHtlcTimeout.txInfo.fee > 0.sat)
       assert(claimHtlcTimeoutTx.txIn.length === 1)
-    })
+    }
   }
 
   test("claim htlc tx feerate too low, lowering output amount") {
-    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs, f => {
+    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
@@ -1212,11 +1211,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(claimHtlcTimeoutTx.txIn.length === 1)
       assert(claimHtlcTimeoutTx.txOut.length === 1)
       assert(claimHtlcTimeoutTx.txOut.head.amount < claimHtlcTimeout.txInfo.tx.txOut.head.amount)
-    })
+    }
   }
 
   test("claim htlc tx feerate too low, lowering output amount (standard commitment format)") {
-    withFixture(Seq(11 millibtc), ChannelTypes.Standard, f => {
+    withFixture(Seq(11 millibtc), ChannelTypes.Standard) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
@@ -1252,11 +1251,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(claimHtlcTimeoutResult.cmd === claimHtlcTimeout)
       assert(claimHtlcTimeoutResult.tx.txIn.map(_.outPoint.txid).contains(remoteCommitTx.txid))
       claimHtlcTimeoutPublisher ! Stop
-    })
+    }
   }
 
   test("claim htlc tx feerate way too low, skipping output") {
-    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs, f => {
+    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs) { f =>
       import f._
 
       val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300)
@@ -1281,11 +1280,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result2.cmd === claimHtlcTimeout)
       assert(result2.reason === TxSkipped(retryNextBlock = true))
       claimHtlcTimeoutPublisher ! Stop
-    })
+    }
   }
 
   test("claim htlc tx not confirming, lowering output amount again (standard commitment format)") {
-    withFixture(Seq(11 millibtc), ChannelTypes.Standard, f => {
+    withFixture(Seq(11 millibtc), ChannelTypes.Standard) { f =>
       import f._
 
       val initialFeerate = FeeratePerKw(15_000 sat)
@@ -1331,11 +1330,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(finalHtlcTimeoutTx.txIn.length === 1)
       assert(finalHtlcTimeoutTx.txOut.length === 1)
       assert(finalHtlcTimeoutTx.txIn.head.outPoint.txid === remoteCommitTx.txid)
-    })
+    }
   }
 
   test("claim htlc tx not confirming, but cannot lower output amount again") {
-    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs, f => {
+    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs) { f =>
       import f._
 
       val (remoteCommitTx, claimHtlcSuccess, _) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300)
@@ -1353,7 +1352,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectNoMessage(500 millis)
       val mempoolTxs = getMempool()
       assert(mempoolTxs.map(_.txid).toSet === Set(claimHtlcSuccessTx.txid))
-    })
+    }
   }
 
 }
