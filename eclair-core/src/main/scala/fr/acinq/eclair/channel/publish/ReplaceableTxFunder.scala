@@ -306,6 +306,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
           val nodeOperatorMessage =
             s"""Insufficient funds in bitcoin wallet to set feerate=$targetFeerate for ${cmd.desc}.
                |You should add more utxos to your bitcoin wallet to guarantee funds safety.
+               |Attempts will be made periodically to re-publish this transaction.
                |""".stripMargin
           context.system.eventStream ! EventStream.Publish(NotifyNodeOperator(NotificationsLogger.Warning, nodeOperatorMessage))
           log.warn("cannot add inputs to {}: {}", cmd.desc, reason.getMessage)

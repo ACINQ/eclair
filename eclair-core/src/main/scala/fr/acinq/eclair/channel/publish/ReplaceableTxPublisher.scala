@@ -147,6 +147,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case WrappedFundingResult(result) =>
         result match {
           case ReplaceableTxFunder.TransactionReady(tx) =>
+            log.debug("publishing {} with confirmation target in {} blocks", cmd.desc, confirmBefore.toLong)
             val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), s"mempool-tx-monitor-${tx.signedTx.txid}")
             txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
             wait(tx)
