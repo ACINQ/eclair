@@ -18,11 +18,36 @@ Node operators should watch this file very regularly.
 An event is also sent to the event stream for every such notification.
 This lets plugins notify the node operator via external systems (push notifications, email, etc).
 
-### Initial support for onion messages
+### Support for onion messages
 
-Eclair now supports the feature `option_onion_messages`. If this feature is enabled, eclair will relay onion messages.
-It can also send onion messages with the `sendonionmessage` API.
-Messages sent to Eclair can be read with the websocket API.
+Eclair now supports the `option_onion_messages` feature (see <https://github.com/lightning/bolts/pull/759)>.
+This feature is enabled by default: eclair will automatically relay onion messages it receives.
+
+By default, eclair will only accept and relay onion messages from peers with whom you have channels.
+You can change that strategy by updating `eclair.onion-messages.relay-policy` in your `eclair.conf`.
+
+Eclair applies some rate-limiting on the number of messages that can be relayed to and from each peer.
+You can choose what limits to apply by updating `eclair.onion-messages.max-per-peer-per-second` in your `eclair.conf`.
+
+Whenever an onion message for your node is received, eclair will emit an event, that can for example be received on the websocket (`onion-message-received`).
+
+You can also send onion messages via the API.
+This will be covered in the API changes section below.
+
+To disable the feature, you can simply update your `eclair.conf`:
+
+```conf
+eclair.features.option_onion_messages = disabled
+```
+
+### Support for `option_payment_metadata`
+
+Eclair now supports the `option_payment_metadata` feature (see https://github.com/lightning/bolts/pull/912).
+This feature will let recipients generate "light" invoices that don't need to be stored locally until they're paid.
+This is particularly useful for payment hubs that generate a lot of invoices (e.g. to be displayed on a website) but expect only a fraction of them to actually be paid.
+
+Eclair includes a small `payment_metadata` field in all invoices it generates.
+This lets node operators verify that payers actually support that feature.
 
 ### API changes
 
@@ -71,8 +96,19 @@ Examples:
 #### Sending onion messages
 
 You can now send onion messages with `sendonionmessage`.
-It expects `--recipientNode`, the node id of the recipient if it is known or `--recipientBlindedRoute` a hexadecimal encoded blinded route to send the message to, and `--content` the content of the message as an encoded TLV stream in hexadecimal.
-It also accepts `--intermediateNodes` a list of intermediate node ids to hide the origin of the message and `--replyPath` a possibly empty list of intermediate node ids for the reply path if we expect a response to the message.
+
+There are two ways to specify the recipient:
+
+- when you're sending to a known `nodeId`, you must set it in the `--recipientNode` field
+- when you're sending to an unknown node behind a blinded route, you must provide the blinded route in the `--recipientBlindedRoute` field (hex-encoded)
+
+If you're not connected to the recipient and don't have channels with them, eclair will try connecting to them based on the best address it knows (usually from their `node_announcement`).
+If that fails, or if you don't want to expose your `nodeId` by directly connecting to the recipient, you should find a route to them and specify the nodes in that route in the `--intermediateNodes` field.
+
+You can send arbitrary content to the recipient, by providing a hex-encoded tlv in the `--content` field.
+
+If you expect a response, you should provide a route from the recipient back to you in the `--replyPath` field.
+Eclair will create a corresponding blinded route, and the API will wait for a response (or timeout if it doesn't receive a response).
 
 #### Balance
 

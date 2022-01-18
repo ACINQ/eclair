@@ -50,7 +50,7 @@ object TestConstants {
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2500 sat)
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
-  case object TestFeature extends Feature {
+  case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
     val mandatory = 50000
   }
@@ -91,7 +91,8 @@ object TestConstants {
           ChannelRangeQueriesExtended -> Optional,
           VariableLengthOnion -> Mandatory,
           PaymentSecret -> Mandatory,
-          BasicMultiPartPayment -> Optional
+          BasicMultiPartPayment -> Optional,
+          PaymentMetadata -> Optional,
         ),
         Set(UnknownFeature(TestFeature.optional))
       ),
@@ -225,7 +226,8 @@ object TestConstants {
         ChannelRangeQueriesExtended -> Optional,
         VariableLengthOnion -> Mandatory,
         PaymentSecret -> Mandatory,
-        BasicMultiPartPayment -> Optional
+        BasicMultiPartPayment -> Optional,
+        PaymentMetadata -> Optional,
       ),
       pluginParams = Nil,
       overrideFeatures = Map.empty,

@@ -19,12 +19,11 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
 
-import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -66,6 +65,11 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case PaymentRequest.Description(d) => Left(d)
     case PaymentRequest.DescriptionHash(h) => Right(h)
   }.get
+
+  /**
+   * @return metadata about the payment (see option_payment_metadata).
+   */
+  lazy val paymentMetadata: Option[ByteVector] = tags.collectFirst { case m: PaymentRequest.PaymentMetadata => m.data }
 
   /**
    * @return the fallback address if any. It could be a script address, pubkey address, ..
@@ -126,6 +130,11 @@ object PaymentRequest {
     Block.LivenetGenesisBlock.hash -> "lnbc"
   )
 
+  val defaultFeatures: Map[Feature with InvoiceFeature, FeatureSupport] = Map(
+    Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+    Features.PaymentSecret -> FeatureSupport.Mandatory,
+  )
+
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
             paymentHash: ByteVector32,
@@ -137,7 +146,8 @@ object PaymentRequest {
             extraHops: List[List[ExtraHop]] = Nil,
             timestamp: TimestampSecond = TimestampSecond.now(),
             paymentSecret: ByteVector32 = randomBytes32(),
-            features: PaymentRequestFeatures = PaymentRequestFeatures(Features.VariableLengthOnion.mandatory, Features.PaymentSecret.mandatory)): PaymentRequest = {
+            paymentMetadata: Option[ByteVector] = None,
+            features: PaymentRequestFeatures = PaymentRequestFeatures(defaultFeatures)): PaymentRequest = {
     require(features.requirePaymentSecret, "invoices must require a payment secret")
     val prefix = prefixes(chainHash)
     val tags = {
@@ -145,6 +155,7 @@ object PaymentRequest {
         Some(PaymentHash(paymentHash)),
         Some(description.fold(Description, DescriptionHash)),
         Some(PaymentSecret(paymentSecret)),
+        paymentMetadata.map(PaymentMetadata),
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
@@ -193,7 +204,6 @@ object PaymentRequest {
   case class InvalidTag23(data: BitVector) extends InvalidTaggedField
   case class UnknownTag25(data: BitVector) extends UnknownTaggedField
   case class UnknownTag26(data: BitVector) extends UnknownTaggedField
-  case class UnknownTag27(data: BitVector) extends UnknownTaggedField
   case class UnknownTag28(data: BitVector) extends UnknownTaggedField
   case class UnknownTag29(data: BitVector) extends UnknownTaggedField
   case class UnknownTag30(data: BitVector) extends UnknownTaggedField
@@ -228,6 +238,11 @@ object PaymentRequest {
    *             long description, an invoice, ...
    */
   case class DescriptionHash(hash: ByteVector32) extends TaggedField
+
+  /**
+   * Additional metadata to attach to the payment.
+   */
+  case class PaymentMetadata(data: ByteVector) extends TaggedField
 
   /**
    * Fallback Payment that specifies a fallback payment address to be used if LN payment cannot be processed
@@ -355,8 +370,8 @@ object PaymentRequest {
   }
 
   object PaymentRequestFeatures {
-    def apply(features: Int*): PaymentRequestFeatures = PaymentRequestFeatures(long2bits(features.foldLeft(0L) {
-      case (current, feature) => current + (1L << feature)
+    def apply(features: Map[Feature with InvoiceFeature, FeatureSupport]): PaymentRequestFeatures = PaymentRequestFeatures(long2bits(features.foldLeft(0L) {
+      case (current, (feature, support)) => current + (1L << feature.supportBit(support))
     }))
   }
 
@@ -429,7 +444,7 @@ object PaymentRequest {
       .typecase(24, dataCodec(bits).as[MinFinalCltvExpiry])
       .typecase(25, dataCodec(bits).as[UnknownTag25])
       .typecase(26, dataCodec(bits).as[UnknownTag26])
-      .typecase(27, dataCodec(bits).as[UnknownTag27])
+      .typecase(27, dataCodec(alignedBytesCodec(bytes)).as[PaymentMetadata])
       .typecase(28, dataCodec(bits).as[UnknownTag28])
       .typecase(29, dataCodec(bits).as[UnknownTag29])
       .typecase(30, dataCodec(bits).as[UnknownTag30])

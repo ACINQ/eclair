@@ -509,7 +509,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
     val messageId = randomBytes32()
     val probe = TestProbe()
-    peer ! RelayOnionMessage(messageId, msg, probe.ref.toTyped)
+    peer ! RelayOnionMessage(messageId, msg, Some(probe.ref.toTyped))
     probe.expectMsg(MessageRelay.Sent(messageId))
   }
 
@@ -518,7 +518,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
     val messageId = randomBytes32()
     val probe = TestProbe()
-    peer ! RelayOnionMessage(messageId, msg, probe.ref.toTyped)
+    peer ! RelayOnionMessage(messageId, msg, Some(probe.ref.toTyped))
     probe.expectMsg(MessageRelay.Disconnected(messageId))
   }
 }

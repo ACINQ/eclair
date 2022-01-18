@@ -27,9 +27,10 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
-import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentMetadataReceived, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Success, Try}
 
@@ -71,7 +72,12 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
               PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.add.channelId, cmdFail)
             case None =>
-              log.info("received payment for amount={} totalAmount={}", p.add.amountMsat, p.payload.totalAmount)
+              // We log whether the sender included the payment metadata field.
+              // We always set it in our invoices to test whether senders support it.
+              // Once all incoming payments correctly set that field, we can make it mandatory.
+              log.info("received payment for amount={} totalAmount={} paymentMetadata={}", p.add.amountMsat, p.payload.totalAmount, p.payload.paymentMetadata.map(_.toHex).getOrElse("none"))
+              Metrics.PaymentHtlcReceived.withTag(Tags.PaymentMetadataIncluded, p.payload.paymentMetadata.nonEmpty).increment()
+              p.payload.paymentMetadata.foreach(metadata => ctx.system.eventStream.publish(PaymentMetadataReceived(p.add.paymentHash, metadata)))
               pendingPayments.get(p.add.paymentHash) match {
                 case Some((_, handler)) =>
                   handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
@@ -86,13 +92,13 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = Left("Donation")
-              val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
-                PaymentRequestFeatures(Features.BasicMultiPartPayment.optional, Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
+              val features: Map[Feature with InvoiceFeature, FeatureSupport] = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
+                Map(Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               } else {
-                PaymentRequestFeatures(Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
+                Map(Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               }
               // Insert a fake invoice and then restart the incoming payment handler
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
+              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = PaymentRequestFeatures(features))
               log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
               db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
@@ -223,14 +229,25 @@ object MultiPartHandler {
               val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
               val paymentHash = Crypto.sha256(paymentPreimage)
               val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
-              val features = {
-                val f1 = Seq(Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
-                val allowMultiPart = nodeParams.features.hasFeature(Features.BasicMultiPartPayment)
-                val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
-                val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
-                PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*)
+              val paymentMetadata = hex"2a"
+              val invoiceFeatures = if (nodeParams.enableTrampolinePayment) {
+                nodeParams.features.invoiceFeatures() + (Features.TrampolinePayment -> FeatureSupport.Optional)
+              } else {
+                nodeParams.features.invoiceFeatures()
               }
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, description, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
+              val paymentRequest = PaymentRequest(
+                nodeParams.chainHash,
+                amount_opt,
+                paymentHash,
+                nodeParams.privateKey,
+                description,
+                nodeParams.minFinalExpiryDelta,
+                fallbackAddress_opt,
+                expirySeconds = Some(expirySeconds),
+                extraHops = extraHops,
+                paymentMetadata = Some(paymentMetadata),
+                features = PaymentRequestFeatures(invoiceFeatures)
+              )
               context.log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
               nodeParams.db.payments.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
               paymentRequest

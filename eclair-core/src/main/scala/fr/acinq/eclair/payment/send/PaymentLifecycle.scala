@@ -76,9 +76,15 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(c, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
-      val (cmd, sharedSecrets) = OutgoingPaymentPacket.buildCommand(self, cfg.upstream, paymentHash, route.hops, c.finalPayload)
-      register ! Register.ForwardShortId(self, route.hops.head.lastUpdate.shortChannelId, cmd)
-      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(c, cmd, failures, sharedSecrets, ignore, route)
+      OutgoingPaymentPacket.buildCommand(self, cfg.upstream, paymentHash, route.hops, c.finalPayload) match {
+        case Success((cmd, sharedSecrets)) =>
+          register ! Register.ForwardShortId(self, route.hops.head.lastUpdate.shortChannelId, cmd)
+          goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(c, cmd, failures, sharedSecrets, ignore, route)
+        case Failure(t) =>
+          log.warning("cannot send outgoing payment: {}", t.getMessage)
+          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(c.finalPayload.amount, Nil, t))).increment()
+          myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(c.finalPayload.amount, Nil, t))))
+      }
 
     case Event(Status.Failure(t), WaitingForRoute(c, failures, _)) =>
       log.warning("router error: {}", t.getMessage)

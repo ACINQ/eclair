@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
+import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -25,7 +25,7 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayPolicy}
+import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.io.Peer.PeerInfoResponse
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
@@ -67,12 +67,12 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       sender() ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case Peer.Connect(nodeId, address_opt, replyTo, isPersistent) =>
-        // we create a peer if it doesn't exist: when the peer doesn't exist, we can be sure that we don't have channels,
-        // otherwise the peer would have been created during the initialization step.
+      // we create a peer if it doesn't exist: when the peer doesn't exist, we can be sure that we don't have channels,
+      // otherwise the peer would have been created during the initialization step.
       val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty)
-      val c = if (replyTo == ActorRef.noSender){
+      val c = if (replyTo == ActorRef.noSender) {
         Peer.Connect(nodeId, address_opt, sender(), isPersistent)
-      }else{
+      } else {
         Peer.Connect(nodeId, address_opt, replyTo, isPersistent)
       }
       peer forward c
@@ -92,7 +92,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
-      val features = nodeParams.featuresFor(authenticated.remoteNodeId)
+      val features = nodeParams.initFeaturesFor(authenticated.remoteNodeId)
       // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
       val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && peersWithChannels.contains(authenticated.remoteNodeId))
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
@@ -112,7 +112,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
 
     case RelayMessage(messageId, prevNodeId, nextNodeId, dataToRelay, relayPolicy, replyTo) =>
-      val relay = context.spawnAnonymous(MessageRelay())
+      val relay = context.spawn(Behaviors.supervise(MessageRelay()).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
       relay ! MessageRelay.RelayMessage(messageId, self, prevNodeId.getOrElse(nodeParams.nodeId), nextNodeId, dataToRelay, relayPolicy, replyTo)
   }
 
@@ -167,6 +167,7 @@ object Switchboard {
   case object GetRouterPeerConf extends RemoteTypes
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
 
-  case class RelayMessage(messageId: ByteVector32, prevNodeId: Option[PublicKey], nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy, replyTo: typed.ActorRef[MessageRelay.Status])
+  case class RelayMessage(messageId: ByteVector32, prevNodeId: Option[PublicKey], nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy, replyTo_opt: Option[typed.ActorRef[MessageRelay.Status]])
   // @formatter:on
+
 }

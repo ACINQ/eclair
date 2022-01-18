@@ -77,7 +77,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
-    sendFeatures(nodeParams, remoteNodeId, nodeParams.features, expectedSync = true)
+    sendFeatures(nodeParams, remoteNodeId, nodeParams.features.initFeatures(), expectedSync = true)
   }
 
   test("sync if no whitelist is defined and peer creates a channel") {
@@ -91,7 +91,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     val initConnection1 = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
     assert(initConnection1.chainHash === nodeParams.chainHash)
-    assert(initConnection1.features === nodeParams.features)
+    assert(initConnection1.features === nodeParams.features.initFeatures())
     assert(initConnection1.doSync)
 
     // We don't have channels with our peer, so we won't trigger a sync when connecting.
@@ -99,26 +99,26 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     val initConnection2 = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
     assert(initConnection2.chainHash === nodeParams.chainHash)
-    assert(initConnection2.features === nodeParams.features)
+    assert(initConnection2.features === nodeParams.features.initFeatures())
     assert(!initConnection2.doSync)
   }
 
   test("don't sync if no whitelist is defined and peer does not have channels") {
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
-    sendFeatures(nodeParams, randomKey().publicKey, nodeParams.features, expectedSync = false)
+    sendFeatures(nodeParams, randomKey().publicKey, nodeParams.features.initFeatures(), expectedSync = false)
   }
 
   test("sync if whitelist contains peer") {
     val remoteNodeId = randomKey().publicKey
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(remoteNodeId, randomKey().publicKey, randomKey().publicKey))
-    sendFeatures(nodeParams, remoteNodeId, nodeParams.features, expectedSync = true)
+    sendFeatures(nodeParams, remoteNodeId, nodeParams.features.initFeatures(), expectedSync = true)
   }
 
   test("don't sync if whitelist doesn't contain peer") {
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
-    sendFeatures(nodeParams, remoteNodeId, nodeParams.features, expectedSync = false)
+    sendFeatures(nodeParams, remoteNodeId, nodeParams.features.initFeatures(), expectedSync = false)
   }
 
   test("get peer info") {
