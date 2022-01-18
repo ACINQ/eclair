@@ -46,6 +46,7 @@ object ReplaceableTxPrePublisher {
   case class CheckPreconditions(replyTo: ActorRef[PreconditionsResult], cmd: TxPublisher.PublishReplaceableTx) extends Command
 
   private case object ParentTxOk extends Command
+  private case object FundingTxNotFound extends RuntimeException with Command
   private case object CommitTxAlreadyConfirmed extends RuntimeException with Command
   private case object LocalCommitTxConfirmed extends Command
   private case object RemoteCommitTxConfirmed extends Command
@@ -130,14 +131,22 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     //  - our commit tx is in the mempool (otherwise we can't claim our anchor)
     val commitTx = cmd.commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
     val fundingOutpoint = cmd.commitments.commitInput.outPoint
-    context.pipeToSelf(bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
-      case false => Future.failed(CommitTxAlreadyConfirmed)
-      case true =>
-        // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
-        // If it's already published, this call will be a no-op.
-        bitcoinClient.publishTransaction(commitTx)
+    context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
+      case Some(_) =>
+        // The funding transaction was found, let's see if we can still spend it.
+        bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
+          case false => Future.failed(CommitTxAlreadyConfirmed)
+          case true =>
+            // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
+            // If it's already published, this call will be a no-op.
+            bitcoinClient.publishTransaction(commitTx)
+        }
+      case None =>
+        // If the funding transaction cannot be found (e.g. when using 0-conf), we should retry later.
+        Future.failed(FundingTxNotFound)
     }) {
       case Success(_) => ParentTxOk
+      case Failure(FundingTxNotFound) => FundingTxNotFound
       case Failure(CommitTxAlreadyConfirmed) => CommitTxAlreadyConfirmed
       case Failure(reason) if reason.getMessage.contains("rejecting replacement") => RemoteCommitTxPublished
       case Failure(reason) => UnknownFailure(reason)
@@ -145,6 +154,10 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
         replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
+        Behaviors.stopped
+      case FundingTxNotFound =>
+        log.debug("funding tx could not be found, we don't know yet if we need to claim our anchor")
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
       case CommitTxAlreadyConfirmed =>
         log.debug("commit tx is already confirmed, no need to claim our anchor")

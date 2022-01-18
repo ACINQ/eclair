@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -280,6 +280,22 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd === anchorTx)
       assert(result.reason === WalletInputGone)
+    }
+  }
+
+  test("funding tx not found, skipping anchor output") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
+      import f._
+
+      val (_, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
+      // We simulate an unconfirmed funding transaction that cannot be found in the mempool either.
+      // This may happen when using 0-conf channels if the funding transaction is evicted from the mempool for some reason.
+      val cmd = anchorTx.copy(commitments = anchorTx.commitments.copy(commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(0 sat, Nil), Nil)))
+      publisher ! Publish(probe.ref, cmd)
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd === cmd)
+      // We should keep retrying until the funding transaction is available.
+      assert(result.reason === TxSkipped(retryNextBlock = true))
     }
   }
 

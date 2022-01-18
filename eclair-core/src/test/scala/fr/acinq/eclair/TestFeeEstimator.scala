@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair
 
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.eclair.TestConstants.feeratePerKw
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKB, FeeratePerKw, FeeratesPerKw}
 
@@ -30,15 +29,16 @@ class TestFeeEstimator extends FeeEstimator {
   // @formatter:on
 
   def setFeerate(target: Int, feerate: FeeratePerKw): Unit = {
-    currentFeerates = currentFeerates
-      .modify(_.block_1).setToIf(target == 1)(feerate)
-      .modify(_.blocks_2).setToIf(target == 2)(feerate)
-      .modify(_.blocks_6).setToIf(target <= 6)(feerate)
-      .modify(_.blocks_12).setToIf(target <= 12)(feerate)
-      .modify(_.blocks_36).setToIf(target <= 36)(feerate)
-      .modify(_.blocks_72).setToIf(target <= 72)(feerate)
-      .modify(_.blocks_144).setToIf(target <= 144)(feerate)
-      .modify(_.blocks_1008).setToIf(target > 144)(feerate)
+    target match {
+      case 1 => currentFeerates = currentFeerates.copy(block_1 = feerate)
+      case 2 => currentFeerates = currentFeerates.copy(blocks_2 = feerate)
+      case t if t <= 6 => currentFeerates = currentFeerates.copy(blocks_6 = feerate)
+      case t if t <= 12 => currentFeerates = currentFeerates.copy(blocks_12 = feerate)
+      case t if t <= 36 => currentFeerates = currentFeerates.copy(blocks_36 = feerate)
+      case t if t <= 72 => currentFeerates = currentFeerates.copy(blocks_72 = feerate)
+      case t if t <= 144 => currentFeerates = currentFeerates.copy(blocks_144 = feerate)
+      case _ => currentFeerates = currentFeerates.copy(blocks_1008 = feerate)
+    }
   }
 
   def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
