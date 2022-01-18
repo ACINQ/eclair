@@ -30,14 +30,14 @@ class RateLimiterSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   test("can burst immediately") {
-    val rateLimiter = new RateLimiter(10, 100 millis)
+    val rateLimiter = new RateLimiter(10)
     for(_ <- 1 to 10) {
       assert(rateLimiter.tryAcquire())
     }
   }
 
   test("blocks when limit rate is reached") {
-    val rateLimiter = new RateLimiter(10, 100 millis)
+    val rateLimiter = new RateLimiter(10)
     for(_ <- 1 to 11) {
       rateLimiter.tryAcquire()
     }
@@ -47,12 +47,12 @@ class RateLimiterSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   test("recovers after time has passed") {
-    val rateLimiter = new RateLimiter(10, 100 millis)
+    val rateLimiter = new RateLimiter(10)
     for(_ <- 1 to 11) {
       rateLimiter.tryAcquire()
     }
     assert(!rateLimiter.tryAcquire())
-    sleep(100 millis)
+    sleep(1 second)
     assert(rateLimiter.tryAcquire())
   }
 }

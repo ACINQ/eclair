@@ -16,19 +16,22 @@
 
 package fr.acinq.eclair.io
 
-import scala.concurrent.duration.FiniteDuration
-
-class RateLimiter(n: Int, per: FiniteDuration) {
-  val perMs: Long = per.toMillis
-
+/**
+ * @param qps maximum number or messages allowed per second
+ * This class is not thread-safe, the rate limiter must not be shared between actors.
+ */
+class RateLimiter(qps: Int) {
   var i = 0
-  val accepted: Array[Long] = Array.fill(n)(0)
+  val accepted: Array[Long] = Array.fill(qps)(0)
 
+  /**
+  * [[tryAcquire()]] is guaranteed to return `true` at most `qps` times per second.
+  */
   def tryAcquire(): Boolean = {
     val now = System.currentTimeMillis()
-    if (now - accepted(i) > perMs) {
+    if (now - accepted(i) > 1000) {
       accepted(i) = now
-      i = (i + 1) % n
+      i = (i + 1) % qps
       true
     } else {
       false

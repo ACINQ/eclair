@@ -61,8 +61,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   import PeerConnection._
 
-  val incomingRateLimiter: RateLimiter = new RateLimiter(conf.onionMessagesRateLimit.number, conf.onionMessagesRateLimit.per)
-  val outgoingRateLimiter: RateLimiter = new RateLimiter(conf.onionMessagesRateLimit.number, conf.onionMessagesRateLimit.per)
+  val incomingRateLimiter: RateLimiter = new RateLimiter(conf.maxOnionMessagesPerSecond)
+  val outgoingRateLimiter: RateLimiter = new RateLimiter(conf.maxOnionMessagesPerSecond)
 
   startWith(BEFORE_AUTH, Nothing)
 
@@ -519,7 +519,6 @@ object PeerConnection {
   def props(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props =
     Props(new PeerConnection(keyPair, conf, switchboard, router))
 
-  case class OnionMessagesRateLimit(number: Int, per: FiniteDuration)
   case class Conf(authTimeout: FiniteDuration,
                   initTimeout: FiniteDuration,
                   pingInterval: FiniteDuration,
@@ -527,7 +526,7 @@ object PeerConnection {
                   pingDisconnect: Boolean,
                   maxRebroadcastDelay: FiniteDuration,
                   killIdleDelay: FiniteDuration,
-                  onionMessagesRateLimit: OnionMessagesRateLimit)
+                  maxOnionMessagesPerSecond: Int)
 
   // @formatter:off
 

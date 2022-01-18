@@ -99,10 +99,6 @@ object EclairInternalsSerializer {
 
   val overrideFeaturesListCodec: Codec[List[(PublicKey, Features)]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
 
-  val onionMessagesRateLimit: Codec[PeerConnection.OnionMessagesRateLimit] = (
-    ("number" | int32) ::
-      ("per" | finiteDurationCodec)).as[PeerConnection.OnionMessagesRateLimit]
-
   val peerConnectionConfCodec: Codec[PeerConnection.Conf] = (
     ("authTimeout" | finiteDurationCodec) ::
       ("initTimeout" | finiteDurationCodec) ::
@@ -111,7 +107,7 @@ object EclairInternalsSerializer {
       ("pingDisconnect" | bool(8)) ::
       ("maxRebroadcastDelay" | finiteDurationCodec) ::
       ("killIdleDelay" | finiteDurationCodec) ::
-      ("onionMessagesRateLimit" | onionMessagesRateLimit)).as[PeerConnection.Conf]
+      ("maxOnionMessagesPerSecond" | int32)).as[PeerConnection.Conf]
 
   val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
 
