@@ -314,4 +314,46 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
   }
 
+  test("update publishing attempts") { _ =>
+    {
+      // No attempts.
+      val attempts = PublishAttempts.empty
+      assert(attempts.isEmpty)
+      assert(attempts.count === 0)
+      assert(attempts.attempts.isEmpty)
+      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
+    }
+    {
+      // Only final attempts.
+      val attempt1 = FinalAttempt(UUID.randomUUID(), null, null)
+      val attempt2 = FinalAttempt(UUID.randomUUID(), null, null)
+      val attempts = PublishAttempts.empty.add(attempt1).add(attempt2)
+      assert(!attempts.isEmpty)
+      assert(attempts.count === 2)
+      assert(attempts.replaceableAttempt_opt.isEmpty)
+      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
+      assert(attempts.remove(attempt1.id) === (Seq(attempt1), PublishAttempts(Seq(attempt2), None)))
+    }
+    {
+      // Only replaceable attempts.
+      val attempt = ReplaceableAttempt(UUID.randomUUID(), null, BlockHeight(0), null)
+      val attempts = PublishAttempts(Nil, Some(attempt))
+      assert(!attempts.isEmpty)
+      assert(attempts.count === 1)
+      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
+      assert(attempts.remove(attempt.id) === (Seq(attempt), PublishAttempts.empty))
+    }
+    {
+      // Mix of final and replaceable attempts with the same id.
+      val attempt1 = ReplaceableAttempt(UUID.randomUUID(), null, BlockHeight(0), null)
+      val attempt2 = FinalAttempt(attempt1.id, null, null)
+      val attempt3 = FinalAttempt(UUID.randomUUID(), null, null)
+      val attempts = PublishAttempts(Seq(attempt2), Some(attempt1)).add(attempt3)
+      assert(!attempts.isEmpty)
+      assert(attempts.count === 3)
+      assert(attempts.remove(attempt3.id) === (Seq(attempt3), PublishAttempts(Seq(attempt2), Some(attempt1))))
+      assert(attempts.remove(attempt1.id) === (Seq(attempt2, attempt1), PublishAttempts(Seq(attempt3), None)))
+    }
+  }
+
 }

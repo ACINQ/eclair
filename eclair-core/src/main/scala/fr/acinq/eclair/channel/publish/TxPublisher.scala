@@ -150,6 +150,41 @@ object TxPublisher {
     // @formatter:on
   }
 
+  // @formatter:off
+  sealed trait PublishAttempt {
+    def id: UUID
+    def cmd: PublishTx
+  }
+  case class FinalAttempt(id: UUID, cmd: PublishFinalTx, actor: ActorRef[FinalTxPublisher.Command]) extends PublishAttempt
+  case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, confirmBefore: BlockHeight, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
+  // @formatter:on
+
+  /**
+   * There can be multiple attempts to spend the same [[OutPoint]].
+   * Only one of them will work, but we keep track of all of them.
+   * There is only one [[ReplaceableAttempt]] because we will replace the existing attempt instead of creating a new one.
+   */
+  case class PublishAttempts(finalAttempts: Seq[FinalAttempt], replaceableAttempt_opt: Option[ReplaceableAttempt]) {
+    val attempts: Seq[PublishAttempt] = finalAttempts ++ replaceableAttempt_opt.toSeq
+    val count: Int = attempts.length
+
+    def add(finalAttempt: FinalAttempt): PublishAttempts = copy(finalAttempts = finalAttempts :+ finalAttempt)
+
+    def remove(id: UUID): (Seq[PublishAttempt], PublishAttempts) = {
+      val (removed, remaining) = finalAttempts.partition(_.id == id)
+      replaceableAttempt_opt match {
+        case Some(replaceableAttempt) if replaceableAttempt.id == id => (removed :+ replaceableAttempt, PublishAttempts(remaining, None))
+        case _ => (removed, PublishAttempts(remaining, replaceableAttempt_opt))
+      }
+    }
+
+    def isEmpty: Boolean = replaceableAttempt_opt.isEmpty && finalAttempts.isEmpty
+  }
+
+  object PublishAttempts {
+    val empty: PublishAttempts = PublishAttempts(Nil, None)
+  }
+
   def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, factory: ChildFactory): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
@@ -167,41 +202,6 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
   import TxPublisher._
 
   private val log = context.log
-
-  // @formatter:off
-  private sealed trait PublishAttempt {
-    def id: UUID
-    def cmd: PublishTx
-  }
-  private case class FinalAttempt(id: UUID, cmd: PublishFinalTx, actor: ActorRef[FinalTxPublisher.Command]) extends PublishAttempt
-  private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, confirmBefore: BlockHeight, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
-  // @formatter:on
-
-  /**
-   * There can be multiple attempts to spend the same [[OutPoint]].
-   * Only one of them will work, but we keep track of all of them.
-   * There is only one [[ReplaceableAttempt]] because we will replace the existing attempt instead of creating a new one.
-   */
-  private case class PublishAttempts(finalAttempts: Seq[FinalAttempt], replaceableAttempt_opt: Option[ReplaceableAttempt]) {
-    val attempts: Seq[PublishAttempt] = finalAttempts ++ replaceableAttempt_opt.toSeq
-    val count: Int = attempts.length
-
-    def add(finalAttempt: FinalAttempt): PublishAttempts = copy(finalAttempts = finalAttempts :+ finalAttempt)
-
-    def remove(id: UUID): (Seq[PublishAttempt], PublishAttempts) = {
-      val (removed, remaining) = finalAttempts.partition(_.id == id)
-      replaceableAttempt_opt match {
-        case Some(replaceableAttempt) if replaceableAttempt.id == id => (removed :+ replaceableAttempt, PublishAttempts(remaining, None))
-        case _ => (removed, PublishAttempts(remaining, replaceableAttempt_opt))
-      }
-    }
-
-    def isEmpty: Boolean = replaceableAttempt_opt.isEmpty && finalAttempts.isEmpty
-  }
-
-  private object PublishAttempts {
-    val empty: PublishAttempts = PublishAttempts(Nil, None)
-  }
 
   private def run(pending: Map[OutPoint, PublishAttempts], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
     Behaviors.receiveMessage {
