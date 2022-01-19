@@ -24,7 +24,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
+import fr.acinq.eclair.{BlockHeight, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
 import scodec.bits.ByteVector
 import shapeless.HNil
 
@@ -50,7 +50,7 @@ object Sync {
     // we must ensure we don't send a new query_channel_range while another query is still in progress
     if (s.replacePrevious || !d.sync.contains(s.remoteNodeId)) {
       // ask for everything
-      val query = QueryChannelRange(s.chainHash, firstBlockNum = 0L, numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toList))
+      val query = QueryChannelRange(s.chainHash, firstBlock = BlockHeight(0), numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toList))
       log.info("sending query_channel_range={}", query)
       s.to ! query
 
@@ -73,11 +73,11 @@ object Sync {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender() ! TransportHandler.ReadAck(q)
     Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
-    log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlockNum, q.numberOfBlocks, q.tlvStream)
+    log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlock, q.numberOfBlocks, q.tlvStream)
     // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-    val shortChannelIds: SortedSet[ShortChannelId] = channels.keySet.filter(keep(q.firstBlockNum, q.numberOfBlocks, _))
-    log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlockNum, q.numberOfBlocks)
-    val chunks = split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
+    val shortChannelIds: SortedSet[ShortChannelId] = channels.keySet.filter(keep(q.firstBlock, q.numberOfBlocks, _))
+    log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlock, q.numberOfBlocks)
+    val chunks = split(shortChannelIds, q.firstBlock, q.numberOfBlocks, routerConf.channelRangeChunkSize)
     Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
     chunks.zipWithIndex.foreach { case (chunk, i) =>
       val syncComplete = i == chunks.size - 1
@@ -218,9 +218,9 @@ object Sync {
   /**
    * Filters channels that we want to send to nodes asking for a channel range
    */
-  def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId): Boolean = {
+  def keep(firstBlock: BlockHeight, numberOfBlocks: Long, id: ShortChannelId): Boolean = {
     val height = id.blockHeight
-    height >= firstBlockNum && height < (firstBlockNum + numberOfBlocks)
+    height >= firstBlock && height < (firstBlock + numberOfBlocks)
   }
 
   def shouldRequestUpdate(ourTimestamp: TimestampSecond, ourChecksum: Long, theirTimestamp_opt: Option[TimestampSecond], theirChecksum_opt: Option[Long]): Boolean = {
@@ -390,7 +390,7 @@ object Sync {
     crc32c(data)
   }
 
-  case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId]) {
+  case class ShortChannelIdsChunk(firstBlock: BlockHeight, numBlocks: Long, shortChannelIds: List[ShortChannelId]) {
     /**
      * @param maximumSize maximum size of the short channel ids list
      * @return a chunk with at most `maximumSize` ids
@@ -413,17 +413,17 @@ object Sync {
    * chunks fully covers the [firstBlockNum, numberOfBlocks] range that was requested
    *
    * @param shortChannelIds       list of short channel ids to split
-   * @param firstBlockNum         first block height requested by our peers
+   * @param firstBlock            first block height requested by our peers
    * @param numberOfBlocks        number of blocks requested by our peer
    * @param channelRangeChunkSize target chunk size. All ids that have the same block height will be grouped together, so
    *                              returned chunks may still contain more than `channelRangeChunkSize` elements
    * @return a list of short channel id chunks
    */
-  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
+  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlock: BlockHeight, numberOfBlocks: Long, channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
     // see BOLT7: MUST encode a short_channel_id for every open channel it knows in blocks first_blocknum to first_blocknum plus number_of_blocks minus one
-    val it = shortChannelIds.iterator.dropWhile(_.blockHeight < firstBlockNum).takeWhile(_.blockHeight < firstBlockNum + numberOfBlocks)
+    val it = shortChannelIds.iterator.dropWhile(_.blockHeight < firstBlock).takeWhile(_.blockHeight < firstBlock + numberOfBlocks)
     if (it.isEmpty) {
-      List(ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, List.empty))
+      List(ShortChannelIdsChunk(firstBlock, numberOfBlocks, List.empty))
     } else {
       // we want to split ids in different chunks, with the following rules by order of priority
       // ids that have the same block height must be grouped in the same chunk
@@ -442,15 +442,15 @@ object Sync {
             // we always prepend because it's more efficient so we have to reverse the current chunk
             // for the first chunk, we make sure that we start at the request first block
             // for the next chunks we start at the end of the range covered by the last chunk
-            val first = if (acc.isEmpty) firstBlockNum else acc.head.firstBlock + acc.head.numBlocks
+            val first = if (acc.isEmpty) firstBlock else acc.head.firstBlock + acc.head.numBlocks
             val count = currentChunk.head.blockHeight - first + 1
             loop(id :: Nil, ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc)
           }
         }
         else {
           // for the last chunk, we make sure that we cover the requested block range
-          val first = if (acc.isEmpty) firstBlockNum else acc.head.firstBlock + acc.head.numBlocks
-          val count = numberOfBlocks - first + firstBlockNum
+          val first = if (acc.isEmpty) firstBlock else acc.head.firstBlock + acc.head.numBlocks
+          val count = numberOfBlocks - (first - firstBlock)
           (ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc).reverse
         }
       }

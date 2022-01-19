@@ -23,6 +23,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.io.dns.{AAAARecord, DnsProtocol}
 import akka.io.{Dns, IO}
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
+import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.BlockHeaderAt
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import org.slf4j.Logger
@@ -44,7 +45,7 @@ object HeadersOverDns {
   private case class WrappedDnsFailed(cause: Throwable) extends Command
   // @formatter:on
 
-  def apply(chainHash: ByteVector32, currentBlockCount: Long): Behavior[Command] = {
+  def apply(chainHash: ByteVector32, currentBlockHeight: BlockHeight): Behavior[Command] = {
     Behaviors.setup { context =>
       val dnsAdapters = {
         context.messageAdapter[DnsProtocol.Resolved](WrappedDnsResolved)
@@ -54,11 +55,11 @@ object HeadersOverDns {
         case CheckLatestHeaders(replyTo) => chainHash match {
           case Block.LivenetGenesisBlock.hash =>
             // We try to get the next 10 blocks; if we're late by more than 10 blocks, this is bad, no need to even look further.
-            (currentBlockCount until currentBlockCount + 10).foreach(blockCount => {
-              val hostname = s"$blockCount.${blockCount / 10000}.bitcoinheaders.net"
+            (currentBlockHeight.toLong until currentBlockHeight.toLong + 10).foreach(blockHeight => {
+              val hostname = s"$blockHeight.${blockHeight / 10000}.bitcoinheaders.net"
               IO(Dns)(context.system.classicSystem).tell(DnsProtocol.resolve(hostname, DnsProtocol.Ip(ipv4 = false, ipv6 = true)), dnsAdapters)
             })
-            collect(replyTo, currentBlockCount, Set.empty, 10)
+            collect(replyTo, currentBlockHeight, Set.empty, 10)
           case _ =>
             context.log.debug("bitcoinheaders.net is only supported on mainnet - skipped")
             Behaviors.stopped
@@ -68,42 +69,42 @@ object HeadersOverDns {
     }
   }
 
-  private def collect(replyTo: ActorRef[BlockchainWatchdog.LatestHeaders], currentBlockCount: Long, received: Set[BlockHeaderAt], remaining: Int): Behavior[Command] = {
+  private def collect(replyTo: ActorRef[BlockchainWatchdog.LatestHeaders], currentBlockHeight: BlockHeight, received: Set[BlockHeaderAt], remaining: Int): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.receiveMessage {
         case WrappedDnsResolved(response) =>
           val blockHeader_opt = for {
-            blockCount <- parseBlockCount(response)(context.log)
+            blockHeight <- parseBlockCount(response)(context.log)
             blockHeader <- parseBlockHeader(response)(context.log)
-          } yield BlockHeaderAt(blockCount, blockHeader)
+          } yield BlockHeaderAt(blockHeight, blockHeader)
           val received1 = blockHeader_opt match {
             case Some(blockHeader) => received + blockHeader
             case None =>
               Metrics.WatchdogError.withTag(Tags.Source, Source).increment()
               received
           }
-          stopOrCollect(replyTo, currentBlockCount, received1, remaining - 1)
+          stopOrCollect(replyTo, currentBlockHeight, received1, remaining - 1)
 
         case WrappedDnsFailed(ex) =>
           context.log.warn("bitcoinheaders.net failed to resolve: {}", ex)
-          stopOrCollect(replyTo, currentBlockCount, received, remaining - 1)
+          stopOrCollect(replyTo, currentBlockHeight, received, remaining - 1)
 
         case _ => Behaviors.unhandled
       }
     }
   }
 
-  private def stopOrCollect(replyTo: ActorRef[BlockchainWatchdog.LatestHeaders], currentBlockCount: Long, received: Set[BlockHeaderAt], remaining: Int): Behavior[Command] = remaining match {
+  private def stopOrCollect(replyTo: ActorRef[BlockchainWatchdog.LatestHeaders], currentBlockHeight: BlockHeight, received: Set[BlockHeaderAt], remaining: Int): Behavior[Command] = remaining match {
     case 0 =>
-      replyTo ! BlockchainWatchdog.LatestHeaders(currentBlockCount, received, Source)
+      replyTo ! BlockchainWatchdog.LatestHeaders(currentBlockHeight, received, Source)
       Behaviors.stopped
     case _ =>
-      collect(replyTo, currentBlockCount, received, remaining)
+      collect(replyTo, currentBlockHeight, received, remaining)
   }
 
-  private def parseBlockCount(response: DnsProtocol.Resolved)(implicit log: Logger): Option[Long] = {
+  private def parseBlockCount(response: DnsProtocol.Resolved)(implicit log: Logger): Option[BlockHeight] = {
     response.name.split('.').headOption match {
-      case Some(blockCount) => blockCount.toLongOption
+      case Some(blockHeight) => blockHeight.toLongOption.map(l => BlockHeight(l))
       case None =>
         log.error("bitcoinheaders.net response did not contain block count: {}", response)
         None

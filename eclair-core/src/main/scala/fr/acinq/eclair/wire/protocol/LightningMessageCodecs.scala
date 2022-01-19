@@ -290,13 +290,13 @@ object LightningMessageCodecs {
 
   val queryChannelRangeCodec: Codec[QueryChannelRange] = (
     ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
+      ("firstBlock" | blockHeight) ::
       ("numberOfBlocks" | uint32) ::
       ("tlvStream" | QueryChannelRangeTlv.codec)).as[QueryChannelRange]
 
   val replyChannelRangeCodec: Codec[ReplyChannelRange] = (
     ("chainHash" | bytes32) ::
-      ("firstBlockNum" | uint32) ::
+      ("firstBlock" | blockHeight) ::
       ("numberOfBlocks" | uint32) ::
       ("complete" | byte) ::
       ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::

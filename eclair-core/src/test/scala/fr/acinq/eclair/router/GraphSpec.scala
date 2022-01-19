@@ -23,7 +23,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
-import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -258,7 +258,7 @@ class GraphSpec extends AnyFunSuite {
     val path :: Nil = yenKshortestPaths(graph, a, e, 100000000 msat,
       Set.empty, Set.empty, Set.empty, 1,
       Right(HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20))),
-      714930, _ => true, includeLocalChannelCost = true)
+      BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(path.path == Seq(edgeAB, edgeBC, edgeCE))
   }
 }

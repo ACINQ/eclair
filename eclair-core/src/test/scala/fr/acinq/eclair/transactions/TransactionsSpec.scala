@@ -72,7 +72,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       parentTxId3 -> 5,
     )
     assert(expected === Scripts.csvTimeouts(tx))
-    assert(10 === Scripts.cltvTimeout(tx))
+    assert(BlockHeight(10) === Scripts.cltvTimeout(tx))
   }
 
   test("encode/decode sequence and lockTime (one example)") {
@@ -113,7 +113,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val localDustLimit = 546 sat
     val toLocalDelay = CltvExpiryDelta(144)
     val feeratePerKw = FeeratePerKw.MinimumFeeratePerKw
-    val blockHeight = 400000
+    val blockHeight = BlockHeight(400000)
 
     {
       // ClaimP2WPKHOutputTx

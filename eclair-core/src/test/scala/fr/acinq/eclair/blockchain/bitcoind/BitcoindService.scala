@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.{Block, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
-import fr.acinq.eclair.{TestUtils, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestUtils, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 
@@ -140,7 +140,7 @@ trait BitcoindService extends Logging {
     sender.expectMsgType[JValue]
     logger.info(s"generating initial blocks to wallet=$defaultWallet...")
     generateBlocks(150)
-    awaitCond(currentBlockHeight(sender) >= 150, max = 3 minutes, interval = 2 second)
+    awaitCond(currentBlockHeight(sender) >= BlockHeight(150), max = 3 minutes, interval = 2 second)
   }
 
   /** Generate blocks to a given address, or to our wallet if no address is provided. */
@@ -158,10 +158,10 @@ trait BitcoindService extends Logging {
     assert(blocks.size == blockCount)
   }
 
-  def currentBlockHeight(sender: TestProbe = TestProbe()): Long = {
+  def currentBlockHeight(sender: TestProbe = TestProbe()): BlockHeight = {
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val JInt(blockCount) = sender.expectMsgType[JInt]
-    blockCount.toLong
+    BlockHeight(blockCount.toLong)
   }
 
   /** Create a new wallet and returns an RPC client to interact with it. */

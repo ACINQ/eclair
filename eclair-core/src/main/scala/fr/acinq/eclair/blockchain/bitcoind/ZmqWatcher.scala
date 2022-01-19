@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
-import fr.acinq.eclair.{KamonExt, NodeParams, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.{BlockHeight, KamonExt, NodeParams, ShortChannelId, TimestampSecond}
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
@@ -59,8 +59,8 @@ object ZmqWatcher {
   private case object TickNewBlock extends Command
   private case object TickBlockTimeout extends Command
   private case class GetBlockCountFailed(t: Throwable) extends Command
-  private case class CheckBlockCount(count: Long) extends Command
-  private case class PublishBlockCount(count: Long) extends Command
+  private case class CheckBlockHeight(current: BlockHeight) extends Command
+  private case class PublishBlockHeight(current: BlockHeight) extends Command
   private case class ProcessNewBlock(blockHash: ByteVector32) extends Command
   private case class ProcessNewTransaction(tx: Transaction) extends Command
 
@@ -120,7 +120,7 @@ object ZmqWatcher {
   /** This event is sent when a [[WatchConfirmed]] condition is met. */
   sealed trait WatchConfirmedTriggered extends WatchTriggered {
     /** Block in which the transaction was confirmed. */
-    def blockHeight: Int
+    def blockHeight: BlockHeight
     /** Index of the transaction in that block. */
     def txIndex: Int
     /** Transaction that has been confirmed. */
@@ -146,16 +146,16 @@ object ZmqWatcher {
   case class WatchOutputSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
 
   case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
-  case class WatchFundingConfirmedTriggered(blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
+  case class WatchFundingConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
   case class WatchFundingDeeplyBuried(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchFundingDeeplyBuriedTriggered]
-  case class WatchFundingDeeplyBuriedTriggered(blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
+  case class WatchFundingDeeplyBuriedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
   case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchTxConfirmedTriggered]
-  case class WatchTxConfirmedTriggered(blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
+  case class WatchTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
   case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
-  case class WatchParentTxConfirmedTriggered(blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
+  case class WatchParentTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
   // TODO: not implemented yet: notify me if confirmation number gets below minDepth?
   case class WatchFundingLost(replyTo: ActorRef[WatchFundingLostTriggered], txId: ByteVector32, minDepth: Long) extends Watch[WatchFundingLostTriggered]
@@ -213,7 +213,7 @@ object ZmqWatcher {
 
 }
 
-private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client: BitcoinCoreClient, context: ActorContext[ZmqWatcher.Command], timers: TimerScheduler[ZmqWatcher.Command])(implicit ec: ExecutionContext = ExecutionContext.global) {
+private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client: BitcoinCoreClient, context: ActorContext[ZmqWatcher.Command], timers: TimerScheduler[ZmqWatcher.Command])(implicit ec: ExecutionContext = ExecutionContext.global) {
 
   import ZmqWatcher._
 
@@ -250,9 +250,9 @@ private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client:
       case TickBlockTimeout =>
         // we haven't received a block in a while, we check whether we're behind and restart the timer.
         timers.startSingleTimer(TickBlockTimeout, blockTimeout)
-        context.pipeToSelf(client.getBlockCount) {
+        context.pipeToSelf(client.getBlockHeight()) {
           case Failure(t) => GetBlockCountFailed(t)
-          case Success(count) => CheckBlockCount(count)
+          case Success(currentHeight) => CheckBlockHeight(currentHeight)
         }
         Behaviors.same
 
@@ -260,18 +260,18 @@ private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client:
         log.error("could not get block count from bitcoind", t)
         Behaviors.same
 
-      case CheckBlockCount(count) =>
-        val current = blockCount.get()
-        if (count > current) {
-          log.warn("block {} wasn't received via ZMQ, you should verify that your bitcoind node is running", count)
+      case CheckBlockHeight(height) =>
+        val current = blockHeight.get()
+        if (height.toLong > current) {
+          log.warn("block {} wasn't received via ZMQ, you should verify that your bitcoind node is running", height.toLong)
           context.self ! TickNewBlock
         }
         Behaviors.same
 
       case TickNewBlock =>
-        context.pipeToSelf(client.getBlockCount) {
+        context.pipeToSelf(client.getBlockHeight()) {
           case Failure(t) => GetBlockCountFailed(t)
-          case Success(count) => PublishBlockCount(count)
+          case Success(currentHeight) => PublishBlockHeight(currentHeight)
         }
         // TODO: beware of the herd effect
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
@@ -279,10 +279,10 @@ private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client:
         }
         Behaviors.same
 
-      case PublishBlockCount(count) =>
-        log.debug("setting blockCount={}", count)
-        blockCount.set(count)
-        context.system.eventStream ! EventStream.Publish(CurrentBlockCount(count))
+      case PublishBlockHeight(currentHeight) =>
+        log.debug("setting blockHeight={}", currentHeight)
+        blockHeight.set(currentHeight.toLong)
+        context.system.eventStream ! EventStream.Publish(CurrentBlockHeight(currentHeight))
         Behaviors.same
 
       case TriggerEvent(replyTo, watch, event) =>

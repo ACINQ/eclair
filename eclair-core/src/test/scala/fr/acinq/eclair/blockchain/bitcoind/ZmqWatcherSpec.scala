@@ -28,8 +28,8 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactionOptions, FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewTransaction}
-import fr.acinq.eclair.{ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, NewTransaction}
+import fr.acinq.eclair.{BlockHeight, ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -66,14 +66,14 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     super.afterAll()
   }
 
-  case class Fixture(blockCount: AtomicLong, bitcoinClient: BitcoinCoreClient, watcher: typed.ActorRef[ZmqWatcher.Command], probe: TestProbe, listener: TestProbe)
+  case class Fixture(blockHeight: AtomicLong, bitcoinClient: BitcoinCoreClient, watcher: typed.ActorRef[ZmqWatcher.Command], probe: TestProbe, listener: TestProbe)
 
   // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
   private def withWatcher(testFun: Fixture => Any): Unit = {
     val blockCount = new AtomicLong()
     val probe = TestProbe()
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[CurrentBlockCount])
+    system.eventStream.subscribe(listener.ref, classOf[CurrentBlockHeight])
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     val nodeParams = TestConstants.Alice.nodeParams.copy(chainHash = Block.RegtestGenesisBlock.hash)
     val watcher = system.spawn(ZmqWatcher(nodeParams, blockCount, bitcoinClient), UUID.randomUUID().toString)
@@ -89,13 +89,13 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       import f._
 
       // When the watcher starts, it broadcasts the current height.
-      val block1 = listener.expectMsgType[CurrentBlockCount]
+      val block1 = listener.expectMsgType[CurrentBlockHeight]
       listener.expectNoMessage(100 millis)
 
       restartBitcoind(probe)
       generateBlocks(1)
-      val block2 = listener.expectMsgType[CurrentBlockCount]
-      assert(block2.blockCount === block1.blockCount + 1)
+      val block2 = listener.expectMsgType[CurrentBlockHeight]
+      assert(block2.blockHeight === block1.blockHeight + 1)
       listener.expectNoMessage(100 millis)
     })
   }
@@ -140,18 +140,18 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       import f._
 
       // When the watcher starts, it broadcasts the current height.
-      val block1 = listener.expectMsgType[CurrentBlockCount]
-      assert(blockCount.get() === block1.blockCount)
+      val block1 = listener.expectMsgType[CurrentBlockHeight]
+      assert(blockHeight.get() === block1.blockHeight.toLong)
       listener.expectNoMessage(100 millis)
 
       generateBlocks(1)
-      assert(listener.expectMsgType[CurrentBlockCount].blockCount === block1.blockCount + 1)
-      assert(blockCount.get() === block1.blockCount + 1)
+      assert(listener.expectMsgType[CurrentBlockHeight].blockHeight === block1.blockHeight + 1)
+      assert(blockHeight.get() === block1.blockHeight.toLong + 1)
       listener.expectNoMessage(100 millis)
 
       generateBlocks(5)
-      assert(listener.expectMsgType[CurrentBlockCount].blockCount === block1.blockCount + 6)
-      assert(blockCount.get() === block1.blockCount + 6)
+      assert(listener.expectMsgType[CurrentBlockHeight].blockHeight === block1.blockHeight + 6)
+      assert(blockHeight.get() === block1.blockHeight.toLong + 6)
       listener.expectNoMessage(100 millis)
     })
   }
@@ -226,8 +226,8 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       )
       // Let's confirm tx and tx1: seeing tx1 in a block should trigger WatchEventSpent again, but not WatchEventSpentBasic
       // (which only triggers once).
-      bitcoinClient.getBlockCount.pipeTo(listener.ref)
-      val initialBlockCount = listener.expectMsgType[Long]
+      bitcoinClient.getBlockHeight().pipeTo(listener.ref)
+      val initialBlockHeight = listener.expectMsgType[BlockHeight]
       generateBlocks(1)
       listener.expectMsg(WatchFundingSpentTriggered(tx1))
       listener.expectNoMessage(1 second)
@@ -242,9 +242,9 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.expectMsg(tx2.txid)
       listener.expectNoMessage(1 second)
 
-      system.eventStream.subscribe(probe.ref, classOf[CurrentBlockCount])
+      system.eventStream.subscribe(probe.ref, classOf[CurrentBlockHeight])
       generateBlocks(1)
-      awaitCond(probe.expectMsgType[CurrentBlockCount].blockCount >= initialBlockCount + 2)
+      awaitCond(probe.expectMsgType[CurrentBlockHeight].blockHeight >= initialBlockHeight + 2)
 
       watcher ! ListWatches(listener.ref)
       val watches2 = listener.expectMsgType[Set[Watch[_]]]

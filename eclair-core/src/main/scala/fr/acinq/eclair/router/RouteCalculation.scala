@@ -96,7 +96,7 @@ object RouteCalculation {
     }
   }
 
-  def handleRouteRequest(d: Data, routerConf: RouterConf, currentBlockHeight: Long, r: RouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def handleRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: RouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = r.paymentContext.map(_.parentId),
@@ -225,7 +225,7 @@ object RouteCalculation {
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
-                currentBlockHeight: Long): Try[Seq[Route]] = Try {
+                currentBlockHeight: BlockHeight): Try[Seq[Route]] = Try {
     findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
       case Right(routes) => routes.map(route => Route(amount, route.path.map(graphEdgeToHop)))
       case Left(ex) => return Failure(ex)
@@ -243,7 +243,7 @@ object RouteCalculation {
                                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
-                                currentBlockHeight: Long): Either[RouterException, Seq[Graph.WeightedPath]] = {
+                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[Graph.WeightedPath]] = {
     require(amount > 0.msat, "route amount must be strictly positive")
 
     if (localNodeId == targetNodeId) return Left(CannotRouteToSelf)
@@ -301,7 +301,7 @@ object RouteCalculation {
                          ignoredVertices: Set[PublicKey] = Set.empty,
                          pendingHtlcs: Seq[Route] = Nil,
                          routeParams: RouteParams,
-                         currentBlockHeight: Long): Try[Seq[Route]] = Try {
+                         currentBlockHeight: BlockHeight): Try[Seq[Route]] = Try {
     val result = findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight) match {
       case Right(routes) => Right(routes)
       case Left(RouteNotFound) if routeParams.randomize =>
@@ -325,7 +325,7 @@ object RouteCalculation {
                                          ignoredVertices: Set[PublicKey] = Set.empty,
                                          pendingHtlcs: Seq[Route] = Nil,
                                          routeParams: RouteParams,
-                                         currentBlockHeight: Long): Either[RouterException, Seq[Route]] = {
+                                         currentBlockHeight: BlockHeight): Either[RouterException, Seq[Route]] = {
     // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
     val routeParams1 = {

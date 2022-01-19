@@ -21,14 +21,14 @@ import akka.event.LoggingAdapter
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.{ChannelDesc, Data, PublicChannel, hasChannels}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.{ShortChannelId, TimestampSecond, TxCoordinates}
+import fr.acinq.eclair.{BlockHeight, ShortChannelId, TimestampSecond, TxCoordinates}
 
 import scala.collection.mutable
 import scala.concurrent.duration._
 
 object StaleChannels {
 
-  def handlePruneStaleChannels(d: Data, db: NetworkDb, currentBlockHeight: Long)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handlePruneStaleChannels(d: Data, db: NetworkDb, currentBlockHeight: BlockHeight)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     // first we select channels that we will prune
     val staleChannels = getStaleChannels(d.channels.values, currentBlockHeight)
     val staleChannelIds = staleChannels.map(_.ann.shortChannelId)
@@ -88,7 +88,7 @@ object StaleChannels {
    * @param update2_opt update corresponding to the other side of the channel, if we have it
    * @return
    */
-  def isStale(channel: ChannelAnnouncement, update1_opt: Option[ChannelUpdate], update2_opt: Option[ChannelUpdate], currentBlockHeight: Long): Boolean = {
+  def isStale(channel: ChannelAnnouncement, update1_opt: Option[ChannelUpdate], update2_opt: Option[ChannelUpdate], currentBlockHeight: BlockHeight): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
     val staleThresholdBlocks = currentBlockHeight - 2016
@@ -96,6 +96,6 @@ object StaleChannels {
     blockHeight < staleThresholdBlocks && update1_opt.forall(isStale) && update2_opt.forall(isStale)
   }
 
-  def getStaleChannels(channels: Iterable[PublicChannel], currentBlockHeight: Long): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt, currentBlockHeight))
+  def getStaleChannels(channels: Iterable[PublicChannel], currentBlockHeight: BlockHeight): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt, currentBlockHeight))
 
 }

@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, UInt64}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -102,7 +102,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
   test("encode reply_channel_range (no optional data)") {
     val replyChannelRange = ReplyChannelRange(
       Block.RegtestGenesisBlock.blockId,
-      1, 100,
+      BlockHeight(1), 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       None, None)
@@ -115,7 +115,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
   test("encode reply_channel_range (with optional timestamps)") {
     val replyChannelRange = ReplyChannelRange(
       Block.RegtestGenesisBlock.blockId,
-      1, 100,
+      BlockHeight(1), 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec)))),
@@ -129,7 +129,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
   test("encode reply_channel_range (with optional timestamps, checksums, and unknown data)") {
     val replyChannelRange = ReplyChannelRange(
       Block.RegtestGenesisBlock.blockId,
-      1, 100,
+      BlockHeight(1), 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       TlvStream(

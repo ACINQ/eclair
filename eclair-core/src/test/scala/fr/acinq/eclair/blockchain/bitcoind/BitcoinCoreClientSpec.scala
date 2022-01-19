@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPass
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
@@ -523,9 +523,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     bitcoinClient.publishTransaction(txWithNoOutputs).pipeTo(sender.ref)
     sender.expectMsgType[Failure]
 
-    bitcoinClient.getBlockCount.pipeTo(sender.ref)
-    val blockCount = sender.expectMsgType[Long]
-    val txWithFutureCltv = signTxResponse.tx.copy(lockTime = blockCount + 1)
+    bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+    val blockHeight = sender.expectMsgType[BlockHeight]
+    val txWithFutureCltv = signTxResponse.tx.copy(lockTime = blockHeight.toLong + 1)
     bitcoinClient.publishTransaction(txWithFutureCltv).pipeTo(sender.ref)
     sender.expectMsgType[Failure]
 
@@ -693,8 +693,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
-    bitcoinClient.getBlockCount.pipeTo(sender.ref)
-    val blockCount = sender.expectMsgType[Long]
+    bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+    val blockHeight = sender.expectMsgType[BlockHeight]
 
     val address = getNewAddress(sender)
     val tx1 = sendToAddress(address, 5 btc, sender)
@@ -717,9 +717,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     // Let's confirm our transaction.
     generateBlocks(1)
-    bitcoinClient.getBlockCount.pipeTo(sender.ref)
-    val blockCount1 = sender.expectMsgType[Long]
-    assert(blockCount1 === blockCount + 1)
+    bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+    val blockHeight1 = sender.expectMsgType[BlockHeight]
+    assert(blockHeight1 === blockHeight + 1)
     bitcoinClient.getTxConfirmations(tx1.txid).pipeTo(sender.ref)
     sender.expectMsg(Some(1))
     bitcoinClient.isTransactionOutputSpendable(tx1.txid, 0, includeMempool = false).pipeTo(sender.ref)

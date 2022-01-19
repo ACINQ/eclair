@@ -25,15 +25,14 @@ import scala.util.Try
 class ShortChannelIdSpec extends AnyFunSuite {
 
   test("handle values from 0 to 0xffffffffffff") {
-
     val expected = Map(
-      TxCoordinates(0, 0, 0) -> ShortChannelId(0),
-      TxCoordinates(42000, 27, 3) -> ShortChannelId(0x0000a41000001b0003L),
-      TxCoordinates(1258612, 63, 0) -> ShortChannelId(0x13347400003f0000L),
-      TxCoordinates(0xffffff, 0x000000, 0xffff) -> ShortChannelId(0xffffff000000ffffL),
-      TxCoordinates(0x000000, 0xffffff, 0xffff) -> ShortChannelId(0x000000ffffffffffL),
-      TxCoordinates(0xffffff, 0xffffff, 0x0000) -> ShortChannelId(0xffffffffffff0000L),
-      TxCoordinates(0xffffff, 0xffffff, 0xffff) -> ShortChannelId(0xffffffffffffffffL)
+      TxCoordinates(BlockHeight(0), 0, 0) -> ShortChannelId(0),
+      TxCoordinates(BlockHeight(42000), 27, 3) -> ShortChannelId(0x0000a41000001b0003L),
+      TxCoordinates(BlockHeight(1258612), 63, 0) -> ShortChannelId(0x13347400003f0000L),
+      TxCoordinates(BlockHeight(0xffffff), 0x000000, 0xffff) -> ShortChannelId(0xffffff000000ffffL),
+      TxCoordinates(BlockHeight(0x000000), 0xffffff, 0xffff) -> ShortChannelId(0x000000ffffffffffL),
+      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0x0000) -> ShortChannelId(0xffffffffffff0000L),
+      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0xffff) -> ShortChannelId(0xffffffffffffffffL)
     )
     for ((coord, shortChannelId) <- expected) {
       assert(shortChannelId == ShortChannelId(coord.blockHeight, coord.txIndex, coord.outputIndex))

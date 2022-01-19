@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
 
 /**
@@ -81,16 +81,16 @@ object Scripts {
    *
    * @return the block height before which this tx cannot be published.
    */
-  def cltvTimeout(tx: Transaction): Long =
+  def cltvTimeout(tx: Transaction): BlockHeight =
     if (tx.lockTime <= LockTimeThreshold) {
       // locktime is a number of blocks
-      tx.lockTime
+      BlockHeight(tx.lockTime)
     }
     else {
       // locktime is a unix epoch timestamp
       require(tx.lockTime <= 0x20FFFFFF, "locktime should be lesser than 0x20FFFFFF")
       // since locktime is very well in the past (0x20FFFFFF is in 1987), it is equivalent to no locktime at all
-      0
+      BlockHeight(0)
     }
 
   private def sequenceToBlockHeight(sequence: Long): Long = {

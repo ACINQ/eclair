@@ -20,11 +20,11 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
 import fr.acinq.eclair.channel.{TransactionConfirmed, TransactionPublished}
+import fr.acinq.eclair.{BlockHeight, NodeParams}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.DurationLong
@@ -43,11 +43,11 @@ object MempoolTxMonitor {
   private case class PublishFailed(reason: Throwable) extends Command
   private case class InputStatus(spentConfirmed: Boolean, spentUnconfirmed: Boolean) extends Command
   private case class CheckInputFailed(reason: Throwable) extends Command
-  private case class TxConfirmations(confirmations: Int, currentBlockCount: Long) extends Command
+  private case class TxConfirmations(confirmations: Int, blockHeight: BlockHeight) extends Command
   private case object TxNotFound extends Command
   private case class GetTxConfirmationsFailed(reason: Throwable) extends Command
-  private case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
-  private case class CheckTxConfirmations(currentBlockCount: Long) extends Command
+  private case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
+  private case class CheckTxConfirmations(currentBlockHeight: BlockHeight) extends Command
   // @formatter:on
 
   // Timer key to ensure we don't have multiple concurrent timers running.
@@ -58,7 +58,7 @@ object MempoolTxMonitor {
   sealed trait TxResult
   sealed trait IntermediateTxResult extends TxResult
   /** The transaction is still unconfirmed and available in the mempool. */
-  case class TxInMempool(txid: ByteVector32, currentBlockCount: Long) extends IntermediateTxResult
+  case class TxInMempool(txid: ByteVector32, blockHeight: BlockHeight) extends IntermediateTxResult
   /** The transaction is confirmed, but hasn't reached min depth yet, we should wait for more confirmations. */
   case class TxRecentlyConfirmed(txid: ByteVector32, confirmations: Int) extends IntermediateTxResult
   sealed trait FinalTxResult extends TxResult
@@ -132,22 +132,22 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
   }
 
   def waitForConfirmation(): Behavior[Command] = {
-    val messageAdapter = context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount))
+    val messageAdapter = context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight))
     context.system.eventStream ! EventStream.Subscribe(messageAdapter)
     Behaviors.receiveMessagePartial {
-      case WrappedCurrentBlockCount(currentBlockCount) =>
-        timers.startSingleTimer(CheckTxConfirmationsKey, CheckTxConfirmations(currentBlockCount), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
+      case WrappedCurrentBlockHeight(currentBlockHeight) =>
+        timers.startSingleTimer(CheckTxConfirmationsKey, CheckTxConfirmations(currentBlockHeight), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
         Behaviors.same
-      case CheckTxConfirmations(currentBlockCount) =>
+      case CheckTxConfirmations(currentBlockHeight) =>
         context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.tx.txid)) {
-          case Success(Some(confirmations)) => TxConfirmations(confirmations, currentBlockCount)
+          case Success(Some(confirmations)) => TxConfirmations(confirmations, currentBlockHeight)
           case Success(None) => TxNotFound
           case Failure(reason) => GetTxConfirmationsFailed(reason)
         }
         Behaviors.same
-      case TxConfirmations(confirmations, currentBlockCount) =>
+      case TxConfirmations(confirmations, currentBlockHeight) =>
         if (confirmations == 0) {
-          cmd.replyTo ! TxInMempool(cmd.tx.txid, currentBlockCount)
+          cmd.replyTo ! TxInMempool(cmd.tx.txid, currentBlockHeight)
           Behaviors.same
         } else if (confirmations < nodeParams.minDepthBlocks) {
           log.info("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
@@ -183,7 +183,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
     }
   }
 
-  def sendFinalResult(result: FinalTxResult, blockSubscriber_opt: Option[ActorRef[CurrentBlockCount]] = None): Behavior[Command] = {
+  def sendFinalResult(result: FinalTxResult, blockSubscriber_opt: Option[ActorRef[CurrentBlockHeight]] = None): Behavior[Command] = {
     blockSubscriber_opt.foreach(actor => context.system.eventStream ! EventStream.Unsubscribe(actor))
     cmd.replyTo ! result
     Behaviors.stopped

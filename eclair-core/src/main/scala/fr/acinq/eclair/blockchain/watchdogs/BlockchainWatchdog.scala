@@ -22,10 +22,10 @@ import akka.actor.typed.scaladsl.Behaviors
 import com.softwaremill.sttp.SttpBackend
 import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.{NodeParams, NotificationsLogger}
+import fr.acinq.eclair.{BlockHeight, NodeParams, NotificationsLogger}
 
 import java.util.UUID
 import scala.concurrent.Future
@@ -40,7 +40,7 @@ import scala.util.Random
 object BlockchainWatchdog {
 
   // @formatter:off
-  case class BlockHeaderAt(blockCount: Long, blockHeader: BlockHeader)
+  case class BlockHeaderAt(blockHeight: BlockHeight, blockHeader: BlockHeader)
   case object NoBlockReceivedTimer
 
   trait SupportsTor {
@@ -58,10 +58,10 @@ object BlockchainWatchdog {
   case class DangerousBlocksSkew(recentHeaders: LatestHeaders) extends BlockchainWatchdogEvent
 
   sealed trait Command
-  case class LatestHeaders(currentBlockCount: Long, blockHeaders: Set[BlockHeaderAt], source: String) extends Command
-  private[watchdogs] case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
-  private case class CheckLatestHeaders(currentBlockCount: Long) extends Command
-  private case class NoBlockReceivedSince(lastBlockCount: Long) extends Command
+  case class LatestHeaders(currentBlockHeight: BlockHeight, blockHeaders: Set[BlockHeaderAt], source: String) extends Command
+  private[watchdogs] case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
+  private case class CheckLatestHeaders(currentBlockHeight: BlockHeight) extends Command
+  private case class NoBlockReceivedSince(lastBlockHeight: BlockHeight) extends Command
   // @formatter:on
 
   /**
@@ -91,34 +91,34 @@ object BlockchainWatchdog {
         context.log.warn(s"blockchain watchdog ${HeadersOverDns.Source} is disabled")
       }
 
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight)))
 
       Behaviors.withTimers { timers =>
         // We start a timer to check blockchain watchdogs regularly even when we don't receive any block.
-        timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(0), blockTimeout)
+        timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(BlockHeight(0)), blockTimeout)
         Behaviors.receiveMessage {
           case NoBlockReceivedSince(lastBlockCount) =>
             context.self ! CheckLatestHeaders(lastBlockCount)
             timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(lastBlockCount), blockTimeout)
             Behaviors.same
-          case WrappedCurrentBlockCount(blockCount) =>
+          case WrappedCurrentBlockHeight(blockHeight) =>
             val delay = Random.nextInt(maxRandomDelay.toSeconds.toInt).seconds
-            timers.startSingleTimer(CheckLatestHeaders(blockCount), delay)
-            timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(blockCount), blockTimeout)
+            timers.startSingleTimer(CheckLatestHeaders(blockHeight), delay)
+            timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(blockHeight), blockTimeout)
             Behaviors.same
-          case CheckLatestHeaders(blockCount) =>
+          case CheckLatestHeaders(blockHeight) =>
             val id = UUID.randomUUID()
             if (headersOverDnsEnabled) {
-              context.spawn(HeadersOverDns(nodeParams.chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
+              context.spawn(HeadersOverDns(nodeParams.chainHash, blockHeight), s"${HeadersOverDns.Source}-${blockHeight.toLong}-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
             }
             explorers.foreach { explorer =>
-              context.spawn(ExplorerApi(nodeParams.chainHash, blockCount, explorer), s"${explorer.name}-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
+              context.spawn(ExplorerApi(nodeParams.chainHash, blockHeight, explorer), s"${explorer.name}-${blockHeight.toLong}-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
             }
             Behaviors.same
-          case headers@LatestHeaders(blockCount, blockHeaders, source) =>
+          case headers@LatestHeaders(blockHeight, blockHeaders, source) =>
             val missingBlocks = blockHeaders match {
               case h if h.isEmpty => 0
-              case _ => blockHeaders.map(_.blockCount).max - blockCount
+              case _ => blockHeaders.map(_.blockHeight).max - blockHeight
             }
             if (missingBlocks >= 6) {
               context.log.warn("{}: we are {} blocks late: we may be eclipsed from the bitcoin network", source, missingBlocks)

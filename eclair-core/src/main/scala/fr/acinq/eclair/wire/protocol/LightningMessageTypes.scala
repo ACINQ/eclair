@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelType
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
@@ -295,18 +295,18 @@ case class QueryShortChannelIds(chainHash: ByteVector32, shortChannelIds: Encode
 
 case class ReplyShortChannelIdsEnd(chainHash: ByteVector32, complete: Byte, tlvStream: TlvStream[ReplyShortChannelIdsEndTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
 
-case class QueryChannelRange(chainHash: ByteVector32, firstBlockNum: Long, numberOfBlocks: Long, tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
+case class QueryChannelRange(chainHash: ByteVector32, firstBlock: BlockHeight, numberOfBlocks: Long, tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
   val queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.get[QueryChannelRangeTlv.QueryFlags]
 }
 
-case class ReplyChannelRange(chainHash: ByteVector32, firstBlockNum: Long, numberOfBlocks: Long, syncComplete: Byte, shortChannelIds: EncodedShortChannelIds, tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
+case class ReplyChannelRange(chainHash: ByteVector32, firstBlock: BlockHeight, numberOfBlocks: Long, syncComplete: Byte, shortChannelIds: EncodedShortChannelIds, tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
   val timestamps_opt: Option[ReplyChannelRangeTlv.EncodedTimestamps] = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps]
   val checksums_opt: Option[ReplyChannelRangeTlv.EncodedChecksums] = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums]
 }
 
 object ReplyChannelRange {
   def apply(chainHash: ByteVector32,
-            firstBlockNum: Long,
+            firstBlock: BlockHeight,
             numberOfBlocks: Long,
             syncComplete: Byte,
             shortChannelIds: EncodedShortChannelIds,
@@ -314,7 +314,7 @@ object ReplyChannelRange {
             checksums: Option[ReplyChannelRangeTlv.EncodedChecksums]): ReplyChannelRange = {
     timestamps.foreach(ts => require(ts.timestamps.length == shortChannelIds.array.length))
     checksums.foreach(cs => require(cs.checksums.length == shortChannelIds.array.length))
-    new ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, syncComplete, shortChannelIds, TlvStream(timestamps.toList ::: checksums.toList))
+    new ReplyChannelRange(chainHash, firstBlock, numberOfBlocks, syncComplete, shortChannelIds, TlvStream(timestamps.toList ::: checksums.toList))
   }
 }
 

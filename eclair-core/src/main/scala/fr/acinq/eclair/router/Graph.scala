@@ -118,7 +118,7 @@ object Graph {
                         extraEdges: Set[GraphEdge],
                         pathsToFind: Int,
                         wr: Either[WeightRatios, HeuristicsConstants],
-                        currentBlockHeight: Long,
+                        currentBlockHeight: BlockHeight,
                         boundaries: RichWeight => Boolean,
                         includeLocalChannelCost: Boolean): Seq[WeightedPath] = {
     // find the shortest path (k = 0)
@@ -208,7 +208,7 @@ object Graph {
                                    extraEdges: Set[GraphEdge],
                                    initialWeight: RichWeight,
                                    boundaries: RichWeight => Boolean,
-                                   currentBlockHeight: Long,
+                                   currentBlockHeight: BlockHeight,
                                    wr: Either[WeightRatios, HeuristicsConstants],
                                    includeLocalChannelCost: Boolean): Seq[GraphEdge] = {
     // the graph does not contain source/destination nodes
@@ -275,7 +275,7 @@ object Graph {
       while (current.isDefined) {
         edgePath += current.get
         current = bestEdges.get(current.get.desc.b)
-        if(edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH){
+        if (edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH) {
           throw InfiniteLoop(edgePath.toSeq)
         }
       }
@@ -295,7 +295,7 @@ object Graph {
    * @param weightRatios            ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
-  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
+  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: BlockHeight, weightRatios: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
     val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
     val fee = totalAmount - prev.amount
     val totalFees = prev.fees + fee
@@ -308,7 +308,7 @@ object Graph {
 
         // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
         val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
-        val ageFactor = normalize(channelBlockHeight, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
+        val ageFactor = normalize(channelBlockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
 
         // Every edge is weighted by channel capacity, larger channels add less weight
         val edgeMaxCapacity = edge.capacity.toMilliSatoshi
@@ -375,7 +375,7 @@ object Graph {
    * @param wr                      ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
-  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: Long, wr: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
+  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: BlockHeight, wr: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
     path.foldRight(RichWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0)) { (edge, prev) =>
       addEdgeWeight(sender, edge, prev, currentBlockHeight, wr, includeLocalChannelCost)
     }

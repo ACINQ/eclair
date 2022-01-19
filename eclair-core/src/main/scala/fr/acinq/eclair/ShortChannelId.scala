@@ -17,11 +17,9 @@
 package fr.acinq.eclair
 
 /**
-  * A short channel id uniquely identifies a channel by the coordinates of its funding tx output in the blockchain.
-  *
-  * See BOLT 7: https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
-  *
-  */
+ * A short channel id uniquely identifies a channel by the coordinates of its funding tx output in the blockchain.
+ * See BOLT 7: https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
+ */
 case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] {
 
   def toLong: Long = id
@@ -30,7 +28,7 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   override def toString: String = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)
-    s"${blockHeight}x${txIndex}x${outputIndex}"
+    s"${blockHeight.toLong}x${txIndex}x$outputIndex"
   }
 
   // we use an unsigned long comparison here
@@ -44,20 +42,20 @@ object ShortChannelId {
     case _ => throw new IllegalArgumentException(s"Invalid short channel id: $s")
   }
 
-  def apply(blockHeight: Int, txIndex: Int, outputIndex: Int): ShortChannelId = ShortChannelId(toShortId(blockHeight, txIndex, outputIndex))
+  def apply(blockHeight: BlockHeight, txIndex: Int, outputIndex: Int): ShortChannelId = ShortChannelId(toShortId(blockHeight.toInt, txIndex, outputIndex))
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
 
   @inline
-  def blockHeight(shortChannelId: ShortChannelId) = ((shortChannelId.id >> 40) & 0xFFFFFF).toInt
+  def blockHeight(shortChannelId: ShortChannelId): BlockHeight = BlockHeight((shortChannelId.id >> 40) & 0xFFFFFF)
 
   @inline
-  def txIndex(shortChannelId: ShortChannelId) = ((shortChannelId.id >> 16) & 0xFFFFFF).toInt
+  def txIndex(shortChannelId: ShortChannelId): Int = ((shortChannelId.id >> 16) & 0xFFFFFF).toInt
 
   @inline
-  def outputIndex(shortChannelId: ShortChannelId) = (shortChannelId.id & 0xFFFF).toInt
+  def outputIndex(shortChannelId: ShortChannelId): Int = (shortChannelId.id & 0xFFFF).toInt
 
   def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(blockHeight(shortChannelId), txIndex(shortChannelId), outputIndex(shortChannelId))
 }
 
-case class TxCoordinates(blockHeight: Int, txIndex: Int, outputIndex: Int)
+case class TxCoordinates(blockHeight: BlockHeight, txIndex: Int, outputIndex: Int)

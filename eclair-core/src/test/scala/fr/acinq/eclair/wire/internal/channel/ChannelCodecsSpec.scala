@@ -35,7 +35,6 @@ import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import java.util.UUID
-import scala.concurrent.duration._
 import scala.io.Source
 
 /**
@@ -80,7 +79,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // let's decode the old data (this will use the old codec that provides default values for new fields)
     val data_new = stateDataCodec.decode(bin_old.toBitVector).require.value
     assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx === None)
-    assert(TimestampSecond.now().toLong - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSinceBlock < 3600) // we just set this timestamp to current time
+    assert(TimestampSecond.now().toLong - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince.toLong < 3600) // we just set this to current time
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format

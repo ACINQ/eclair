@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.c
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Script, Transaction}
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT}
 import fr.acinq.eclair.channel._
@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -81,7 +81,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
     // make bob send a FundingLocked msg
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    bob ! WatchFundingConfirmedTriggered(42000, 42, fundingTx)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx === fundingTx)
     assert(txPublished.miningFee === 0.sat) // bob is fundee
@@ -99,7 +99,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchFundingConfirmedTriggered(42000, 42, fundingTx)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
     assert(listener.expectMsgType[TransactionConfirmed].tx === fundingTx)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
     alice2blockchain.expectMsgType[WatchFundingLost]
@@ -111,7 +111,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     val badOutputScript = fundingTx.txOut.head.copy(publicKeyScript = Script.write(multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputScript))
-    alice ! WatchFundingConfirmedTriggered(42000, 42, badFundingTx)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -120,7 +120,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     val badOutputAmount = fundingTx.txOut.head.copy(amount = 1234567.sat)
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputAmount))
-    alice ! WatchFundingConfirmedTriggered(42000, 42, badFundingTx)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -148,21 +148,21 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv CurrentBlockCount (funder)") { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
-    alice ! CurrentBlockCount(initialState.waitingSinceBlock + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
+    alice ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
     alice2bob.expectNoMessage(100 millis)
   }
 
   test("recv CurrentBlockCount (funding timeout not reached)") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
-    bob ! CurrentBlockCount(initialState.waitingSinceBlock + Channel.FUNDING_TIMEOUT_FUNDEE - 1)
+    bob ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE - 1)
     bob2alice.expectNoMessage(100 millis)
   }
 
   test("recv CurrentBlockCount (funding timeout reached)") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
-    bob ! CurrentBlockCount(initialState.waitingSinceBlock + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
+    bob ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSED)
   }
@@ -170,13 +170,13 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("migrate waitingSince to waitingSinceBlocks") { f =>
     import f._
     // Before version 0.5.1, eclair used an absolute timestamp instead of a block height for funding timeouts.
-    val beforeMigration = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].copy(waitingSinceBlock = TimestampSecond.now().toLong)
+    val beforeMigration = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].copy(waitingSince = BlockHeight(TimestampSecond.now().toLong))
     bob.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
     bob ! INPUT_RESTORED(beforeMigration)
     awaitCond(bob.stateName == OFFLINE)
     // We reset the waiting period to the current block height when starting up after updating eclair.
     val currentBlockHeight = bob.underlyingActor.nodeParams.currentBlockHeight
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSinceBlock === currentBlockHeight)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince === currentBlockHeight)
   }
 
   test("recv WatchFundingSpentTriggered (remote commit)") { f =>

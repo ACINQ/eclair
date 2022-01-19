@@ -199,7 +199,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr)
 
     case Event(r: RouteRequest, d) =>
-      stay() using RouteCalculation.handleRouteRequest(d, nodeParams.routerConf, nodeParams.currentBlockHeight, r)
+      stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>

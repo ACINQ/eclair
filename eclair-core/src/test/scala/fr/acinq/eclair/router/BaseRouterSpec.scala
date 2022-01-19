@@ -73,12 +73,12 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val node_g = makeNodeAnnouncement(priv_g, "node-G", Color(30, 10, -50), Nil, Features.empty)
   val node_h = makeNodeAnnouncement(priv_h, "node-H", Color(30, 10, -50), Nil, Features.empty)
 
-  val channelId_ab = ShortChannelId(420000, 1, 0)
-  val channelId_bc = ShortChannelId(420000, 2, 0)
-  val channelId_cd = ShortChannelId(420000, 3, 0)
-  val channelId_ef = ShortChannelId(420000, 4, 0)
-  val channelId_ag_private = ShortChannelId(420000, 5, 0)
-  val channelId_gh = ShortChannelId(420000, 6, 0)
+  val channelId_ab = ShortChannelId(BlockHeight(420000), 1, 0)
+  val channelId_bc = ShortChannelId(BlockHeight(420000), 2, 0)
+  val channelId_cd = ShortChannelId(BlockHeight(420000), 3, 0)
+  val channelId_ef = ShortChannelId(BlockHeight(420000), 4, 0)
+  val channelId_ag_private = ShortChannelId(BlockHeight(420000), 5, 0)
+  val channelId_gh = ShortChannelId(BlockHeight(420000), 6, 0)
 
   val chan_ab = channelAnnouncement(channelId_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
   val chan_bc = channelAnnouncement(channelId_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)

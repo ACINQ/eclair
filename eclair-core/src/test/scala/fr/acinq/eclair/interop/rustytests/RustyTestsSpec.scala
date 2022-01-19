@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.Init
-import fr.acinq.eclair.{MilliSatoshiLong, TestFeeEstimator, TestKitBaseClass, TestUtils}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestFeeEstimator, TestKitBaseClass, TestUtils}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{BeforeAndAfterAll, Outcome}
@@ -49,7 +49,7 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
   case class FixtureParam(ref: List[String], res: List[String])
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val blockCount = new AtomicLong(0)
+    val blockHeight = new AtomicLong(0)
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
     val alicePeer = TestProbe()
@@ -64,8 +64,8 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     val relayer = paymentHandler
     val wallet = new DummyOnChainWallet()
     val feeEstimator = new TestFeeEstimator()
-    val aliceNodeParams = Alice.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
-    val bobNodeParams = Bob.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
+    val aliceNodeParams = Alice.nodeParams.copy(blockHeight = blockHeight, onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
+    val bobNodeParams = Bob.nodeParams.copy(blockHeight = blockHeight, onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
     val channelConfig = ChannelConfig.standard
     val channelType = ChannelTypes.Standard
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceNodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayer, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
@@ -88,8 +88,8 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
       bob2blockchain.expectMsgType[WatchFundingConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-      alice ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
-      bob ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+      alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       alice2blockchain.expectMsgType[WatchFundingLost]
       bob2blockchain.expectMsgType[WatchFundingLost]
       awaitCond(alice.stateName == NORMAL)

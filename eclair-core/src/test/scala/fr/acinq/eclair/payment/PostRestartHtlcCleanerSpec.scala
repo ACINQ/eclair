@@ -33,7 +33,7 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits.ByteVector
@@ -378,13 +378,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       }
 
       val closingState = localClose(alice, alice2blockchain)
-      alice ! WatchTxConfirmedTriggered(42, 0, closingState.commitTx)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, closingState.commitTx)
       // All committed htlcs timed out except the last two; one will be fulfilled later and the other will timeout later.
       assert(closingState.htlcTxs.size === 4)
       assert(getHtlcTimeoutTxs(closingState).length === 4)
       val htlcTxs = getHtlcTimeoutTxs(closingState).sortBy(_.tx.txOut.map(_.amount).sum)
       htlcTxs.reverse.drop(2).zipWithIndex.foreach {
-        case (htlcTx, i) => alice ! WatchTxConfirmedTriggered(201, i, htlcTx.tx)
+        case (htlcTx, i) => alice ! WatchTxConfirmedTriggered(BlockHeight(201), i, htlcTx.tx)
       }
       (alice.stateData.asInstanceOf[DATA_CLOSING], htlc_2_2)
     }

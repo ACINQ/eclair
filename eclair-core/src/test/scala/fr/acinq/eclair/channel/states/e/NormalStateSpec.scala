@@ -26,7 +26,7 @@ import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
@@ -161,7 +161,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val expiryTooBig = (Channel.MAX_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight)
     val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, randomBytes32(), expiryTooBig, TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add
-    val error = ExpiryTooBig(channelId(alice), maximum = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentBlockHeight), actual = expiryTooBig, blockCount = currentBlockHeight)
+    val error = ExpiryTooBig(channelId(alice), maximum = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentBlockHeight), actual = expiryTooBig, blockHeight = currentBlockHeight)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     alice2bob.expectNoMessage(200 millis)
   }
@@ -2706,7 +2706,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    alice ! CurrentBlockCount(400143)
+    alice ! CurrentBlockHeight(BlockHeight(400143))
     awaitCond(alice.stateData == initialState)
   }
 
@@ -2718,7 +2718,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test begins
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    alice ! CurrentBlockCount(400145)
+    alice ! CurrentBlockHeight(BlockHeight(400145))
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
 
     alice2blockchain.expectMsgType[PublishTx] // main delayed
@@ -2746,7 +2746,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.expectMsgType[CommitSig]
-    bob ! CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong)
+    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.fulfillSafetyBeforeTimeout.toInt)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
@@ -2779,7 +2779,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = false)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.expectNoMessage(500 millis)
-    bob ! CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong)
+    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.fulfillSafetyBeforeTimeout.toInt)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
@@ -2816,7 +2816,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
-    bob ! CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong)
+    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.fulfillSafetyBeforeTimeout.toInt)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
@@ -3291,7 +3291,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     Seq(htlcTx1, htlcTx2, htlcTx3).foreach { htlcTimeoutTx =>
       alice ! WatchOutputSpentTriggered(htlcTimeoutTx)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === htlcTimeoutTx.txid)
-      alice ! WatchTxConfirmedTriggered(2701, 3, htlcTimeoutTx)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx)
       val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
       Transaction.correctlySpends(claimHtlcDelayedTx, htlcTimeoutTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimHtlcDelayedTx.txid)
@@ -3357,7 +3357,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val blockTargets = alice.underlyingActor.nodeParams.onChainFeeConf.feeTargets
     val localAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
     // When there are no pending HTLCs, there is no rush to get the commit tx confirmed
-    assert(localAnchor.txInfo.confirmBefore.toLong === currentBlockHeight + blockTargets.commitmentWithoutHtlcsBlockTarget)
+    assert(localAnchor.txInfo.confirmBefore === currentBlockHeight + blockTargets.commitmentWithoutHtlcsBlockTarget)
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === aliceCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid)
@@ -3400,7 +3400,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv WatchFundingDeeplyBuriedTriggered", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMessage(1 second)
@@ -3411,7 +3411,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv WatchFundingDeeplyBuriedTriggered (short channel id changed)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(400001, 22, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400001), 22, null)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMessage(1 second)
@@ -3422,7 +3422,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv WatchFundingDeeplyBuriedTriggered (private channel)") { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     // private channel: we send the channel_update directly to the peer
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
@@ -3432,7 +3432,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv WatchFundingDeeplyBuriedTriggered (private channel, short channel id changed)") { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(400001, 22, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400001), 22, null)
     // private channel: we send the channel_update directly to the peer
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
@@ -3444,9 +3444,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv AnnouncementSignatures", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-    bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     import initialState.commitments.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
@@ -3462,9 +3462,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv AnnouncementSignatures (re-send)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    alice ! WatchFundingDeeplyBuriedTriggered(42, 10, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42), 10, null)
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-    bob ! WatchFundingDeeplyBuriedTriggered(42, 10, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42), 10, null)
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     import initialState.commitments.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
@@ -3481,9 +3481,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv AnnouncementSignatures (invalid)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val channelId = alice.stateData.asInstanceOf[DATA_NORMAL].channelId
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     alice2bob.expectMsgType[AnnouncementSignatures]
-    bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     // actual test starts here - Bob sends an invalid signature
     val annSigsB_invalid = annSigsB.copy(bitcoinSignature = annSigsB.nodeSignature, nodeSignature = annSigsB.bitcoinSignature)
@@ -3496,8 +3496,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv BroadcastChannelUpdate", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -3511,8 +3511,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv BroadcastChannelUpdate (no changes)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -3525,7 +3525,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv INPUT_DISCONNECTED") { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
     assert(update1a.channelFlags.isEnabled)
 
@@ -3539,7 +3539,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv INPUT_DISCONNECTED (with pending unsigned htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
     assert(update1a.channelFlags.isEnabled)
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
@@ -3564,8 +3564,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv INPUT_DISCONNECTED (public channel)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -3580,8 +3580,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv INPUT_DISCONNECTED (public channel, with pending unsigned htlcs)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val sender = TestProbe()
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[AnnouncementSignatures]
