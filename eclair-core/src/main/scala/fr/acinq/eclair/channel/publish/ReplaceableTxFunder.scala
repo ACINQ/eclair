@@ -353,23 +353,10 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   def signWalletInputs(locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
-    locallySignedTx match {
-      case ClaimLocalAnchorWithWitnessData(anchorTx) =>
-        val commitInfo = BitcoinCoreClient.PreviousTx(anchorTx.input, anchorTx.tx.txIn.head.witness)
-        context.pipeToSelf(bitcoinClient.signTransaction(anchorTx.tx, Seq(commitInfo))) {
-          case Success(signedTx) => SignWalletInputsOk(signedTx.tx)
-          case Failure(reason) => SignWalletInputsFailed(reason)
-        }
-      case htlcTx: HtlcWithWitnessData =>
-        val inputInfo = BitcoinCoreClient.PreviousTx(htlcTx.txInfo.input, htlcTx.txInfo.tx.txIn.head.witness)
-        context.pipeToSelf(bitcoinClient.signTransaction(htlcTx.txInfo.tx, Seq(inputInfo), allowIncomplete = true).map(signTxResponse => {
-          // NB: bitcoind versions older than 0.21.1 messes up the witness stack for our htlc input, so we need to restore it.
-          // See https://github.com/bitcoin/bitcoin/issues/21151
-          htlcTx.txInfo.tx.copy(txIn = htlcTx.txInfo.tx.txIn.head +: signTxResponse.tx.txIn.tail)
-        })) {
-          case Success(signedTx) => SignWalletInputsOk(signedTx)
-          case Failure(reason) => SignWalletInputsFailed(reason)
-        }
+    val inputInfo = BitcoinCoreClient.PreviousTx(locallySignedTx.txInfo.input, locallySignedTx.txInfo.tx.txIn.head.witness)
+    context.pipeToSelf(bitcoinClient.signTransaction(locallySignedTx.txInfo.tx, Seq(inputInfo))) {
+      case Success(signedTx) => SignWalletInputsOk(signedTx.tx)
+      case Failure(reason) => SignWalletInputsFailed(reason)
     }
     Behaviors.receiveMessagePartial {
       case SignWalletInputsOk(signedTx) =>

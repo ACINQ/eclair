@@ -215,12 +215,11 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
 
   def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = signTransaction(tx, Nil)
 
-  def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
+  def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx])(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
     rpcClient.invoke("signrawtransactionwithwallet", tx.toString(), previousTxs).map(json => {
       val JString(hex) = json \ "hex"
       val JBool(complete) = json \ "complete"
-      // TODO: remove allowIncomplete once https://github.com/bitcoin/bitcoin/issues/21151 is fixed
-      if (!complete && !allowIncomplete) {
+      if (!complete) {
         val JArray(errors) = json \ "errors"
         val message = errors.map(error => {
           val JString(txid) = error \ "txid"
