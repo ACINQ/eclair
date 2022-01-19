@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair
 
-import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.ParallelTestExecution
+import org.scalatest.funsuite.AnyFunSuite
 
 /**
  * Created by t-bast on 21/08/2019.
@@ -44,8 +44,8 @@ class CltvExpirySpec extends AnyFunSuite with ParallelTestExecution {
     assert(d > CltvExpiryDelta(560))
 
     // convert to cltv expiry
-    assert(d.toCltvExpiry(blockHeight = 1105) === CltvExpiry(1666))
-    assert(d.toCltvExpiry(blockHeight = 1106) === CltvExpiry(1667))
+    assert(d.toCltvExpiry(currentBlockHeight = BlockHeight(1105)) === CltvExpiry(1666))
+    assert(d.toCltvExpiry(currentBlockHeight = BlockHeight(1106)) === CltvExpiry(1667))
   }
 
   test("cltv expiry") {

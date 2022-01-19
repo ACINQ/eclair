@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
+import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 
 /**
@@ -29,6 +30,6 @@ case class NewBlock(blockHash: ByteVector32) extends BlockchainEvent
 
 case class NewTransaction(tx: Transaction) extends BlockchainEvent
 
-case class CurrentBlockCount(blockCount: Long) extends BlockchainEvent
+case class CurrentBlockHeight(blockHeight: BlockHeight) extends BlockchainEvent
 
 case class CurrentFeerates(feeratesPerKw: FeeratesPerKw) extends BlockchainEvent

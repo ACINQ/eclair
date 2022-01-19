@@ -19,13 +19,13 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
-import fr.acinq.eclair.{TimestampSecond, TxCoordinates}
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
+import fr.acinq.eclair.{BlockHeight, TimestampSecond, TxCoordinates}
 import grizzled.slf4j.Logging
 import org.json4s.Formats
 import org.json4s.JsonAST._
@@ -84,14 +84,14 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
    * @return a Future[height, index] where height is the height of the block where this transaction was published, and
    *         index is the index of the transaction in that block.
    */
-  def getTransactionShortId(txid: ByteVector32)(implicit ec: ExecutionContext): Future[(Int, Int)] =
+  def getTransactionShortId(txid: ByteVector32)(implicit ec: ExecutionContext): Future[(BlockHeight, Int)] =
     for {
       Some(blockHash) <- getTxBlockHash(txid)
       json <- rpcClient.invoke("getblock", blockHash)
       JInt(height) = json \ "height"
       JArray(txs) = json \ "tx"
       index = txs.indexOf(JString(txid.toHex))
-    } yield (height.toInt, index)
+    } yield (BlockHeight(height.toInt), index)
 
   def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
@@ -381,15 +381,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
 
   //------------------------- BLOCKCHAIN  -------------------------//
 
-  def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
+  def getBlockHeight()(implicit ec: ExecutionContext): Future[BlockHeight] =
     rpcClient.invoke("getblockcount").collect {
-      case JInt(count) => count.toLong
+      case JInt(count) => BlockHeight(count.toLong)
     }
 
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
     for {
-      blockHash <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOpt[String].map(ByteVector32.fromValidHex).getOrElse(ByteVector32.Zeroes))
+      blockHash <- rpcClient.invoke("getblockhash", blockHeight.toInt).map(_.extractOpt[String].map(ByteVector32.fromValidHex).getOrElse(ByteVector32.Zeroes))
       txid: ByteVector32 <- rpcClient.invoke("getblock", blockHash).map(json => Try {
         val JArray(txs) = json \ "tx"
         ByteVector32.fromValidHex(txs(txIndex).extract[String])

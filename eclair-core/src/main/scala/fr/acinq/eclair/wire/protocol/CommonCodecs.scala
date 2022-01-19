@@ -62,8 +62,8 @@ object CommonCodecs {
 
   val feeratePerKw: Codec[FeeratePerKw] = uint32.xmapc(l => FeeratePerKw(Satoshi(l)))(_.toLong)
 
-  val blockHeight: Codec[BlockHeight] = uint32.xmapc(BlockHeight)(_.toLong)
-  val cltvExpiry: Codec[CltvExpiry] = uint32.xmapc(CltvExpiry)(_.toLong)
+  val blockHeight: Codec[BlockHeight] = uint32.xmapc(l => BlockHeight(l))(_.toLong)
+  val cltvExpiry: Codec[CltvExpiry] = blockHeight.as[CltvExpiry]
   val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)(_.toInt)
 
   // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs

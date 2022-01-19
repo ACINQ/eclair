@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -283,7 +283,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
         mutualClosePublished = tx2 :: tx3 :: Nil,
         localCommitPublished = None,
@@ -298,7 +298,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -320,7 +320,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -342,7 +342,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -370,7 +370,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -398,7 +398,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments.copy(remoteNextCommitInfo = Left(WaitingForRevocation(commitments.remoteCommit, null, 7L))),
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -432,7 +432,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -453,7 +453,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -474,7 +474,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -521,7 +521,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSinceBlock = 0,
+        waitingSince = BlockHeight(0),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(

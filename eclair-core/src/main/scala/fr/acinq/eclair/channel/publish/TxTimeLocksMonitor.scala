@@ -20,12 +20,12 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
-import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.{BlockHeight, NodeParams}
 
 import scala.concurrent.duration.DurationLong
 import scala.util.Random
@@ -45,7 +45,7 @@ object TxTimeLocksMonitor {
   // @formatter:off
   sealed trait Command
   case class CheckTx(replyTo: ActorRef[TimeLocksOk], tx: Transaction, desc: String) extends Command
-  private case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
+  private case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
   private case object CheckRelativeTimeLock extends Command
   private case class ParentTxConfirmed(parentTxId: ByteVector32) extends Command
   // @formatter:on
@@ -75,15 +75,15 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams,
   private val log = context.log
 
   def checkAbsoluteTimeLock(): Behavior[Command] = {
-    val blockCount = nodeParams.currentBlockHeight
+    val blockHeight = nodeParams.currentBlockHeight
     val cltvTimeout = Scripts.cltvTimeout(cmd.tx)
-    if (blockCount < cltvTimeout) {
-      log.info("delaying publication of {} until block={} (current block={})", cmd.desc, cltvTimeout, blockCount)
-      val messageAdapter = context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount))
+    if (blockHeight < cltvTimeout) {
+      log.info("delaying publication of {} until block={} (current block={})", cmd.desc, cltvTimeout, blockHeight)
+      val messageAdapter = context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight))
       context.system.eventStream ! EventStream.Subscribe(messageAdapter)
       Behaviors.receiveMessagePartial {
-        case WrappedCurrentBlockCount(currentBlockCount) =>
-          if (cltvTimeout <= currentBlockCount) {
+        case WrappedCurrentBlockHeight(currentBlockHeight) =>
+          if (cltvTimeout <= currentBlockHeight) {
             context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
             timers.startSingleTimer(CheckRelativeTimeLock, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
             Behaviors.same

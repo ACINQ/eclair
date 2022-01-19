@@ -20,11 +20,11 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, TimeLocksOk}
-import fr.acinq.eclair.{NodeParams, TestConstants, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{BlockHeight, NodeParams, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -48,14 +48,14 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("transaction with absolute delay") { f =>
     import f._
 
-    val tx = Transaction(2, Nil, TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, nodeParams.currentBlockHeight + 3)
+    val tx = Transaction(2, Nil, TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, nodeParams.currentBlockHeight.toLong + 3)
     monitor ! CheckTx(probe.ref, tx, "absolute-delay")
     probe.expectNoMessage(100 millis)
 
-    system.eventStream.publish(CurrentBlockCount(nodeParams.currentBlockHeight + 1))
+    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 1))
     probe.expectNoMessage(100 millis)
 
-    system.eventStream.publish(CurrentBlockCount(nodeParams.currentBlockHeight + 3))
+    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 3))
     probe.expectMsg(TimeLocksOk())
   }
 
@@ -71,7 +71,7 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(w.minDepth === 3)
     probe.expectNoMessage(100 millis)
 
-    w.replyTo ! WatchParentTxConfirmedTriggered(651, 0, parentTx)
+    w.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx)
     probe.expectMsg(TimeLocksOk())
   }
 
@@ -95,10 +95,10 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(Seq(w1, w2).map(w => (w.txId, w.minDepth)).toSet === Set((parentTx1.txid, 3), (parentTx2.txid, 1)))
     probe.expectNoMessage(100 millis)
 
-    w1.replyTo ! WatchParentTxConfirmedTriggered(651, 0, parentTx1)
+    w1.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx1)
     probe.expectNoMessage(100 millis)
 
-    w2.replyTo ! WatchParentTxConfirmedTriggered(1105, 0, parentTx2)
+    w2.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(1105), 0, parentTx2)
     probe.expectMsg(TimeLocksOk())
   }
 
@@ -111,23 +111,23 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       2,
       TxIn(OutPoint(parentTx1, 0), Nil, 3) :: TxIn(OutPoint(parentTx2, 0), Nil, 6) :: Nil,
       TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
-      nodeParams.currentBlockHeight + 3
+      nodeParams.currentBlockHeight.toLong + 3
     )
     monitor ! CheckTx(probe.ref, tx, "absolute-and-relative-delays")
 
     // We set watches on parent txs only once the absolute delay is over.
     watcher.expectNoMessage(100 millis)
-    system.eventStream.publish(CurrentBlockCount(nodeParams.currentBlockHeight + 3))
+    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 3))
     val w1 = watcher.expectMsgType[WatchParentTxConfirmed]
     val w2 = watcher.expectMsgType[WatchParentTxConfirmed]
     watcher.expectNoMessage(100 millis)
     assert(Seq(w1, w2).map(w => (w.txId, w.minDepth)).toSet === Set((parentTx1.txid, 3), (parentTx2.txid, 6)))
     probe.expectNoMessage(100 millis)
 
-    w1.replyTo ! WatchParentTxConfirmedTriggered(651, 0, parentTx1)
+    w1.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx1)
     probe.expectNoMessage(100 millis)
 
-    w2.replyTo ! WatchParentTxConfirmedTriggered(1105, 0, parentTx2)
+    w2.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(1105), 0, parentTx2)
     probe.expectMsg(TimeLocksOk())
   }
 

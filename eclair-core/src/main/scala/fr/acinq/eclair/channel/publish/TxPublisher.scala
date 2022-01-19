@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Commitments
@@ -119,7 +119,7 @@ object TxPublisher {
     case object UnknownTxFailure extends TxRejectedReason
   }
 
-  case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
+  case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
   case class SetChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
   // @formatter:on
 
@@ -189,7 +189,7 @@ object TxPublisher {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
-          context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
+          context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight)))
           new TxPublisher(nodeParams, factory, context, timers).run(Map.empty, Seq.empty, ChannelLogContext(remoteNodeId, None))
         }
       }
@@ -290,9 +290,9 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
           }
       }
 
-      case WrappedCurrentBlockCount(currentBlockCount) =>
+      case WrappedCurrentBlockHeight(currentBlockHeight) =>
         if (retryNextBlock.nonEmpty) {
-          log.info("{} transactions are still pending at block {}, retrying {} transactions that previously failed", pending.size, currentBlockCount, retryNextBlock.length)
+          log.info("{} transactions are still pending at block {}, retrying {} transactions that previously failed", pending.size, currentBlockHeight, retryNextBlock.length)
           retryNextBlock.foreach(cmd => timers.startSingleTimer(cmd, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis))
         }
         run(pending, Seq.empty, channelInfo)

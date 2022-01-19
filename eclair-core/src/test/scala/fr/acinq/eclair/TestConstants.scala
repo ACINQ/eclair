@@ -79,7 +79,7 @@ object TestConstants {
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
-      blockCount = new AtomicLong(defaultBlockHeight),
+      blockHeight = new AtomicLong(defaultBlockHeight),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
@@ -215,7 +215,7 @@ object TestConstants {
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
-      blockCount = new AtomicLong(defaultBlockHeight),
+      blockHeight = new AtomicLong(defaultBlockHeight),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,

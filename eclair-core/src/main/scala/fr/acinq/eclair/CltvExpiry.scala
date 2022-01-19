@@ -21,18 +21,26 @@ package fr.acinq.eclair
  */
 
 /**
- * Bitcoin scripts (in particular HTLCs) need an absolute block expiry (greater than the current block count) to work
+ * Bitcoin scripts (in particular HTLCs) need an absolute block expiry (greater than the current block height) to work
  * with OP_CLTV.
  *
- * @param underlying the absolute cltv expiry value (current block count + some delta).
+ * @param underlying the absolute cltv expiry value (current block height + some delta).
  */
-case class CltvExpiry(private val underlying: Long) extends Ordered[CltvExpiry] {
+case class CltvExpiry(private val underlying: BlockHeight) extends Ordered[CltvExpiry] {
   // @formatter:off
   def +(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying + d.toInt)
   def -(d: CltvExpiryDelta): CltvExpiry = CltvExpiry(underlying - d.toInt)
   def -(other: CltvExpiry): CltvExpiryDelta = CltvExpiryDelta((underlying - other.underlying).toInt)
   override def compare(other: CltvExpiry): Int = underlying.compareTo(other.underlying)
-  def toLong: Long = underlying
+  def blockHeight: BlockHeight = underlying
+  def toLong: Long = underlying.toLong
+  // @formatter:on
+}
+
+object CltvExpiry {
+  // @formatter:off
+  def apply(underlying: Int): CltvExpiry = CltvExpiry(BlockHeight(underlying))
+  def apply(underlying: Long): CltvExpiry = CltvExpiry(BlockHeight(underlying))
   // @formatter:on
 }
 
@@ -49,7 +57,7 @@ case class CltvExpiryDelta(private val underlying: Int) extends Ordered[CltvExpi
   /**
    * Adds the current block height to the given delta to obtain an absolute expiry.
    */
-  def toCltvExpiry(blockHeight: Long) = CltvExpiry(blockHeight + underlying)
+  def toCltvExpiry(currentBlockHeight: BlockHeight) = CltvExpiry(currentBlockHeight + underlying)
 
   // @formatter:off
   def +(other: Int): CltvExpiryDelta = CltvExpiryDelta(underlying + other)

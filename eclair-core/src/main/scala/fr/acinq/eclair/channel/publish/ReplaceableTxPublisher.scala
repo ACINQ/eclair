@@ -74,7 +74,7 @@ object ReplaceableTxPublisher {
   }
 
   def getFeerate(feeEstimator: FeeEstimator, confirmBefore: BlockHeight, currentBlockHeight: BlockHeight): FeeratePerKw = {
-    val remainingBlocks = (confirmBefore - currentBlockHeight).toLong
+    val remainingBlocks = confirmBefore - currentBlockHeight
     val blockTarget = remainingBlocks match {
       // If our target is still very far in the future, no need to rush
       case t if t >= 144 => 144
@@ -140,14 +140,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def fund(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
-    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, BlockHeight(nodeParams.currentBlockHeight))
+    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, nodeParams.currentBlockHeight)
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
         result match {
           case ReplaceableTxFunder.TransactionReady(tx) =>
-            log.debug("publishing {} with confirmation target in {} blocks", cmd.desc, confirmBefore.toLong - nodeParams.currentBlockHeight)
+            log.debug("publishing {} with confirmation target in {} blocks", cmd.desc, confirmBefore - nodeParams.currentBlockHeight)
             val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), s"mempool-tx-monitor-${tx.signedTx.txid}")
             txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
             wait(tx)
@@ -170,18 +170,18 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {
-          case MempoolTxMonitor.TxInMempool(_, currentBlockCount) =>
+          case MempoolTxMonitor.TxInMempool(_, currentBlockHeight) =>
             // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
             val bumpRatio = 1.2
-            val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, BlockHeight(currentBlockCount))
-            val targetFeerate_opt = if (confirmBefore.toLong <= currentBlockCount + 6) {
-              log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, confirmBefore.toLong - currentBlockCount)
+            val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, currentBlockHeight)
+            val targetFeerate_opt = if (confirmBefore <= currentBlockHeight + 6) {
+              log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
               Some(currentFeerate.max(tx.feerate * bumpRatio))
             } else if (tx.feerate * bumpRatio <= currentFeerate) {
-              log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, confirmBefore.toLong - currentBlockCount)
+              log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
               Some(currentFeerate)
             } else {
-              log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, confirmBefore.toLong - currentBlockCount)
+              log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, confirmBefore - currentBlockHeight)
               None
             }
             // We avoid a herd effect whenever we fee bump transactions.

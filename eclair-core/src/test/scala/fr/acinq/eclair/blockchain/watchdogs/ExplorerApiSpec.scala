@@ -19,9 +19,9 @@ package fr.acinq.eclair.blockchain.watchdogs
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.TestTags
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.LatestHeaders
 import fr.acinq.eclair.blockchain.watchdogs.ExplorerApi.{BlockcypherExplorer, BlockstreamExplorer, CheckLatestHeaders, MempoolSpaceExplorer}
+import fr.acinq.eclair.{BlockHeight, TestTags}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
@@ -32,23 +32,23 @@ class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
   test("fetch latest block headers", TestTags.ExternalApi) {
     for (explorer <- explorers) {
-      val api = testKit.spawn(ExplorerApi(Block.LivenetGenesisBlock.hash, 630450, explorer))
+      val api = testKit.spawn(ExplorerApi(Block.LivenetGenesisBlock.hash, BlockHeight(630450), explorer))
       val sender = testKit.createTestProbe[LatestHeaders]()
       api ! CheckLatestHeaders(sender.ref)
       val latestHeaders = sender.expectMessageType[LatestHeaders]
-      assert(latestHeaders.currentBlockCount === 630450)
+      assert(latestHeaders.currentBlockHeight === BlockHeight(630450))
       assert(latestHeaders.blockHeaders.nonEmpty)
-      assert(latestHeaders.blockHeaders.forall(_.blockCount > 630450))
+      assert(latestHeaders.blockHeaders.forall(_.blockHeight > BlockHeight(630450)))
       assert(latestHeaders.source === explorer.name)
     }
   }
 
   test("fetch future block headers", TestTags.ExternalApi) {
     for (explorer <- explorers) {
-      val api = testKit.spawn(ExplorerApi(Block.LivenetGenesisBlock.hash, 60000000, explorer))
+      val api = testKit.spawn(ExplorerApi(Block.LivenetGenesisBlock.hash, BlockHeight(60000000), explorer))
       val sender = testKit.createTestProbe[LatestHeaders]()
       api ! CheckLatestHeaders(sender.ref)
-      sender.expectMessage(LatestHeaders(60000000, Set.empty, explorer.name))
+      sender.expectMessage(LatestHeaders(BlockHeight(60000000), Set.empty, explorer.name))
     }
   }
 

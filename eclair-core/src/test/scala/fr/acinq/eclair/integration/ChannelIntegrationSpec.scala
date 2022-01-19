@@ -138,8 +138,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     nodes("C").system.eventStream.subscribe(stateListenerC.ref, classOf[ChannelStateChanged])
     nodes("F").system.eventStream.subscribe(stateListenerF.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    val currentBlockCount = getBlockCount
-    awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
+    val currentBlockHeight = getBlockHeight()
+    awaitCond(getBlockHeight() == currentBlockHeight, max = 20 seconds, interval = 1 second)
     // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
     nodes("F").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
@@ -249,7 +249,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // won't be testing the right scenario.
     disconnectCF(htlc.channelId, sender)
     // we generate enough blocks to reach the htlc timeout
-    generateBlocks((htlc.cltvExpiry.toLong - getBlockCount).toInt, Some(minerAddress))
+    generateBlocks((htlc.cltvExpiry.blockHeight - getBlockHeight()).toInt, Some(minerAddress))
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
@@ -309,7 +309,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
     val Some(remoteCommit) = sender.expectMsgType[RES_GETSTATEDATA[DATA_CLOSING]].data.remoteCommitPublished
     // we generate enough blocks to make the htlc timeout
-    generateBlocks((htlc.cltvExpiry.toLong - getBlockCount).toInt, Some(minerAddress))
+    generateBlocks((htlc.cltvExpiry.blockHeight - getBlockHeight()).toInt, Some(minerAddress))
     // we wait until the claim-htlc-timeout has been broadcast
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     assert(remoteCommit.claimHtlcTxs.size === 1)
@@ -362,8 +362,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").register))
     val paymentHandlerF = nodes("F").system.actorOf(PaymentHandler.props(nodes("F").nodeParams, nodes("F").register))
     // first we make sure nodes are in sync with current blockchain height
-    val currentBlockCount = getBlockCount
-    awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
+    val currentBlockHeight = getBlockHeight()
+    awaitCond(getBlockHeight() == currentBlockHeight, max = 20 seconds, interval = 1 second)
 
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: MilliSatoshi, paymentHandler: ActorRef, paymentInitiator: ActorRef): UUID = {

@@ -300,7 +300,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     assert(!router.stateData.sync.contains(remoteNodeId))
 
     // we didn't send a corresponding query_channel_range, but peer sends us a reply_channel_range
-    val unsolicitedBlocks = ReplyChannelRange(params.chainHash, 10, 5, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(5).keys.toList), None, None)
+    val unsolicitedBlocks = ReplyChannelRange(params.chainHash, BlockHeight(10), 5, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(5).keys.toList), None, None)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, unsolicitedBlocks))
 
     // it will be simply ignored
@@ -335,7 +335,7 @@ object RoutingSyncSpec {
     block <- 400000 to 420000
     txindex <- 0 to 5
     outputIndex <- 0 to 1
-  } yield ShortChannelId(block, txindex, outputIndex)).foldLeft(SortedSet.empty[ShortChannelId])(_ + _)
+  } yield ShortChannelId(BlockHeight(block), txindex, outputIndex)).foldLeft(SortedSet.empty[ShortChannelId])(_ + _)
 
   val unused: PrivateKey = randomKey()
 

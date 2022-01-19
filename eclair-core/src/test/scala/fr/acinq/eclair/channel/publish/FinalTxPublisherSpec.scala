@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOp
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
@@ -69,7 +69,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
   def createBlocks(blockCount: Int, probe: TestProbe): Unit = {
     generateBlocks(blockCount)
-    system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
   }
 
   test("publish transaction with time locks") {
@@ -86,7 +86,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     assert(w.txId === parentTx.txid)
     assert(w.minDepth === 5)
     createBlocks(5, probe)
-    w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe).toInt, 0, parentTx)
+    w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, parentTx)
 
     // Once time locks are satisfied, the transaction should be published:
     waitTxInMempool(bitcoinClient, tx.txid, probe)

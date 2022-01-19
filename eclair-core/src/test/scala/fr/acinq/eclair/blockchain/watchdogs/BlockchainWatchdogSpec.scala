@@ -20,9 +20,9 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{DangerousBlocksSkew, WrappedCurrentBlockCount}
+import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{DangerousBlocksSkew, WrappedCurrentBlockHeight}
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.{NodeParams, TestConstants, TestTags}
+import fr.acinq.eclair.{BlockHeight, NodeParams, TestConstants, TestTags}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.net.{InetSocketAddress, Socket}
@@ -44,16 +44,16 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val watchdog = testKit.spawn(BlockchainWatchdog(nodeParamsLivenet, 1 second))
-    watchdog ! WrappedCurrentBlockCount(630561)
+    watchdog ! WrappedCurrentBlockHeight(BlockHeight(630561))
 
     val events = Seq(
       eventListener.expectMessageType[DangerousBlocksSkew],
       eventListener.expectMessageType[DangerousBlocksSkew],
       eventListener.expectMessageType[DangerousBlocksSkew],
-      //      eventListener.expectMessageType[DangerousBlocksSkew]
+      // eventListener.expectMessageType[DangerousBlocksSkew]
     )
     eventListener.expectNoMessage(100 millis)
-    //    assert(events.map(_.recentHeaders.source).toSet === Set("bitcoinheaders.net", "blockcypher.com", "blockstream.info", "mempool.space"))
+    // assert(events.map(_.recentHeaders.source).toSet === Set("bitcoinheaders.net", "blockcypher.com", "blockstream.info", "mempool.space"))
     assert(events.map(_.recentHeaders.source).toSet === Set("bitcoinheaders.net", "blockstream.info", "mempool.space"))
     testKit.stop(watchdog)
   }
@@ -62,15 +62,15 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val watchdog = testKit.spawn(BlockchainWatchdog(nodeParamsTestnet, 1 second))
-    watchdog ! WrappedCurrentBlockCount(500000)
+    watchdog ! WrappedCurrentBlockHeight(BlockHeight(500000))
 
     val events = Seq(
       eventListener.expectMessageType[DangerousBlocksSkew],
       eventListener.expectMessageType[DangerousBlocksSkew],
-      //      eventListener.expectMessageType[DangerousBlocksSkew]
+      // eventListener.expectMessageType[DangerousBlocksSkew]
     )
     eventListener.expectNoMessage(100 millis)
-    //    assert(events.map(_.recentHeaders.source).toSet === Set("blockcypher.com", "blockstream.info", "mempool.space"))
+    // assert(events.map(_.recentHeaders.source).toSet === Set("blockcypher.com", "blockstream.info", "mempool.space"))
     assert(events.map(_.recentHeaders.source).toSet === Set("blockstream.info", "mempool.space"))
     testKit.stop(watchdog)
   }
@@ -81,22 +81,22 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     val blockTimeout = 5 seconds
     val watchdog = testKit.spawn(BlockchainWatchdog(nodeParamsTestnet, 1 second, blockTimeout))
 
-    watchdog ! WrappedCurrentBlockCount(500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-//    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    watchdog ! WrappedCurrentBlockHeight(BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
     eventListener.expectNoMessage(100 millis)
 
     // If we don't receive blocks, we check blockchain sources.
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-//    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
     eventListener.expectNoMessage(100 millis)
 
     // And we keep checking blockchain sources until we receive a block.
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-//    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
     eventListener.expectNoMessage(100 millis)
   }
 
@@ -115,12 +115,12 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
 
       val nodeParams = nodeParamsLivenet.copy(socksProxy_opt = Some(proxyParams))
       val watchdog = testKit.spawn(BlockchainWatchdog(nodeParams, 1 second))
-      watchdog ! WrappedCurrentBlockCount(630561)
+      watchdog ! WrappedCurrentBlockHeight(BlockHeight(630561))
 
       val events = Seq(
         eventListener.expectMessageType[DangerousBlocksSkew],
         eventListener.expectMessageType[DangerousBlocksSkew],
-//        eventListener.expectMessageType[DangerousBlocksSkew]
+        // eventListener.expectMessageType[DangerousBlocksSkew]
       )
       eventListener.expectNoMessage(100 millis)
       assert(events.map(_.recentHeaders.source).toSet === Set("blockstream.info", "mempool.space"))

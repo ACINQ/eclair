@@ -249,8 +249,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     case class TestCase(exc: ChannelException, update: ChannelUpdate, failure: FailureMessage)
 
     val testCases = Seq(
-      TestCase(ExpiryTooSmall(channelId1, CltvExpiry(100), CltvExpiry(0), 0), u.channelUpdate, ExpiryTooSoon(u.channelUpdate)),
-      TestCase(ExpiryTooBig(channelId1, CltvExpiry(100), CltvExpiry(200), 0), u.channelUpdate, ExpiryTooFar),
+      TestCase(ExpiryTooSmall(channelId1, CltvExpiry(100), CltvExpiry(0), BlockHeight(0)), u.channelUpdate, ExpiryTooSoon(u.channelUpdate)),
+      TestCase(ExpiryTooBig(channelId1, CltvExpiry(100), CltvExpiry(200), BlockHeight(0)), u.channelUpdate, ExpiryTooFar),
       TestCase(InsufficientFunds(channelId1, payload.amountToForward, 100 sat, 0 sat, 0 sat), u.channelUpdate, TemporaryChannelFailure(u.channelUpdate)),
       TestCase(FeerateTooDifferent(channelId1, FeeratePerKw(1000 sat), FeeratePerKw(300 sat)), u.channelUpdate, TemporaryChannelFailure(u.channelUpdate)),
       TestCase(ChannelUnavailable(channelId1), u_disabled.channelUpdate, ChannelDisabled(u_disabled.channelUpdate.messageFlags, u_disabled.channelUpdate.channelFlags, u_disabled.channelUpdate))

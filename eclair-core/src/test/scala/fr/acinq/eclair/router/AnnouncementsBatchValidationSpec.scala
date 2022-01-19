@@ -28,7 +28,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, Bitco
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, randomKey}
 import org.json4s.JsonAST.JString
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -67,7 +67,7 @@ class AnnouncementsBatchValidationSpec extends AnyFunSuite {
     bitcoinClient.validate(announcements(1).copy(shortChannelId = ShortChannelId(Long.MaxValue))).pipeTo(sender.ref) // invalid block height
     sender.expectMsgType[ValidateResult].fundingTx.isRight
 
-    bitcoinClient.validate(announcements(2).copy(shortChannelId = ShortChannelId(500, 1000, 0))).pipeTo(sender.ref) // invalid tx index
+    bitcoinClient.validate(announcements(2).copy(shortChannelId = ShortChannelId(BlockHeight(500), 1000, 0))).pipeTo(sender.ref) // invalid tx index
     sender.expectMsgType[ValidateResult].fundingTx.isRight
   }
 

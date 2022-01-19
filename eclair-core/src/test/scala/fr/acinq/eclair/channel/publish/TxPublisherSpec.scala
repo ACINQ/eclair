@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel.publish
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
@@ -101,7 +101,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("publish replaceable tx") { f =>
     import f._
 
-    val confirmBefore = BlockHeight(nodeParams.currentBlockHeight + 12)
+    val confirmBefore = nodeParams.currentBlockHeight + 12
     val input = OutPoint(randomBytes32(), 3)
     val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), confirmBefore), null)
     txPublisher ! cmd
@@ -113,7 +113,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("publish replaceable tx duplicate") { f =>
     import f._
 
-    val confirmBefore = BlockHeight(nodeParams.currentBlockHeight + 12)
+    val confirmBefore = nodeParams.currentBlockHeight + 12
     val input = OutPoint(randomBytes32(), 3)
     val anchorTx = ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), confirmBefore)
     val cmd = PublishReplaceableTx(anchorTx, null)
@@ -159,7 +159,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned].actor
     attempt2.expectMsgType[FinalTxPublisher.Publish]
 
-    val cmd3 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), BlockHeight(nodeParams.currentBlockHeight)), null)
+    val cmd3 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), nodeParams.currentBlockHeight), null)
     txPublisher ! cmd3
     val attempt3 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     attempt3.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -181,7 +181,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt1 = factory.expectMsgType[FinalTxPublisherSpawned]
     attempt1.actor.expectMsgType[FinalTxPublisher.Publish]
 
-    val cmd2 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), BlockHeight(nodeParams.currentBlockHeight)), null)
+    val cmd2 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), nodeParams.currentBlockHeight), null)
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -198,7 +198,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("publishing attempt fails (not enough funds)") { f =>
     import f._
 
-    val target = BlockHeight(nodeParams.currentBlockHeight + 12)
+    val target = nodeParams.currentBlockHeight + 12
     val input = OutPoint(randomBytes32(), 7)
     val paymentHash = randomBytes32()
     val cmd = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, target), null)
@@ -211,7 +211,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // We automatically retry the failed attempt once a new block is found (we may have more funds now):
     factory.expectNoMessage(100 millis)
-    system.eventStream.publish(CurrentBlockCount(8200))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
   }
@@ -237,7 +237,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     attempt2.actor.expectMsg(FinalTxPublisher.Stop)
     factory.expectNoMessage(100 millis)
 
-    system.eventStream.publish(CurrentBlockCount(8200))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     val attempt3 = factory.expectMsgType[FinalTxPublisherSpawned]
     assert(attempt3.actor.expectMsgType[publish.FinalTxPublisher.Publish].cmd === cmd2)
     factory.expectNoMessage(100 millis)
@@ -256,7 +256,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     attempt.actor.expectMsg(FinalTxPublisher.Stop)
 
     // We don't retry, even after a new block has been found:
-    system.eventStream.publish(CurrentBlockCount(8200))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     factory.expectNoMessage(100 millis)
   }
 
@@ -265,7 +265,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val input = OutPoint(randomBytes32(), 7)
     val paymentHash = randomBytes32()
-    val cmd = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, BlockHeight(nodeParams.currentBlockHeight)), null)
+    val cmd = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, nodeParams.currentBlockHeight), null)
     txPublisher ! cmd
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -275,7 +275,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
 
     // We retry when a new block is found:
-    system.eventStream.publish(CurrentBlockCount(nodeParams.currentBlockHeight + 1))
+    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 1))
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
   }
@@ -293,7 +293,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     attempt.actor.expectMsg(FinalTxPublisher.Stop)
 
     // We don't retry, even after a new block has been found:
-    system.eventStream.publish(CurrentBlockCount(8200))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     factory.expectNoMessage(100 millis)
   }
 
@@ -310,7 +310,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     attempt.actor.expectMsg(FinalTxPublisher.Stop)
 
     // We don't retry, even after a new block has been found:
-    system.eventStream.publish(CurrentBlockCount(8200))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     factory.expectNoMessage(100 millis)
   }
 

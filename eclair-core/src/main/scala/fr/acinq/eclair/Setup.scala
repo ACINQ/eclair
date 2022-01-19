@@ -110,7 +110,7 @@ class Setup(val datadir: File,
    * It is mainly used to calculate htlc expiries.
    * The value is read by all actors, hence it needs to be thread-safe.
    */
-  val blockCount = new AtomicLong(0)
+  val blockHeight = new AtomicLong(0)
 
   /**
    * This holds the current feerates, in satoshi-per-kilobytes.
@@ -132,7 +132,7 @@ class Setup(val datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
@@ -194,7 +194,7 @@ class Setup(val datadir: File,
     assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
     assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
     logger.info(s"current blockchain height=$blocks")
-    blockCount.set(blocks)
+    blockHeight.set(blocks)
     bitcoinClient
   }
 
@@ -255,7 +255,7 @@ class Setup(val datadir: File,
       watcher = {
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
-        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockCount, bitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "watcher")
+        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockHeight, bitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "watcher")
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))

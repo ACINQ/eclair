@@ -23,15 +23,22 @@ package fr.acinq.eclair
 case class BlockHeight(private val underlying: Long) extends Ordered[BlockHeight] {
   // @formatter:off
   override def compare(other: BlockHeight): Int = underlying.compareTo(other.underlying)
-  def +(other: BlockHeight) = BlockHeight(underlying + other.underlying)
   def +(i: Int) = BlockHeight(underlying + i)
   def +(l: Long) = BlockHeight(underlying + l)
-  def -(other: BlockHeight) = BlockHeight(underlying - other.underlying)
   def -(i: Int) = BlockHeight(underlying - i)
   def -(l: Long) = BlockHeight(underlying - l)
+  def -(other: BlockHeight): Long = underlying - other.underlying
   def unary_- = BlockHeight(-underlying)
 
-  def toLong: Long = underlying
+  def max(other: BlockHeight): BlockHeight = if (this > other) this else other
+  def min(other: BlockHeight): BlockHeight = if (this < other) this else other
+
   def toInt: Int = underlying.toInt
+  def toLong: Long = underlying
+  def toDouble: Double = underlying.toDouble
   // @formatter:on
+}
+
+object BlockHeight {
+  def apply(underlying: Int): BlockHeight = BlockHeight(underlying.toLong)
 }

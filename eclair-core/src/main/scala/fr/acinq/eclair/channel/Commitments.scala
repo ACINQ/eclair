@@ -133,8 +133,8 @@ case class Commitments(channelId: ByteVector32,
     localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
     remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
 
-  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = {
-    def expired(add: UpdateAddHtlc): Boolean = blockheight >= add.cltvExpiry.toLong
+  def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = {
+    def expired(add: UpdateAddHtlc): Boolean = currentHeight >= add.cltvExpiry.blockHeight
 
     localCommit.spec.htlcs.collect(outgoing).filter(expired) ++
       remoteCommit.spec.htlcs.collect(incoming).filter(expired) ++
@@ -177,8 +177,8 @@ case class Commitments(channelId: ByteVector32,
    * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
    * and our HTLC success in case of a force-close.
    */
-  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
-    def nearlyExpired(add: UpdateAddHtlc): Boolean = blockheight >= (add.cltvExpiry - fulfillSafety).toLong
+  def almostTimedOutIncomingHtlcs(currentHeight: BlockHeight, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
+    def nearlyExpired(add: UpdateAddHtlc): Boolean = currentHeight >= (add.cltvExpiry - fulfillSafety).blockHeight
 
     localCommit.spec.htlcs.collect(incoming).filter(nearlyExpired)
   }
@@ -316,17 +316,17 @@ object Commitments {
    * @param cmd         add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right(new commitments, updateAddHtlc)
    */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, blockHeight: Long, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, currentHeight: BlockHeight, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
     // we must ensure we're not relaying htlcs that are already expired, otherwise the downstream channel will instantly close
     // NB: we add a 3 blocks safety to reduce the probability of running into this when our bitcoin node is slightly outdated
-    val minExpiry = CltvExpiry(blockHeight + 3)
+    val minExpiry = CltvExpiry(currentHeight + 3)
     if (cmd.cltvExpiry < minExpiry) {
-      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
+      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockHeight = currentHeight))
     }
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
-    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
+    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentHeight)
     if (cmd.cltvExpiry >= maxExpiry) {
-      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
+      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockHeight = currentHeight))
     }
 
     // even if remote advertises support for 0 msat htlc, we limit ourselves to values strictly positive, hence the max(1 msat)

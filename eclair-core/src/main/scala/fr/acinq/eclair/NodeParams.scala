@@ -53,7 +53,7 @@ import scala.jdk.CollectionConverters._
 case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
-                      private val blockCount: AtomicLong,
+                      private val blockHeight: AtomicLong,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -108,7 +108,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
-  def currentBlockHeight: Long = blockCount.get
+  def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features).initFeatures()
@@ -186,7 +186,7 @@ object NodeParams extends Logging {
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
   def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
-                     torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator,
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator,
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
@@ -384,7 +384,7 @@ object NodeParams extends Logging {
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
       instanceId = instanceId,
-      blockCount = blockCount,
+      blockHeight = blockHeight,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,

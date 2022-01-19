@@ -43,6 +43,6 @@ class TestBitcoinCoreClient()(implicit system: ActorSystem) extends BitcoinCoreC
 
   override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("not implemented"))
 
-  override def getTransactionShortId(txId: ByteVector32)(implicit ec: ExecutionContext): Future[(Int, Int)] = Future.successful((400000, 42))
+  override def getTransactionShortId(txId: ByteVector32)(implicit ec: ExecutionContext): Future[(BlockHeight, Int)] = Future.successful((BlockHeight(400000), 42))
 
 }
