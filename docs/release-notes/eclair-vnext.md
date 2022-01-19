@@ -2,6 +2,8 @@
 
 <insert here a high-level description of the release>
 
+This release adds support for Bitcoin Core 22.0 and removes support for Bitcoin Core < 0.21.1.
+
 ## Major changes
 
 <insert changes>

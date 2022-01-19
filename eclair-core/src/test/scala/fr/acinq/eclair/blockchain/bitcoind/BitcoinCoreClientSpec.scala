@@ -400,12 +400,6 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val Failure(JsonRPCError(error)) = sender.expectMsgType[Failure]
       assert(error.message.contains(txToRemote.txid.toHex))
 
-      // we can ignore that error with allowIncomplete = true, and in that case bitcoind signs the wallet inputs.
-      bitcoinClient.signTransaction(txWithNonWalletInput, Nil, allowIncomplete = true).pipeTo(sender.ref)
-      val signTxResponse1 = sender.expectMsgType[SignTransactionResponse]
-      assert(!signTxResponse1.complete)
-      signTxResponse1.tx.txIn.tail.foreach(walletTxIn => assert(walletTxIn.witness.stack.nonEmpty))
-
       // if the non-wallet inputs are signed, bitcoind signs the remaining wallet inputs.
       val nonWalletSig = Transaction.signInput(txWithNonWalletInput, 0, Script.pay2pkh(nonWalletKey.publicKey), SIGHASH_ALL, txToRemote.txOut.head.amount, SIGVERSION_WITNESS_V0, nonWalletKey)
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))

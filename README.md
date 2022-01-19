@@ -52,7 +52,7 @@ You will find detailed guides and frequently asked questions there.
 
 ### Prerequisite: Bitcoin Core
 
-:warning: Eclair requires Bitcoin Core 0.20.1 or 0.21.1. (other versions of Bitcoin Core are *not* actively tested - use at your own risk).  If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
+:warning: Eclair requires Bitcoin Core 0.21.1 or 22.0. (other versions of Bitcoin Core are *not* actively tested - use at your own risk).  If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 
