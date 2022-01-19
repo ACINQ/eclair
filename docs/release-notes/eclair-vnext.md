@@ -12,6 +12,7 @@ What seems to be a simple change in transaction structure had a lot of impact in
 
 When using anchor outputs, you will need to keep utxos available in your `bitcoind` wallet to fee-bump HTLC transactions when channels are force-closed.
 Eclair will warn you via the `notifications.log` file when your `bitcoind` wallet balance is too low to protect your funds against malicious channel peers.
+Eclair will wait for you to add funds to your wallet and automatically retry, but you may be at risk in the meantime if you had pending payments at the time of the force-close.
 
 We recommend activating debug logs for the transaction publication mechanisms.
 This will make it much easier to follow the trail of RBF-ed transactions, and shouldn't be too noisy unless you constantly have a lot of channels force-closing.
