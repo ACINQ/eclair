@@ -87,33 +87,38 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.router.broadcast-interval" -> "2 seconds",
     "eclair.auto-reconnect" -> false,
     "eclair.to-remote-delay-blocks" -> 24,
-    "eclair.multi-part-payment-expiry" -> "20 seconds").asJava).withFallback(ConfigFactory.load())
+    "eclair.multi-part-payment-expiry" -> "20 seconds",
+    "eclair.max-funding-satoshis" -> 500000000).asJava).withFallback(ConfigFactory.load())
 
-  val commonFeatures = ConfigFactory.parseMap(Map(
+  private val commonFeatures = ConfigFactory.parseMap(Map(
     s"eclair.features.${OptionDataLossProtect.rfcName}" -> "optional",
     s"eclair.features.${ChannelRangeQueries.rfcName}" -> "optional",
     s"eclair.features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
     s"eclair.features.${VariableLengthOnion.rfcName}" -> "mandatory",
     s"eclair.features.${PaymentSecret.rfcName}" -> "mandatory",
-    s"eclair.features.${BasicMultiPartPayment.rfcName}" -> "optional"
+    s"eclair.features.${BasicMultiPartPayment.rfcName}" -> "optional",
+    s"eclair.features.${Wumbo.rfcName}" -> "optional",
+    s"eclair.features.${ShutdownAnySegwit.rfcName}" -> "optional",
+    s"eclair.features.${ChannelType.rfcName}" -> "optional",
   ).asJava)
 
-  val withWumbo = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
-    s"eclair.features.${Wumbo.rfcName}" -> "optional",
-    "eclair.max-funding-satoshis" -> 500000000
+  val withDefaultCommitment = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
+    s"eclair.features.${StaticRemoteKey.rfcName}" -> "disabled",
+    s"eclair.features.${AnchorOutputs.rfcName}" -> "disabled",
+    s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "disabled",
   ).asJava))
 
-  val withStaticRemoteKey = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
+  val withStaticRemoteKey = ConfigFactory.parseMap(Map(
     s"eclair.features.${StaticRemoteKey.rfcName}" -> "optional"
-  ).asJava))
+  ).asJava).withFallback(withDefaultCommitment)
 
-  val withAnchorOutputs = withStaticRemoteKey.withFallback(ConfigFactory.parseMap(Map(
+  val withAnchorOutputs = ConfigFactory.parseMap(Map(
     s"eclair.features.${AnchorOutputs.rfcName}" -> "optional"
-  ).asJava))
+  ).asJava).withFallback(withStaticRemoteKey)
 
-  val withAnchorOutputsZeroFeeHtlcTxs = withAnchorOutputs.withFallback(ConfigFactory.parseMap(Map(
+  val withAnchorOutputsZeroFeeHtlcTxs = ConfigFactory.parseMap(Map(
     s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "optional"
-  ).asJava))
+  ).asJava).withFallback(withStaticRemoteKey)
 
   implicit val formats: Formats = DefaultFormats
 
