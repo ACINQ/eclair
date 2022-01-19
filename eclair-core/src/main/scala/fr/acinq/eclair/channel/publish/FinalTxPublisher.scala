@@ -21,7 +21,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
 
 import scala.concurrent.ExecutionContext
@@ -50,12 +50,12 @@ object FinalTxPublisher {
   case object Stop extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
-        Behaviors.withMdc(loggingInfo.mdc()) {
+        Behaviors.withMdc(txPublishContext.mdc()) {
           Behaviors.receiveMessagePartial {
-            case Publish(replyTo, cmd) => new FinalTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, loggingInfo).checkTimeLocks()
+            case Publish(replyTo, cmd) => new FinalTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, txPublishContext).checkTimeLocks()
             case Stop => Behaviors.stopped
           }
         }
@@ -72,14 +72,14 @@ private class FinalTxPublisher(nodeParams: NodeParams,
                                watcher: ActorRef[ZmqWatcher.Command],
                                context: ActorContext[FinalTxPublisher.Command],
                                timers: TimerScheduler[FinalTxPublisher.Command],
-                               loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+                               txPublishContext: TxPublishContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import FinalTxPublisher._
 
   private val log = context.log
 
   def checkTimeLocks(): Behavior[Command] = {
-    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
+    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, txPublishContext), "time-locks-monitor")
     timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.tx, cmd.desc)
     Behaviors.receiveMessagePartial {
       case TimeLocksOk => checkParentPublished()
@@ -106,7 +106,7 @@ private class FinalTxPublisher(nodeParams: NodeParams,
             Behaviors.same
           case UnknownFailure(reason) =>
             log.error("could not check parent tx", reason)
-            sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
+            sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
           case Stop => Behaviors.stopped
         }
       case None => publish()
@@ -114,13 +114,13 @@ private class FinalTxPublisher(nodeParams: NodeParams,
   }
 
   def publish(): Behavior[Command] = {
-    val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
+    val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), "mempool-tx-monitor")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, cmd.desc, cmd.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {
           case _: MempoolTxMonitor.IntermediateTxResult => Behaviors.same
-          case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
+          case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason))
           case MempoolTxMonitor.TxDeeplyBuried(tx) => sendResult(TxPublisher.TxConfirmed(cmd, tx))
         }
       case Stop => Behaviors.stopped

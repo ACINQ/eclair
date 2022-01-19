@@ -43,14 +43,21 @@ object Logs {
    *                            - for a channel-relay: the relay id
    *                            - for a trampoline-relay: the relay id and the parent payment id of the outgoing payment
    */
-  def mdc(category_opt: Option[LogCategory] = None, remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[ByteVector32] = None, parentPaymentId_opt: Option[UUID] = None, paymentId_opt: Option[UUID] = None, paymentHash_opt: Option[ByteVector32] = None): Map[String, String] =
+  def mdc(category_opt: Option[LogCategory] = None,
+          remoteNodeId_opt: Option[PublicKey] = None,
+          channelId_opt: Option[ByteVector32] = None,
+          parentPaymentId_opt: Option[UUID] = None,
+          paymentId_opt: Option[UUID] = None,
+          paymentHash_opt: Option[ByteVector32] = None,
+          txPublishId_opt: Option[UUID] = None): Map[String, String] =
     Seq(
       category_opt.map(l => "category" -> s" ${l.category}"),
       remoteNodeId_opt.map(n => "nodeId" -> s" n:$n"), // nb: we preformat MDC values so that there is no white spaces in logs when they are not defined
       channelId_opt.map(c => "channelId" -> s" c:$c"),
       parentPaymentId_opt.map(p => "parentPaymentId" -> s" p:$p"),
       paymentId_opt.map(i => "paymentId" -> s" i:$i"),
-      paymentHash_opt.map(h => "paymentHash" -> s" h:$h")
+      paymentHash_opt.map(h => "paymentHash" -> s" h:$h"),
+      txPublishId_opt.map(t => "txPublishId" -> s" t:$t")
     ).flatten.toMap
 
   /**

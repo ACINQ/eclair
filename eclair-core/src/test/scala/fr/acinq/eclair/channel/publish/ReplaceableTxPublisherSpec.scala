@@ -67,7 +67,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
                      probe: TestProbe) {
 
     def createPublisher(): ActorRef[ReplaceableTxPublisher.Command] = {
-      system.spawnAnonymous(ReplaceableTxPublisher(alice.underlyingActor.nodeParams, wallet, alice2blockchain.ref, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
+      system.spawnAnonymous(ReplaceableTxPublisher(alice.underlyingActor.nodeParams, wallet, alice2blockchain.ref, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
     }
 
     def aliceBlockHeight(): BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
@@ -141,7 +141,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     generateBlocks(1)
 
     // Execute our test.
-    val publisher = system.spawn(ReplaceableTxPublisher(aliceNodeParams, walletClient, alice2blockchain.ref, TxPublishLogContext(testId, TestConstants.Bob.nodeParams.nodeId, None)), testId.toString)
+    val publisher = system.spawn(ReplaceableTxPublisher(aliceNodeParams, walletClient, alice2blockchain.ref, TxPublishContext(testId, TestConstants.Bob.nodeParams.nodeId, None)), testId.toString)
     testFun(Fixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, walletClient, walletRpcClient, publisher, probe))
   }
 

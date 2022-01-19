@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{BlockHeight, NodeParams}
 
@@ -50,10 +50,10 @@ object TxTimeLocksMonitor {
   private case class ParentTxConfirmed(parentTxId: ByteVector32) extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
-        Behaviors.withMdc(loggingInfo.mdc()) {
+        Behaviors.withMdc(txPublishContext.mdc()) {
           Behaviors.receiveMessagePartial {
             case cmd: CheckTx => new TxTimeLocksMonitor(nodeParams, cmd, watcher, context, timers).checkAbsoluteTimeLock()
           }
