@@ -214,7 +214,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
       // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
       // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-      val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.OptionUpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
+      val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
       val open = OpenChannel(nodeParams.chainHash,
         temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
@@ -350,7 +350,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           val minimumDepth = Helpers.minDepthForFunding(nodeParams, open.fundingSatoshis)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-          val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.OptionUpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
+          val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimit,
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,

@@ -91,7 +91,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.max-funding-satoshis" -> 500000000).asJava).withFallback(ConfigFactory.load())
 
   private val commonFeatures = ConfigFactory.parseMap(Map(
-    s"eclair.features.${OptionDataLossProtect.rfcName}" -> "optional",
+    s"eclair.features.${DataLossProtect.rfcName}" -> "optional",
     s"eclair.features.${ChannelRangeQueries.rfcName}" -> "optional",
     s"eclair.features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
     s"eclair.features.${VariableLengthOnion.rfcName}" -> "mandatory",

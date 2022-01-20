@@ -34,14 +34,14 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("'data_loss_protect' feature") {
-    assert(Features(hex"01").hasFeature(OptionDataLossProtect, Some(FeatureSupport.Mandatory)))
-    assert(Features(hex"02").hasFeature(OptionDataLossProtect, Some(FeatureSupport.Optional)))
+    assert(Features(hex"01").hasFeature(DataLossProtect, Some(FeatureSupport.Mandatory)))
+    assert(Features(hex"02").hasFeature(DataLossProtect, Some(FeatureSupport.Optional)))
   }
 
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
-    val features = Features(InitialRoutingSync -> Optional, OptionDataLossProtect -> Optional, VariableLengthOnion -> Mandatory)
+    val features = Features(InitialRoutingSync -> Optional, DataLossProtect -> Optional, VariableLengthOnion -> Mandatory)
     assert(features.toByteVector == hex"010a")
-    assert(features.hasFeature(OptionDataLossProtect))
+    assert(features.hasFeature(DataLossProtect))
     assert(features.hasFeature(InitialRoutingSync, None))
     assert(features.hasFeature(VariableLengthOnion))
   }
@@ -213,15 +213,15 @@ class FeaturesSpec extends AnyFunSuite {
 
   test("filter features based on their usage") {
     val features = Features(
-      Map[Feature, FeatureSupport](OptionDataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
+      Map[Feature, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
       Set(UnknownFeature(753), UnknownFeature(852))
     )
     assert(features.initFeatures() === Features(
-      Map[Feature, FeatureSupport](OptionDataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
+      Map[Feature, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
       Set(UnknownFeature(753), UnknownFeature(852))
     ))
     assert(features.nodeAnnouncementFeatures() === Features(
-      Map[Feature, FeatureSupport](OptionDataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
+      Map[Feature, FeatureSupport](DataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
       Set(UnknownFeature(753), UnknownFeature(852))
     ))
     assert(features.invoiceFeatures() === Map[Feature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional))
@@ -231,7 +231,7 @@ class FeaturesSpec extends AnyFunSuite {
     val testCases = Map(
       hex"" -> Features.empty,
       hex"0100" -> Features(VariableLengthOnion -> Mandatory),
-      hex"028a8a" -> Features(OptionDataLossProtect -> Optional, InitialRoutingSync -> Optional, ChannelRangeQueries -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueriesExtended -> Optional, PaymentSecret -> Optional, BasicMultiPartPayment -> Optional),
+      hex"028a8a" -> Features(DataLossProtect -> Optional, InitialRoutingSync -> Optional, ChannelRangeQueries -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueriesExtended -> Optional, PaymentSecret -> Optional, BasicMultiPartPayment -> Optional),
       hex"09004200" -> Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, ShutdownAnySegwit -> Optional), Set(UnknownFeature(24))),
       hex"52000000" -> Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
     )
@@ -264,7 +264,7 @@ class FeaturesSpec extends AnyFunSuite {
       assert(features.toByteVector === hex"028a8a")
       assert(Features(hex"028a8a") === features)
       assert(validateFeatureGraph(features) === None)
-      assert(features.hasFeature(OptionDataLossProtect, Some(Optional)))
+      assert(features.hasFeature(DataLossProtect, Some(Optional)))
       assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
       assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
       assert(features.hasFeature(ChannelRangeQueriesExtended, Some(Optional)))
@@ -291,7 +291,7 @@ class FeaturesSpec extends AnyFunSuite {
       assert(features.toByteVector === hex"068a")
       assert(Features(hex"068a") === features)
       assert(validateFeatureGraph(features) === None)
-      assert(features.hasFeature(OptionDataLossProtect, Some(Optional)))
+      assert(features.hasFeature(DataLossProtect, Some(Optional)))
       assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
       assert(!features.hasFeature(InitialRoutingSync, Some(Mandatory)))
       assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
@@ -343,7 +343,7 @@ class FeaturesSpec extends AnyFunSuite {
         """.stripMargin)
 
       val features = fromConfiguration(confWithDisabledFeatures)
-      assert(!features.hasFeature(OptionDataLossProtect))
+      assert(!features.hasFeature(DataLossProtect))
       assert(!features.hasFeature(Wumbo))
       assert(features.hasFeature(ChannelRangeQueries))
       assert(features.hasFeature(ChannelRangeQueriesExtended))

@@ -155,7 +155,7 @@ object Features {
     }
   }
 
-  case object OptionDataLossProtect extends Feature with InitFeature with NodeFeature {
+  case object DataLossProtect extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_data_loss_protect"
     val mandatory = 0
   }
@@ -166,7 +166,7 @@ object Features {
     val mandatory = 2
   }
 
-  case object OptionUpfrontShutdownScript extends Feature with InitFeature with NodeFeature {
+  case object UpfrontShutdownScript extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_upfront_shutdown_script"
     val mandatory = 4
   }
@@ -250,9 +250,9 @@ object Features {
   }
 
   val knownFeatures: Set[Feature] = Set(
-    OptionDataLossProtect,
+    DataLossProtect,
     InitialRoutingSync,
-    OptionUpfrontShutdownScript,
+    UpfrontShutdownScript,
     ChannelRangeQueries,
     VariableLengthOnion,
     ChannelRangeQueriesExtended,
