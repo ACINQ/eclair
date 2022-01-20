@@ -73,8 +73,12 @@ object ReplaceableTxPublisher {
     }
   }
 
-  def getFeerate(feeEstimator: FeeEstimator, confirmBefore: BlockHeight, currentBlockHeight: BlockHeight): FeeratePerKw = {
-    val remainingBlocks = confirmBefore - currentBlockHeight
+  def getFeerate(feeEstimator: FeeEstimator, confirmBefore: BlockHeight, currentBlockHeight: BlockHeight, randomize: Boolean): FeeratePerKw = {
+    val remainingBlocks = if (randomize) {
+      Random.nextLong((confirmBefore - currentBlockHeight).max(1))
+    } else {
+      confirmBefore - currentBlockHeight
+    }
     val blockTarget = remainingBlocks match {
       // If our target is still very far in the future, no need to rush
       case t if t >= 144 => 144
@@ -140,7 +144,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def fund(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
-    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, nodeParams.currentBlockHeight)
+    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeTargets.randomize)
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, txPublishContext), "tx-funder")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
     Behaviors.receiveMessagePartial {
@@ -173,7 +177,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
           case MempoolTxMonitor.TxInMempool(_, currentBlockHeight) =>
             // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
             val bumpRatio = 1.2
-            val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, currentBlockHeight)
+            val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, currentBlockHeight, nodeParams.onChainFeeConf.feeTargets.randomize)
             val targetFeerate_opt = if (confirmBefore <= currentBlockHeight + 6) {
               log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
               Some(currentFeerate.max(tx.feerate * bumpRatio))
@@ -181,7 +185,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
               log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
               Some(currentFeerate)
             } else {
-              log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, confirmBefore - currentBlockHeight)
+              log.debug("{} confirmation target is in {} blocks: no need to bump fees (previous feerate={}, current feerate={})", cmd.desc, confirmBefore - currentBlockHeight, tx.feerate, currentFeerate)
               None
             }
             // We avoid a herd effect whenever we fee bump transactions.

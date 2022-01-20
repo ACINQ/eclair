@@ -41,7 +41,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   val feeConfNoMismatch = OnChainFeeConf(
-    FeeTargets(6, 2, 12, 2, 6),
+    FeeTargets(6, 2, 12, 2, 6, randomize = false),
     new TestFeeEstimator(),
     closeOnOfflineMismatch = false,
     1.0,
