@@ -303,7 +303,7 @@ object Graph {
     val totalCltv = prev.cltv + cltv
     weightRatios match {
       case Left(weightRatios) =>
-        val hopCost = nodeFee(weightRatios.hopCost.feeBase, weightRatios.hopCost.feeProportionalMillionths, prev.amount)
+        val hopCost = nodeFee(weightRatios.hopCost, prev.amount)
         import RoutingHeuristics._
 
         // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
@@ -322,7 +322,7 @@ object Graph {
         val totalWeight = prev.weight + (fee + hopCost).toLong * factor
         RichWeight(totalAmount, prev.length + 1, totalCltv, 1.0, totalFees, 0 msat, totalWeight)
       case Right(heuristicsConstants) =>
-        val hopCost = nodeFee(heuristicsConstants.hopCost.feeBase, heuristicsConstants.hopCost.feeProportionalMillionths, prev.amount)
+        val hopCost = nodeFee(heuristicsConstants.hopCost, prev.amount)
         val totalHopsCost = prev.virtualFees + hopCost
         val riskCost = totalAmount.toLong * totalCltv.toInt * heuristicsConstants.lockedFundsRisk
         // If the edge was added by the invoice, it is assumed that it can route the payment.
@@ -332,7 +332,7 @@ object Graph {
           throw NegativeProbability(edge, prev, heuristicsConstants)
         }
         val totalSuccessProbability = prev.successProbability * successProbability
-        val failureCost = nodeFee(heuristicsConstants.failureCost.feeBase, heuristicsConstants.failureCost.feeProportionalMillionths, totalAmount)
+        val failureCost = nodeFee(heuristicsConstants.failureCost, totalAmount)
         val weight = totalFees.toLong + totalHopsCost.toLong + riskCost + failureCost.toLong / totalSuccessProbability
         RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
     }
@@ -347,7 +347,7 @@ object Graph {
    * @return the new amount updated with the necessary fees for this edge
    */
   private def addEdgeFees(edge: GraphEdge, amountToForward: MilliSatoshi): MilliSatoshi = {
-    amountToForward + nodeFee(edge.update.feeBaseMsat, edge.update.feeProportionalMillionths, amountToForward)
+    amountToForward + nodeFee(edge.update, amountToForward)
   }
 
   /** Validate that all edges along the path can relay the amount with fees. */
@@ -424,7 +424,7 @@ object Graph {
         Some(capacity.toMilliSatoshi - reservedCapacity)
       ).flatten.min.max(0 msat)
 
-      def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, amount)
+      def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(update, amount)
 
     }
 

@@ -402,7 +402,7 @@ object Router {
   case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
     override lazy val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
 
-    override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
+    override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate, amount)
   }
 
   /**
