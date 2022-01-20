@@ -311,7 +311,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
           context.system.eventStream ! EventStream.Publish(NotifyNodeOperator(NotificationsLogger.Warning, nodeOperatorMessage))
           log.warn("cannot add inputs to {}: {}", cmd.desc, reason.getMessage)
         } else {
-          log.error("cannot add inputs to {}: {}", cmd.desc, reason)
+          log.error(s"cannot add inputs to ${cmd.desc}: ", reason)
         }
         replyTo ! FundingFailed(TxPublisher.TxRejectedReason.CouldNotFund)
         Behaviors.stopped
@@ -377,7 +377,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         replyTo ! TransactionReady(FundedTx(fullySignedTx, amountIn, txFeerate))
         Behaviors.stopped
       case SignWalletInputsFailed(reason) =>
-        log.error("cannot sign {}: {}", cmd.desc, reason)
+        log.error(s"cannot sign ${cmd.desc}: ", reason)
         // We reply with the failure only once the utxos are unlocked, otherwise there is a risk that our parent stops
         // itself, which will automatically stop us before we had a chance to unlock them.
         unlockAndStop(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
