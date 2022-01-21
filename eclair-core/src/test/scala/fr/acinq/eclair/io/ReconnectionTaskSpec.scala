@@ -21,10 +21,14 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.ChannelId
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
-import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.tor.Socks5ProxyParams
+import fr.acinq.eclair.wire.protocol.{Color, IPv4, NodeAddress, NodeAnnouncement}
+import org.mockito.IdiomaticMockito.StubbingOps
+import org.mockito.MockitoSugar.mock
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 
+import java.net.Inet4Address
 import scala.concurrent.duration._
 
 class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
@@ -219,6 +223,47 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     awaitCond(mockServer.accept() != null, max = 60 seconds, interval = 1 second)
     mockServer.close()
+  }
+
+  test("select peer address for reconnection") { _ =>
+    val nodeParams = mock[NodeParams]
+    val clearnet = NodeAddress.fromParts("1.2.3.4", 9735).get
+    val tor = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get
+
+    // NB: we don't test randomization here, but it makes tests unnecessary more complex for little value
+
+    {
+      // tor not supported: always return clearnet addresses
+      nodeParams.socksProxy_opt returns None
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) === Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) === None)
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) === Some(clearnet))
+    }
+
+    {
+      // tor supported but not enabled for clearnet addresses: return clearnet addresses when available
+      val socksParams = mock[Socks5ProxyParams]
+      socksParams.useForTor returns true
+      socksParams.useForIPv4 returns false
+      socksParams.useForIPv6 returns false
+      nodeParams.socksProxy_opt returns Some(socksParams)
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) === Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) === Some(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) === Some(clearnet))
+    }
+
+    {
+      // tor supported and enabled for clearnet addresses: return tor addresses when available
+      val socksParams = mock[Socks5ProxyParams]
+      socksParams.useForTor returns true
+      socksParams.useForIPv4 returns true
+      socksParams.useForIPv6 returns true
+      nodeParams.socksProxy_opt returns Some(socksParams)
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) === Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) === Some(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) === Some(tor))
+    }
+
   }
 
 }
