@@ -232,19 +232,7 @@ object NodeAddress {
     host match {
       case _ if host.endsWith(".onion") && host.length == 22 => Tor2(host.dropRight(6), port)
       case _ if host.endsWith(".onion") && host.length == 62 => Tor3(host.dropRight(6), port)
-      case _ => InetAddress.getByName(host) match {
-        case a: Inet4Address => IPv4(a, port)
-        case a: Inet6Address => IPv6(a, port)
-      }
-    }
-  }
-
-  def extractIPAddress(socketAddress: InetSocketAddress): Option[IPAddress] = {
-    val address = socketAddress.getAddress
-    address match {
-      case address: Inet4Address => Some(IPv4(address, socketAddress.getPort))
-      case address: Inet6Address => Some(IPv6(address, socketAddress.getPort))
-      case _ => None
+      case _ => IPAddress(InetAddress.getByName(host), port).get
     }
   }
 
@@ -256,6 +244,14 @@ object NodeAddress {
       case IPv6(ipv6, _) if !isPrivate(ipv6) => true
       case _ => false
     }
+  }
+}
+
+object IPAddress {
+  def apply(inetAddress: InetAddress, port: Int): Option[IPAddress] = inetAddress match {
+    case address: Inet4Address => Some(IPv4(address, port))
+    case address: Inet6Address => Some(IPv6(address, port))
+    case _ => None
   }
 }
 

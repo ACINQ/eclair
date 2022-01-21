@@ -486,8 +486,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get -> false,
     )
     for ((address, expected) <- testCases) {
-      val isPublic = NodeAddress.isPublicIPAddress(address)
-      assert(isPublic === expected)
+      val isPublicIP = NodeAddress.isPublicIPAddress(address)
+      assert(isPublicIP === expected)
     }
   }
 

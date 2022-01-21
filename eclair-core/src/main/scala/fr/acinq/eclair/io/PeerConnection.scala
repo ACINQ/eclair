@@ -104,7 +104,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.info(s"using features=$localFeatures")
-      val localInit = NodeAddress.extractIPAddress(d.pendingAuth.address) match {
+      val localInit = IPAddress(d.pendingAuth.address.getAddress, d.pendingAuth.address.getPort) match {
         case Some(remoteAddress) if !d.pendingAuth.outgoing && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
         case _ => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
       }
