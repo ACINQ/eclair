@@ -75,6 +75,27 @@ This is particularly useful for payment hubs that generate a lot of invoices (e.
 Eclair includes a small `payment_metadata` field in all invoices it generates.
 This lets node operators verify that payers actually support that feature.
 
+### Optional safety checks when using Postgres
+
+When using postgres, at startup we optionnally run a few basic safety checks, e.g. the number of local channels, how long since the last local channel update, etc. The goal is to make sure that we are connected to the correct database instance.
+
+Those checks are configured as follows and are disabled by default:
+```
+eclair.db.postgres.safety-checks {
+  enabled = false
+  max-age {
+    local-channels = 3 minutes
+    network-nodes = 30 minutes
+    audit-relayed = 10 minutes
+  }
+  min-count {
+    local-channels = 10
+    network-nodes = 3000
+    network-channels = 20000
+  }
+}
+```
+
 ### API changes
 
 #### Timestamps
