@@ -93,6 +93,20 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
   }
 
+  test("send incoming connection's remote address in init") { f =>
+    import f._
+    val probe = TestProbe()
+    val incomingConnection = PeerConnection.PendingAuth(connection.ref, None, fakeIPAddress.socketAddress, origin_opt = None, transport_opt = Some(transport.ref), isPersistent = true)
+    assert(!incomingConnection.outgoing)
+    probe.send(peerConnection, incomingConnection)
+    transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
+    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = false))
+    transport.expectMsgType[TransportHandler.Listener]
+    val localInit = transport.expectMsgType[protocol.Init]
+    assert(localInit.remoteAddress_opt === Some(fakeIPAddress))
+  }
+
   test("handle connection closed during authentication") { f =>
     import f._
     val probe = TestProbe()
@@ -459,5 +473,23 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     peer.send(peerConnection, message)
     transport.expectMsg(message)
   }
+
+  test("filter private IP addresses") { _ =>
+    val testCases = Seq(
+      NodeAddress.fromParts("127.0.0.1", 9735).get -> false,
+      NodeAddress.fromParts("0.0.0.0", 9735).get -> false,
+      NodeAddress.fromParts("192.168.0.1", 9735).get -> false,
+      NodeAddress.fromParts("140.82.121.3", 9735).get -> true,
+      NodeAddress.fromParts("0000:0000:0000:0000:0000:0000:0000:0001", 9735).get -> false,
+      NodeAddress.fromParts("b643:8bb1:c1f9:0556:487c:0acb:2ba3:3cc2", 9735).get -> true,
+      NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get -> false,
+      NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get -> false,
+    )
+    for ((address, expected) <- testCases) {
+      val isPublicIP = NodeAddress.isPublicIPAddress(address)
+      assert(isPublicIP === expected)
+    }
+  }
+
 }
 

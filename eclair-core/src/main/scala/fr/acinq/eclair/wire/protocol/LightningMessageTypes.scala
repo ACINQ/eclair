@@ -49,6 +49,7 @@ sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- 
 
 case class Init(features: Features, tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
+  val remoteAddress_opt = tlvStream.get[InitTlv.RemoteAddress].map(_.address)
 }
 
 case class Warning(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[WarningTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
@@ -215,28 +216,48 @@ case class Color(r: Byte, g: Byte, b: Byte) {
 // @formatter:off
 sealed trait NodeAddress { def socketAddress: InetSocketAddress }
 sealed trait OnionAddress extends NodeAddress
+sealed trait IPAddress extends NodeAddress
+// @formatter:on
+
 object NodeAddress {
   /**
-    * Creates a NodeAddress from a host and port.
-    *
-    * Note that non-onion hosts will be resolved.
-    *
-    * We don't attempt to resolve onion addresses (it will be done by the tor proxy), so we just recognize them based on
-    * the .onion TLD and rely on their length to separate v2/v3.
-    */
+   * Creates a NodeAddress from a host and port.
+   *
+   * Note that non-onion hosts will be resolved.
+   *
+   * We don't attempt to resolve onion addresses (it will be done by the tor proxy), so we just recognize them based on
+   * the .onion TLD and rely on their length to separate v2/v3.
+   */
   def fromParts(host: String, port: Int): Try[NodeAddress] = Try {
     host match {
       case _ if host.endsWith(".onion") && host.length == 22 => Tor2(host.dropRight(6), port)
       case _ if host.endsWith(".onion") && host.length == 62 => Tor3(host.dropRight(6), port)
-      case _  => InetAddress.getByName(host) match {
-        case a: Inet4Address => IPv4(a, port)
-        case a: Inet6Address => IPv6(a, port)
-      }
+      case _ => IPAddress(InetAddress.getByName(host), port).get
+    }
+  }
+
+  private def isPrivate(address: InetAddress): Boolean = address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress || address.isSiteLocalAddress
+
+  def isPublicIPAddress(address: NodeAddress): Boolean = {
+    address match {
+      case IPv4(ipv4, _) if !isPrivate(ipv4) => true
+      case IPv6(ipv6, _) if !isPrivate(ipv6) => true
+      case _ => false
     }
   }
 }
-case class IPv4(ipv4: Inet4Address, port: Int) extends NodeAddress { override def socketAddress = new InetSocketAddress(ipv4, port) }
-case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress { override def socketAddress = new InetSocketAddress(ipv6, port) }
+
+object IPAddress {
+  def apply(inetAddress: InetAddress, port: Int): Option[IPAddress] = inetAddress match {
+    case address: Inet4Address => Some(IPv4(address, port))
+    case address: Inet6Address => Some(IPv6(address, port))
+    case _ => None
+  }
+}
+
+// @formatter:off
+case class IPv4(ipv4: Inet4Address, port: Int) extends IPAddress { override def socketAddress = new InetSocketAddress(ipv4, port) }
+case class IPv6(ipv6: Inet6Address, port: Int) extends IPAddress { override def socketAddress = new InetSocketAddress(ipv6, port) }
 case class Tor2(tor2: String, port: Int) extends OnionAddress { override def socketAddress = InetSocketAddress.createUnresolved(tor2 + ".onion", port) }
 case class Tor3(tor3: String, port: Int) extends OnionAddress { override def socketAddress = InetSocketAddress.createUnresolved(tor3 + ".onion", port) }
 // @formatter:on
