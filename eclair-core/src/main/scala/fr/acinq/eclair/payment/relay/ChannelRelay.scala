@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
@@ -29,9 +27,10 @@ import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, channel, nodeFee}
+
+import java.util.UUID
 
 object ChannelRelay {
 
@@ -262,7 +261,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, channelUpdate)), commit = true))
       case Some(channelUpdate) if r.expiryDelta < channelUpdate.cltvExpiryDelta =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, channelUpdate)), commit = true))
-      case Some(channelUpdate) if r.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amountToForward) =>
+      case Some(channelUpdate) if r.relayFeeMsat < nodeFee(channelUpdate, payload.amountToForward) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
         val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, add, payload.amountToForward)

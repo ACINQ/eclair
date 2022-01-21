@@ -19,6 +19,8 @@ package fr.acinq
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.crypto.StrongRandom
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
@@ -69,6 +71,10 @@ package object eclair {
    * @return the fee that a node should be paid to forward an HTLC of 'paymentAmount' millisatoshis
    */
   def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
+
+  def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
+
+  def nodeFee(channelUpdate: ChannelUpdate, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, paymentAmount)
 
   /**
    * @param address   base58 of bech32 address

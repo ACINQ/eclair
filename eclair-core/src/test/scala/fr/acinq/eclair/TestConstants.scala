@@ -86,7 +86,7 @@ object TestConstants {
       torAddress_opt = None,
       features = Features(
         Map[Feature, FeatureSupport](
-          OptionDataLossProtect -> Optional,
+          DataLossProtect -> Optional,
           ChannelRangeQueries -> Optional,
           ChannelRangeQueriesExtended -> Optional,
           VariableLengthOnion -> Mandatory,
@@ -221,7 +221,7 @@ object TestConstants {
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
       torAddress_opt = None,
       features = Features(
-        OptionDataLossProtect -> Optional,
+        DataLossProtect -> Optional,
         ChannelRangeQueries -> Optional,
         ChannelRangeQueriesExtended -> Optional,
         VariableLengthOnion -> Mandatory,

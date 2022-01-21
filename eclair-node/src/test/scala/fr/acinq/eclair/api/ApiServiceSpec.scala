@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
+import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, DataLossProtect}
 import fr.acinq.eclair._
 import fr.acinq.eclair.api.directives.{EclairDirectives, ErrorResponse}
 import fr.acinq.eclair.api.serde.JsonSupport
@@ -226,7 +226,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     eclair.getInfo()(any[Timeout]) returns Future.successful(GetInfoResponse(
       version = "1.0.0-SNAPSHOT-e3f1ec0",
       color = Color(0.toByte, 1.toByte, 2.toByte).toString,
-      features = Features(OptionDataLossProtect -> Mandatory, ChannelRangeQueriesExtended -> Optional),
+      features = Features(DataLossProtect -> Mandatory, ChannelRangeQueriesExtended -> Optional),
       nodeId = aliceNodeId,
       alias = "alice",
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),

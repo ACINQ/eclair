@@ -59,7 +59,7 @@ object ChannelFeatures {
   def apply(channelType: ChannelType, localFeatures: Features, remoteFeatures: Features): ChannelFeatures = {
     // NB: we don't include features that can be safely activated/deactivated without impacting the channel's operation,
     // such as option_dataloss_protect or option_shutdown_anysegwit.
-    val availableFeatures: Seq[Feature] = Seq(Features.Wumbo, Features.OptionUpfrontShutdownScript).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
+    val availableFeatures: Seq[Feature] = Seq(Features.Wumbo, Features.UpfrontShutdownScript).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
     val allFeatures = channelType.features.toSeq ++ availableFeatures
     ChannelFeatures(allFeatures: _*)
   }

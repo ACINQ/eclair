@@ -93,7 +93,7 @@ case class Commitments(channelId: ByteVector32,
   def getLocalShutdownScript(scriptPubKey: Option[ByteVector]): Either[ChannelException, ByteVector] = {
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
-    (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), scriptPubKey) match {
+    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), scriptPubKey) match {
       case (true, Some(script)) if script != localParams.defaultFinalScriptPubKey => Left(InvalidFinalScript(channelId))
       case (false, Some(script)) if !Closing.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
       case (false, Some(script)) => Right(script)
@@ -109,7 +109,7 @@ case class Commitments(channelId: ByteVector32,
   def getRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
-    (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), remoteParams.shutdownScript) match {
+    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), remoteParams.shutdownScript) match {
       case (false, _) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => Left(InvalidFinalScript(channelId))
       case (false, _) => Right(remoteScriptPubKey)
       case (true, None) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) =>

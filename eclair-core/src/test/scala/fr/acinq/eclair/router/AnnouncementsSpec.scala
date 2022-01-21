@@ -54,7 +54,7 @@ class AnnouncementsSpec extends AnyFunSuite {
 
   test("create valid signed node announcement") {
     val features = Features(
-      Features.OptionDataLossProtect -> FeatureSupport.Optional,
+      Features.DataLossProtect -> FeatureSupport.Optional,
       Features.InitialRoutingSync -> FeatureSupport.Optional,
       Features.ChannelRangeQueries -> FeatureSupport.Optional,
       Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
@@ -66,7 +66,7 @@ class AnnouncementsSpec extends AnyFunSuite {
     val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, features)
     // Features should be filtered to only include node_announcement related features.
     assert(ann.features === Features(
-      Features.OptionDataLossProtect -> FeatureSupport.Optional,
+      Features.DataLossProtect -> FeatureSupport.Optional,
       Features.ChannelRangeQueries -> FeatureSupport.Optional,
       Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
       Features.VariableLengthOnion -> FeatureSupport.Mandatory,

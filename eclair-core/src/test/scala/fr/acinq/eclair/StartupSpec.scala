@@ -91,7 +91,7 @@ class StartupSpec extends AnyFunSuite {
     def finalizeConf(testCfg: Config): Config = testCfg.withFallback(defaultConf.withoutPath("features"))
 
     val legalFeaturesConf = ConfigFactory.parseMap(Map(
-      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${DataLossProtect.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
       s"features.${ChannelType.rfcName}" -> "optional",
@@ -102,7 +102,7 @@ class StartupSpec extends AnyFunSuite {
 
     // var_onion_optin cannot be disabled
     val noVariableLengthOnionConf = ConfigFactory.parseMap(Map(
-      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${DataLossProtect.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
       s"features.${ChannelType.rfcName}" -> "optional",
@@ -110,7 +110,7 @@ class StartupSpec extends AnyFunSuite {
 
     // var_onion_optin cannot be optional
     val optionalVarOnionOptinConf = ConfigFactory.parseMap(Map(
-      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${DataLossProtect.rfcName}" -> "optional",
       s"features.${ChannelType.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "optional",
       s"features.${PaymentSecret.rfcName}" -> "mandatory",
@@ -118,7 +118,7 @@ class StartupSpec extends AnyFunSuite {
 
     // payment_secret cannot be optional
     val optionalPaymentSecretConf = ConfigFactory.parseMap(Map(
-      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${DataLossProtect.rfcName}" -> "optional",
       s"features.${ChannelType.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
       s"features.${PaymentSecret.rfcName}" -> "optional",
@@ -126,7 +126,7 @@ class StartupSpec extends AnyFunSuite {
 
     // option_channel_type cannot be disabled
     val noChannelTypeConf = ConfigFactory.parseMap(Map(
-      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${DataLossProtect.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
@@ -136,7 +136,7 @@ class StartupSpec extends AnyFunSuite {
 
     // initial_routing_sync cannot be enabled
     val initialRoutingSyncConf = ConfigFactory.parseMap(Map(
-      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${DataLossProtect.rfcName}" -> "optional",
       s"features.${InitialRoutingSync.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
@@ -147,7 +147,7 @@ class StartupSpec extends AnyFunSuite {
 
     // extended channel queries without channel queries
     val illegalFeaturesConf = ConfigFactory.parseMap(Map(
-      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${DataLossProtect.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
       s"features.${ChannelType.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
