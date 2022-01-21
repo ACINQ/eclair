@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
+import akka.pattern.pipe
 import akka.testkit.TestProbe
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -29,12 +30,12 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.OpenChannel
-import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendSpontaneousPayment}
+import fr.acinq.eclair.payment.send.PaymentInitiator._
+import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, Router}
@@ -48,13 +49,14 @@ import scodec.bits._
 
 import java.util.UUID
 import scala.concurrent.Await
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.util.Success
 
 class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
   implicit val timeout: Timeout = Timeout(30 seconds)
 
-  case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)
+  case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, sender: TestProbe, kit: Kit)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val watcher = TestProbe()
@@ -84,8 +86,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       postman.ref.toTyped,
       new DummyOnChainWallet()
     )
-
-    withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, paymentHandler, kit)))
+    withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
   }
 
   test("convert fee rate properly") { f =>
@@ -536,6 +537,60 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     awaitCond(res.isCompleted)
 
     assert(res.value.get.get === RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal))
+  }
+
+  test("get sent payment info") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    // A first payment has been sent out and is currently pending.
+    val pendingPayment1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32(), "test", 500 msat, 750 msat, randomKey().publicKey, TimestampMilli.now(), None, OutgoingPaymentStatus.Pending)
+    kit.nodeParams.db.payments.addOutgoingPayment(pendingPayment1)
+    eclair.sentInfo(Left(pendingPayment1.parentId)).pipeTo(sender.ref)
+    sender.expectMsg(Seq(pendingPayment1))
+    eclair.sentInfo(Right(pendingPayment1.paymentHash)).pipeTo(sender.ref)
+    sender.expectMsg(Seq(pendingPayment1))
+
+    // Payments must be queried by parentId, not child paymentId.
+    eclair.sentInfo(Left(pendingPayment1.id)).pipeTo(sender.ref)
+    paymentInitiator.expectMsg(GetPayment(Left(pendingPayment1.id)))
+    paymentInitiator.reply(NoPendingPayment(Left(pendingPayment1.id)))
+    sender.expectMsg(Nil)
+
+    // A second payment is pending in the payment initiator, but doesn't have a corresponding DB entry yet.
+    val pendingPaymentId = UUID.randomUUID()
+    val spontaneousPayment = SendSpontaneousPayment(600 msat, randomKey().publicKey, randomBytes32(), 5, routeParams = null)
+    eclair.sentInfo(Right(spontaneousPayment.paymentHash)).pipeTo(sender.ref)
+    paymentInitiator.expectMsg(GetPayment(Right(spontaneousPayment.paymentHash)))
+    paymentInitiator.reply(PaymentIsPending(pendingPaymentId, spontaneousPayment.paymentHash, PendingSpontaneousPayment(ActorRef.noSender, spontaneousPayment)))
+    val pendingPayment2 = sender.expectMsgType[Seq[OutgoingPayment]]
+    assert(pendingPayment2.length === 1)
+    assert(pendingPayment2.head.id === pendingPayment2.head.parentId)
+    assert(pendingPayment2.head.id === pendingPaymentId)
+    assert(pendingPayment2.head.paymentHash === spontaneousPayment.paymentHash)
+    assert(pendingPayment2.head.status === OutgoingPaymentStatus.Pending)
+
+    // A third payment is fully settled in the DB and not being retried.
+    val failedAt = TimestampMilli.now()
+    val failedPayment = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, spontaneousPayment.paymentHash, "test", 700 msat, 900 msat, randomKey().publicKey, TimestampMilli.now(), None, OutgoingPaymentStatus.Failed(Nil, failedAt))
+    kit.nodeParams.db.payments.addOutgoingPayment(failedPayment.copy(status = OutgoingPaymentStatus.Pending))
+    kit.nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(failedPayment.id, failedPayment.paymentHash, Nil, failedAt))
+    eclair.sentInfo(Left(failedPayment.parentId)).pipeTo(sender.ref)
+    paymentInitiator.expectMsg(GetPayment(Left(failedPayment.parentId)))
+    paymentInitiator.reply(NoPendingPayment(Left(failedPayment.parentId)))
+    sender.expectMsg(Seq(failedPayment))
+
+    // The failed payment is currently being retried.
+    eclair.sentInfo(Left(failedPayment.parentId)).pipeTo(sender.ref)
+    paymentInitiator.expectMsg(GetPayment(Left(failedPayment.parentId)))
+    paymentInitiator.reply(PaymentIsPending(failedPayment.parentId, spontaneousPayment.paymentHash, PendingSpontaneousPayment(ActorRef.noSender, spontaneousPayment)))
+    val pendingPayment3 = sender.expectMsgType[Seq[OutgoingPayment]]
+    assert(pendingPayment3.length === 2)
+    assert(pendingPayment3.head.id === failedPayment.parentId)
+    assert(pendingPayment3.head.paymentHash === failedPayment.paymentHash)
+    assert(pendingPayment3.head.status === OutgoingPaymentStatus.Pending)
+    assert(pendingPayment3.last === failedPayment)
   }
 
   test("close channels") { f =>
