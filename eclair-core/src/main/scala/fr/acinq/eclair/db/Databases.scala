@@ -218,7 +218,7 @@ object Databases extends Logging {
               val count = statement
                 .executeQuery(sqlQuery)
                 .map(_.getInt("count"))
-                .head
+                .head // NB: COUNT(*) always returns exactly one row
               require(count >= minCount, s"db check failed: min count not reached for $name ($count < $minCount)")
               logger.info(s"db check ok: min count $count > $minCount for $name")
             }
