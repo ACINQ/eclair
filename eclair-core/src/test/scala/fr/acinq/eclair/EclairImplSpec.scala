@@ -23,7 +23,7 @@ import akka.testkit.TestProbe
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong}
-import fr.acinq.eclair.ApiTypes.ChannelNotFound
+import fr.acinq.eclair.ApiTypes.{ChannelIdentifier, ChannelNotFound}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
@@ -41,17 +41,16 @@ import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAnnouncement}
-import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits._
 
 import java.util.UUID
+import scala.collection.immutable.SortedMap
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.util.Success
 
 class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
   implicit val timeout: Timeout = Timeout(30 seconds)
@@ -178,37 +177,22 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     )
 
     {
-      val fRes = eclair.nodes()
+      eclair.nodes().pipeTo(sender.ref)
       router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
-      awaitCond(fRes.value match {
-        case Some(Success(nodes)) =>
-          assert(nodes.toSet === allNodes.toSet)
-          true
-        case _ => false
-      })
+      assert(sender.expectMsgType[Iterable[NodeAnnouncement]].toSet === allNodes.toSet)
     }
     {
-      val fRes = eclair.nodes(Some(Set(remoteNodeAnn1.nodeId, remoteNodeAnn2.nodeId)))
+      eclair.nodes(Some(Set(remoteNodeAnn1.nodeId, remoteNodeAnn2.nodeId))).pipeTo(sender.ref)
       router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
-      awaitCond(fRes.value match {
-        case Some(Success(nodes)) =>
-          assert(nodes.toSet === Set(remoteNodeAnn1, remoteNodeAnn2))
-          true
-        case _ => false
-      })
+      assert(sender.expectMsgType[Iterable[NodeAnnouncement]].toSet === Set(remoteNodeAnn1, remoteNodeAnn2))
     }
     {
-      val fRes = eclair.nodes(Some(Set(randomKey().publicKey)))
+      eclair.nodes(Some(Set(randomKey().publicKey))).pipeTo(sender.ref)
       router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
-      awaitCond(fRes.value match {
-        case Some(Success(nodes)) =>
-          assert(nodes.isEmpty)
-          true
-        case _ => false
-      })
+      assert(sender.expectMsgType[Iterable[NodeAnnouncement]].isEmpty)
     }
   }
 
@@ -220,7 +204,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       PrivateKey(hex"f6a353f7a5de654501c3495acde7450293f74d09086c2b7c9a4e524248d0daac"),
       PrivateKey(hex"c2efe0095f9113bc5b9f4140958670a8ea2afc3ed50fb32ea9c809f82b3b0374"),
       PrivateKey(hex"216414970b4216b197a1040367419ad6922f80e8b73ced083e9afe5e6ddd8e4d"),
-      PrivateKey(hex"216414970b4216b197a1040367419ad6922f80e8b73ced083e9afe5e6ddd8e4e"))
+      PrivateKey(hex"216414970b4216b197a1040367419ad6922f80e8b73ced083e9afe5e6ddd8e4e"),
+    )
 
     val (a, b, c, d, e) = (a_priv.publicKey, b_priv.publicKey, c_priv.publicKey, d_priv.publicKey, e_priv.publicKey)
     val ann_ab = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1), a, b, a, b, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
@@ -232,39 +217,21 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(Announcements.isNode1(a, b))
     assert(Announcements.isNode1(b, c))
 
-    var channels = scala.collection.immutable.SortedMap.empty[ShortChannelId, PublicChannel]
-
-    List(
+    val channels = SortedMap(Seq(
       (ann_ab, makeUpdateShort(ShortChannelId(1L), a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(13))),
       (ann_ae, makeUpdateShort(ShortChannelId(4L), a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))),
       (ann_bc, makeUpdateShort(ShortChannelId(2L), b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
       (ann_cd, makeUpdateShort(ShortChannelId(3L), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
       (ann_ec, makeUpdateShort(ShortChannelId(7L), e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)))
-    ).foreach { case (ann, update) =>
-      channels = channels + (update.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = ChannelUpdate.ChannelFlags.DUMMY)), None, None))
-    }
+    ).map { case (ann, update) =>
+      update.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = ChannelUpdate.ChannelFlags.DUMMY)), None, None)
+    }: _*)
 
-    val mockNetworkDb = mock[NetworkDb]
-    mockNetworkDb.listChannels() returns channels
-    mockNetworkDb.listNodes() returns Seq.empty
-    Mockito.doNothing().when(mockNetworkDb).removeNode(kit.nodeParams.nodeId)
-
-    val mockDB = mock[Databases]
-    mockDB.network returns mockNetworkDb
-
-    val mockNodeParams = kit.nodeParams.copy(db = mockDB)
-    val mockRouter = system.actorOf(Router.props(mockNodeParams, TestProbe().ref))
-
-    val eclair = new EclairImpl(kit.copy(router = mockRouter, nodeParams = mockNodeParams))
-    val fResp = eclair.allUpdates(Some(b)) // ask updates filtered by 'b'
-
-    awaitCond({
-      fResp.value match {
-        // check if the response contains updates only for 'b'
-        case Some(Success(res)) => res.map(_.shortChannelId).toList == List(ShortChannelId(2))
-        case _ => false
-      }
-    })
+    val eclair = new EclairImpl(kit)
+    eclair.allUpdates(Some(b)).pipeTo(sender.ref) // ask updates filtered by 'b'
+    router.expectMsg(Router.GetChannelsMap)
+    router.reply(channels)
+    assert(sender.expectMsgType[Iterable[ChannelUpdate]].map(_.shortChannelId).toSet === Set(ShortChannelId(2)))
   }
 
   test("close and forceclose should work both with channelId and shortChannelId") { f =>
@@ -328,13 +295,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32()
 
-    val fResp = eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage))
-    awaitCond({
-      fResp.value match {
-        case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
-        case _ => false
-      }
-    })
+    eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage)).pipeTo(sender.ref)
+    assert(sender.expectMsgType[PaymentRequest].paymentHash === Crypto.sha256(paymentPreimage))
   }
 
   test("sendtoroute should pass the parameters correctly") { f =>
@@ -347,7 +309,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val secret = randomBytes32()
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
-
     paymentInitiator.expectMsg(SendPaymentToRoute(1000 msat, 1200 msat, pr, CltvExpiryDelta(123), route, Some("42"), Some(parentId), Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
   }
 
@@ -392,11 +353,11 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val base64Msg = "aGVsbG8sIHdvcmxk" // echo -n 'hello, world' | base64
     val bytesMsg = ByteVector.fromValidBase64(base64Msg)
 
-    val signedMessage: SignedMessage = eclair.signMessage(bytesMsg)
+    val signedMessage = eclair.signMessage(bytesMsg)
     assert(signedMessage.nodeId === kit.nodeParams.nodeId)
     assert(signedMessage.message === base64Msg)
 
-    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(bytesMsg, signedMessage.signature)
+    val verifiedMessage = eclair.verifyMessage(bytesMsg, signedMessage.signature)
     assert(verifiedMessage.valid)
     assert(verifiedMessage.publicKey === kit.nodeParams.nodeId)
 
@@ -415,12 +376,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val base64Msg = "aGVsbG8sIHdvcmxk" // echo -n 'hello, world' | base64
     val bytesMsg = ByteVector.fromValidBase64(base64Msg)
 
-    val signedMessage: SignedMessage = eclair.signMessage(bytesMsg)
+    val signedMessage = eclair.signMessage(bytesMsg)
     assert(signedMessage.nodeId === kit.nodeParams.nodeId)
     assert(signedMessage.message === base64Msg)
 
     val wrongMsg = ByteVector.fromValidBase64(base64Msg.tail)
-    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(wrongMsg, signedMessage.signature)
+    val verifiedMessage = eclair.verifyMessage(wrongMsg, signedMessage.signature)
     assert(verifiedMessage.valid)
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
@@ -443,12 +404,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val base64Msg = "aGVsbG8sIHdvcmxk" // echo -n 'hello, world' | base64
     val bytesMsg = ByteVector.fromValidBase64(base64Msg)
 
-    val signedMessage: SignedMessage = eclair.signMessage(bytesMsg)
+    val signedMessage = eclair.signMessage(bytesMsg)
     assert(signedMessage.nodeId === kit.nodeParams.nodeId)
     assert(signedMessage.message === base64Msg)
 
     val invalidSignature = (if (signedMessage.signature.head.toInt == 31) 32 else 31).toByte +: signedMessage.signature.tail
-    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(bytesMsg, invalidSignature)
+    val verifiedMessage = eclair.verifyMessage(bytesMsg, invalidSignature)
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
 
@@ -464,7 +425,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val b1 = randomBytes32()
     val map = Map(a1 -> a, a2 -> a, b1 -> b)
 
-    val res = eclair.channelsInfo(toRemoteNode_opt = None)
+    eclair.channelsInfo(toRemoteNode_opt = None).pipeTo(sender.ref)
 
     register.expectMsg(Symbol("channels"))
     register.reply(map)
@@ -477,9 +438,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.reply(RES_GETINFO(map(c3.channelId), c3.channelId, NORMAL, ChannelCodecsSpec.normal))
     register.expectNoMessage()
 
-    awaitCond(res.isCompleted)
-
-    assert(res.value.get.get.toSet === Set(
+    assert(sender.expectMsgType[Iterable[RES_GETINFO]].toSet === Set(
       RES_GETINFO(a, a1, NORMAL, ChannelCodecsSpec.normal),
       RES_GETINFO(b, b1, NORMAL, ChannelCodecsSpec.normal),
     ))
@@ -497,7 +456,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val b1 = randomBytes32()
     val channels2Nodes = Map(a1 -> a, a2 -> a, b1 -> b)
 
-    val res = eclair.channelsInfo(toRemoteNode_opt = Some(a))
+    eclair.channelsInfo(toRemoteNode_opt = Some(a)).pipeTo(sender.ref)
 
     register.expectMsg(Symbol("channelsTo"))
     register.reply(channels2Nodes)
@@ -508,11 +467,9 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.reply(RES_GETINFO(channels2Nodes(c2.channelId), c2.channelId, NORMAL, ChannelCodecsSpec.normal))
     register.expectNoMessage()
 
-    awaitCond(res.isCompleted)
-
-    assert(res.value.get.get.toSet === Set(
+    assert(sender.expectMsgType[Iterable[RES_GETINFO]].toSet === Set(
       RES_GETINFO(a, a1, NORMAL, ChannelCodecsSpec.normal),
-      RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal)
+      RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal),
     ))
   }
 
@@ -528,15 +485,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val b1 = randomBytes32()
     val channels2Nodes = Map(a1 -> a, a2 -> a, b1 -> b)
 
-    val res = eclair.channelInfo(Left(a2))
+    eclair.channelInfo(Left(a2)).pipeTo(sender.ref)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
     register.reply(RES_GETINFO(channels2Nodes(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
     register.expectNoMessage()
 
-    awaitCond(res.isCompleted)
-
-    assert(res.value.get.get === RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal))
+    sender.expectMsg(RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal))
   }
 
   test("get sent payment info") { f =>
@@ -598,13 +553,10 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
 
-    val a = randomKey().publicKey
-    val b = randomKey().publicKey
-    val a1 = randomBytes32()
-    val a2 = randomBytes32()
-    val b1 = randomBytes32()
+    val a = randomBytes32()
+    val b = randomBytes32()
 
-    val res = eclair.close(List(Left(a2), Left(b1)), None, None)
+    eclair.close(List(Left(a), Left(b)), None, None).pipeTo(sender.ref)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_CLOSE]]
     register.reply(RES_SUCCESS(c1.message, c1.channelId))
@@ -612,11 +564,9 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.reply(RES_SUCCESS(c2.message, c2.channelId))
     register.expectNoMessage()
 
-    awaitCond(res.isCompleted)
-
-    assert(res.value.get.get === Map(
-      Left(a2) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), a2)),
-      Left(b1) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), b1))
+    assert(sender.expectMsgType[Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]] === Map(
+      Left(a) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), a)),
+      Left(b) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), b))
     ))
   }
 
@@ -638,7 +588,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val b1 = randomBytes32()
     val map = Map(a1 -> a, a2 -> a, b1 -> b)
 
-    val res = eclair.updateRelayFee(List(a, b), 999 msat, 1234)
+    eclair.updateRelayFee(List(a, b), 999 msat, 1234).pipeTo(sender.ref)
 
     register.expectMsg(Symbol("channelsTo"))
     register.reply(map)
@@ -651,9 +601,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.reply(Register.ForwardFailure(u3))
     register.expectNoMessage()
 
-    awaitCond(res.isCompleted)
-
-    assert(res.value.get.get === Map(
+    assert(sender.expectMsgType[Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] === Map(
       Left(a1) -> Right(RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, None), a1)),
       Left(a2) -> Right(RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, None), CommandUnavailableInThisState(a2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))),
       Left(b1) -> Left(ChannelNotFound(Left(b1)))
