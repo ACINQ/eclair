@@ -37,11 +37,13 @@ The goal is to offload your node from connection and routing table management:
 
 ### Prerequisite
 
-You already have a node up and running in a standalone setup (with Bitcoin Core properly configured, etc.).
+You already have a lightning node up and running in a standalone setup (with Bitcoin Core properly configured, etc.).
 
 You know what your `node id` is.
 
-In the following, what we previously called `eclair-node` will be called `backend`. It is to be launched, configured and backed-up exactly like in a standalone setup.
+Conventions used in this document:
+- what we previously called `eclair-node` will be called `backend`. It is to be launched, configured and backed-up exactly like in a standalone setup.
+- `node` refer to *akka cluster nodes*, not to be confused with lightning nodes. Together, all *cluster nodes* form a single logical *lighting node*.
 
 ### Minimal/Demo setup
 
@@ -72,7 +74,7 @@ NB: we override the ports, otherwise they would conflict since in this example e
 ### Production setup
 
 In production you should:
-- run multiple `frontend`s
+- run multiple `frontend` servers
 - run one app per server
 - enable `tcp-tls` to encrypt communications between members of the cluster with your own generated certificate (see below)
 - use a load balancer to hide all your `frontend` servers under the same ip address
@@ -86,7 +88,7 @@ We use a self-signed certificate, which offers a good compromise. More advanced 
 > Have a single set of keys and a single certificate for all nodes and disable hostname checking
 > - The single set of keys and the single certificate is distributed to all nodes. The certificate can be self-signed as it is distributed both as a certificate for authentication but also as the trusted certificate.
 > - If the keys/certificate are lost, someone else can connect to your cluster.
-> - Adding nodes to the cluster is simple as the key material can be deployed / distributed to the new node.
+> - Adding nodes to the cluster is simple as the key material can be deployed / distributed to the new cluster node.
 
 Generate a self-signed certificate (set a strong password):
 ```shell
