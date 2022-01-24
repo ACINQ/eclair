@@ -20,6 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
@@ -35,7 +36,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, NodeParams, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -66,8 +67,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
                      publisher: ActorRef[ReplaceableTxPublisher.Command],
                      probe: TestProbe) {
 
-    def createPublisher(): ActorRef[ReplaceableTxPublisher.Command] = {
-      system.spawnAnonymous(ReplaceableTxPublisher(alice.underlyingActor.nodeParams, wallet, alice2blockchain.ref, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
+    def createPublisher(): ActorRef[ReplaceableTxPublisher.Command] = createPublisher(alice.underlyingActor.nodeParams)
+
+    def createPublisher(nodeParams: NodeParams): ActorRef[ReplaceableTxPublisher.Command] = {
+      system.spawnAnonymous(ReplaceableTxPublisher(nodeParams, wallet, alice2blockchain.ref, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
     }
 
     def aliceBlockHeight(): BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
@@ -1007,6 +1010,28 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // Once the confirmation target is reach, we should raise the feerate by at least 20% at every block.
       val htlcTimeoutTargetFee = Transactions.weight2fee(feerate * 1.2, htlcTimeoutTx2.weight.toInt)
       assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx2.fees && htlcTimeoutTx2.fees <= htlcTimeoutTargetFee * 1.1, s"actualFee=${htlcTimeoutTx2.fees} targetFee=$htlcTimeoutTargetFee")
+    }
+  }
+
+  test("utxos count too low, setting short confirmation target") {
+    withFixture(Seq(15 millibtc, 10 millibtc, 5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
+      import f._
+
+      val (commitTx, htlcSuccess, _) = closeChannelWithHtlcs(f, aliceBlockHeight() + 144)
+      // The HTLC confirmation target is far away, but we have less safe utxos than the configured threshold.
+      // We will target a 1-block confirmation to get a safe utxo back as soon as possible.
+      val highSafeThresholdParams = alice.underlyingActor.nodeParams.modify(_.onChainFeeConf.feeTargets.safeUtxosThreshold).setTo(10)
+      setFeerate(FeeratePerKw(2500 sat))
+      val targetFeerate = FeeratePerKw(5000 sat)
+      setFeerate(targetFeerate, blockTarget = 2)
+
+      val htlcSuccessPublisher = createPublisher(highSafeThresholdParams)
+      htlcSuccessPublisher ! Publish(probe.ref, htlcSuccess)
+      val w = alice2blockchain.expectMsgType[WatchParentTxConfirmed]
+      w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
+      val htlcSuccessTx = getMempoolTxs(1).head
+      val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx.weight.toInt)
+      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
     }
   }
 

@@ -319,7 +319,8 @@ object NodeParams extends Logging {
       commitmentBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment"),
       commitmentWithoutHtlcsBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment-without-htlcs"),
       mutualCloseBlockTarget = config.getInt("on-chain-fees.target-blocks.mutual-close"),
-      claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
+      claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main"),
+      safeUtxosThreshold = config.getInt("on-chain-fees.target-blocks.safe-utxos-threshold"),
     )
 
     def getRelayFees(relayFeesConfig: Config): RelayFees = {
