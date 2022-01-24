@@ -169,7 +169,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
       case UnknownFailure(reason) =>
-        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway", reason)
+        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our commit tx.
         replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
         Behaviors.stopped
@@ -197,7 +197,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
         Behaviors.stopped
       case UnknownFailure(reason) =>
-        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway", reason)
+        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our htlc transactions.
         extractHtlcWitnessData(htlcTx, cmd.commitments) match {
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
@@ -219,11 +219,11 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
             } match {
               case Some(preimage) => Some(HtlcSuccessWithWitnessData(tx, remoteSig, preimage))
               case None =>
-                log.error("preimage not found for htlcId={}, skipping...", tx.htlcId)
+                log.error(s"preimage not found for htlcId=${tx.htlcId}, skipping...")
                 None
             }
           case None =>
-            log.error("remote signature not found for htlcId={}, skipping...", tx.htlcId)
+            log.error(s"remote signature not found for htlcId=${tx.htlcId}, skipping...")
             None
         }
       case tx: HtlcTimeoutTx =>
@@ -232,7 +232,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         } match {
           case Some(remoteSig) => Some(HtlcTimeoutWithWitnessData(tx, remoteSig))
           case None =>
-            log.error("remote signature not found for htlcId={}, skipping...", tx.htlcId)
+            log.error(s"remote signature not found for htlcId=${tx.htlcId}, skipping...")
             None
         }
     }
@@ -259,7 +259,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
         Behaviors.stopped
       case UnknownFailure(reason) =>
-        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway", reason)
+        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our htlc transactions.
         extractClaimHtlcWitnessData(claimHtlcTx, cmd.commitments) match {
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
@@ -277,7 +277,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         } match {
           case Some(preimage) => Some(LegacyClaimHtlcSuccessWithWitnessData(tx, preimage))
           case None =>
-            log.error("preimage not found for legacy htlcId={}, skipping...", tx.htlcId)
+            log.error(s"preimage not found for legacy htlcId=${tx.htlcId}, skipping...")
             None
         }
       case tx: ClaimHtlcSuccessTx =>
@@ -286,7 +286,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         } match {
           case Some(preimage) => Some(ClaimHtlcSuccessWithWitnessData(tx, preimage))
           case None =>
-            log.error("preimage not found for htlcId={}, skipping...", tx.htlcId)
+            log.error(s"preimage not found for htlcId=${tx.htlcId}, skipping...")
             None
         }
       case tx: ClaimHtlcTimeoutTx => Some(ClaimHtlcTimeoutWithWitnessData(tx))

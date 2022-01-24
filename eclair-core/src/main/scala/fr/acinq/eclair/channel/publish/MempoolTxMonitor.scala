@@ -112,7 +112,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
         checkInputStatus(cmd.input)
         Behaviors.same
       case PublishFailed(reason) =>
-        log.error("could not publish transaction", reason)
+        log.error("could not publish transaction: ", reason)
         sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.UnknownTxFailure))
       case status: InputStatus =>
         if (status.spentConfirmed) {
@@ -126,7 +126,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
           sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.WalletInputGone))
         }
       case CheckInputFailed(reason) =>
-        log.error("could not check input status", reason)
+        log.error("could not check input status: ", reason)
         sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true))) // we act as if the input is potentially still spendable
     }
   }
@@ -163,7 +163,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
         checkInputStatus(cmd.input)
         Behaviors.same
       case GetTxConfirmationsFailed(reason) =>
-        log.error("could not get tx confirmations", reason)
+        log.error("could not get tx confirmations: ", reason)
         // We will retry when the next block is found.
         Behaviors.same
       case status: InputStatus =>
@@ -178,7 +178,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
           sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.WalletInputGone))
         }
       case CheckInputFailed(reason) =>
-        log.error("could not check input status", reason)
+        log.error("could not check input status: ", reason)
         sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true)), Some(messageAdapter))
     }
   }

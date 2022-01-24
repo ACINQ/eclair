@@ -105,7 +105,7 @@ private class FinalTxPublisher(nodeParams: NodeParams,
             timers.startSingleTimer(CheckParentTx, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
             Behaviors.same
           case UnknownFailure(reason) =>
-            log.error("could not check parent tx", reason)
+            log.error("could not check parent tx: ", reason)
             sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
           case Stop => Behaviors.stopped
         }
