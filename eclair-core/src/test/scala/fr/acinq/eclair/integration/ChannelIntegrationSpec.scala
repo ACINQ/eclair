@@ -145,7 +145,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPaymentToNode(100000000 msat, PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, nodes("F").nodeParams.privateKey, Left("test"), finalCltvExpiryDelta), maxAttempts = 1, routeParams = integrationTestRouteParams)
+    val paymentReq = SendPaymentToNode(ActorRef.noSender, 100000000 msat, Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, paymentHash, nodes("F").nodeParams.privateKey, Left("test"), finalCltvExpiryDelta), maxAttempts = 1, routeParams = integrationTestRouteParams)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID]
@@ -368,7 +368,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     def send(amountMsat: MilliSatoshi, paymentHandler: ActorRef, paymentInitiator: ActorRef): UUID = {
       sender.send(paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
       val pr = sender.expectMsgType[PaymentRequest]
-      val sendReq = SendPaymentToNode(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams)
+      val sendReq = SendPaymentToNode(ActorRef.noSender, amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams)
       sender.send(paymentInitiator, sendReq)
       sender.expectMsgType[UUID]
     }
@@ -684,7 +684,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
 
     // then we make the actual payment
-    sender.send(nodes("C").paymentInitiator, SendPaymentToNode(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams))
+    sender.send(nodes("C").paymentInitiator, SendPaymentToNode(ActorRef.noSender, amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent](60 seconds)
     assert(ps.id == paymentId)

@@ -25,7 +25,7 @@ import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
@@ -44,7 +44,7 @@ object FormParamExtractors {
 
   implicit val sha256HashesUnmarshaller: Unmarshaller[String, List[ByteVector32]] = listUnmarshaller(bin => ByteVector32.fromValidHex(bin))
 
-  implicit val bolt11Unmarshaller: Unmarshaller[String, PaymentRequest] = Unmarshaller.strict { rawRequest => PaymentRequest.read(rawRequest) }
+  implicit val bolt11Unmarshaller: Unmarshaller[String, Bolt11Invoice] = Unmarshaller.strict { rawRequest => Bolt11Invoice.read(rawRequest) }
 
   implicit val shortChannelIdUnmarshaller: Unmarshaller[String, ShortChannelId] = Unmarshaller.strict { str => ShortChannelId(str) }
 

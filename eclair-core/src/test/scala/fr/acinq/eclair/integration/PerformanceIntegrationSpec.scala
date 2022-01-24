@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.integration
 
+import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.SatoshiLong
@@ -85,7 +86,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
-    sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPaymentToNode(amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1))
+    sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPaymentToNode(ActorRef.noSender, amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID]
     sender.expectMsgType[PreimageReceived]
     val ps = sender.expectMsgType[PaymentSent]

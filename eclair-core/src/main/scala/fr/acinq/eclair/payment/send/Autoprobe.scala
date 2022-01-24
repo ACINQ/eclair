@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment.send
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, PaymentRequest, RemoteFailure}
+import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, Bolt11Invoice, PaymentRequest, RemoteFailure}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TimestampSecond, randomBytes32, randomLong}
@@ -53,19 +53,19 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
     case TickProbe =>
       pickPaymentDestination(nodeParams.nodeId, routingData) match {
         case Some(targetNodeId) =>
-          val fakeInvoice = PaymentRequest(
-            PaymentRequest.prefixes(nodeParams.chainHash),
+          val fakeInvoice = Bolt11Invoice(
+            Bolt11Invoice.prefixes(nodeParams.chainHash),
             Some(PAYMENT_AMOUNT_MSAT),
             TimestampSecond.now(),
             targetNodeId,
             List(
-              PaymentRequest.PaymentHash(randomBytes32()), // we don't even know the preimage (this needs to be a secure random!)
-              PaymentRequest.Description("ignored"),
+              Bolt11Invoice.PaymentHash(randomBytes32()), // we don't even know the preimage (this needs to be a secure random!)
+              Bolt11Invoice.Description("ignored"),
             ),
             ByteVector.empty)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=${fakeInvoice.paymentHash}")
           val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
-          paymentInitiator ! PaymentInitiator.SendPaymentToNode(PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1, routeParams = routeParams)
+          paymentInitiator ! PaymentInitiator.SendPaymentToNode(self, PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1, routeParams = routeParams)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()

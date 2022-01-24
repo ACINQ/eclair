@@ -31,7 +31,7 @@ trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with Payment
 trait IncomingPaymentsDb {
 
   /** Add a new expected incoming payment (not yet received). */
-  def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
+  def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
@@ -105,7 +105,7 @@ case object PaymentType {
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
  * @param status          current status of the payment.
  */
-case class IncomingPayment(paymentRequest: PaymentRequest,
+case class IncomingPayment(paymentRequest: Bolt11Invoice,
                            paymentPreimage: ByteVector32,
                            paymentType: String,
                            createdAt: TimestampMilli,
@@ -144,7 +144,7 @@ object IncomingPaymentStatus {
  * @param recipientAmount amount that will be received by the final recipient.
  * @param recipientNodeId id of the final recipient.
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment was created.
- * @param paymentRequest  Bolt 11 payment request (if paying from an invoice).
+ * @param paymentRequest  payment request (if paying from an invoice).
  * @param status          current status of the payment.
  */
 case class OutgoingPayment(id: UUID,

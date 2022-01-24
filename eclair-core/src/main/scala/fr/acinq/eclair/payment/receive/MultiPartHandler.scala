@@ -26,11 +26,14 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentMetadataReceived, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, randomBytes32}
 import scodec.bits.HexStringSyntax
+import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.{Bolt11Invoice, IncomingPaymentPacket, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{FeatureSupport, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}
 
@@ -92,14 +95,14 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = Left("Donation")
-              val features: Map[Feature with InvoiceFeature, FeatureSupport] = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
-                Map(Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
+              val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
+                Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               } else {
-                Map(Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
+                Features(Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               }
               // Insert a fake invoice and then restart the incoming payment handler
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = PaymentRequestFeatures(features))
-              log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
+              val paymentRequest = Bolt11Invoice(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
+              log.debug("generated fake payment request={} from amount={} (KeySend)", paymentRequest.write, amount)
               db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
             case _ =>
@@ -231,11 +234,11 @@ object MultiPartHandler {
               val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
               val paymentMetadata = hex"2a"
               val invoiceFeatures = if (nodeParams.enableTrampolinePayment) {
-                nodeParams.features.invoiceFeatures() + (Features.TrampolinePayment -> FeatureSupport.Optional)
+                Features(nodeParams.features.invoiceFeatures().activated + (Features.TrampolinePayment -> FeatureSupport.Optional))
               } else {
                 nodeParams.features.invoiceFeatures()
               }
-              val paymentRequest = PaymentRequest(
+              val paymentRequest = Bolt11Invoice(
                 nodeParams.chainHash,
                 amount_opt,
                 paymentHash,
@@ -246,14 +249,16 @@ object MultiPartHandler {
                 expirySeconds = Some(expirySeconds),
                 extraHops = extraHops,
                 paymentMetadata = Some(paymentMetadata),
-                features = PaymentRequestFeatures(invoiceFeatures)
+                features = invoiceFeatures
               )
-              context.log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
+              context.log.debug("generated payment request={} from amount={}", paymentRequest.write, amount_opt)
               nodeParams.db.payments.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
               paymentRequest
             } match {
               case Success(paymentRequest) => replyTo ! paymentRequest
-              case Failure(exception) => replyTo ! Status.Failure(exception)
+              case Failure(exception) =>
+                exception.printStackTrace()
+                replyTo ! Status.Failure(exception)
             }
             Behaviors.stopped
         }
@@ -315,7 +320,7 @@ object MultiPartHandler {
   }
 
   private def validateInvoiceFeatures(payment: IncomingPaymentPacket.FinalPacket, pr: PaymentRequest)(implicit log: LoggingAdapter): Boolean = {
-    if (payment.payload.amount < payment.payload.totalAmount && !pr.features.allowMultiPart) {
+    if (payment.payload.amount < payment.payload.totalAmount && !pr.features.hasFeature(Features.BasicMultiPartPayment)) {
       log.warning("received multi-part payment but invoice doesn't support it for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else if (payment.payload.amount < payment.payload.totalAmount && !pr.paymentSecret.contains(payment.payload.paymentSecret)) {
@@ -332,7 +337,7 @@ object MultiPartHandler {
   private def validatePayment(nodeParams: NodeParams, payment: IncomingPaymentPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
-    val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(payment, a))
+    val paymentAmountOk = record.paymentRequest.amount_opt.forall(a => validatePaymentAmount(payment, a))
     val paymentCltvOk = validatePaymentCltv(nodeParams, payment, record)
     val paymentStatusOk = validatePaymentStatus(payment, record)
     val paymentFeaturesOk = validateInvoiceFeatures(payment, record.paymentRequest)

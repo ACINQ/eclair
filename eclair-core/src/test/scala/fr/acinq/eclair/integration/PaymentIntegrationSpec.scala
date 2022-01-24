@@ -32,7 +32,7 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer
@@ -42,7 +42,7 @@ import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
 
@@ -163,7 +163,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(pr.paymentMetadata.nonEmpty)
 
     // then we make the actual payment
-    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1))
+    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(ActorRef.noSender, amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
@@ -189,7 +189,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment, do not randomize the route to make sure we route through node B
-    val sendReq = SendPaymentToNode(amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
+    val sendReq = SendPaymentToNode(ActorRef.noSender, amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will receive an error from B that include the updated channel update, then will retry the payment
     val paymentId = sender.expectMsgType[UUID]
@@ -230,7 +230,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the payment (B-C has a smaller capacity than A-B and C-D)
-    val sendReq = SendPaymentToNode(amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
+    val sendReq = SendPaymentToNode(ActorRef.noSender, amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
     sender.expectMsgType[UUID]
@@ -240,8 +240,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   test("send an HTLC A->D with an unknown payment hash") {
     val sender = TestProbe()
     val amount = 100000000 msat
-    val unknownInvoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(amount), randomBytes32(), nodes("D").nodeParams.privateKey, Left("test"), finalCltvExpiryDelta)
-    val pr = SendPaymentToNode(amount, unknownInvoice, routeParams = integrationTestRouteParams, maxAttempts = 5)
+    val unknownInvoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(amount), randomBytes32(), nodes("D").nodeParams.privateKey, Left("test"), finalCltvExpiryDelta)
+    val pr = SendPaymentToNode(ActorRef.noSender, amount, unknownInvoice, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, pr)
 
     // A will receive an error from D and won't retry
@@ -261,7 +261,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of only 1 mBTC
-    val sendReq = SendPaymentToNode(100000000 msat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
+    val sendReq = SendPaymentToNode(ActorRef.noSender, 100000000 msat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
 
     // A will first receive an IncorrectPaymentAmount error from D
@@ -281,7 +281,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of 6 mBTC
-    val sendReq = SendPaymentToNode(600000000 msat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
+    val sendReq = SendPaymentToNode(ActorRef.noSender, 600000000 msat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
 
     // A will first receive an IncorrectPaymentAmount error from D
@@ -301,7 +301,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of 3 mBTC, more than asked but it should still be accepted
-    val sendReq = SendPaymentToNode(300000000 msat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
+    val sendReq = SendPaymentToNode(ActorRef.noSender, 300000000 msat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
     sender.expectMsgType[UUID]
   }
@@ -314,7 +314,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 payment")))
       val pr = sender.expectMsgType[PaymentRequest]
 
-      val sendReq = SendPaymentToNode(amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
+      val sendReq = SendPaymentToNode(ActorRef.noSender, amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 5)
       sender.send(nodes("A").paymentInitiator, sendReq)
       sender.expectMsgType[UUID]
       sender.expectMsgType[PaymentSent] // the payment FSM will also reply to the sender after the payment is completed
@@ -329,7 +329,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
 
     // the payment is requesting to use a capacity-optimized route which will select node G even though it's a bit more expensive
-    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams.copy(heuristics = Left(WeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0))))))
+    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(ActorRef.noSender, amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams.copy(heuristics = Left(WeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0))))))
     sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
     ps.parts.foreach(part => assert(part.route.getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)))
@@ -341,9 +341,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 1000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), Left("split the restaurant bill")))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
 
-    sender.send(nodes("B").paymentInitiator, SendPaymentToNode(amount, pr, maxAttempts = 5, routeParams = integrationTestRouteParams))
+    sender.send(nodes("B").paymentInitiator, SendPaymentToNode(ActorRef.noSender, amount, pr, maxAttempts = 5, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
     assert(paymentSent.id === paymentId, paymentSent)
@@ -380,13 +380,13 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 2000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), Left("well that's an expensive restaurant bill")))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
 
     sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
     val canSend = sender.expectMsgType[Relayer.OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
     assert(canSend > amount)
 
-    sender.send(nodes("B").paymentInitiator, SendPaymentToNode(amount, pr, maxAttempts = 1, routeParams = integrationTestRouteParams))
+    sender.send(nodes("B").paymentInitiator, SendPaymentToNode(ActorRef.noSender, amount, pr, maxAttempts = 1, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
     assert(paymentFailed.id === paymentId, paymentFailed)
@@ -407,9 +407,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 5100000000L.msat
     sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), Left("lemme borrow some money")))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
 
-    sender.send(nodes("D").paymentInitiator, SendPaymentToNode(amount, pr, maxAttempts = 3, routeParams = integrationTestRouteParams))
+    sender.send(nodes("D").paymentInitiator, SendPaymentToNode(ActorRef.noSender, amount, pr, maxAttempts = 3, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
     assert(paymentSent.id === paymentId, paymentSent)
@@ -435,13 +435,13 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 10000000000L.msat
     sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), Left("lemme borrow more money")))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
 
     sender.send(nodes("D").relayer, Relayer.GetOutgoingChannels())
     val canSend = sender.expectMsgType[Relayer.OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
     assert(canSend < amount)
 
-    sender.send(nodes("D").paymentInitiator, SendPaymentToNode(amount, pr, maxAttempts = 1, routeParams = integrationTestRouteParams))
+    sender.send(nodes("D").paymentInitiator, SendPaymentToNode(ActorRef.noSender, amount, pr, maxAttempts = 1, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
     assert(paymentFailed.id === paymentId, paymentFailed)
@@ -462,8 +462,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 4000000000L.msat
     sender.send(nodes("F").paymentHandler, ReceivePayment(Some(amount), Left("like trampoline much?")))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
-    assert(pr.features.allowTrampoline)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
+    assert(pr.features.hasFeature(Features.TrampolinePayment))
 
     // The first attempt should fail, but the second one should succeed.
     val attempts = (1000 msat, CltvExpiryDelta(42)) :: (1000000 msat, CltvExpiryDelta(288)) :: Nil
@@ -505,8 +505,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 2500000000L.msat
     sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amount), Left("trampoline-MPP is so #reckless")))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
-    assert(pr.features.allowTrampoline)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
+    assert(pr.features.hasFeature(Features.TrampolinePayment))
     assert(pr.paymentMetadata.nonEmpty)
 
     val payment = SendTrampolinePayment(amount, pr, nodes("C").nodeParams.nodeId, Seq((350000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
@@ -557,8 +557,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 3000000000L.msat
     sender.send(nodes("A").paymentHandler, ReceivePayment(Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
-    assert(!pr.features.allowTrampoline)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
+    assert(!pr.features.hasFeature(Features.TrampolinePayment))
     assert(pr.paymentMetadata.nonEmpty)
 
     val payment = SendTrampolinePayment(amount, pr, nodes("C").nodeParams.nodeId, Seq((1000000 msat, CltvExpiryDelta(432))), routeParams = integrationTestRouteParams)
@@ -597,7 +597,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // We put most of the capacity C <-> D on D's side.
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(8000000000L msat), Left("plz send everything")))
     val pr1 = sender.expectMsgType[PaymentRequest]
-    sender.send(nodes("C").paymentInitiator, SendPaymentToNode(8000000000L msat, pr1, maxAttempts = 3, routeParams = integrationTestRouteParams))
+    sender.send(nodes("C").paymentInitiator, SendPaymentToNode(ActorRef.noSender, 8000000000L msat, pr1, maxAttempts = 3, routeParams = integrationTestRouteParams))
     sender.expectMsgType[UUID]
     sender.expectMsgType[PaymentSent](max = 30 seconds)
 
@@ -605,8 +605,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 2000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), Left("I iz Satoshi")))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
-    assert(pr.features.allowTrampoline)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
+    assert(pr.features.hasFeature(Features.TrampolinePayment))
 
     val payment = SendTrampolinePayment(amount, pr, nodes("C").nodeParams.nodeId, Seq((250000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("B").paymentInitiator, payment)
@@ -626,8 +626,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val amount = 2000000000L.msat // B can forward to C, but C doesn't have that much outgoing capacity to D
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), Left("I iz not Satoshi")))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.features.allowMultiPart)
-    assert(pr.features.allowTrampoline)
+    assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
+    assert(pr.features.hasFeature(Features.TrampolinePayment))
 
     val payment = SendTrampolinePayment(amount, pr, nodes("B").nodeParams.nodeId, Seq((450000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, payment)

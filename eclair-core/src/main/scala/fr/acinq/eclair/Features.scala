@@ -87,7 +87,7 @@ case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[Unknow
   def nodeAnnouncementFeatures(): Features = Features(activated.collect { case (f: NodeFeature, s) => (f: Feature, s) }, unknown)
 
   // NB: we don't include unknown features in invoices, which means plugins cannot inject invoice features.
-  def invoiceFeatures(): Map[Feature with InvoiceFeature, FeatureSupport] = activated.collect { case (f: InvoiceFeature, s) => (f, s) }
+  def invoiceFeatures(): Features = Features(activated.collect { case (f: InvoiceFeature, s) => (f: Feature, s) })
 
   def toByteVector: ByteVector = {
     val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature.supportBit(support) }.toSet)

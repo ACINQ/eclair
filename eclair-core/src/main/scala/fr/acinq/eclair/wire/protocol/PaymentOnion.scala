@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentRequest}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
@@ -171,7 +171,7 @@ object OnionPaymentPayloadTlv {
    * Invoice routing hints. Only included for intermediate trampoline nodes when they should convert to a legacy payment
    * because the final recipient doesn't support trampoline.
    */
-  case class InvoiceRoutingInfo(extraHops: List[List[PaymentRequest.ExtraHop]]) extends OnionPaymentPayloadTlv
+  case class InvoiceRoutingInfo(extraHops: List[List[Bolt11Invoice.ExtraHop]]) extends OnionPaymentPayloadTlv
 
   /** An encrypted trampoline onion packet. */
   case class TrampolineOnion(packet: OnionRoutingPacket) extends OnionPaymentPayloadTlv
@@ -374,7 +374,7 @@ object PaymentOnionCodecs {
 
   private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
 
-  private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = variableSizeBytesLong(varintoverflow, list(listOfN(uint8, PaymentRequest.Codecs.extraHopCodec))).as[InvoiceRoutingInfo]
+  private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = variableSizeBytesLong(varintoverflow, list(listOfN(uint8, Bolt11Invoice.Codecs.extraHopCodec))).as[InvoiceRoutingInfo]
 
   private val trampolineOnion: Codec[TrampolineOnion] = variableSizeBytesLong(varintoverflow, trampolineOnionPacketCodec).as[TrampolineOnion]
 

@@ -20,8 +20,8 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
-import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
+import fr.acinq.eclair.payment.Bolt11Invoice._
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -33,7 +33,7 @@ import scala.util.Success
  * Created by fabrice on 15/05/17.
  */
 
-class PaymentRequestSpec extends AnyFunSuite {
+class Bolt11InvoiceSpec extends AnyFunSuite {
 
   val priv = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734")
   val pub = priv.publicKey
@@ -84,94 +84,94 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("verify that padding is zero") {
-    val codec = PaymentRequest.Codecs.alignedBytesCodec(bits)
+    val codec = Bolt11Invoice.Codecs.alignedBytesCodec(bits)
     assert(codec.decode(bin"1010101000").require == DecodeResult(bin"10101010", BitVector.empty))
     assert(codec.decode(bin"1010101001").isFailure) // non-zero padding
   }
 
   test("Please make a donation of any amount using payment_hash 0001020304050607080900010203040506070809000102030405060708090102 to me @03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad") {
     val ref = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugp9lfyql"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount.isEmpty)
+    assert(pr.amount_opt.isEmpty)
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.paymentSecret.map(_.bytes) === Some(hex"1111111111111111111111111111111111111111111111111111111111111111"))
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Left("Please consider supporting this project"))
     assert(pr.fallbackAddress() === None)
     assert(pr.tags.size === 4)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("Please send $3 for a cup of coffee to the same peer, within 1 minute") {
     val ref = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(250000000 msat))
+    assert(pr.amount_opt === Some(250000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Left("1 cup coffee"))
     assert(pr.fallbackAddress() === None)
     assert(pr.tags.size === 5)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("Please send 0.0025 BTC for a cup of nonsense (ナンセンス 1杯) to the same peer, within one minute") {
     val ref = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpquwpc4curk03c9wlrswe78q4eyqc7d8d0xqzpu9qrsgqhtjpauu9ur7fw2thcl4y9vfvh4m9wlfyz2gem29g5ghe2aak2pm3ps8fdhtceqsaagty2vph7utlgj48u0ged6a337aewvraedendscp573dxr"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(250000000 msat))
+    assert(pr.amount_opt === Some(250000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Left("ナンセンス 1杯"))
     assert(pr.fallbackAddress() === None)
     assert(pr.tags.size === 5)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("Now send $24 for an entire list of things (hashed)") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfpr6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp7ynn44"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(2000000000 msat))
+    assert(pr.amount_opt === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === None)
     assert(pr.tags.size === 4)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("The same, on testnet, with a fallback address mk2QpYatsKicvFVuTAQLBryyccRXMUaGHP") {
     val ref = "lntb20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfpp3x9et2e20v6pu37c5d9vax37wxq72un989qrsgqdj545axuxtnfemtpwkc45hx9d2ft7x04mt8q7y6t0k2dge9e7h8kpy9p34ytyslj3yu569aalz2xdk8xkd7ltxqld94u8h2esmsmacgpghe9k8"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lntb")
-    assert(pr.amount === Some(2000000000 msat))
+    assert(pr.amount_opt === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("mk2QpYatsKicvFVuTAQLBryyccRXMUaGHP"))
     assert(pr.tags.size == 5)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("On mainnet, with fallback address 1RustyRX2oai4EYYDpQGWvEL62BBGqN9T with extra routing info to go via nodes 029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255 then 039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfpp3qjmp7lwpagxun9pygexvgpjdc4jdj85fr9yq20q82gphp2nflc7jtzrcazrra7wwgzxqc8u7754cdlpfrmccae92qgzqvzq2ps8pqqqqqqpqqqqq9qqqvpeuqafqxu92d8lr6fvg0r5gv0heeeqgcrqlnm6jhphu9y00rrhy4grqszsvpcgpy9qqqqqqgqqqqq7qqzq9qrsgqdfjcdk6w3ak5pca9hwfwfh63zrrz06wwfya0ydlzpgzxkn5xagsqz7x9j4jwe7yj7vaf2k9lqsdk45kts2fd0fkr28am0u4w95tt2nsq76cqw0"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(2000000000 msat))
+    assert(pr.amount_opt === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
@@ -181,70 +181,70 @@ class PaymentRequestSpec extends AnyFunSuite {
       ExtraHop(PublicKey(hex"039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId("197637x395016x2314"), 2 msat, 30, CltvExpiryDelta(4))
     )))
     assert(pr.tags.size == 6)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("On mainnet, with fallback (p2sh) address 3EktnHQD7RiAE6uzMj2ZifT9YgRrkSgzQX") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfppj3a24vwu6r8ejrss3axul8rxldph2q7z99qrsgqz6qsgww34xlatfj6e3sngrwfy3ytkt29d2qttr8qz2mnedfqysuqypgqex4haa2h8fx3wnypranf3pdwyluftwe680jjcfp438u82xqphf75ym"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(2000000000 msat))
+    assert(pr.amount_opt === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("3EktnHQD7RiAE6uzMj2ZifT9YgRrkSgzQX"))
     assert(pr.tags.size == 5)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("On mainnet, with fallback (p2wpkh) address bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfppqw508d6qejxtdg4y5r3zarvary0c5xw7k9qrsgqt29a0wturnys2hhxpner2e3plp6jyj8qx7548zr2z7ptgjjc7hljm98xhjym0dg52sdrvqamxdezkmqg4gdrvwwnf0kv2jdfnl4xatsqmrnsse"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(2000000000 msat))
+    assert(pr.amount_opt === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"))
     assert(pr.tags.size == 5)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("On mainnet, with fallback (p2wsh) address bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q9qrsgq9vlvyj8cqvq6ggvpwd53jncp9nwc47xlrsnenq2zp70fq83qlgesn4u3uyf4tesfkkwwfg3qs54qe426hp3tz7z6sweqdjg05axsrjqp9yrrwc"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(2000000000 msat))
+    assert(pr.amount_opt === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
-    assert(!pr.features.allowMultiPart)
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(!pr.features.hasFeature(BasicMultiPartPayment))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.tags.size == 5)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("On mainnet, with fallback (p2wsh) address bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3 and a minimum htlc cltv expiry of 12") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygscqpvpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q9qrsgq999fraffdzl6c8j7qd325dfurcq7vl0mfkdpdvve9fy3hy4lw0x9j3zcj2qdh5e5pyrp6cncvmxrhchgey64culwmjtw9wym74xm6xqqevh9r0"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(2000000000 msat))
+    assert(pr.amount_opt === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
-    assert(!pr.features.allowMultiPart)
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(!pr.features.hasFeature(BasicMultiPartPayment))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(12)))
     assert(pr.tags.size == 6)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14 and 99, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
@@ -257,74 +257,74 @@ class PaymentRequestSpec extends AnyFunSuite {
     )
 
     for (ref <- refs) {
-      val pr = PaymentRequest.read(ref)
+      val pr = Bolt11Invoice.read(ref)
       assert(pr.prefix === "lnbc")
-      assert(pr.amount === Some(2500000000L msat))
+      assert(pr.amount_opt === Some(2500000000L msat))
       assert(pr.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
       assert(pr.paymentSecret === Some(ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")))
       assert(pr.timestamp === TimestampSecond(1496314658L))
       assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
       assert(pr.description === Left("coffee beans"))
-      assert(pr.features.bitmask === bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
-      assert(!pr.features.allowMultiPart)
-      assert(pr.features.requirePaymentSecret)
-      assert(!pr.features.allowTrampoline)
-      assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
-      assert(PaymentRequest.write(pr.sign(priv)) === ref.toLowerCase)
+      assert(featuresBitmask(pr.features) === bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
+      assert(!pr.features.hasFeature(BasicMultiPartPayment))
+      assert(pr.features.hasFeature(PaymentSecret, Some(Mandatory)))
+      assert(!pr.features.hasFeature(TrampolinePayment))
+      assert(TestConstants.Alice.nodeParams.features.areSupported(pr.features))
+      assert(pr.sign(priv).write === ref.toLowerCase)
     }
   }
 
   test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14, 99 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
     val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqqsgqtqyx5vggfcsll4wu246hz02kp85x4katwsk9639we5n5yngc3yhqkm35jnjw4len8vrnqnf5ejh0mzj9n3vz2px97evektfm2l6wqccp3y7372"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix === "lnbc")
-    assert(pr.amount === Some(2500000000L msat))
+    assert(pr.amount_opt === Some(2500000000L msat))
     assert(pr.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.paymentSecret === Some(ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")))
     assert(pr.timestamp === TimestampSecond(1496314658L))
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("coffee beans"))
     assert(pr.fallbackAddress().isEmpty)
-    assert(pr.features.bitmask === bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
-    assert(!pr.features.allowMultiPart)
-    assert(pr.features.requirePaymentSecret)
-    assert(!pr.features.allowTrampoline)
-    assert(!pr.features.areSupported(TestConstants.Alice.nodeParams))
-    assert(PaymentRequest.write(pr.sign(priv)) === ref)
+    assert(featuresBitmask(pr.features) === bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
+    assert(!pr.features.hasFeature(BasicMultiPartPayment))
+    assert(pr.features.hasFeature(PaymentSecret, Some(Mandatory)))
+    assert(!pr.features.hasFeature(TrampolinePayment))
+    assert(!TestConstants.Alice.nodeParams.features.areSupported(pr.features))
+    assert(pr.sign(priv).write === ref)
   }
 
   test("On mainnet, please send 0.00967878534 BTC for a list of items within one week, amount in pico-BTC") {
     val ref = "lnbc9678785340p1pwmna7lpp5gc3xfm08u9qy06djf8dfflhugl6p7lgza6dsjxq454gxhj9t7a0sd8dgfkx7cmtwd68yetpd5s9xar0wfjn5gpc8qhrsdfq24f5ggrxdaezqsnvda3kkum5wfjkzmfqf3jkgem9wgsyuctwdus9xgrcyqcjcgpzgfskx6eqf9hzqnteypzxz7fzypfhg6trddjhygrcyqezcgpzfysywmm5ypxxjemgw3hxjmn8yptk7untd9hxwg3q2d6xjcmtv4ezq7pqxgsxzmnyyqcjqmt0wfjjq6t5v4khxsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygsxqyjw5qcqp2rzjq0gxwkzc8w6323m55m4jyxcjwmy7stt9hwkwe2qxmy8zpsgg7jcuwz87fcqqeuqqqyqqqqlgqqqqn3qq9q9qrsgqrvgkpnmps664wgkp43l22qsgdw4ve24aca4nymnxddlnp8vh9v2sdxlu5ywdxefsfvm0fq3sesf08uf6q9a2ke0hc9j6z6wlxg5z5kqpu2v9wz"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix === "lnbc")
-    assert(pr.amount === Some(967878534 msat))
+    assert(pr.amount_opt === Some(967878534 msat))
     assert(pr.paymentHash.bytes === hex"462264ede7e14047e9b249da94fefc47f41f7d02ee9b091815a5506bc8abf75f")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
-    assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(TestConstants.Alice.nodeParams.features.areSupported(pr.features))
     assert(pr.timestamp === TimestampSecond(1572468703L))
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("Blockstream Store: 88.85 USD for Blockstream Ledger Nano S x 1, \"Back In My Day\" Sticker x 2, \"I Got Lightning Working\" Sticker x 2 and 1 more items"))
     assert(pr.fallbackAddress().isEmpty)
-    assert(pr.expiry === Some(604800L))
+    assert(pr.relativeExpiry === 604800L)
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(10)))
     assert(pr.routingInfo === Seq(Seq(ExtraHop(PublicKey(hex"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"), ShortChannelId("589390x3312x1"), 1000 msat, 2500, CltvExpiryDelta(40)))))
-    assert(PaymentRequest.write(pr.sign(priv)) === ref)
+    assert(pr.sign(priv).write === ref)
   }
 
   test("On mainnet, please send 0.01 BTC with payment metadata 0x01fafaf0") {
     val ref = "lnbc10m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdp9wpshjmt9de6zqmt9w3skgct5vysxjmnnd9jx2mq8q8a04uqsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q2gqqqqqqsgq7hf8he7ecf7n4ffphs6awl9t6676rrclv9ckg3d3ncn7fct63p6s365duk5wrk202cfy3aj5xnnp5gs3vrdvruverwwq7yzhkf5a3xqpd05wjc"
-    val pr = PaymentRequest.read(ref)
+    val pr = Bolt11Invoice.read(ref)
     assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(1000000000 msat))
+    assert(pr.amount_opt === Some(1000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, PaymentMetadata -> Mandatory))
+    assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, PaymentMetadata -> Mandatory))
     assert(pr.timestamp == TimestampSecond(1496314658L))
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.paymentSecret === Some(ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")))
     assert(pr.description == Left("payment metadata inside"))
     assert(pr.paymentMetadata === Some(hex"01fafaf0"))
     assert(pr.tags.size == 5)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+    assert(pr.sign(priv).write == ref)
   }
 
   test("reject invalid invoices") {
@@ -345,14 +345,14 @@ class PaymentRequestSpec extends AnyFunSuite {
       "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq0lzc236j96a95uv0m3umg28gclm5lqxtqqwk32uuk4k6673k6n5kfvx3d2h8s295fad45fdhmusm8sjudfhlf6dcsxmfvkeywmjdkxcp99202x"
     )
     for (ref <- refs) {
-      assertThrows[Exception](PaymentRequest.read(ref))
+      assertThrows[Exception](Bolt11Invoice.read(ref))
     }
   }
 
   test("correctly serialize/deserialize variable-length tagged fields") {
     val number = 123456
-    val codec = PaymentRequest.Codecs.dataCodec(scodec.codecs.bits).as[PaymentRequest.Expiry]
-    val field = PaymentRequest.Expiry(number)
+    val codec = Bolt11Invoice.Codecs.dataCodec(scodec.codecs.bits).as[Bolt11Invoice.Expiry]
+    val field = Bolt11Invoice.Expiry(number)
     assert(field.toLong == number)
 
     val serializedExpiry = codec.encode(field).require
@@ -360,17 +360,17 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(field1 == field)
 
     // Now with a payment request
-    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = Left("Some invoice"), minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345 unixsec)
+    val pr = Bolt11Invoice(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = Left("Some invoice"), minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345 unixsec)
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(18)))
-    val serialized = PaymentRequest.write(pr)
-    val pr1 = PaymentRequest.read(serialized)
+    val serialized = pr.write
+    val pr1 = Bolt11Invoice.read(serialized)
     assert(pr == pr1)
   }
 
   test("ignore unknown tags") {
-    val pr = PaymentRequest(
+    val pr = Bolt11Invoice(
       prefix = "lntb",
-      amount = Some(100000 msat),
+      amount_opt = Some(100000 msat),
       timestamp = TimestampSecond.now(),
       nodeId = nodeId,
       tags = List(
@@ -380,8 +380,8 @@ class PaymentRequestSpec extends AnyFunSuite {
       ),
       signature = ByteVector.empty).sign(priv)
 
-    val serialized = PaymentRequest.write(pr)
-    val pr1 = PaymentRequest.read(serialized)
+    val serialized = pr.write
+    val pr1 = Bolt11Invoice.read(serialized)
     val Some(_) = pr1.tags.collectFirst { case u: UnknownTag21 => u }
   }
 
@@ -411,43 +411,43 @@ class PaymentRequestSpec extends AnyFunSuite {
 
   test("accept uppercase payment request") {
     val input = "lntb1500n1pwxx94fsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5q3xzmwuvxpkyhz6pvg3fcfxz0259kgh367qazj62af9rs0pw07dsdpa2fjkzep6yp58garswvaz7tmvd9nksarwd9hxw6n0w4kx2tnrdakj7grfwvs8wcqzysxqr23swwl9egjej7rvvt9zdxrtpy8xuu6cckdwajfccmtz7n90ea34k3j595w77pt69s5dx5a46f4k4w5avtvjkc4l4rm8n4xmk7fe3pms3pspdd032j"
-    assert(PaymentRequest.write(PaymentRequest.read(input.toUpperCase())) == input)
+    assert(Bolt11Invoice.read(input.toUpperCase()).write == input)
   }
 
   test("Pay 1 BTC without multiplier") {
     val ref = "lnbc1000m1pdkmqhusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5n2ees808r98m0rh4472yyth0c5fptzcxmexcjznrzmq8xald0cgqdqsf4ujqarfwqsxymmccqp2pv37ezvhth477nu0yhhjlcry372eef57qmldhreqnr0kx82jkupp3n7nw42u3kdyyjskdr8jhjy2vugr3skdmy8ersft36969xplkxsp2v7c58"
-    val pr = PaymentRequest.read(ref)
-    assert(pr.amount === Some(100000000000L msat))
-    assert(pr.features.bitmask === BitVector.empty)
+    val pr = Bolt11Invoice.read(ref)
+    assert(pr.amount_opt === Some(100000000000L msat))
+    assert(featuresBitmask(pr.features) === BitVector.empty)
   }
 
   test("supported payment request features") {
-    val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(knownFeatures.map(f => f -> FeatureSupport.Optional).toMap))
+    val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(knownFeatures.map(f => f -> Optional).toMap))
     case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule
     val featureBits = Map(
-      PaymentRequestFeatures(bin"               00000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"               00100100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"               00100100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"               01000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"          0000010000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"          0000011000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"          0000110000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"          0000100000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"          0010000000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00100100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00100100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               01000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"          0000010000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"          0000011000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"          0000110000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"          0000100000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"          0010000000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      PaymentRequestFeatures(bin"     000001000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
-      PaymentRequestFeatures(bin"     000100000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
-      PaymentRequestFeatures(bin"00001000000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false)
+      Features(bin"     000001000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
+      Features(bin"     000100000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
+      Features(bin"00001000000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false)
     )
 
     for ((features, res) <- featureBits) {
-      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features)
-      assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.areSupported(nodeParams)) === res)
-      assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
+      val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features)
+      assert(Result(pr.features.hasFeature(BasicMultiPartPayment), pr.features.hasFeature(PaymentSecret, Some(Mandatory)), nodeParams.features.areSupported(pr.features)) === res)
+      assert(Bolt11Invoice.read(pr.write) === pr)
     }
   }
 
@@ -464,51 +464,48 @@ class PaymentRequestSpec extends AnyFunSuite {
     )
 
     for ((bitmask, featureBytes) <- testCases) {
-      assert(PaymentRequestFeatures(bitmask).toByteVector === featureBytes)
+      assert(Features(bitmask).toByteVector === featureBytes)
     }
   }
 
   test("payment secret") {
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18))
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18))
     assert(pr.paymentSecret.isDefined)
-    assert(pr.features === PaymentRequestFeatures(Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory)))
-    assert(pr.features.requirePaymentSecret)
+    assert(pr.features === Features(PaymentSecret -> Mandatory, VariableLengthOnion -> Mandatory))
+    assert(pr.features.hasFeature(PaymentSecret, Some(Mandatory)))
 
-    val pr1 = PaymentRequest.read(PaymentRequest.write(pr))
+    val pr1 = Bolt11Invoice.read(pr.write)
     assert(pr1.paymentSecret === pr.paymentSecret)
 
-    val pr2 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
-    assert(!pr2.features.requirePaymentSecret)
+    val pr2 = Bolt11Invoice.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    assert(!pr2.features.hasFeature(PaymentSecret, Some(Mandatory)))
     assert(pr2.paymentSecret === None)
 
     // An invoice that sets the payment secret feature bit must provide a payment secret.
     assertThrows[IllegalArgumentException](
-      PaymentRequest.read("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7")
+      Bolt11Invoice.read("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7")
     )
 
     // A multi-part invoice must use a payment secret.
-    assertThrows[IllegalArgumentException]({
-      val features = PaymentRequestFeatures(Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Optional))
-      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("MPP without secrets"), CltvExpiryDelta(18), features = features)
-    })
+    assertThrows[IllegalArgumentException](
+      Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("MPP without secrets"), CltvExpiryDelta(18), features = Features(VariableLengthOnion -> Optional, PaymentSecret -> Optional))
+    )
   }
 
   test("trampoline") {
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18))
-    assert(!pr.features.allowTrampoline)
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18))
+    assert(!pr.features.hasFeature(TrampolinePayment))
 
-    val features1 = PaymentRequestFeatures(Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, TrampolinePayment -> Optional))
-    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features1)
-    assert(!pr1.features.allowMultiPart)
-    assert(pr1.features.allowTrampoline)
+    val pr1 = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, TrampolinePayment -> Optional))
+    assert(!pr1.features.hasFeature(BasicMultiPartPayment))
+    assert(pr1.features.hasFeature(TrampolinePayment))
 
-    val features2 = PaymentRequestFeatures(Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, TrampolinePayment -> Optional))
-    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features2)
-    assert(pr2.features.allowMultiPart)
-    assert(pr2.features.allowTrampoline)
+    val pr2 = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, TrampolinePayment -> Optional))
+    assert(pr2.features.hasFeature(BasicMultiPartPayment))
+    assert(pr2.features.hasFeature(TrampolinePayment))
 
-    val pr3 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
-    assert(!pr3.features.allowTrampoline)
+    val pr3 = Bolt11Invoice.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    assert(!pr3.features.hasFeature(TrampolinePayment))
   }
 
   test("nonreg") {
@@ -575,7 +572,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     )
 
     for (req <- requests) {
-      assert(PaymentRequest.write(PaymentRequest.read(req)) == req)
+      assert(Bolt11Invoice.read(req).write == req)
     }
   }
 }

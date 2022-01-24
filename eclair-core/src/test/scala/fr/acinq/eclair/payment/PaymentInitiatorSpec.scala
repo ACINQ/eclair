@@ -24,9 +24,9 @@ import fr.acinq.eclair.Features._
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentPacketSpec._
-import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentError.UnsupportedFeatures
@@ -37,7 +37,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, KeySend, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalTlvPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{BinStringSyntax, ByteVector, HexStringSyntax}
@@ -53,18 +53,18 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
-  val featuresWithoutMpp: Map[Feature with InvoiceFeature, FeatureSupport] = Map(
+  val featuresWithoutMpp: Features = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory
   )
 
-  val featuresWithMpp: Map[Feature with InvoiceFeature, FeatureSupport] = Map(
+  val featuresWithMpp: Features = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
   )
 
-  val featuresWithTrampoline: Map[Feature with InvoiceFeature, FeatureSupport] = Map(
+  val featuresWithTrampoline: Features = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
@@ -86,7 +86,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   override def withFixture(test: OneArgTest): Outcome = {
     val features = if (test.tags.contains("mpp_disabled")) featuresWithoutMpp else featuresWithMpp
-    val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(features.collect { case (f, s) => (f: Feature, s) }))
+    val nodeParams = TestConstants.Alice.nodeParams.copy(features = features)
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
@@ -97,8 +97,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("forward payment with user custom tlv records") { f =>
     import f._
     val customRecords = Seq(GenericTlv(500L, hex"01020304"), GenericTlv(501L, hex"d34db33f"))
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, None, paymentHash, priv_c.privateKey, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
-    val req = SendPaymentToNode(finalAmount, pr, 1, Channel.MIN_CLTV_EXPIRY_DELTA, userCustomTlvs = customRecords, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, None, paymentHash, priv_c.privateKey, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
+    val req = SendPaymentToNode(ActorRef.noSender, finalAmount, pr, 1, Channel.MIN_CLTV_EXPIRY_DELTA, userCustomTlvs = customRecords, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     payFsm.expectMsgType[SendPaymentConfig]
@@ -124,20 +124,20 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("reject payment with unknown mandatory feature") { f =>
     import f._
     val taggedFields = List(
-      PaymentRequest.PaymentHash(paymentHash),
-      PaymentRequest.Description("Some invoice"),
-      PaymentRequest.PaymentSecret(randomBytes32()),
-      PaymentRequest.Expiry(3600),
-      PaymentRequest.PaymentRequestFeatures(bin"000001000000000000000000000000000100000100000000") // feature 42
+      Bolt11Invoice.PaymentHash(paymentHash),
+      Bolt11Invoice.Description("Some invoice"),
+      Bolt11Invoice.PaymentSecret(randomBytes32()),
+      Bolt11Invoice.Expiry(3600),
+      Bolt11Invoice.InvoiceFeatures(Features(bin"000001000000000000000000000000000100000100000000")) // feature 42
     )
-    val pr = PaymentRequest("lnbc", Some(finalAmount), TimestampSecond.now(), randomKey().publicKey, taggedFields, ByteVector.empty)
-    val req = SendPaymentToNode(finalAmount + 100.msat, pr, 1, CltvExpiryDelta(42), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    val pr = Bolt11Invoice("lnbc", Some(finalAmount), TimestampSecond.now(), randomKey().publicKey, taggedFields, ByteVector.empty)
+    val req = SendPaymentToNode(sender.ref, finalAmount + 100.msat, pr, 1, CltvExpiryDelta(42), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id === id)
     assert(fail.failures.head.isInstanceOf[LocalFailure])
-    assert(fail.failures.head.asInstanceOf[LocalFailure].t === UnsupportedFeatures(pr.features.features))
+    assert(fail.failures.head.asInstanceOf[LocalFailure].t === UnsupportedFeatures(pr.features))
   }
 
   test("forward payment with pre-defined route") { f =>
@@ -145,7 +145,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // we prioritize the invoice's finalExpiryDelta over the one from SendPaymentToRouteRequest
     val ignoredFinalExpiryDelta = CltvExpiryDelta(18)
     val finalExpiryDelta = CltvExpiryDelta(36)
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), finalExpiryDelta)
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), finalExpiryDelta)
     val route = PredefinedNodeRoute(Seq(a, b, c))
     val request = SendPaymentToRoute(finalAmount, finalAmount, pr, ignoredFinalExpiryDelta, route, None, None, None, 0 msat, CltvExpiryDelta(0), Nil)
     sender.send(initiator, request)
@@ -170,8 +170,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("forward single-part payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
     import f._
     val finalExpiryDelta = CltvExpiryDelta(24)
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some MPP invoice"), finalExpiryDelta, features = PaymentRequestFeatures(featuresWithMpp))
-    val req = SendPaymentToNode(finalAmount, pr, 1, /* ignored since the invoice provides it */ CltvExpiryDelta(12), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some MPP invoice"), finalExpiryDelta, features = featuresWithMpp)
+    val req = SendPaymentToNode(ActorRef.noSender, finalAmount, pr, 1, /* ignored since the invoice provides it */ CltvExpiryDelta(12), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     assert(req.finalExpiry(nodeParams.currentBlockHeight) === (finalExpiryDelta + 1).toCltvExpiry(nodeParams.currentBlockHeight))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -194,8 +194,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward multi-part payment") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18), features = PaymentRequestFeatures(featuresWithMpp))
-    val req = SendPaymentToNode(finalAmount + 100.msat, pr, 1, CltvExpiryDelta(42), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18), features = featuresWithMpp)
+    val req = SendPaymentToNode(ActorRef.noSender, finalAmount + 100.msat, pr, 1, CltvExpiryDelta(42), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount + 100.msat, c, Upstream.Local(id), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
@@ -217,7 +217,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward multi-part payment with pre-defined route") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18), features = PaymentRequestFeatures(featuresWithMpp))
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18), features = featuresWithMpp)
     val route = PredefinedChannelRoute(c, Seq(channelUpdate_ab.shortChannelId, channelUpdate_bc.shortChannelId))
     val req = SendPaymentToRoute(finalAmount / 2, finalAmount, pr, Channel.MIN_CLTV_EXPIRY_DELTA, route, None, None, None, 0 msat, CltvExpiryDelta(0), Nil)
     sender.send(initiator, req)
@@ -248,7 +248,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("forward trampoline payment") { f =>
     import f._
     val ignoredRoutingHints = List(List(ExtraHop(b, channelUpdate_bc.shortChannelId, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(9), features = PaymentRequestFeatures(featuresWithTrampoline), extraHops = ignoredRoutingHints)
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(9), features = featuresWithTrampoline, extraHops = ignoredRoutingHints)
     val trampolineFees = 21000 msat
     val req = SendTrampolinePayment(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), /* ignored since the invoice provides it */ CltvExpiryDelta(18), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
@@ -293,7 +293,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward trampoline to legacy payment") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some eclair-mobile invoice"), CltvExpiryDelta(9))
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some eclair-mobile invoice"), CltvExpiryDelta(9))
     val trampolineFees = 21000 msat
     val req = SendTrampolinePayment(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
@@ -323,8 +323,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("reject trampoline to legacy payment for 0-value invoice") { f =>
     import f._
     // This is disabled because it would let the trampoline node steal the whole payment (if malicious).
-    val routingHints = List(List(PaymentRequest.ExtraHop(b, channelUpdate_bc.shortChannelId, 10 msat, 100, CltvExpiryDelta(144))))
-    val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_a.privateKey, Left("#abittooreckless"), CltvExpiryDelta(18), None, None, routingHints, features = PaymentRequestFeatures(featuresWithMpp))
+    val routingHints = List(List(Bolt11Invoice.ExtraHop(b, channelUpdate_bc.shortChannelId, 10 msat, 100, CltvExpiryDelta(144))))
+    val pr = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_a.privateKey, Left("#abittooreckless"), CltvExpiryDelta(18), None, None, routingHints, features = featuresWithMpp)
     val trampolineFees = 21000 msat
     val req = SendTrampolinePayment(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), CltvExpiryDelta(9), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
@@ -340,7 +340,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("reject trampoline payment with onion too big") { f =>
     import f._
     val paymentMetadata = ByteVector.fromValidHex("01" * 400)
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Much payment very metadata"), CltvExpiryDelta(9), features = PaymentRequestFeatures(featuresWithTrampoline), paymentMetadata = Some(paymentMetadata))
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Much payment very metadata"), CltvExpiryDelta(9), features = featuresWithTrampoline, paymentMetadata = Some(paymentMetadata))
     val trampolineFees = 21000 msat
     val req = SendTrampolinePayment(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), CltvExpiryDelta(18), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
@@ -353,7 +353,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("retry trampoline payment") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = PaymentRequestFeatures(featuresWithTrampoline))
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = featuresWithTrampoline)
     val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
     val req = SendTrampolinePayment(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
@@ -388,7 +388,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("retry trampoline payment and fail") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = PaymentRequestFeatures(featuresWithTrampoline))
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = featuresWithTrampoline)
     val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
     val req = SendTrampolinePayment(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
@@ -417,7 +417,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("retry trampoline payment and fail (route not found)") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = PaymentRequestFeatures(featuresWithTrampoline))
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = featuresWithTrampoline)
     val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
     val req = SendTrampolinePayment(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
@@ -444,7 +444,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward trampoline payment with pre-defined route") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18))
+    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18))
     val trampolineFees = 100 msat
     val route = PredefinedNodeRoute(Seq(a, b))
     val req = SendPaymentToRoute(finalAmount + trampolineFees, finalAmount, pr, Channel.MIN_CLTV_EXPIRY_DELTA, route, None, None, None, trampolineFees, CltvExpiryDelta(144), Seq(b, c))

@@ -23,7 +23,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PaymentsDb.{decodeFailures, decodeRoute, encodeFailures, encodeRoute}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
-import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
+import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
@@ -106,7 +106,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setLong(7, sent.recipientAmount.toLong)
         statement.setString(8, sent.recipientNodeId.value.toHex)
         statement.setTimestamp(9, sent.createdAt.toSqlTimestamp)
-        statement.setString(10, sent.paymentRequest.map(PaymentRequest.write).orNull)
+        statement.setString(10, sent.paymentRequest.map(_.write).orNull)
         statement.executeUpdate()
       }
     }
@@ -220,15 +220,15 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Postgres) {
+  override def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, pr.paymentHash.toHex)
         statement.setString(2, preimage.toHex)
         statement.setString(3, paymentType)
-        statement.setString(4, PaymentRequest.write(pr))
+        statement.setString(4, pr.write)
         statement.setTimestamp(5, pr.timestamp.toSqlTimestamp)
-        statement.setTimestamp(6, (pr.timestamp + pr.expiry.getOrElse(PaymentRequest.DEFAULT_EXPIRY_SECONDS).seconds).toSqlTimestamp)
+        statement.setTimestamp(6, (pr.timestamp + pr.relativeExpiry.seconds).toSqlTimestamp)
         statement.executeUpdate()
       }
     }
@@ -249,7 +249,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val paymentRequest = rs.getString("payment_request")
     IncomingPayment(
-      PaymentRequest.read(paymentRequest),
+      Bolt11Invoice.read(paymentRequest),
       rs.getByteVector32FromHex("payment_preimage"),
       rs.getString("payment_type"),
       TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),
@@ -259,7 +259,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedPaymentRequest_opt: Option[String], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
     amount_opt match {
       case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0 unixms))
-      case None if serializedPaymentRequest_opt.exists(PaymentRequest.fastHasExpired) => IncomingPaymentStatus.Expired
+      case None if serializedPaymentRequest_opt.exists(Bolt11Invoice.fastHasExpired) => IncomingPaymentStatus.Expired
       case None => IncomingPaymentStatus.Pending
     }
   }
