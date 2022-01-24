@@ -176,7 +176,14 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile
 
 ### Backup
 
-The files that you need to backup are located in your data directory. You must backup:
+You need to backup:
+- your bitcoin core wallet
+- your eclair channels
+
+For bitcoin core, you need to backup the wallet file for the wallet that eclair is using. You only need to this once, when the wallet is 
+created (see https://github.com/bitcoin/bitcoin/blob/master/doc/managing-wallets.md for more information). 
+
+For eclair, the files that you need to backup are located in your data directory. You must backup:
 
 * your seeds (`node_seed.dat` and `channel_seed.dat`)
 * your channel database (`eclair.sqlite.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
