@@ -109,10 +109,12 @@ Add this to `eclair.conf` on all your frontend nodes:
 akka.remote.artery.transport = "tls-tcp"
 ```
 
+#### Run cluster nodes on separate servers
+
 Start all your frontend nodes with the following environment variables:
-* BACKEND_IP set the the IP address of your backend node
+* BACKEND_IP set to the IP address of your backend node
 * LOCAL_IP set to the IP address of this frontend node (this is typically a private IP address, reachable from your backend node)
-* NODE_PUB_KEY set the your node public key
+* NODE_PUB_KEY set to your node public key
 * AKKA_TLS_PASSWORD set to the password of your Akka certificate
 
 Add this to `eclair.conf` on your backend node:
