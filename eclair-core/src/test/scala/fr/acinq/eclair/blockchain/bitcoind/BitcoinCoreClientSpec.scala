@@ -130,6 +130,159 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
   }
 
+  test("fund transactions with unconfirmed ancestors") {
+    val sender = TestProbe()
+    val walletWithFunds = new BitcoinCoreClient(bitcoinrpcclient)
+    val walletWithoutFunds = new BitcoinCoreClient(createWallet("unconfirmed_ancestors", sender))
+
+    // Our wallet initially contains a single confirmed utxo.
+    walletWithoutFunds.getReceiveAddress().pipeTo(sender.ref)
+    val unsafeFundsAddress = sender.expectMsgType[String]
+    walletWithFunds.sendToAddress(unsafeFundsAddress, 500_000 sat, 1).pipeTo(sender.ref)
+    sender.expectMsgType[ByteVector32]
+    generateBlocks(1)
+
+    def fundAndPublish(txNotFunded: Transaction, targetFeerate: FeeratePerKw): Transaction = {
+      walletWithoutFunds.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, replaceable = false)).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
+      walletWithoutFunds.signTransaction(fundedTx).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      walletWithoutFunds.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+
+    // We use this utxo to fund a first transaction with a low feerate.
+    val tx1 = {
+      val targetFeerate = FeeratePerKw(5000 sat)
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(100_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      val tx = fundAndPublish(txNotFunded, targetFeerate)
+      // Verify that the transaction feerate matches what we requested.
+      walletWithoutFunds.getMempoolTx(tx.txid).pipeTo(sender.ref)
+      val mempoolTx = sender.expectMsgType[MempoolTx]
+      assert(mempoolTx.fees === mempoolTx.ancestorFees)
+      val actualFee = mempoolTx.fees
+      val expectedFee = Transactions.weight2fee(targetFeerate, tx.weight())
+      assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+      tx
+    }
+
+    // We create another transaction with a higher feerate, that spends the unconfirmed change output from tx1.
+    val tx2 = {
+      val targetFeerate = FeeratePerKw(10_000 sat)
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(75_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      val tx = fundAndPublish(txNotFunded, targetFeerate)
+      Transaction.correctlySpends(tx, Seq(tx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      // The feerate should take into account our unconfirmed parent.
+      walletWithoutFunds.getMempoolTx(tx.txid).pipeTo(sender.ref)
+      val mempoolTx = sender.expectMsgType[MempoolTx]
+      assert(mempoolTx.ancestorCount === 1)
+      assert(mempoolTx.fees < mempoolTx.ancestorFees)
+      // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation
+      // val actualFee = mempoolTx.ancestorFees
+      // val expectedFee = Transactions.weight2fee(targetFeerate, tx.weight() + tx1.weight())
+      // assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+      tx
+    }
+
+    // We create a third transaction, with an even higher feerate, that spends our chain of unconfirmed transactions.
+    {
+      val targetFeerate = FeeratePerKw(15_000 sat)
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      val tx = fundAndPublish(txNotFunded, targetFeerate)
+      Transaction.correctlySpends(tx, Seq(tx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      // The feerate should take into account our chain of unconfirmed parents.
+      walletWithoutFunds.getMempoolTx(tx.txid).pipeTo(sender.ref)
+      val mempoolTx = sender.expectMsgType[MempoolTx]
+      assert(mempoolTx.ancestorCount === 2)
+      assert(mempoolTx.fees < mempoolTx.ancestorFees)
+      // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation
+      // val actualFee = mempoolTx.ancestorFees
+      // val expectedFee = Transactions.weight2fee(targetFeerate, tx.weight() + tx1.weight() + tx2.weight())
+      // assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+    }
+  }
+
+  test("fund transactions with unsafe inputs") {
+    val sender = TestProbe()
+    val walletWithFunds = new BitcoinCoreClient(bitcoinrpcclient)
+    val walletUnsafeFunds = new BitcoinCoreClient(createWallet("unsafe_inputs", sender))
+    generateBlocks(1) // we start with an empty mempool
+
+    def fundUnsafeAndPublish(txNotFunded: Transaction, targetFeerate: FeeratePerKw): Transaction = {
+      walletUnsafeFunds.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, includeUnsafe = Some(true))).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
+      walletUnsafeFunds.signTransaction(fundedTx).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      walletUnsafeFunds.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+
+    // Our unsafe wallet receives unconfirmed funds from an external sender.
+    val tx1 = {
+      walletUnsafeFunds.getReceiveAddress().pipeTo(sender.ref)
+      val unsafeFundsAddress = sender.expectMsgType[String]
+      walletWithFunds.sendToAddress(unsafeFundsAddress, 500_000 sat, 144).pipeTo(sender.ref)
+      val fundingTxid = sender.expectMsgType[ByteVector32]
+      walletUnsafeFunds.getTransaction(fundingTxid).pipeTo(sender.ref)
+      val unsafeTx = sender.expectMsgType[Transaction]
+      walletUnsafeFunds.getMempoolTx(unsafeTx.txid).pipeTo(sender.ref)
+      val mempoolUnsafeTx = sender.expectMsgType[MempoolTx]
+      // This transaction has no unconfirmed parent and pays a relatively low feerate.
+      assert(mempoolUnsafeTx.ancestorCount === 0)
+      assert(Transactions.fee2rate(mempoolUnsafeTx.fees, unsafeTx.weight()) <= FeeratePerKw(6000 sat))
+      unsafeTx
+    }
+
+    // Create a chain of child transactions that spend the change output of the previous one with a growing feerate.
+    (1 until 25).foldLeft(tx1) {
+      case (previousTx, i) =>
+        val targetFeerate = FeeratePerKw((10 + i) * 1000 sat)
+        val txNotFunded = Transaction(2, Nil, Seq(TxOut(2_500 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+        // By default, we cannot use these funds: they are considered unsafe because the sender could replace the transaction.
+        walletUnsafeFunds.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate)).pipeTo(sender.ref)
+        assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+        // But we can if we opt into using unsafe funds for funding.
+        val tx = fundUnsafeAndPublish(txNotFunded, targetFeerate)
+        Transaction.correctlySpends(tx, Seq(previousTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        // The feerate should take the unconfirmed ancestors into account.
+        walletUnsafeFunds.getMempoolTx(tx.txid).pipeTo(sender.ref)
+        val mempoolTx = sender.expectMsgType[MempoolTx]
+        assert(mempoolTx.ancestorCount === i)
+        assert(mempoolTx.fees < mempoolTx.ancestorFees)
+        // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation
+        // walletUnsafeFunds.getMempool().pipeTo(sender.ref)
+        // val mempoolTxs = sender.expectMsgType[Seq[Transaction]]
+        // val actualFee = mempoolTx.ancestorFees
+        // val expectedFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight()).sum)
+        // assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+        tx
+    }
+
+    // Our mempool policy prevents us from creating chains of transactions that are too long.
+    {
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(2_500 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      walletUnsafeFunds.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(50_000 sat), includeUnsafe = Some(true))).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
+      walletUnsafeFunds.signTransaction(fundedTx).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      walletUnsafeFunds.publishTransaction(signedTx).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Failure].cause.getMessage.contains("too many unconfirmed ancestors"))
+    }
+
+    // If the initial unsafe input is replaced, the whole chain of transactions is evicted from the mempool.
+    // But we have to pay a very high fee to be able to replace all our descendants!
+    val amountOut = tx1.txOut.map(_.amount).sum - 350_000.sat
+    val unsignedTx2 = tx1.copy(txOut = Seq(TxOut(amountOut, Script.pay2wpkh(randomKey().publicKey))))
+    walletWithFunds.signTransaction(unsignedTx2).pipeTo(sender.ref)
+    val tx2 = sender.expectMsgType[SignTransactionResponse].tx
+    walletWithFunds.publishTransaction(tx2).pipeTo(sender.ref)
+    sender.expectMsg(tx2.txid)
+    walletWithFunds.getMempool().pipeTo(sender.ref)
+    assert(sender.expectMsgType[Seq[Transaction]] === Seq(tx2))
+  }
+
   test("absence of rounding") {
     val txIn = Transaction(1, Nil, Nil, 42)
     val hexOut = "02000000013361e994f6bd5cbe9dc9e8cb3acdc12bc1510a3596469d9fc03cfddd71b223720000000000feffffff02c821354a00000000160014b6aa25d6f2a692517f2cf1ad55f243a5ba672cac404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
