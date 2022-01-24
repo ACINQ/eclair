@@ -31,7 +31,6 @@ import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, TxOwner}
@@ -407,22 +406,18 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    val preimage1 = sender.expectMsgType[PreimageReceived].paymentPreimage
-    assert(sender.expectMsgType[PaymentSent].paymentPreimage === preimage1)
+    val preimage1 = sender.expectMsgType[PaymentSent].paymentPreimage
     buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    val preimage2 = sender.expectMsgType[PreimageReceived].paymentPreimage
-    assert(sender.expectMsgType[PaymentSent].paymentPreimage === preimage2)
+    val preimage2 = sender.expectMsgType[PaymentSent].paymentPreimage
     buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PreimageReceived]
     sender.expectMsgType[PaymentSent]
     buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PreimageReceived]
     sender.expectMsgType[PaymentSent]
     // we then generate blocks to make htlcs timeout (nothing will happen in the channel because all of them have already been fulfilled)
     generateBlocks(40)
@@ -691,10 +686,9 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     // then we make the actual payment
     sender.send(nodes("C").paymentInitiator, SendPaymentToNode(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
-    val preimage = sender.expectMsgType[PreimageReceived].paymentPreimage
-    assert(Crypto.sha256(preimage) === pr.paymentHash)
     val ps = sender.expectMsgType[PaymentSent](60 seconds)
     assert(ps.id == paymentId)
+    assert(Crypto.sha256(ps.paymentPreimage) === pr.paymentHash)
 
     // we make sure the htlc has been removed from F's commitment before we force-close
     awaitCond({

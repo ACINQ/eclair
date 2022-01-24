@@ -27,6 +27,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
+import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentError.UnsupportedFeatures
 import fr.acinq.eclair.payment.send.PaymentInitiator._
@@ -122,13 +123,12 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("reject payment with unknown mandatory feature") { f =>
     import f._
-    val unknownFeature = 42
     val taggedFields = List(
       PaymentRequest.PaymentHash(paymentHash),
       PaymentRequest.Description("Some invoice"),
       PaymentRequest.PaymentSecret(randomBytes32()),
       PaymentRequest.Expiry(3600),
-      PaymentRequest.PaymentRequestFeatures(bin"000001000000000000000000000000000100000100000000")
+      PaymentRequest.PaymentRequestFeatures(bin"000001000000000000000000000000000100000100000000") // feature 42
     )
     val pr = PaymentRequest("lnbc", Some(finalAmount), TimestampSecond.now(), randomKey().publicKey, taggedFields, ByteVector.empty)
     val req = SendPaymentToNode(finalAmount + 100.msat, pr, 1, CltvExpiryDelta(42), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
@@ -147,10 +147,24 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val finalExpiryDelta = CltvExpiryDelta(36)
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), finalExpiryDelta)
     val route = PredefinedNodeRoute(Seq(a, b, c))
-    sender.send(initiator, SendPaymentToRoute(finalAmount, finalAmount, pr, ignoredFinalExpiryDelta, route, None, None, None, 0 msat, CltvExpiryDelta(0), Nil))
+    val request = SendPaymentToRoute(finalAmount, finalAmount, pr, ignoredFinalExpiryDelta, route, None, None, None, 0 msat, CltvExpiryDelta(0), Nil)
+    sender.send(initiator, request)
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, Nil))
-    payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.createSinglePartPayload(finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1), pr.paymentSecret.get, pr.paymentMetadata)))
+    payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(initiator, Left(route), PaymentOnion.createSinglePartPayload(finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1), pr.paymentSecret.get, pr.paymentMetadata)))
+
+    sender.send(initiator, GetPayment(Left(payment.paymentId)))
+    sender.expectMsg(PaymentIsPending(payment.paymentId, pr.paymentHash, PendingPaymentToRoute(sender.ref, request)))
+    sender.send(initiator, GetPayment(Right(pr.paymentHash)))
+    sender.expectMsg(PaymentIsPending(payment.paymentId, pr.paymentHash, PendingPaymentToRoute(sender.ref, request)))
+
+    val pf = PaymentFailed(payment.paymentId, pr.paymentHash, Nil)
+    payFsm.send(initiator, pf)
+    sender.expectMsg(pf)
+    eventListener.expectNoMessage(100 millis)
+
+    sender.send(initiator, GetPayment(Right(pr.paymentHash)))
+    sender.expectMsg(NoPendingPayment(Right(pr.paymentHash)))
   }
 
   test("forward single-part payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
@@ -162,7 +176,20 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount, c, Upstream.Local(id), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
-    payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(sender.ref, c, FinalTlvPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(finalAmount), OnionPaymentPayloadTlv.OutgoingCltv(req.finalExpiry(nodeParams.currentBlockHeight)), OnionPaymentPayloadTlv.PaymentData(pr.paymentSecret.get, finalAmount))), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+    payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(initiator, c, FinalTlvPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(finalAmount), OnionPaymentPayloadTlv.OutgoingCltv(req.finalExpiry(nodeParams.currentBlockHeight)), OnionPaymentPayloadTlv.PaymentData(pr.paymentSecret.get, finalAmount))), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(PaymentIsPending(id, pr.paymentHash, PendingPaymentToNode(sender.ref, req)))
+    sender.send(initiator, GetPayment(Right(pr.paymentHash)))
+    sender.expectMsg(PaymentIsPending(id, pr.paymentHash, PendingPaymentToNode(sender.ref, req)))
+
+    val pf = PaymentFailed(id, pr.paymentHash, Nil)
+    payFsm.send(initiator, pf)
+    sender.expectMsg(pf)
+    eventListener.expectNoMessage(100 millis)
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(NoPendingPayment(Left(id)))
   }
 
   test("forward multi-part payment") { f =>
@@ -172,7 +199,20 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount + 100.msat, c, Upstream.Local(id), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
-    multiPartPayFsm.expectMsg(SendMultiPartPayment(sender.ref, pr.paymentSecret.get, c, finalAmount + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight), 1, pr.paymentMetadata, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+    multiPartPayFsm.expectMsg(SendMultiPartPayment(initiator, pr.paymentSecret.get, c, finalAmount + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight), 1, pr.paymentMetadata, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(PaymentIsPending(id, pr.paymentHash, PendingPaymentToNode(sender.ref, req)))
+    sender.send(initiator, GetPayment(Right(pr.paymentHash)))
+    sender.expectMsg(PaymentIsPending(id, pr.paymentHash, PendingPaymentToNode(sender.ref, req)))
+
+    val ps = PaymentSent(id, pr.paymentHash, randomBytes32(), finalAmount, priv_c.publicKey, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None)))
+    payFsm.send(initiator, ps)
+    sender.expectMsg(ps)
+    eventListener.expectNoMessage(100 millis)
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(NoPendingPayment(Left(id)))
   }
 
   test("forward multi-part payment with pre-defined route") { f =>
@@ -184,11 +224,25 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, Nil))
     val msg = payFsm.expectMsgType[PaymentLifecycle.SendPaymentToRoute]
+    assert(msg.replyTo === initiator)
     assert(msg.route === Left(route))
     assert(msg.finalPayload.amount === finalAmount / 2)
     assert(msg.finalPayload.expiry === req.finalExpiry(nodeParams.currentBlockHeight))
     assert(msg.finalPayload.paymentSecret === pr.paymentSecret.get)
     assert(msg.finalPayload.totalAmount === finalAmount)
+
+    sender.send(initiator, GetPayment(Left(payment.paymentId)))
+    sender.expectMsg(PaymentIsPending(payment.paymentId, pr.paymentHash, PendingPaymentToRoute(sender.ref, req)))
+    sender.send(initiator, GetPayment(Right(pr.paymentHash)))
+    sender.expectMsg(PaymentIsPending(payment.paymentId, pr.paymentHash, PendingPaymentToRoute(sender.ref, req)))
+
+    val pf = PaymentFailed(payment.paymentId, pr.paymentHash, Nil)
+    payFsm.send(initiator, pf)
+    sender.expectMsg(pf)
+    eventListener.expectNoMessage(100 millis)
+
+    sender.send(initiator, GetPayment(Right(pr.paymentHash)))
+    sender.expectMsg(NoPendingPayment(Right(pr.paymentHash)))
   }
 
   test("forward trampoline payment") { f =>
@@ -198,8 +252,13 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val trampolineFees = 21000 msat
     val req = SendTrampolinePayment(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), /* ignored since the invoice provides it */ CltvExpiryDelta(18), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
-    sender.expectMsgType[UUID]
+    val id = sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsgType[SendPaymentConfig]
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(PaymentIsPending(id, pr.paymentHash, PendingTrampolinePayment(sender.ref, Nil, req)))
+    sender.send(initiator, GetPayment(Right(pr.paymentHash)))
+    sender.expectMsg(PaymentIsPending(id, pr.paymentHash, PendingTrampolinePayment(sender.ref, Nil, req)))
 
     val msg = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
     assert(msg.paymentSecret !== pr.paymentSecret.get) // we should not leak the invoice secret to the trampoline node
@@ -298,13 +357,16 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
     val req = SendTrampolinePayment(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
-    sender.expectMsgType[UUID]
+    val id = sender.expectMsgType[UUID]
     val cfg = multiPartPayFsm.expectMsgType[SendPaymentConfig]
     assert(cfg.storeInDb)
     assert(!cfg.publishEvent)
 
     val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
     assert(msg1.totalAmount === finalAmount + 21000.msat)
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsgType[PaymentIsPending]
 
     // Simulate a failure which should trigger a retry.
     multiPartPayFsm.send(initiator, PaymentFailed(cfg.parentId, pr.paymentHash, Seq(RemoteFailure(msg1.totalAmount, Nil, Sphinx.DecryptedFailurePacket(b, TrampolineFeeInsufficient)))))
@@ -319,6 +381,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     eventListener.expectMsg(success)
     sender.expectNoMessage(100 millis)
     eventListener.expectNoMessage(100 millis)
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(NoPendingPayment(Left(id)))
   }
 
   test("retry trampoline payment and fail") { f =>

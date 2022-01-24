@@ -34,7 +34,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
-import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
+import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.{OnionMessages, Postman}
@@ -42,7 +42,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, RelayFees, UsableBalance}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendPaymentToRouteResponse, SendSpontaneousPayment}
+import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
@@ -375,11 +375,33 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = Future {
-    id match {
-      case Left(uuid) => appKit.nodeParams.db.payments.listOutgoingPayments(uuid)
-      case Right(paymentHash) => appKit.nodeParams.db.payments.listOutgoingPayments(paymentHash)
-    }
+  override def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = {
+    Future {
+      id match {
+        case Left(uuid) => appKit.nodeParams.db.payments.listOutgoingPayments(uuid)
+        case Right(paymentHash) => appKit.nodeParams.db.payments.listOutgoingPayments(paymentHash)
+      }
+    }.flatMap(outgoingDbPayments => {
+      if (!outgoingDbPayments.exists(_.status == OutgoingPaymentStatus.Pending)) {
+        // We don't have any pending payment in the DB, but we may have just started a payment that hasn't written to the DB yet.
+        // We ask the payment initiator and if that's the case, we build a dummy payment placeholder to let the caller know
+        // that a payment attempt is in progress (even though we don't have information yet about the actual HTLCs).
+        (appKit.paymentInitiator ? GetPayment(id)).mapTo[GetPaymentResponse].map {
+          case NoPendingPayment(_) => outgoingDbPayments
+          case PaymentIsPending(paymentId, paymentHash, pending) =>
+            val paymentType = "placeholder"
+            val dummyOutgoingPayment = pending match {
+              case PendingSpontaneousPayment(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), None, OutgoingPaymentStatus.Pending)
+              case PendingPaymentToNode(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.paymentRequest), OutgoingPaymentStatus.Pending)
+              case PendingPaymentToRoute(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.paymentRequest), OutgoingPaymentStatus.Pending)
+              case PendingTrampolinePayment(_, _, r) => OutgoingPayment(paymentId, paymentId, None, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.paymentRequest), OutgoingPaymentStatus.Pending)
+            }
+            dummyOutgoingPayment +: outgoingDbPayments
+        }
+      } else {
+        Future.successful(outgoingDbPayments)
+      }
+    })
   }
 
   override def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]] = Future {

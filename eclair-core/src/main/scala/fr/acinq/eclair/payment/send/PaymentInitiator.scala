@@ -60,11 +60,13 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, PaymentSecretMissing) :: Nil)
         case Some(paymentSecret) if r.paymentRequest.features.allowMultiPart && nodeParams.features.hasFeature(BasicMultiPartPayment) =>
           val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
-          fsm ! SendMultiPartPayment(sender(), paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.paymentRequest.paymentMetadata, r.assistedRoutes, r.routeParams, userCustomTlvs = r.userCustomTlvs)
+          fsm ! SendMultiPartPayment(self, paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.paymentRequest.paymentMetadata, r.assistedRoutes, r.routeParams, userCustomTlvs = r.userCustomTlvs)
+          context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
         case Some(paymentSecret) =>
           val finalPayload = PaymentOnion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.paymentRequest.paymentMetadata, r.userCustomTlvs)
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          fsm ! PaymentLifecycle.SendPaymentToNode(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
+          fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
+          context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
       }
 
     case r: SendSpontaneousPayment =>
@@ -74,7 +76,8 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val finalExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1)
       val finalPayload = PaymentOnion.FinalTlvPayload(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(r.recipientAmount), OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry), OnionPaymentPayloadTlv.PaymentData(randomBytes32(), r.recipientAmount), OnionPaymentPayloadTlv.KeySend(r.paymentPreimage)), r.userCustomTlvs))
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-      fsm ! PaymentLifecycle.SendPaymentToNode(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, routeParams = r.routeParams)
+      fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, finalPayload, r.maxAttempts, routeParams = r.routeParams)
+      context become main(pending + (paymentId -> PendingSpontaneousPayment(sender(), r)))
 
     case r: SendTrampolinePayment =>
       val paymentId = UUID.randomUUID()
@@ -88,55 +91,12 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           log.info(s"sending trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
           sendTrampolinePayment(paymentId, r, trampolineFees, trampolineExpiryDelta) match {
             case Success(_) =>
-              context become main(pending + (paymentId -> PendingPayment(sender(), remainingAttempts, r)))
+              context become main(pending + (paymentId -> PendingTrampolinePayment(sender(), remainingAttempts, r)))
             case Failure(t) =>
               log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
               sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, t) :: Nil)
           }
       }
-
-    case pf: PaymentFailed => pending.get(pf.id).foreach(pp => {
-      val trampolineRoute = Seq(
-        NodeHop(nodeParams.nodeId, pp.r.trampolineNodeId, nodeParams.expiryDelta, 0 msat),
-        NodeHop(pp.r.trampolineNodeId, pp.r.recipientNodeId, pp.r.trampolineAttempts.last._2, pp.r.trampolineAttempts.last._1)
-      )
-      val decryptedFailures = pf.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f)) => f }
-      val shouldRetry = decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon)
-      if (shouldRetry) {
-        pp.remainingAttempts match {
-          case (trampolineFees, trampolineExpiryDelta) :: remaining =>
-            log.info(s"retrying trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
-            sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta) match {
-              case Success(_) =>
-                context become main(pending + (pf.id -> pp.copy(remainingAttempts = remaining)))
-              case Failure(t) =>
-                log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
-                val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, trampolineRoute, t)))
-                pp.sender ! localFailure
-                context.system.eventStream.publish(localFailure)
-                context become main(pending - pf.id)
-            }
-          case Nil =>
-            log.info("trampoline node couldn't find a route after all retries")
-            val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, trampolineRoute, RouteNotFound)))
-            pp.sender ! localFailure
-            context.system.eventStream.publish(localFailure)
-            context become main(pending - pf.id)
-        }
-      } else {
-        pp.sender ! pf
-        context.system.eventStream.publish(pf)
-        context become main(pending - pf.id)
-      }
-    })
-
-    case _: PreimageReceived => // we received the preimage, but we wait for the PaymentSent event that will contain more data
-
-    case ps: PaymentSent => pending.get(ps.id).foreach(pp => {
-      pp.sender ! ps
-      context.system.eventStream.publish(ps)
-      context become main(pending - ps.id)
-    })
 
     case r: SendPaymentToRoute =>
       val paymentId = UUID.randomUUID()
@@ -155,7 +115,8 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
               val trampolineSecret = r.trampolineSecret.getOrElse(randomBytes32())
               sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
               val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-              payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, r.paymentRequest.paymentMetadata, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
+              payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, r.paymentRequest.paymentMetadata, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
+              context become main(pending + (paymentId -> PendingPaymentToRoute(sender(), r)))
             case Failure(t) =>
               log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
               sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, t) :: Nil)
@@ -163,10 +124,72 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         case Nil =>
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, r.paymentRequest.paymentSecret.get, r.paymentRequest.paymentMetadata), r.paymentRequest.routingInfo)
+          payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, r.paymentRequest.paymentSecret.get, r.paymentRequest.paymentMetadata), r.paymentRequest.routingInfo)
+          context become main(pending + (paymentId -> PendingPaymentToRoute(sender(), r)))
         case _ =>
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineMultiNodeNotSupported) :: Nil)
       }
+
+    case pf: PaymentFailed => pending.get(pf.id).foreach {
+      case pp: PendingTrampolinePayment =>
+        val trampolineRoute = Seq(
+          NodeHop(nodeParams.nodeId, pp.r.trampolineNodeId, nodeParams.expiryDelta, 0 msat),
+          NodeHop(pp.r.trampolineNodeId, pp.r.recipientNodeId, pp.r.trampolineAttempts.last._2, pp.r.trampolineAttempts.last._1)
+        )
+        val decryptedFailures = pf.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f)) => f }
+        val shouldRetry = decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon)
+        if (shouldRetry) {
+          pp.remainingAttempts match {
+            case (trampolineFees, trampolineExpiryDelta) :: remaining =>
+              log.info(s"retrying trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
+              sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta) match {
+                case Success(_) =>
+                  context become main(pending + (pf.id -> pp.copy(remainingAttempts = remaining)))
+                case Failure(t) =>
+                  log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
+                  val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, trampolineRoute, t)))
+                  pp.sender ! localFailure
+                  context.system.eventStream.publish(localFailure)
+                  context become main(pending - pf.id)
+              }
+            case Nil =>
+              log.info("trampoline node couldn't find a route after all retries")
+              val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, trampolineRoute, RouteNotFound)))
+              pp.sender ! localFailure
+              context.system.eventStream.publish(localFailure)
+              context become main(pending - pf.id)
+          }
+        } else {
+          pp.sender ! pf
+          context.system.eventStream.publish(pf)
+          context become main(pending - pf.id)
+        }
+      case pp =>
+        pp.sender ! pf
+        context become main(pending - pf.id)
+    }
+
+    case _: PreimageReceived => // we received the preimage, but we wait for the PaymentSent event that will contain more data
+
+    case ps: PaymentSent => pending.get(ps.id).foreach(pp => {
+      pp.sender ! ps
+      pp match {
+        case _: PendingTrampolinePayment => context.system.eventStream.publish(ps)
+        case _ => // other types of payment internally handle publishing the event
+      }
+      context become main(pending - ps.id)
+    })
+
+    case GetPayment(id) =>
+      val pending_opt = id match {
+        case Left(paymentId) => pending.get(paymentId).map(pp => (paymentId, pp))
+        case Right(paymentHash) => pending.collectFirst { case (paymentId, pp) if pp.paymentHash == paymentHash => (paymentId, pp) }
+      }
+      pending_opt match {
+        case Some((paymentId, pp)) => sender() ! PaymentIsPending(paymentId, pp.paymentHash, pp)
+        case None => sender() ! NoPendingPayment(id)
+      }
+
   }
 
   private def buildTrampolinePayment(r: SendRequestedPayment, trampolineNodeId: PublicKey, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): Try[(MilliSatoshi, CltvExpiry, OnionRoutingPacket)] = {
@@ -225,7 +248,23 @@ object PaymentInitiator {
 
   def props(nodeParams: NodeParams, outgoingPaymentFactory: MultiPartPaymentFactory) = Props(new PaymentInitiator(nodeParams, outgoingPaymentFactory))
 
-  case class PendingPayment(sender: ActorRef, remainingAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)], r: SendTrampolinePayment)
+  // @formatter:off
+  sealed trait PendingPayment {
+    def sender: ActorRef
+    def paymentHash: ByteVector32
+  }
+  case class PendingSpontaneousPayment(sender: ActorRef, request: SendSpontaneousPayment) extends PendingPayment { override def paymentHash: ByteVector32 = request.paymentHash }
+  case class PendingPaymentToNode(sender: ActorRef, request: SendPaymentToNode) extends PendingPayment { override def paymentHash: ByteVector32 = request.paymentHash }
+  case class PendingPaymentToRoute(sender: ActorRef, request: SendPaymentToRoute) extends PendingPayment { override def paymentHash: ByteVector32 = request.paymentHash }
+  case class PendingTrampolinePayment(sender: ActorRef, remainingAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)], r: SendTrampolinePayment) extends PendingPayment { override def paymentHash: ByteVector32 = r.paymentHash }
+  // @formatter:on
+
+  // @formatter:off
+  case class GetPayment(id: Either[UUID, ByteVector32])
+  sealed trait GetPaymentResponse
+  case class NoPendingPayment(id: Either[UUID, ByteVector32]) extends GetPaymentResponse
+  case class PaymentIsPending(paymentId: UUID, paymentHash: ByteVector32, pending: PendingPayment) extends GetPaymentResponse
+  // @formatter:on
 
   sealed trait SendRequestedPayment {
     // @formatter:off
