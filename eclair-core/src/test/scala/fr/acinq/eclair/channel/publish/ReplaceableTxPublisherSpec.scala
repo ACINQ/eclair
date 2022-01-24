@@ -1023,7 +1023,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val highSafeThresholdParams = alice.underlyingActor.nodeParams.modify(_.onChainFeeConf.feeTargets.safeUtxosThreshold).setTo(10)
       setFeerate(FeeratePerKw(2500 sat))
       val targetFeerate = FeeratePerKw(5000 sat)
-      setFeerate(targetFeerate, blockTarget = 1)
+      setFeerate(targetFeerate, blockTarget = 2)
 
       val htlcSuccessPublisher = createPublisher(highSafeThresholdParams)
       htlcSuccessPublisher ! Publish(probe.ref, htlcSuccess)

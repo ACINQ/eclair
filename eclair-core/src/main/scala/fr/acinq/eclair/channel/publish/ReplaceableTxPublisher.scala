@@ -75,8 +75,8 @@ object ReplaceableTxPublisher {
   }
 
   def getFeerate(feeEstimator: FeeEstimator, confirmBefore: BlockHeight, currentBlockHeight: BlockHeight, hasEnoughSafeUtxos: Boolean): FeeratePerKw = {
+    val remainingBlocks = confirmBefore - currentBlockHeight
     if (hasEnoughSafeUtxos) {
-      val remainingBlocks = confirmBefore - currentBlockHeight
       val blockTarget = remainingBlocks match {
         // If our target is still very far in the future, no need to rush
         case t if t >= 144 => 144
@@ -91,7 +91,11 @@ object ReplaceableTxPublisher {
       feeEstimator.getFeeratePerKw(blockTarget)
     } else {
       // We don't have many safe utxos so we want the transaction to confirm quickly.
-      feeEstimator.getFeeratePerKw(1)
+      if (remainingBlocks <= 1) {
+        feeEstimator.getFeeratePerKw(1)
+      } else {
+        feeEstimator.getFeeratePerKw(2)
+      }
     }
   }
 
