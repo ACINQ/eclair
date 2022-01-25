@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
@@ -86,7 +86,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
                       chainHash: ByteVector32,
-                      channelFlags: Byte,
+                      channelFlags: ChannelFlags,
                       watchSpentWindow: FiniteDuration,
                       paymentRequestExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
@@ -220,6 +220,8 @@ object NodeParams extends Logging {
       "router.path-finding.ratio-channel-capacity" -> "router.path-finding.default.ratios.channel-capacity",
       "router.path-finding.hop-cost-base-msat" -> "router.path-finding.default.hop-cost.fee-base-msat",
       "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost.fee-proportional-millionths",
+      // v0.6.3
+      "channel-flags" -> "channel.channel-flags",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -231,6 +233,8 @@ object NodeParams extends Logging {
 
     val chain = config.getString("chain")
     val chainHash = hashFromChain(chain)
+
+    val channelFlags = ChannelFlags(announceChannel = config.getBoolean("channel.channel-flags.announce-channel"))
 
     val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
@@ -449,7 +453,7 @@ object NodeParams extends Logging {
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
       chainHash = chainHash,
-      channelFlags = config.getInt("channel-flags").toByte,
+      channelFlags = channelFlags,
       watchSpentWindow = watchSpentWindow,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),

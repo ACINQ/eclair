@@ -21,7 +21,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
-import fr.acinq.eclair.channel.LocalParams
+import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{Peer, PeerConnection}
@@ -139,7 +139,7 @@ object TestConstants {
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
-      channelFlags = 1,
+      channelFlags = ChannelFlags(announceChannel = true),
       watchSpentWindow = 1 second,
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
@@ -272,7 +272,7 @@ object TestConstants {
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
-      channelFlags = 1,
+      channelFlags = ChannelFlags(announceChannel = true),
       watchSpentWindow = 1 second,
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
