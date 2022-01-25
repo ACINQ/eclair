@@ -176,6 +176,7 @@ This release contains many other API updates:
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--maxFeeMsat` to specify an upper bound of fees (#1969)
 - `getsentinfo` output includes `failedNode` field for all failed routes
 - for `payinvoice` and `sendtonode`, `--feeThresholdSat` has been renamed to `--maxFeeFlatSat`
+- for `open`, `--channelFlags` has been replaced by `--announceChannel`
 - the `networkstats` API has been removed
 
 Have a look at our [API documentation](https://acinq.github.io/eclair) for more details.

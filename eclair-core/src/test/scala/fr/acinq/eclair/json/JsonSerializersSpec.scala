@@ -151,14 +151,6 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     JsonSerializers.serialization.write(inputInfo)(JsonSerializers.formats) shouldBe """{"outPoint":"9f0b9c0ce92c175ca4e78acfd13a718099c73818b6d3140cfe6f04ec052b5b34:42","amountSatoshis":456651}"""
   }
 
-  test("channel flags serialization") {
-    //object ChannelFlags {
-    //  val AnnounceChannel = 0x01.toByte
-    //  val Empty = 0x00.toByte
-    //}
-    // val announceChannel: Boolean = (channelFlags & 0x01) != 0
-  }
-
   test("Features serialization") {
     val features = Features(
       activated = Map(

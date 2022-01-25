@@ -33,8 +33,8 @@ trait Channel {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "channelFlags".as[Int].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, channelType, fundingFeerateSatByte, channelFlags_opt, announceChannel_opt, openTimeout_opt) =>
+    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
+      (nodeId, fundingSatoshis, pushMsat, channelType, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
         val (channelTypeOk, channelType_opt) = channelType match {
           case Some(str) if str == ChannelTypes.Standard.toString => (true, Some(ChannelTypes.Standard))
           case Some(str) if str == ChannelTypes.StaticRemoteKey.toString => (true, Some(ChannelTypes.StaticRemoteKey))
@@ -45,8 +45,6 @@ trait Channel {
         }
         if (!channelTypeOk) {
           reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be ${ChannelTypes.Standard.toString}, ${ChannelTypes.StaticRemoteKey.toString}, ${ChannelTypes.AnchorOutputs.toString} or ${ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString}"))
-        } else if (channelFlags_opt.isDefined) {
-          reject(MalformedFormFieldRejection("channelFlags", "The field channelFlags is not supported anymore, use announceChannel instead"))
         } else {
           complete {
             eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt)

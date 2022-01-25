@@ -357,20 +357,6 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'open' channels with deprecated channelFlags arg") {
-        val eclair = mock[Eclair]
-    val mockService = new MockService(eclair)
-
-    Post("/open", FormData("nodeId" -> randomKey().publicKey.toString(), "fundingSatoshis" -> "100000", "channelFlags" -> "1").toEntity) ~>
-      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
-      addHeader("Content-Type", "application/json") ~>
-      Route.seal(mockService.open) ~>
-      check {
-        assert(handled)
-        assert(status == BadRequest)
-      }
-  }
-
   test("'close' method should accept shortChannelIds") {
     val shortChannelIdSerialized = "42000x27x3"
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")

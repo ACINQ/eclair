@@ -497,5 +497,6 @@ case class ChannelFlags(announceChannel: Boolean) {
 }
 object ChannelFlags {
   val Private: ChannelFlags = ChannelFlags(announceChannel = false)
+  val Public: ChannelFlags = ChannelFlags(announceChannel = true)
 }
 // @formatter:on
