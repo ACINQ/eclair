@@ -1,4 +1,6 @@
-export LOCAL_IP=$(curl -s 169.254.169.254/latest/meta-data/local-ipv4)
+# see https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html
+TOKEN_IMDSV2=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+export LOCAL_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN_IMDSV2" http://169.254.169.254/latest/meta-data/local-ipv4)
 export HOSTNAME=$(hostname)
 
 # make the eclair home directory
