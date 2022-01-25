@@ -19,6 +19,9 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
+import fr.acinq.eclair.payment.Bolt12Invoice
+import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceErrorCodec, invoiceRequestCodec}
+import fr.acinq.eclair.wire.protocol.Offers.{InvoiceErrorTlv, InvoiceRequestTlv, InvoiceTlv}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
 import scodec.bits.ByteVector
 
@@ -39,6 +42,12 @@ object OnionMessagePayloadTlv {
    * The sender must provide some encrypted data for each intermediate node which lets them locate the next node.
    */
   case class EncryptedData(data: ByteVector) extends OnionMessagePayloadTlv
+
+  case class InvoiceRequest(request: Offers.InvoiceRequest) extends OnionMessagePayloadTlv
+
+  case class Invoice(invoice: Bolt12Invoice) extends OnionMessagePayloadTlv
+
+  case class InvoiceError(error: Offers.InvoiceError) extends OnionMessagePayloadTlv
 
 }
 
@@ -62,6 +71,9 @@ object MessageOnion {
   case class FinalPayload(records: TlvStream[OnionMessagePayloadTlv]) extends PerHopPayload {
     val replyPath: Option[OnionMessagePayloadTlv.ReplyPath] = records.get[OnionMessagePayloadTlv.ReplyPath]
     val encryptedData: ByteVector = records.get[OnionMessagePayloadTlv.EncryptedData].get.data
+    val invoiceRequest: Option[OnionMessagePayloadTlv.InvoiceRequest] = records.get[OnionMessagePayloadTlv.InvoiceRequest]
+    val invoice: Option[OnionMessagePayloadTlv.Invoice] = records.get[OnionMessagePayloadTlv.Invoice]
+    val invoiceError: Option[OnionMessagePayloadTlv.InvoiceError] = records.get[OnionMessagePayloadTlv.InvoiceError]
   }
 
   /** Content of the encrypted data of a final node's per-hop payload. */
@@ -90,6 +102,10 @@ object MessageOnionCodecs {
   private val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
     .typecase(UInt64(2), replyPathCodec)
     .typecase(UInt64(4), encryptedDataCodec)
+    .typecase(UInt64(64), variableSizeBytesLong(varintoverflow, invoiceRequestCodec.as[InvoiceRequest]))
+    .typecase(UInt64(66), variableSizeBytesLong(varintoverflow, invoiceCodec.as[Invoice]))
+    .typecase(UInt64(68), variableSizeBytesLong(varintoverflow, invoiceErrorCodec.as[InvoiceError]))
+
 
   val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 

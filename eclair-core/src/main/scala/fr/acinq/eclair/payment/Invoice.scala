@@ -53,6 +53,10 @@ trait Invoice {
 
 object Invoice {
   def fromString(input: String): Invoice = {
-    Bolt11Invoice.fromString(input)
+    if (input.startsWith("lni")) {
+      Bolt12Invoice.fromString(input)
+    } else {
+      Bolt11Invoice.fromString(input)
+    }
   }
 }

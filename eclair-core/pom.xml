@@ -163,6 +163,12 @@
             <groupId>com.softwaremill.sttp.client3</groupId>
             <artifactId>okhttp-backend_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- JSON -->
         <dependency>
@@ -183,6 +189,16 @@
         </dependency>
         <!-- BITCOIN -->
         <dependency>
+            <groupId>fr.acinq.secp256k1</groupId>
+            <artifactId>secp256k1-kmp-jvm</artifactId>
+            <version>0.6.2</version>
+        </dependency>
+        <dependency>
+            <groupId>fr.acinq.secp256k1</groupId>
+            <artifactId>secp256k1-kmp-jni-jvm</artifactId>
+            <version>0.6.2</version>
+        </dependency>
+        <dependency>
             <groupId>fr.acinq</groupId>
             <artifactId>bitcoin-lib_${scala.version.short}</artifactId>
             <version>${bitcoinlib.version}</version>
@@ -190,6 +206,14 @@
                 <exclusion>
                     <groupId>com.google.protobuf</groupId>
                     <artifactId>protobuf-java</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>fr.acinq.secp256k1</groupId>
+                    <artifactId>secp256k1-kmp-jvm</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>fr.acinq.secp256k1</groupId>
+                    <artifactId>secp256k1-kmp-jni-jvm</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
