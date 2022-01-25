@@ -59,7 +59,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
     val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
 
-    postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 second)
+    postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId === recipient)
@@ -81,7 +81,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val replyPath = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(ourNodeId, Some(pathId))))
     val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
 
-    postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 second)
+    postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId === recipient)
@@ -89,6 +89,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendingStatus(Disconnected(messageId))
 
     messageRecipient.expectMessage(SendingStatus(Disconnected(messageId)))
+    messageRecipient.expectNoMessage()
   }
 
   test("timeout") { f =>
@@ -121,7 +122,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val recipient = randomKey().publicKey
     val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, Left(OnionMessages.Recipient(recipient, None)), Nil)
 
-    postman ! SendMessage(recipient, messageExpectingReply, None, messageRecipient.ref, 1 second)
+    postman ! SendMessage(recipient, messageExpectingReply, None, messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId === recipient)
@@ -129,5 +130,6 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendingStatus(Sent(messageId))
 
     messageRecipient.expectMessage(SendingStatus(Sent(messageId)))
+    messageRecipient.expectNoMessage()
   }
 }
