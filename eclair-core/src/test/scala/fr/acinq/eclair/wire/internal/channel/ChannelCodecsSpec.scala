@@ -29,10 +29,12 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, TxOwner}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
-import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
+import fr.acinq.eclair.wire.protocol.{CommonCodecs, UpdateAddHtlc}
 import org.json4s.jackson.Serialization
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.DecodeResult
 import scodec.bits._
+import scodec.codecs.byte
 
 import java.util.UUID
 import scala.io.Source
@@ -69,6 +71,12 @@ class ChannelCodecsSpec extends AnyFunSuite {
       .map(data => Scripts.der(data.remoteSig))
 
     assert(ref === sigs)
+  }
+
+  test("nonreg for channel flags codec") {
+    // make sure that we correctly decode data encoded with the previous standard 'byte' codec
+    assert(CommonCodecs.channelflags.decode(byte.encode(0).require).require === DecodeResult(ChannelFlags(announceChannel = false), BitVector.empty))
+    assert(CommonCodecs.channelflags.decode(byte.encode(1).require).require === DecodeResult(ChannelFlags(announceChannel = true), BitVector.empty))
   }
 
   test("backward compatibility DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec") {
