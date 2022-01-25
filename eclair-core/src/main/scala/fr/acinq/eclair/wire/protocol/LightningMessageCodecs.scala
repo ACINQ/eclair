@@ -91,7 +91,7 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | byte) ::
+      ("channelFlags" | channelflags) ::
       ("tlvStream" | OpenChannelTlv.openTlvCodec)).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (

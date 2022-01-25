@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import org.apache.commons.codec.binary.Base32
@@ -108,6 +109,8 @@ object CommonCodecs {
   val varsizebinarydata: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
 
   val listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
+
+  val channelflags: Codec[ChannelFlags] = (ignore(7) dropLeft bool).as[ChannelFlags]
 
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 

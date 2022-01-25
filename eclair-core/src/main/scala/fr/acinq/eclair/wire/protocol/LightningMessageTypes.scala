@@ -20,7 +20,7 @@ import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelType
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
@@ -102,7 +102,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        delayedPaymentBasepoint: PublicKey,
                        htlcBasepoint: PublicKey,
                        firstPerCommitmentPoint: PublicKey,
-                       channelFlags: Byte,
+                       channelFlags: ChannelFlags,
                        tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)

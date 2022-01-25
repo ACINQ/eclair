@@ -223,7 +223,7 @@ private[channel] object ChannelCodecs2 {
       ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
         ("localParams" | localParamsCodec(channelVersion)) ::
           ("remoteParams" | remoteParamsCodec) ::
-          ("channelFlags" | byte) ::
+          ("channelFlags" | channelflags) ::
           ("localCommit" | localCommitCodec) ::
           ("remoteCommit" | remoteCommitCodec) ::
           ("localChanges" | localChangesCodec) ::

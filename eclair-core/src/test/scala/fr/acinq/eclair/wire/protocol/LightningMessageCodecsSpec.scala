@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelTypes
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -152,7 +152,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode open_channel") {
-    val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, FeeratePerKw(1 sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
+    val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, FeeratePerKw(1 sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags.Private)
     // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
     // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
     // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
@@ -254,7 +254,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode all channel messages") {
-    val open = OpenChannel(randomBytes32(), randomBytes32(), 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, FeeratePerKw(9 sat), CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
+    val open = OpenChannel(randomBytes32(), randomBytes32(), 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, FeeratePerKw(9 sat), CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags.Private)
     val accept = AcceptChannel(randomBytes32(), 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6))
     val funding_created = FundingCreated(randomBytes32(), bin32(0), 3, randomBytes64())
     val funding_signed = FundingSigned(randomBytes32(), randomBytes64())

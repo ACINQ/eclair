@@ -266,7 +266,7 @@ private[channel] object ChannelCodecs3 {
         (("channelFeatures" | channelFeaturesCodec) >>:~ { channelFeatures =>
           ("localParams" | localParamsCodec(channelFeatures)) ::
             ("remoteParams" | remoteParamsCodec) ::
-            ("channelFlags" | byte) ::
+            ("channelFlags" | channelflags) ::
             ("localCommit" | localCommitCodec) ::
             ("remoteCommit" | remoteCommitCodec) ::
             ("localChanges" | localChangesCodec) ::

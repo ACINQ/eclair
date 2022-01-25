@@ -33,8 +33,8 @@ trait Channel {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, channelType, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>
+    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
+      (nodeId, fundingSatoshis, pushMsat, channelType, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
         val (channelTypeOk, channelType_opt) = channelType match {
           case Some(str) if str == ChannelTypes.Standard.toString => (true, Some(ChannelTypes.Standard))
           case Some(str) if str == ChannelTypes.StaticRemoteKey.toString => (true, Some(ChannelTypes.StaticRemoteKey))
@@ -47,7 +47,7 @@ trait Channel {
           reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be ${ChannelTypes.Standard.toString}, ${ChannelTypes.StaticRemoteKey.toString}, ${ChannelTypes.AnchorOutputs.toString} or ${ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString}"))
         } else {
           complete {
-            eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, channelFlags, openTimeout_opt)
+            eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt)
           }
         }
     }

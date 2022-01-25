@@ -74,7 +74,7 @@ case class Commitments(channelId: ByteVector32,
                        channelConfig: ChannelConfig,
                        channelFeatures: ChannelFeatures,
                        localParams: LocalParams, remoteParams: RemoteParams,
-                       channelFlags: Byte,
+                       channelFlags: ChannelFlags,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
@@ -204,7 +204,7 @@ case class Commitments(channelId: ByteVector32,
 
   val remoteNodeId: PublicKey = remoteParams.nodeId
 
-  val announceChannel: Boolean = (channelFlags & 0x01) != 0
+  val announceChannel: Boolean = channelFlags.announceChannel
 
   val capacity: Satoshi = commitInput.txOut.amount
 

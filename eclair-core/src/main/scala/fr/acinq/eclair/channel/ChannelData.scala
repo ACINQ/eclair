@@ -84,7 +84,7 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              localParams: LocalParams,
                              remote: ActorRef,
                              remoteInit: Init,
-                             channelFlags: Byte,
+                             channelFlags: ChannelFlags,
                              channelConfig: ChannelConfig,
                              channelType: SupportedChannelType)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
@@ -400,7 +400,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
                                                pushAmount: MilliSatoshi,
                                                initialFeeratePerKw: FeeratePerKw,
                                                remoteFirstPerCommitmentPoint: PublicKey,
-                                               channelFlags: Byte,
+                                               channelFlags: ChannelFlags,
                                                channelConfig: ChannelConfig,
                                                channelFeatures: ChannelFeatures,
                                                lastSent: AcceptChannel) extends ChannelData {
@@ -414,7 +414,7 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
                                               localSpec: CommitmentSpec,
                                               localCommitTx: CommitTx,
                                               remoteCommit: RemoteCommit,
-                                              channelFlags: Byte,
+                                              channelFlags: ChannelFlags,
                                               channelConfig: ChannelConfig,
                                               channelFeatures: ChannelFeatures,
                                               lastSent: FundingCreated) extends ChannelData
@@ -492,8 +492,11 @@ case class RemoteParams(nodeId: PublicKey,
                         initFeatures: Features,
                         shutdownScript: Option[ByteVector])
 
+case class ChannelFlags(announceChannel: Boolean) {
+  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"
+}
 object ChannelFlags {
-  val AnnounceChannel = 0x01.toByte
-  val Empty = 0x00.toByte
+  val Private: ChannelFlags = ChannelFlags(announceChannel = false)
+  val Public: ChannelFlags = ChannelFlags(announceChannel = true)
 }
 // @formatter:on

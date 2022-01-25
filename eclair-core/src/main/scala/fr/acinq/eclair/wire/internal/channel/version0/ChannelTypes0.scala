@@ -181,7 +181,7 @@ private[channel] object ChannelTypes0 {
 
   case class Commitments(channelVersion: ChannelVersion,
                          localParams: LocalParams, remoteParams: RemoteParams,
-                         channelFlags: Byte,
+                         channelFlags: ChannelFlags,
                          localCommit: LocalCommit, remoteCommit: RemoteCommit,
                          localChanges: LocalChanges, remoteChanges: RemoteChanges,
                          localNextHtlcId: Long, remoteNextHtlcId: Long,

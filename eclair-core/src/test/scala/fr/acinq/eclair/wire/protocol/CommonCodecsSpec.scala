@@ -20,12 +20,13 @@ import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
-import scodec.bits.{BitVector, HexStringSyntax}
+import scodec.bits.{BinStringSyntax, BitVector, HexStringSyntax}
 import scodec.codecs.uint32
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
@@ -135,6 +136,21 @@ class CommonCodecsSpec extends AnyFunSuite {
     for (testCase <- testCases) {
       assert(varintoverflow.decode(testCase).isFailure, testCase.toByteVector)
     }
+  }
+
+  test("encode/decode channel flags") {
+    val testCases = Map(
+      bin"00000000" -> ChannelFlags(announceChannel = false),
+      bin"00000001" -> ChannelFlags(announceChannel = true),
+    )
+    testCases.foreach { case (bin, obj) =>
+      assert(channelflags.decode(bin).require === DecodeResult(obj, BitVector.empty))
+      assert(channelflags.encode(obj).require === bin)
+    }
+
+    // BOLT 2: The receiving node MUST [...] ignore undefined bits in channel_flags.
+    assert(channelflags.decode(bin"11111111").require === DecodeResult(ChannelFlags(announceChannel = true), BitVector.empty))
+    assert(channelflags.decode(bin"11111110").require === DecodeResult(ChannelFlags(announceChannel = false), BitVector.empty))
   }
 
   test("encode/decode with rgb codec") {
