@@ -62,6 +62,8 @@ case class UnknownFeature(bitIndex: Int)
 
 case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Set[UnknownFeature] = Set.empty) {
 
+  def isEmpty: Boolean = activated.isEmpty && unknown.isEmpty
+
   def hasFeature(feature: T, support: Option[FeatureSupport] = None): Boolean = support match {
     case Some(s) => activated.get(feature).contains(s)
     case None => activated.contains(feature)

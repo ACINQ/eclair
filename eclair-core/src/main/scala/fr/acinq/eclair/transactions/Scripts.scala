@@ -72,7 +72,7 @@ object Scripts {
   def encodeNumber(n: Long): ScriptElt = n match {
     case 0 => OP_0
     case -1 => OP_1NEGATE
-    case x if x >= 1 && x <= 16 => ScriptElt.code2elt((ScriptElt.elt2code(OP_1) + x - 1).toInt)
+    case x if x >= 1 && x <= 16 => ScriptElt.code2elt((ScriptElt.elt2code(OP_1) + x - 1).toInt).get
     case _ => OP_PUSHDATA(Script.encodeNumber(n))
   }
 
