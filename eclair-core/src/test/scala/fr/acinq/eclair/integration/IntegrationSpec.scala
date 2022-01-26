@@ -81,14 +81,14 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.bitcoind.zmqblock" -> s"tcp://127.0.0.1:$bitcoindZmqBlockPort",
     "eclair.bitcoind.zmqtx" -> s"tcp://127.0.0.1:$bitcoindZmqTxPort",
     "eclair.bitcoind.wallet" -> defaultWallet,
-    "eclair.mindepth-blocks" -> 2,
-    "eclair.max-htlc-value-in-flight-msat" -> 100000000000L,
-    "eclair.max-block-processing-delay" -> "2 seconds",
+    "eclair.channel.mindepth-blocks" -> 2,
+    "eclair.channel.max-htlc-value-in-flight-msat" -> 100000000000L,
+    "eclair.channel.max-block-processing-delay" -> "2 seconds",
+    "eclair.channel.to-remote-delay-blocks" -> 24,
+    "eclair.channel.max-funding-satoshis" -> 500000000,
     "eclair.router.broadcast-interval" -> "2 seconds",
     "eclair.auto-reconnect" -> false,
-    "eclair.to-remote-delay-blocks" -> 24,
-    "eclair.multi-part-payment-expiry" -> "20 seconds",
-    "eclair.max-funding-satoshis" -> 500000000).asJava).withFallback(ConfigFactory.load())
+    "eclair.multi-part-payment-expiry" -> "20 seconds").asJava).withFallback(ConfigFactory.load())
 
   private val commonFeatures = ConfigFactory.parseMap(Map(
     s"eclair.features.${DataLossProtect.rfcName}" -> "optional",
