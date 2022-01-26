@@ -106,7 +106,7 @@ object NodeRelay {
     val fee = nodeFee(nodeParams.relayParams.minTrampolineFees, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
       Some(TrampolineFeeInsufficient)
-    } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.expiryDelta) {
+    } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.channelConf.expiryDelta) {
       Some(TrampolineExpiryTooSoon)
     } else if (payloadOut.outgoingCltv <= CltvExpiry(nodeParams.currentBlockHeight)) {
       Some(TrampolineExpiryTooSoon)

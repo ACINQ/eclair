@@ -86,13 +86,13 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(probe)))
     probe.expectNoMessage(100 millis)
 
-    assert(TestConstants.Alice.nodeParams.minDepthBlocks > 1)
+    assert(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks > 1)
     generateBlocks(1)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     probe.expectMsg(TxRecentlyConfirmed(tx.txid, 1))
     probe.expectNoMessage(100 millis) // we wait for more than one confirmation to protect against reorgs
 
-    generateBlocks(TestConstants.Alice.nodeParams.minDepthBlocks - 1)
+    generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks - 1)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     probe.expectMsg(TxDeeplyBuried(tx))
   }
@@ -109,7 +109,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, "test-tx", 10 sat)
     waitTxInMempool(bitcoinClient, tx2.txid, probe)
 
-    generateBlocks(TestConstants.Alice.nodeParams.minDepthBlocks)
+    generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     probe.expectMsg(TxDeeplyBuried(tx2))
   }
@@ -257,7 +257,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     assert(txPublished.miningFee === 15.sat)
     assert(txPublished.desc === "test-tx")
 
-    generateBlocks(TestConstants.Alice.nodeParams.minDepthBlocks)
+    generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     eventListener.expectMsg(TransactionConfirmed(txPublished.channelId, txPublished.remoteNodeId, tx))
   }

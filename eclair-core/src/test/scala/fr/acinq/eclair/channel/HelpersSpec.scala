@@ -39,13 +39,13 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   test("compute the funding tx min depth according to funding amount") {
-    assert(Helpers.minDepthForFunding(nodeParams, Btc(1)) == 4)
-    assert(Helpers.minDepthForFunding(nodeParams.copy(minDepthBlocks = 6), Btc(1)) == 6) // 4 conf would be enough but we use min-depth=6
-    assert(Helpers.minDepthForFunding(nodeParams, Btc(6.25)) == 16) // we use scaling_factor=15 and a fixed block reward of 6.25BTC
-    assert(Helpers.minDepthForFunding(nodeParams, Btc(12.50)) == 31)
-    assert(Helpers.minDepthForFunding(nodeParams, Btc(12.60)) == 32)
-    assert(Helpers.minDepthForFunding(nodeParams, Btc(30)) == 73)
-    assert(Helpers.minDepthForFunding(nodeParams, Btc(50)) == 121)
+    assert(Helpers.minDepthForFunding(nodeParams.channelConf, Btc(1)) == 4)
+    assert(Helpers.minDepthForFunding(nodeParams.channelConf.copy(minDepthBlocks = 6), Btc(1)) == 6) // 4 conf would be enough but we use min-depth=6
+    assert(Helpers.minDepthForFunding(nodeParams.channelConf, Btc(6.25)) == 16) // we use scaling_factor=15 and a fixed block reward of 6.25BTC
+    assert(Helpers.minDepthForFunding(nodeParams.channelConf, Btc(12.50)) == 31)
+    assert(Helpers.minDepthForFunding(nodeParams.channelConf, Btc(12.60)) == 32)
+    assert(Helpers.minDepthForFunding(nodeParams.channelConf, Btc(30)) == 73)
+    assert(Helpers.minDepthForFunding(nodeParams.channelConf, Btc(50)) == 121)
   }
 
   test("compute refresh delay") {
@@ -176,7 +176,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
   def findTimedOutHtlcs(f: Fixture, withoutHtlcId: Boolean): Unit = {
     import f._
 
-    val dustLimit = alice.underlyingActor.nodeParams.dustLimit
+    val dustLimit = alice.underlyingActor.nodeParams.channelConf.dustLimit
     val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat
     val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.localCommit
     val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.remoteCommit

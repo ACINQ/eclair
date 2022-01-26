@@ -43,9 +43,9 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
     val aliceNodeParams = Alice.nodeParams
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
+      .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
     val bobNodeParams = Bob.nodeParams
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
+      .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
 
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
       (1000100 sat, (1000000 sat).toMilliSatoshi) // toLocal = 100 satoshis
@@ -85,7 +85,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     bob2blockchain.expectMsgType[WatchFundingSpent]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
+    assert(watchConfirmed.minDepth === Alice.nodeParams.channelConf.minDepthBlocks)
   }
 
   test("recv FundingCreated (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
@@ -98,7 +98,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2blockchain.expectMsgType[WatchFundingSpent]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
     // when we are fundee, we use a higher min depth for wumbo channels
-    assert(watchConfirmed.minDepth > Bob.nodeParams.minDepthBlocks)
+    assert(watchConfirmed.minDepth > Bob.nodeParams.channelConf.minDepthBlocks)
   }
 
   test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>

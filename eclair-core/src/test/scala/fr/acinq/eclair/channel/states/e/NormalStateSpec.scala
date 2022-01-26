@@ -448,8 +448,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).dustTolerance.maxExposure === 25_000.sat)
-    assert(alice.underlyingActor.nodeParams.dustLimit === 1100.sat)
-    assert(bob.underlyingActor.nodeParams.dustLimit === 1000.sat)
+    assert(alice.underlyingActor.nodeParams.channelConf.dustLimit === 1100.sat)
+    assert(bob.underlyingActor.nodeParams.channelConf.dustLimit === 1000.sat)
 
     // Alice sends HTLCs to Bob that add 21 000 sat to the dust exposure.
     // She signs them but Bob doesn't answer yet.
@@ -472,8 +472,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     assert(bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(alice.underlyingActor.nodeParams.nodeId).dustTolerance.maxExposure === 30_000.sat)
-    assert(alice.underlyingActor.nodeParams.dustLimit === 1100.sat)
-    assert(bob.underlyingActor.nodeParams.dustLimit === 1000.sat)
+    assert(alice.underlyingActor.nodeParams.channelConf.dustLimit === 1100.sat)
+    assert(bob.underlyingActor.nodeParams.channelConf.dustLimit === 1000.sat)
 
     // Bob sends HTLCs to Alice that add 21 000 sat to the dust exposure.
     // He signs them but Alice doesn't answer yet.
@@ -753,7 +753,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     // for the test to be really useful we have constraint on parameters
-    assert(Alice.nodeParams.dustLimit > Bob.nodeParams.dustLimit)
+    assert(Alice.nodeParams.channelConf.dustLimit > Bob.nodeParams.channelConf.dustLimit)
     // and a low feerate to avoid messing with dust exposure limits
     val currentFeerate = FeeratePerKw(2500 sat)
     alice.feeEstimator.setFeerate(FeeratesPerKw.single(currentFeerate))
@@ -761,10 +761,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     updateFee(currentFeerate, alice, bob, alice2bob, bob2alice)
     // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
     // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
-    val aliceMinReceive = Alice.nodeParams.dustLimit + weight2fee(currentFeerate, DefaultCommitmentFormat.htlcSuccessWeight)
-    val aliceMinOffer = Alice.nodeParams.dustLimit + weight2fee(currentFeerate, DefaultCommitmentFormat.htlcTimeoutWeight)
-    val bobMinReceive = Bob.nodeParams.dustLimit + weight2fee(currentFeerate, DefaultCommitmentFormat.htlcSuccessWeight)
-    val bobMinOffer = Bob.nodeParams.dustLimit + weight2fee(currentFeerate, DefaultCommitmentFormat.htlcTimeoutWeight)
+    val aliceMinReceive = Alice.nodeParams.channelConf.dustLimit + weight2fee(currentFeerate, DefaultCommitmentFormat.htlcSuccessWeight)
+    val aliceMinOffer = Alice.nodeParams.channelConf.dustLimit + weight2fee(currentFeerate, DefaultCommitmentFormat.htlcTimeoutWeight)
+    val bobMinReceive = Bob.nodeParams.channelConf.dustLimit + weight2fee(currentFeerate, DefaultCommitmentFormat.htlcSuccessWeight)
+    val bobMinOffer = Bob.nodeParams.channelConf.dustLimit + weight2fee(currentFeerate, DefaultCommitmentFormat.htlcTimeoutWeight)
     val a2b_1 = bobMinReceive + 10.sat // will be in alice and bob tx
     val a2b_2 = bobMinReceive + 20.sat // will be in alice and bob tx
     val b2a_1 = aliceMinReceive + 10.sat // will be in alice and bob tx
@@ -1363,16 +1363,16 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv RevokeAndAck (over max dust htlc exposure in local commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob)) { f =>
     import f._
     val sender = TestProbe()
-    assert(alice.underlyingActor.nodeParams.dustLimit === 5000.sat)
-    assert(bob.underlyingActor.nodeParams.dustLimit === 1000.sat)
+    assert(alice.underlyingActor.nodeParams.channelConf.dustLimit === 5000.sat)
+    assert(bob.underlyingActor.nodeParams.channelConf.dustLimit === 1000.sat)
     testRevokeAndAckDustOverflowSingleCommit(f)
   }
 
   test("recv RevokeAndAck (over max dust htlc exposure in remote commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice)) { f =>
     import f._
     val sender = TestProbe()
-    assert(alice.underlyingActor.nodeParams.dustLimit === 1000.sat)
-    assert(bob.underlyingActor.nodeParams.dustLimit === 5000.sat)
+    assert(alice.underlyingActor.nodeParams.channelConf.dustLimit === 1000.sat)
+    assert(bob.underlyingActor.nodeParams.channelConf.dustLimit === 5000.sat)
     testRevokeAndAckDustOverflowSingleCommit(f)
   }
 
@@ -2746,7 +2746,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.expectMsgType[CommitSig]
-    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.fulfillSafetyBeforeTimeout.toInt)
+    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
@@ -2779,7 +2779,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = false)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.expectNoMessage(500 millis)
-    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.fulfillSafetyBeforeTimeout.toInt)
+    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
@@ -2816,7 +2816,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
-    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.fulfillSafetyBeforeTimeout.toInt)
+    bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)

@@ -85,7 +85,7 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams,
         case WrappedCurrentBlockHeight(currentBlockHeight) =>
           if (cltvTimeout <= currentBlockHeight) {
             context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
-            timers.startSingleTimer(CheckRelativeTimeLock, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
+            timers.startSingleTimer(CheckRelativeTimeLock, (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis)
             Behaviors.same
           } else {
             Behaviors.same

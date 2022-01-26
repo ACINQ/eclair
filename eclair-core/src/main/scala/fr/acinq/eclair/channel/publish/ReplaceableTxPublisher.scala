@@ -220,7 +220,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
           None
         }
         // We avoid a herd effect whenever we fee bump transactions.
-        targetFeerate_opt.foreach(targetFeerate => timers.startSingleTimer(BumpFeeKey, BumpFee(targetFeerate), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis))
+        targetFeerate_opt.foreach(targetFeerate => timers.startSingleTimer(BumpFeeKey, BumpFee(targetFeerate), (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis))
         Behaviors.same
       case BumpFee(targetFeerate) => fundReplacement(targetFeerate, tx)
       case UpdateConfirmationTarget(target) =>

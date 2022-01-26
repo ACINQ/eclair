@@ -98,7 +98,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 Map(Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               }
               // Insert a fake invoice and then restart the incoming payment handler
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = PaymentRequestFeatures(features))
+              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = PaymentRequestFeatures(features))
               log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
               db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
@@ -241,7 +241,7 @@ object MultiPartHandler {
                 paymentHash,
                 nodeParams.privateKey,
                 description,
-                nodeParams.minFinalExpiryDelta,
+                nodeParams.channelConf.minFinalExpiryDelta,
                 fallbackAddress_opt,
                 expirySeconds = Some(expirySeconds),
                 extraHops = extraHops,
@@ -305,7 +305,7 @@ object MultiPartHandler {
   }
 
   private def validatePaymentCltv(nodeParams: NodeParams, payment: IncomingPaymentPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
-    val minExpiry = record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(nodeParams.minFinalExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight)
+    val minExpiry = record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(nodeParams.channelConf.minFinalExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight)
     if (payment.add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false

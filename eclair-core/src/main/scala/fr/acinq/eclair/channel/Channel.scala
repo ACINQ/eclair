@@ -63,6 +63,27 @@ import scala.util.{Failure, Random, Success, Try}
 
 object Channel {
 
+  case class ChannelConf(channelFlags: ChannelFlags,
+                         dustLimit: Satoshi,
+                         maxRemoteDustLimit: Satoshi,
+                         htlcMinimum: MilliSatoshi,
+                         maxHtlcValueInFlightMsat: UInt64,
+                         maxAcceptedHtlcs: Int,
+                         reserveToFundingRatio: Double,
+                         maxReserveToFundingRatio: Double,
+                         minFundingSatoshis: Satoshi,
+                         maxFundingSatoshis: Satoshi,
+                         toRemoteDelay: CltvExpiryDelta,
+                         maxToLocalDelay: CltvExpiryDelta,
+                         minDepthBlocks: Int,
+                         expiryDelta: CltvExpiryDelta,
+                         fulfillSafetyBeforeTimeout: CltvExpiryDelta,
+                         minFinalExpiryDelta: CltvExpiryDelta,
+                         maxBlockProcessingDelay: FiniteDuration,
+                         maxTxPublishRetryDelay: FiniteDuration,
+                         unhandledExceptionStrategy: UnhandledExceptionStrategy,
+                         revocationTimeout: FiniteDuration)
+
   trait TxPublisherFactory {
     def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): typed.ActorRef[TxPublisher.Command]
   }
@@ -164,7 +185,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockHeight])
   // the constant delay by which we delay processing of blocks (it will be smoothened among all channels)
-  private val blockProcessingDelay = Random.nextLong(nodeParams.maxBlockProcessingDelay.toMillis + 1).millis
+  private val blockProcessingDelay = Random.nextLong(nodeParams.channelConf.maxBlockProcessingDelay.toMillis + 1).millis
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
 
@@ -303,9 +324,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           val fees = getRelayFees(nodeParams, remoteNodeId, data.commitments)
           if (fees.feeBase != normal.channelUpdate.feeBaseMsat ||
             fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
-            nodeParams.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
+            nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
             log.info("refreshing channel_update due to configuration changes")
-            self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(nodeParams.expiryDelta))
+            self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(nodeParams.channelConf.expiryDelta))
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
@@ -347,7 +368,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-          val minimumDepth = Helpers.minDepthForFunding(nodeParams, open.fundingSatoshis)
+          val minimumDepth = Helpers.minDepthForFunding(nodeParams.channelConf, open.fundingSatoshis)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
@@ -521,7 +542,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
               // NB: we don't send a ChannelSignatureSent for the first commit
               log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
               watchFundingTx(commitments)
-              val fundingMinDepth = Helpers.minDepthForFunding(nodeParams, fundingAmount)
+              val fundingMinDepth = Helpers.minDepthForFunding(nodeParams.channelConf, fundingAmount)
               blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, fundingMinDepth)
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
           }
@@ -561,7 +582,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
           watchFundingTx(commitments)
-          blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, nodeParams.minDepthBlocks)
+          blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
           log.info(s"committing txid=${fundingTx.txid}")
 
           // we will publish the funding tx only after the channel state has been written to disk because we want to
@@ -617,7 +638,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       Try(Transaction.correctlySpends(commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
         case Success(_) =>
           log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
-          blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks)
+          blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
           if (!d.commitments.localParams.isFunder) context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
           context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, fundingTx))
           val channelKeyPath = keyManager.keyPath(d.commitments.localParams, commitments.channelConfig)
@@ -670,7 +691,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId, None))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val fees = getRelayFees(nodeParams, remoteNodeId, commitments)
-      val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDelta, d.commitments.remoteParams.htlcMinimum, fees.feeBase, fees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
+      val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.channelConf.expiryDelta, d.commitments.remoteParams.htlcMinimum, fees.feeBase, fees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
       goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None, None) storing()
@@ -817,7 +838,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
-              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), nodeParams.revocationTimeout)
+              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
               handleCommandSuccess(c, d.copy(commitments = commitments1)).storing().sending(commit).acking(commitments1.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
@@ -1174,7 +1195,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
-              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), nodeParams.revocationTimeout)
+              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
               handleCommandSuccess(c, d.copy(commitments = commitments1)).storing().sending(commit).acking(commitments1.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
@@ -1467,7 +1488,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     case Event(WatchOutputSpentTriggered(tx), d: DATA_CLOSING) =>
       // one of the outputs of the local/remote/revoked commit was spent
       // we just put a watch to be notified when it is confirmed
-      blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.minDepthBlocks)
+      blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthBlocks)
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
@@ -1502,7 +1523,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommitHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
           claimHtlcTx_opt.foreach(claimHtlcTx => {
             txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
-            blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.minDepthBlocks)
+            blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepthBlocks)
           })
           Closing.updateLocalCommitPublished(localCommitPublished1, tx)
         }),
@@ -1662,10 +1683,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   when(SYNCING)(handleExceptions {
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       val minDepth = if (d.commitments.localParams.isFunder) {
-        nodeParams.minDepthBlocks
+        nodeParams.channelConf.minDepthBlocks
       } else {
         // when we're fundee we scale the min_depth confirmations depending on the funding amount
-        Helpers.minDepthForFunding(nodeParams, d.commitments.commitInput.txOut.amount)
+        Helpers.minDepthForFunding(nodeParams.channelConf, d.commitments.commitInput.txOut.amount)
       }
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
       blockchain ! WatchFundingConfirmed(self, d.commitments.commitInput.outPoint.txid, minDepth)
@@ -1704,7 +1725,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           commitments1.remoteNextCommitInfo match {
             case Left(_) =>
               // we expect them to (re-)send the revocation immediately
-              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), nodeParams.revocationTimeout)
+              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
             case _ => ()
           }
 
@@ -2145,7 +2166,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     val knownSpendingTxs = Set(commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments.remoteCommit.txid) ++ commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit.txid).toSet ++ additionalKnownSpendingTxs
     blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, knownSpendingTxs)
     // TODO: implement this? (not needed if we use a reasonable min_depth)
-    //blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+    //blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks, BITCOIN_FUNDING_LOST)
   }
 
   /**
@@ -2281,7 +2302,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
 
   private def handleNewBlock(c: CurrentBlockHeight, d: HasCommitments) = {
     val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockHeight)
-    val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.fulfillSafetyBeforeTimeout)
+    val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.channelConf.fulfillSafetyBeforeTimeout)
     if (timedOutOutgoing.nonEmpty) {
       // Downstream timed out.
       handleLocalError(HtlcsTimedoutDownstream(d.channelId, timedOutOutgoing), d, Some(c))
@@ -2338,7 +2359,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             spendLocalCurrent(dd) sending error
           case _ =>
             // unhandled exception: we apply the configured strategy
-            nodeParams.unhandledExceptionStrategy match {
+            nodeParams.channelConf.unhandledExceptionStrategy match {
               case UnhandledExceptionStrategy.LocalClose =>
                 spendLocalCurrent(dd) sending error
               case UnhandledExceptionStrategy.Stop =>
@@ -2399,7 +2420,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     // the funder pays the fee
     val fee = if (isFunder) closingTx.fee else 0.sat
     txPublisher ! PublishFinalTx(closingTx, fee, None)
-    blockchain ! WatchTxConfirmed(self, closingTx.tx.txid, nodeParams.minDepthBlocks)
+    blockchain ! WatchTxConfirmed(self, closingTx.tx.txid, nodeParams.channelConf.minDepthBlocks)
   }
 
   private def spendLocalCurrent(d: HasCommitments) = {
@@ -2438,7 +2459,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
    */
   private def watchConfirmedIfNeeded(txs: Iterable[Transaction], irrevocablySpent: Map[OutPoint, Transaction]): Unit = {
     val (skip, process) = txs.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.minDepthBlocks))
+    process.foreach(tx => blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthBlocks))
     skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
 
