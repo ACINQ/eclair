@@ -408,7 +408,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("can receive availableForReceive") { f =>
     for (isInitiator <- Seq(true, false)) {
       val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
-      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
       receiveAdd(c, add, feeConfNoMismatch)
     }
   }
@@ -457,13 +457,13 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
-        val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+        val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
         receiveAdd(c, add, feeConfNoMismatch) match {
           case Right(cc) => c = cc
           case Left(e) => fail(s"$t -> could not setup initial htlcs: $e")
         }
       }
-      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
       receiveAdd(c, add, feeConfNoMismatch) match {
         case Right(_) => ()
         case Left(e) => fail(s"$t -> $e")

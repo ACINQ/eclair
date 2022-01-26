@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.protocol.PaymentOnion.{ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{ChannelRelayData, ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, NodeParams, RealShortChannelId, TestConstants, randomBytes32, _}
 import org.scalatest.Inside.inside
@@ -156,7 +156,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
     import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
 
-    val payload = ChannelRelayTlvPayload(TlvStream[OnionPaymentPayloadTlv](AmountToForward(outgoingAmount), OutgoingCltv(outgoingExpiry), OutgoingChannelId(realScid1)))
+    val payload = ChannelRelayTlvPayload(realScid1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(payload)
     val u = createLocalUpdate(channelId1)
 
@@ -451,7 +451,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(payload)
     val u = createLocalUpdate(channelId1)
     val u_disabled = createLocalUpdate(channelId1, enabled = false)
-    val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket)
+    val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket, None)
 
     case class TestCase(result: HtlcResult, cmd: channel.HtlcSettlementCommand)
 
@@ -482,7 +482,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val payload = RelayLegacyPayload(realScid1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(payload)
     val u = createLocalUpdate(channelId1)
-    val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket)
+    val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket, None)
 
     case class TestCase(result: HtlcResult)
 
@@ -582,9 +582,9 @@ object ChannelRelayerSpec {
     localAlias2 -> channelId2,
   )
 
-  def createValidIncomingPacket(payload: ChannelRelayPayload, amountIn: MilliSatoshi = 11_000_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100)): IncomingPaymentPacket.ChannelRelayPacket = {
-    val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket)
-    ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
+  def createValidIncomingPacket(payload: ChannelRelayData, amountIn: MilliSatoshi = 11_000_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100)): IncomingPaymentPacket.ChannelRelayPacket = {
+    val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, None)
+    ChannelRelayPacket(add_ab, payload, emptyOnionPacket, None)
   }
 
   def createShortIds(channelId: ByteVector32) = {

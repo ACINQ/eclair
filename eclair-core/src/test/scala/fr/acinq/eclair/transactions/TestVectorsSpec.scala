@@ -151,13 +151,13 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   )
 
   val htlcs = Seq[DirectedHtlc](
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 5000001.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(505), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket))
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 5000001.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(505), TestConstants.emptyOnionPacket, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket, None))
   )
   val htlcScripts = htlcs.map {
     case OutgoingHtlc(add) => Scripts.htlcOffered(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), commitmentFormat)

@@ -30,12 +30,17 @@ import shapeless._
  */
 object LightningMessageCodecs {
 
-  val featuresCodec: Codec[Features[Feature]] = varsizebinarydata.xmap[Features[Feature]](
+  val featuresCodec: Codec[Features[Feature]] = bytes.xmap[Features[Feature]](
     { bytes => Features(bytes) },
     { features => features.toByteVector }
   )
 
-  val initFeaturesCodec: Codec[Features[InitFeature]] = featuresCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
+  val lengthPrefixedFeaturesCodec: Codec[Features[Feature]] = varsizebinarydata.xmap[Features[Feature]](
+    { bytes => Features(bytes) },
+    { features => features.toByteVector }
+  )
+
+  val initFeaturesCodec: Codec[Features[InitFeature]] = lengthPrefixedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
 
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
   val combinedFeaturesCodec: Codec[Features[InitFeature]] = (
@@ -287,7 +292,7 @@ object LightningMessageCodecs {
       ("tlvStream" | AnnouncementSignaturesTlv.announcementSignaturesTlvCodec)).as[AnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec =
-    ("features" | featuresCodec) ::
+    ("features" | lengthPrefixedFeaturesCodec) ::
       ("chainHash" | bytes32) ::
       ("shortChannelId" | realshortchannelid) ::
       ("nodeId1" | publicKey) ::
@@ -304,7 +309,7 @@ object LightningMessageCodecs {
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec =
-    ("features" | featuresCodec) ::
+    ("features" | lengthPrefixedFeaturesCodec) ::
       ("timestamp" | timestampSecond) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::

@@ -379,7 +379,7 @@ class SphinxSpec extends AnyFunSuite {
     assert(blindedRoute.introductionNodeId == publicKeys(0))
     assert(blindedRoute.introductionNode.blindedPublicKey == PublicKey(hex"02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"))
     assert(blindedRoute.introductionNode.blindingEphemeralKey == PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
-    assert(blindedRoute.introductionNode.encryptedPayload == hex"af4fbf67bd52520bdfab6a88cd4e7f22ffad08d8b153b17ff303f93fdb4712")
+    assert(blindedRoute.introductionNode.encryptedPayload == hex"af4fbf67bd52520bdfab5981df7a294cc257ffaea273a76558ae09dbccb2f3c78f6c2b952c3b7a104357d9")
     assert(blindedRoute.blindedNodeIds == Seq(
       PublicKey(hex"02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"),
       PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
@@ -395,10 +395,10 @@ class SphinxSpec extends AnyFunSuite {
     ))
     assert(blindedRoute.encryptedPayloads == blindedRoute.introductionNode.encryptedPayload +: blindedRoute.subsequentNodes.map(_.encryptedPayload))
     assert(blindedRoute.subsequentNodes.map(_.encryptedPayload) == Seq(
-      hex"146c9694ead7de2a54fc43e8bb927bfc377dda7ed5a2e36b327b739e368aa602e43e07e14bfb81d66e1e295f848b6f15ee6483005abb830f4ef08a9da6",
-      hex"8ad7d5d448f15208417a1840f82274101b3c254c24b1b49fd676fd0c4293c9aa66ed51da52579e934a869f016f213044d1b13b63bf586e9c9832106b59",
-      hex"52a45a884542d180e76fe84fc13e71a01f65d943ff89aed29b94644a91b037b9143cfda8f1ff25ba61c37108a5ae57d9ddc5ab688ee8b2f9f6bd94522c",
-      hex"6a4ac764cbf146ffd73299563b07c56052af4acd681d9d0882728c6f399ace90392b694d5e347612dc1417f1b3a9c82d6d4db18b6eb32134e554db7d00",
+      hex"14779694e8dfde2a54fc43e8b9a371f6377dd996d5a2e36a32eb489cc3755900e2ffac99e2777c40ae4d9248abdc34707dc2",
+      hex"89d5d5d448f15208452b1c61f9067f6ce26f01ec5de5871ef2778a384eb82d8abeaafe72a95375047459ac58f6d0149214c5",
+      hex"52a65a884542d180e76fec6ec1dbda1d09d1c5c087b28a2a6bd8742625400e77d90caf9841f2d15b1bd8d3bb09587ddbd1c0",
+      hex"6d63852689b304bd9570db125907c56052af4acd681d9d0882728c6f399ace90392b3677e9bb389ca8c8e8c8c5e7f3219050",
     ))
 
     // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
@@ -524,24 +524,25 @@ class SphinxSpec extends AnyFunSuite {
     // The sender obtains this information (e.g. from a Bolt11 invoice) and prepends two normal hops to reach the introduction node.
     val nodeIds = publicKeys.take(2) ++ Seq(blindedRoute.introductionNodeId) ++ blindedRoute.subsequentNodes.map(_.blindedPublicKey)
     assert(blindedRoute.encryptedPayloads == Seq(
-      hex"36285ee1c0b289eeedf05c9ab66a7b669d92bd3729082c1c42e443d2775b3be7de74b1c64e0cebd0e3a8cddeff2e9acb1ddb62cbb73166723cae905938",
-      hex"14cd98e3f4f29cc7af8624250c5bd14fb5a69be8235748909e754ef43b09b1b424b1bba062d801f8648f28fb1101b9a56dcb1f69d5e1ba7fe584f6a6be",
-      hex"fe7862b65ac8e1c2a319ba558513d97dc237132b22ce4f7439983545e37164d792dc6925a3c7cde855ac824871bd455f2859298456da3ade87d884080d",
+      hex"352a5ee1c0b289eee9a158bbb74e701a64c19997505c1f9d66e534e67b70dfc7063393e698b2dc764d557908b814af436b59",
+      hex"14cf98e3f4f29cc7af8620040cbe7af2a312876b5b6c6c686e395e988ff9887ae981df01620b5dbac8a0483da6178ee3671e",
+      hex"f95120f4188aa380e15bf811e713d97dc237132b22ce4f7439983545e37164d792dc139fb46c24d53c83dc709fed373bb468",
     ))
     val payloads = Seq(
       // The sender sends normal onion payloads to the first two hops.
       TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(500)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1000)), OnionPaymentPayloadTlv.OutgoingChannelId(ShortChannelId(10))),
       TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(450)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(900)), OnionPaymentPayloadTlv.OutgoingChannelId(ShortChannelId(15))),
+    ).map(tlvs => PaymentOnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes) ++ Seq(
       // The sender includes the blinding key and the first encrypted recipient data in the introduction node's payload.
-      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(400)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(860)), OnionPaymentPayloadTlv.BlindingPoint(blindingEphemeralKey0), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(0))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.BlindingPoint(blindingEphemeralKey0), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(0))),
       // The sender includes the correct encrypted recipient data in each blinded node's payload.
-      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(250)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(750)), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
-      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(250)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(750)), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
     ).map(tlvs => PaymentOnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes)
 
     val senderSessionKey = PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val Success(PacketAndSecrets(onion, sharedSecrets)) = create(senderSessionKey, 1300, nodeIds, payloads, associatedData)
-    assert(serializePaymentOnion(onion) == hex"00024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d07666a78b866fda75eb6a991f9815c47624f46324b3e437bb0bd12c29a779d62b7912677b490268f80b9e05044c726b1744e50d20777aa103ebb2a5f054f3d9271e7bf2f0cbe7c4d0bf1e53e911040a52c78dd545aa034b026618ac8ea390ae606baddfd5b82f1fc2ad3a99be0f16ac186e5d6e02d98d4f60f2e505831aa8563d86a7f37f10c133df59201f2d288347a64e4a11a61bc524372ee73179179a51809330e01dc38bb5eee8e7de92885b52423493a326f8bf4c4827760a0af90ac6c4e2f91c3ef9e079523c0262ddc052aefa4154f6aaa814ee8b44b17e9d30650a61076c1a4742fe755694923c78c50b3fbb5549aa7876c797f0f48c929c5ce3742db691d66d101e31426128ee1600b3e0c500c9f955d2ae07710842c23c1e1b7ebb6ed428605f35062fed12f868ef735d1d9d6eee61fc722c5797d886b663400e0fd868898a21fbea928c7382ae82a4016e31fe83e3276b9ab95016d32c6318c7fcf859cf1fd9f02c0b2622dd83c961051eb56f10225297154c5b3c535951749402ea57ca8f6daa5cfaec1e08a15badb4cbae156de04d5ba2ce5212699c5fb11ba3307aafab4028963b41a245b9831035bab359ead24ef15e4d50573d40d66fbdedb1ca652488b96e78266f4d4679af93d685ab9519b1565e822d88a69af3e9f3cadb94619e03ce9828d4c28633b992434d23930e2ee943df0229c57276d9c6a977090137544ea48637eba7d6eca4c5fc7bf827658a6a1944a3d9320e549430dea871bd449d6e971cceca7bf48fe855d1b84f63f7cccf3db81ff4c1626f76084b37c95575cd5aa484d34d9129bbd70dcdbc43a7eda6cef758919bbeee00ff16dff45c7d156c3dc3f928949399398a6eb7fa72ac1610b603cbe73d47c7514d28aeca457678b2748c473e043bc1505df8a8e5836b6c8585be7d18ebb24962311e2f46336abff9db3153c56ab2a5af3722ee4128455ba18fe1bfec545a9b0d043a8cf1d5e36cf7419045aed571c1caab08c8f31c773b1a4fd3bb4eee634a9a9de27a2199d4d90fd9ddc6a89d8a3c27b3229653cb076d8a1e867d4ddb02983464797157736e7e635b234a11a0e5f89ae968b2dc6ca39d62d67274a2bf4b86fdfc249b76bd462185703ee5a0edc5d1662a9cc2d2e7a0badace2b4c3b716c6cae7ab5b976ceec3f15ff3f1af849dc22de2a67d73204b21738e74897bd983526bab2edc4825efbbd060675e1858d866606a79634456b2ff89d07166d4b656684db9dbbfa0cb9a85d2a693e1555f05d923768925c8beb67ecbcb4bdaa0028100a84e67e73de06e3fab255d0b1b87822503b17872a5c14502b87d0281d7830e4989659135735677683d8e9f5555a42a6ab8d22347115f254266332a4e54594052ca1afd0475e47dc8ba6bf6c2a381585722949e7ef102bcd68e181965322c5780f66570528b408f00af716c89b8d82bc359f007dfe7c32ce7e44a760a08b97efe9353a1902ba38058f87b90af99bc88ae488d0ad31ffda18c789854dd1e5bf57726b1eb691b4a4b664d33dc225d1242405361d23b3e5d9b6ad5ce3611f276b29a7bf3307326f5f3016f522d513a0d6e0b10280f846e7f14bb365680fd1be66495f49c7d0dc5c36d7c7d845e1c7ddc36a4d54b0733ba9ba3c881f84ed56acf38104eba5ca0a1078c9ee6ba2580f24ac33334cb7e46b9e66925ba5b7066354bae63bb5b79ecedd25a0ec439ec9246fdad77aa1b159741a34579cd7aa237a83f3bbf9663b668024314c6d707a0e25b01808410a3b75c4fc5e2ce04f4dd87e0e8fc317199cbc4b32ba1256ae6138a61936becc4fa9761515b3c2c86372d30949f2d5f89e89bbb6ca708ea9568b58a98d04e219ac69261c3c3dadbb7457d")
+    assert(serializePaymentOnion(onion) == hex"00024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d07666a78b866fda75eb6a991f9815c47624f46324b71518b671d0101387128b0e82672c73bc6260f424406cf6cc3534083e227a81f77aa103ebb2a5f054f3d9271e7bf2f0cbe7c4d68d1572e5188b92f3786ba1b076b86dcbd0d9278d207ae675ba81dc127a55c3d17db99af5aab89026866053fa49e8e81f3d7a4d1006f8885ee0e84cc8685c26f8d61dab6055800958d03308940749cb56aaae09f60b85ae43c2d004a7c4814a946b531002cafe979f876211d8b06bb400c04d5d027737e49f12f622b79b4becf35b73b6c745f2819d78cab462c343810b445cf099e32c943e008c21a768335cb7094ba3a0956e66449d95b11c6774080e63215b79d7c00f11135d7028350163fdda7073e72b10000a0badbd88dc416af1ffd1685ee8abfde85559bdbeec727a14ec6b203cc5c0c2e1c831ea93bbffe76b90b1e2f3f8fc4affd70119a0a8b95b734f3099df4c4f5d195090479b544b192f92af842686819879df2521845b791591f6ba5aedd54ad18c8cabaa1cb3f70285c225ac277e28f13dc44f3cf1e1a755e28367f79630e123a03b108ab2fa0a97a0b458aff824b25f3d45a74120a526bd75c5d4d353b8372bab418876af4b442429e045efbf954f91263cf93af5bb36861ac11189d0753d81f73668455ad258e014518dd00cb1aabf29da6da01db09951cfcc1d6f1f50473b3c7d6981f3ce16d38649ffa21672dfd00af2bedefe40dd5892c1485544dfb2b2690c2f6c02041774eb6b215752c56dae355a1d8dd631f278b7da4497351216e2d02c79b8423c94962a777cfa8e8b5aceb8d990ba7d12052818704e184ad0f31f6c0d6060251edcf27e85052c44b6e4f681a9feb824da7f7116a968fcfd3a5ae12cf9669ad29bafadfd53fcdbb56db43d8309fa585de0f58ea421c397c33e00772b347aafb0715f2e0550960714feaf3d2b72b6eb6bad0c52b49380cd96de7044afdaf0cc97293a4f0471c659ec6d6f3c8313d2e7226173be520b764a048db829d3d556c4eacce1c34a63de3ab6d7fb148413d79c641e35ef8cc19def31057d9f1758ff68afda1f9c2a93b13980c945612bd71c44622ae5f9e8b6100c180c23d833e7f50c4117874083f4bccd3c4423fff3c38b60f30184abeb7624ecb73c4daa062e068f920bcb8863152ba07d8248fd316f16537fb69590718784c40293608064234abef04c11c1c5a86ff132e574c0cf0373e331d51ac0ae281caaafbe756113cdae65360df7be0ca983b85546c82a330b2d557e64c47224d0549fe674cbff09cc8d6b90dcb16281b45e2924de97f1336889b411b7b5ba5827a819ccf170bc2865162a85f83d069d2fbf15579c678bdef91883441bf8031ead71837a9adc8d2a59cdc178e3cba1dce3246862006eee2e75a093d7c63466788ec19001dc5f1ff2bb0c0b97352f99c3c4f55a9c1be0a9b07b8bdd71d55cd63eb628c1fbc32713d40250da8ff7ffa01e6367072d61f22565755b978def3301d817a01c1cecf00c7f4904cb89c25d0890a0dfe18b009eb6822d124afebc3d1582ad1b949a9e0b8078058ff96c6084a8dc578f8614f2f92c93ccac2c289ee863e3b712f0cbd903a2dff18593e94e311c6efe9387b4d1b611e4b377f118af1302e8c37ef59ceeda75c2d5894172dc7d2f7c2cca49e3d8423bb64eae7cf3ffe844da082c9aa72f3436bedd094f4933285423c51b1a89f71fcbc1b3188623ba853bb5c8c874589418332f45ee9ce3962a736cfadb5dffb288dd0ccdb361606979fbb67ddb35410050099e4d0789701151f8b473532ca4312a3f671b0347e48ec23c8c817094eb1afb77f08f1fe5cb1d230b431e31f581352ff66a5b6894acd47de7a6b56750d837ee902c9e9a66748a0")
 
     // The first two hops can decrypt the onion as usual.
     val Right(DecryptedPacket(payload0, nextPacket0, sharedSecret0)) = peel(privKeys(0), associatedData, onion)
@@ -554,9 +555,8 @@ class SphinxSpec extends AnyFunSuite {
     val tlvs2 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload2.bits).require.value
     assert(tlvs2.get[OnionPaymentPayloadTlv.BlindingPoint].map(_.publicKey) == Some(blindingEphemeralKey0))
     assert(tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs2, blindingEphemeralKey1)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(2), blindingEphemeralKey0, tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs2.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId].map(_.shortChannelId) == Some(ShortChannelId(1105)))
-    assert(recipientTlvs2.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].map(_.nodeId) == Some(publicKeys(3)))
+    val Success((recipientData2, blindingEphemeralKey1)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(2), blindingEphemeralKey0, tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec)
+    assert(recipientData2.outgoingChannelId == ShortChannelId(1105))
 
     // The fourth hop is a blinded hop.
     // It receives the blinding key from the previous node (e.g. in a tlv field in update_add_htlc) which it can use to
@@ -566,8 +566,8 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = peel(blindedPrivKey3, associatedData, nextPacket2)
     val tlvs3 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload3.bits).require.value
     assert(tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs3, blindingEphemeralKey2)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(3), blindingEphemeralKey1, tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs3.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].map(_.nodeId) == Some(publicKeys(4)))
+    val Success((recipientData3, blindingEphemeralKey2)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(3), blindingEphemeralKey1, tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec)
+    assert(recipientData3.outgoingChannelId == ShortChannelId(2434))
 
     // The fifth hop is the blinded recipient.
     // It receives the blinding key from the previous node (e.g. in a tlv field in update_add_htlc) which it can use to
@@ -576,17 +576,17 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = peel(blindedPrivKey4, associatedData, nextPacket3)
     val tlvs4 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
     assert(tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs4, _)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs4.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data) == associatedData.map(_.bytes))
+    val Success((recipientData4, _)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data, RouteBlindingEncryptedDataCodecs.paymentRecipientDataCodec)
+    assert(recipientData4.pathId_opt == associatedData.map(_.bytes))
 
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
-    assert(packets(0).hmac == ByteVector32(hex"4e73505d3e9f5bd9816e6eb2b697c28a3dc29c5a0328ebfd261ececbde063c15"))
-    assert(packets(1).hmac == ByteVector32(hex"1841603b10d16dd84cf0917db581c765bc602a323f09cd2784481ef198354ea5"))
-    assert(packets(2).hmac == ByteVector32(hex"059d613df54e969758395e643aabb04276b6fc64e01d5a4de63ec72dfbfb1a10"))
-    assert(packets(3).hmac == ByteVector32(hex"27c80773d5ab54e0b1ff0b068348394533d235e146e25db69236d2f8a580a919"))
+    assert(packets(0).hmac == ByteVector32(hex"0161a08a9e8c987b87dbbced01c372056bc21c98fece74d5226b3f3c7271460d"))
+    assert(packets(1).hmac == ByteVector32(hex"7b61d22bd0499452570ef632e84a7509270c3282073769a6d95adecde412e364"))
+    assert(packets(2).hmac == ByteVector32(hex"0505963f88328d3a5e6ee2ddbfafeb23ae9e6b291bd44b0d4e984fb8746afddf"))
+    assert(packets(3).hmac == ByteVector32(hex"47d821c9a87f68d3eeeff6ac8388ece055cdefcf7d8623b87fcebbcdac8e9752"))
     assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
@@ -665,11 +665,11 @@ object SphinxSpec {
 
   // This test vector uses route blinding payloads (encrypted_data).
   val routeBlindingPayloads = Seq(
-    hex"0208000000000000002a 3903123456",
-    hex"011900000000000000000000000000000000000000000000000000 02080000000000000231 3b00 fdffff0206c1",
-    hex"02080000000000000451 0421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
-    hex"01080000000000000000 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145",
-    hex"0109000000000000000000 06204242424242424242424242424242424242424242424242424242424242424242",
+    hex"0208000000000000002a 0a0a00000000000000000090 3903123456",
+    hex"01020000 02080000000000000231 0a0a000003e8000000010090 3b00 fdffff0206c1",
+    hex"010a00000000000000000000 02080000000000000451 0a0a000003e800000064012c",
+    hex"010a00000000000000000000 02080000000000000982 0a0a000001e9000002a30062",
+    hex"06204242424242424242424242424242424242424242424242424242424242424242",
   )
 
   val associatedData = Some(ByteVector32(hex"4242424242424242424242424242424242424242424242424242424242424242"))
