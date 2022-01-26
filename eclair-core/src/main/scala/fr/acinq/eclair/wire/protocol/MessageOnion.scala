@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
@@ -72,12 +71,6 @@ object MessageOnion {
     val encryptedData: ByteVector = records.get[OnionMessagePayloadTlv.EncryptedData].get.data
   }
 
-  /** Content of the encrypted data of an intermediate node's per-hop payload. */
-  case class BlindedRelayPayload(records: TlvStream[RouteBlindingEncryptedDataTlv]) {
-    val nextNodeId: PublicKey = records.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId
-    val nextBlindingOverride: Option[PublicKey] = records.get[RouteBlindingEncryptedDataTlv.NextBlinding].map(_.blinding)
-  }
-
   /** Per-hop payload for a final node. */
   case class FinalPayload(records: TlvStream[OnionMessagePayloadTlv]) extends PerHopPayload {
     val replyPath: Option[OnionMessagePayloadTlv.ReplyPath] = records.get[OnionMessagePayloadTlv.ReplyPath]
@@ -85,11 +78,6 @@ object MessageOnion {
     val invoiceRequest: Option[OnionMessagePayloadTlv.InvoiceRequest] = records.get[OnionMessagePayloadTlv.InvoiceRequest]
     val invoice: Option[OnionMessagePayloadTlv.Invoice] = records.get[OnionMessagePayloadTlv.Invoice]
     val invoiceError: Option[OnionMessagePayloadTlv.InvoiceError] = records.get[OnionMessagePayloadTlv.InvoiceError]
-  }
-
-  /** Content of the encrypted data of a final node's per-hop payload. */
-  case class BlindedFinalPayload(records: TlvStream[RouteBlindingEncryptedDataTlv]) {
-    val pathId: Option[ByteVector] = records.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
   }
 
 }
@@ -134,20 +122,6 @@ object MessageOnionCodecs {
   }, {
     case FinalPayload(tlvs) => tlvs
   })
-
-  val blindedRelayPayloadCodec: Codec[BlindedRelayPayload] = RouteBlindingEncryptedDataCodecs.encryptedDataCodec.narrow({
-    case tlvs if tlvs.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-    case tlvs if tlvs.get[RouteBlindingEncryptedDataTlv.PathId].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(6)))
-    case tlvs => Attempt.successful(BlindedRelayPayload(tlvs))
-  }, {
-    case BlindedRelayPayload(tlvs) => tlvs
-  })
-
-  val blindedFinalPayloadCodec: Codec[BlindedFinalPayload] = RouteBlindingEncryptedDataCodecs.encryptedDataCodec.narrow(
-    tlvs => Attempt.successful(BlindedFinalPayload(tlvs)),
-    {
-      case BlindedFinalPayload(tlvs) => tlvs
-    })
 
   def messageOnionPerHopPayloadCodec(isLastPacket: Boolean): Codec[PerHopPayload] = if (isLastPacket) finalPerHopPayloadCodec.upcast[PerHopPayload] else relayPerHopPayloadCodec.upcast[PerHopPayload]
 

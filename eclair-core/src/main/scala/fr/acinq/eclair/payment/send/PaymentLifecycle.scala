@@ -358,7 +358,7 @@ object PaymentLifecycle {
   sealed trait SendPayment {
     // @formatter:off
     def replyTo: ActorRef
-    def finalPayload: FinalPayload
+    def finalPayload: FinalTlvPayload
     def assistedRoutes: Seq[Seq[ExtraHop]]
     def targetNodeId: PublicKey
     def maxAttempts: Int
@@ -373,7 +373,7 @@ object PaymentLifecycle {
    */
   case class SendPaymentToRoute(replyTo: ActorRef,
                                 route: Either[PredefinedRoute, Route],
-                                finalPayload: FinalPayload,
+                                finalPayload: FinalTlvPayload,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil) extends SendPayment {
     require(route.fold(!_.isEmpty, _.hops.nonEmpty), "payment route must not be empty")
 
@@ -400,7 +400,7 @@ object PaymentLifecycle {
    */
   case class SendPaymentToNode(replyTo: ActorRef,
                                targetNodeId: PublicKey,
-                               finalPayload: FinalPayload,
+                               finalPayload: FinalTlvPayload,
                                maxAttempts: Int,
                                assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                routeParams: RouteParams) extends SendPayment {

@@ -247,7 +247,22 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          paymentHash: ByteVector32,
                          cltvExpiry: CltvExpiry,
                          onionRoutingPacket: OnionRoutingPacket,
-                         tlvStream: TlvStream[UpdateAddHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId
+                         tlvStream: TlvStream[UpdateAddHtlcTlv]) extends HtlcMessage with UpdateMessage with HasChannelId {
+  val blinding_opt: Option[PublicKey] = tlvStream.get[BlindingPoint].map(_.publicKey)
+}
+
+object UpdateAddHtlc {
+  def apply(channelId: ByteVector32,
+            id: Long,
+            amountMsat: MilliSatoshi,
+            paymentHash: ByteVector32,
+            cltvExpiry: CltvExpiry,
+            onionRoutingPacket: OnionRoutingPacket,
+            blinding_opt: Option[PublicKey]):UpdateAddHtlc = {
+    val tlvs = Seq(blinding_opt.map(BlindingPoint)).flatten
+    UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream[UpdateAddHtlcTlv](tlvs))
+  }
+}
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,

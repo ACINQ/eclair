@@ -364,7 +364,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val update_fee = UpdateFee(randomBytes32(), FeeratePerKw(2 sat))
     val shutdown = Shutdown(randomBytes32(), bin(47, 0))
     val closing_signed = ClosingSigned(randomBytes32(), 2 sat, randomBytes64())
-    val update_add_htlc = UpdateAddHtlc(randomBytes32(), 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket)
+    val update_add_htlc = UpdateAddHtlc(randomBytes32(), 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket, None)
     val update_fulfill_htlc = UpdateFulfillHtlc(randomBytes32(), 2, bin32(0))
     val update_fail_htlc = UpdateFailHtlc(randomBytes32(), 2, bin(154, 0))
     val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes32(), 2, randomBytes32(), 1111)
