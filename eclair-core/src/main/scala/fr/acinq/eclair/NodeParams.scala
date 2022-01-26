@@ -222,7 +222,6 @@ object NodeParams extends Logging {
       "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost.fee-proportional-millionths",
       // v0.6.3
       "channel-flags" -> "channel.channel-flags",
-      "watch-spent-window" -> "channel.watch-spent-window",
       "dust-limit-satoshis" -> "channel.dust-limit-satoshis",
       "max-remote-dust-limit-satoshis" -> "channel.max-remote-dust-limit-satoshis",
       "htlc-minimum-msat" -> "channel.htlc-minimum-msat",
@@ -242,6 +241,7 @@ object NodeParams extends Logging {
       "max-tx-publish-retry-delay" -> "channel.max-tx-publish-retry-delay",
       "unhandled-exception-strategy" -> "channel.unhandled-exception-strategy",
       "revocation-timeout" -> "channel.revocation-timeout",
+      "watch-spent-window" -> "router.watch-spent-window",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -259,8 +259,8 @@ object NodeParams extends Logging {
     val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
-    val watchSpentWindow = FiniteDuration(config.getDuration("channel.watch-spent-window").getSeconds, TimeUnit.SECONDS)
-    require(watchSpentWindow > 0.seconds, "watch-spent-window must be strictly greater than 0")
+    val watchSpentWindow = FiniteDuration(config.getDuration("router.watch-spent-window").getSeconds, TimeUnit.SECONDS)
+    require(watchSpentWindow > 0.seconds, "router.watch-spent-window must be strictly greater than 0")
 
     val dustLimitSatoshis = Satoshi(config.getLong("channel.dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
