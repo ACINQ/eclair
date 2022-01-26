@@ -16,10 +16,13 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{publicKey, varint}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
 import scodec.Codec
-import scodec.codecs.discriminated
+import scodec.bits.HexStringSyntax
+import scodec.codecs._
 
 /**
  * Created by t-bast on 19/07/2021.
@@ -27,8 +30,13 @@ import scodec.codecs.discriminated
 
 sealed trait UpdateAddHtlcTlv extends Tlv
 
+/** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
+case class BlindingPoint(publicKey: PublicKey) extends UpdateAddHtlcTlv
+
 object UpdateAddHtlcTlv {
-  val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint))
+  private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
+
+  val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint).typecase(UInt64(0), blindingPoint))
 }
 
 sealed trait UpdateFulfillHtlcTlv extends Tlv
