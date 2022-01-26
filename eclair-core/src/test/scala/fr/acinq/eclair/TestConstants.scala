@@ -144,7 +144,6 @@ object TestConstants {
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
-      watchSpentWindow = 1 second,
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
       peerConnectionConf = PeerConnection.Conf(
@@ -158,6 +157,7 @@ object TestConstants {
         maxOnionMessagesPerSecond = 10
       ),
       routerConf = RouterConf(
+        watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
         requestNodeAnnouncements = true,
@@ -279,7 +279,6 @@ object TestConstants {
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
-      watchSpentWindow = 1 second,
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
       peerConnectionConf = PeerConnection.Conf(
@@ -293,6 +292,7 @@ object TestConstants {
         maxOnionMessagesPerSecond = 10
       ),
       routerConf = RouterConf(
+        watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
         requestNodeAnnouncements = true,

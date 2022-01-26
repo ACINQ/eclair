@@ -87,6 +87,7 @@ object EclairInternalsSerializer {
     ).as[PathFindingExperimentConf]
 
   val routerConfCodec: Codec[RouterConf] = (
+    ("watchSpentWindow" | finiteDurationCodec) ::
     ("channelExcludeDuration" | finiteDurationCodec) ::
       ("routerBroadcastInterval" | finiteDurationCodec) ::
       ("requestNodeAnnouncements" | bool(8)) ::

@@ -70,7 +70,6 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
                       chainHash: ByteVector32,
-                      watchSpentWindow: FiniteDuration,
                       paymentRequestExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
                       peerConnectionConf: PeerConnection.Conf,
@@ -459,7 +458,6 @@ object NodeParams extends Logging {
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
       chainHash = chainHash,
-      watchSpentWindow = watchSpentWindow,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),
       peerConnectionConf = PeerConnection.Conf(
@@ -473,6 +471,7 @@ object NodeParams extends Logging {
         maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second")
       ),
       routerConf = RouterConf(
+        watchSpentWindow = watchSpentWindow,
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
