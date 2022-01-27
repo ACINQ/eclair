@@ -34,7 +34,7 @@ object SqliteNetworkDb {
   val DB_NAME = "network"
 }
 
-class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
+class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
 
   import SqliteNetworkDb._
   import SqliteUtils.ExtendedResultSet._

@@ -2,6 +2,7 @@ package fr.acinq.eclair.db
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.typesafe.config.{Config, ConfigFactory, ConfigValue}
+import fr.acinq.eclair.db.Databases.SafetyChecks
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.pg.PgUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LeaseLock, LockFailure, LockFailureHandler}
@@ -176,51 +177,29 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     }
 
     {
-      val safetyConfig = ConfigFactory.parseString(
-        s"""
-           |postgres {
-           |  safety-checks {
-           |    // a set of basic checks on data to make sure we use the correct database
-           |    enabled = true
-           |    max-age {
-           |      local-channels = 3 minutes
-           |      network-nodes = 30 minutes
-           |      audit-relayed = 10 minutes
-           |    }
-           |    min-count {
-           |      local-channels = 1
-           |      network-nodes = 2
-           |      network-channels = 0
-           |    }
-           |  }
-           |}""".stripMargin)
-      val config = safetyConfig.withFallback(baseConfig)
-      val db = Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+      val db = Databases.postgres(baseConfig, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+      db.check(SafetyChecks(
+        localChannelsMaxAge = 3 minutes,
+        networkNodesMaxAge = 30 minutes,
+        auditRelayedMaxAge = 10 minutes,
+        localChannelsMinCount = 1,
+        networkNodesMinCount = 2,
+        networkChannelsMinCount = 0
+      ))
       db.dataSource.close()
     }
 
     {
-      val safetyConfig = ConfigFactory.parseString(
-        s"""
-           |postgres {
-           |  safety-checks {
-           |    // a set of basic checks on data to make sure we use the correct database
-           |    enabled = true
-           |    max-age {
-           |      local-channels = 3 minutes
-           |      network-nodes = 30 minutes
-           |      audit-relayed = 10 minutes
-           |    }
-           |    min-count {
-           |      local-channels = 10
-           |      network-nodes = 2
-           |      network-channels = 0
-           |    }
-           |  }
-           |}""".stripMargin)
-      val config = safetyConfig.withFallback(baseConfig)
       intercept[IllegalArgumentException] {
-        Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+        val db = Databases.postgres(baseConfig, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+        db.check(SafetyChecks(
+          localChannelsMaxAge = 3 minutes,
+          networkNodesMaxAge = 30 minutes,
+          auditRelayedMaxAge = 10 minutes,
+          localChannelsMinCount = 10,
+          networkNodesMinCount = 2,
+          networkChannelsMinCount = 0
+        ))
       }
     }
 
@@ -291,6 +270,7 @@ object PgUtilsSpec extends Logging {
        |    lock-timeout = 5 seconds // timeout for the lock statement on the lease table
        |    auto-release-at-shutdown = false // automatically release the lock when eclair is stopping
        |  }
+       |}
        |  safety-checks {
        |    // a set of basic checks on data to make sure we use the correct database
        |    enabled = false
@@ -305,7 +285,6 @@ object PgUtilsSpec extends Logging {
        |      network-channels = 20000
        |    }
        |  }
-       |}
        |""".stripMargin
   )
 

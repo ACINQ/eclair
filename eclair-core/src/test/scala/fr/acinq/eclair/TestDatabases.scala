@@ -4,6 +4,7 @@ import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.zaxxer.hikari.HikariConfig
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.Databases.{InitChecks, SafetyChecks}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils.{PgLock, getVersion, using}
@@ -21,10 +22,11 @@ import scala.concurrent.duration._
 /**
  * Extends the regular [[fr.acinq.eclair.db.Databases]] trait with test-specific methods
  */
-sealed trait TestDatabases extends Databases {
+sealed trait TestDatabases extends Databases with InitChecks {
   // @formatter:off
   val connection: Connection
-  val db: Databases
+  val db: Databases with InitChecks
+  override def check(safetyChecks: SafetyChecks): Unit = db.check(safetyChecks)
   override def network: NetworkDb = db.network
   override def audit: AuditDb = db.audit
   override def channels: ChannelsDb = db.channels
@@ -88,7 +90,7 @@ object TestDatabases {
   case class TestSqliteDatabases() extends TestDatabases {
     // @formatter:off
     override val connection: SQLiteConnection = sqliteInMemory()
-    override lazy val db: Databases = {
+    override lazy val db: Databases with InitChecks = {
       val dbs = Databases.SqliteDatabases(connection, connection, connection)
       dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
     }
@@ -111,7 +113,7 @@ object TestDatabases {
     // @formatter:off
     override val connection: PgConnection = pg.getPostgresDatabase.getConnection.asInstanceOf[PgConnection]
     // NB: we use a lazy val here: databases won't be initialized until we reference that variable
-    override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile), readOnlyUser_opt = None, resetJsonColumns = false, safetyChecks_opt = None)
+    override lazy val db: Databases with InitChecks = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile), readOnlyUser_opt = None, resetJsonColumns = false)
     override def close(): Unit = pg.close()
     // @formatter:on
   }

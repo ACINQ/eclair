@@ -58,17 +58,90 @@ object Databases extends Logging {
     def obtainExclusiveLock(): Unit
   }
 
+  trait InitChecks {
+    this: Databases =>
+    def check(safetyChecks: SafetyChecks): Unit
+
+    final def checkMaxAge(connection: Connection, name: String, maxAge: FiniteDuration, sqlQuery: String): Unit =
+      using(connection.createStatement()) { statement =>
+        import ExtendedResultSet._
+        val smallestAge_opt = statement
+          .executeQuery(sqlQuery)
+          .headOption // sql max() will always return a result, with perhaps a null value if there was no records
+          .flatMap(_.getTimestampNullable("max"))
+          .map(ts => TimestampMilli.now() - TimestampMilli.fromSqlTimestamp(ts))
+        require(smallestAge_opt.isDefined, s"db check failed: no $name found")
+        require(smallestAge_opt.get <= maxAge, s"db check failed: most recent $name is too old (${smallestAge_opt.get.toMinutes} minutes > ${maxAge.toMinutes} minutes)")
+        logger.info(s"db check ok: max age ${smallestAge_opt.get.toMinutes} minutes <= ${maxAge.toMinutes} minutes for $name")
+      }
+
+    final def checkMinCount(connection: Connection, name: String, minCount: Int, sqlQuery: String): Unit =
+      using(connection.createStatement()) { statement =>
+        import ExtendedResultSet._
+        val count = statement
+          .executeQuery(sqlQuery)
+          .map(_.getInt("count"))
+          .head // NB: COUNT(*) always returns exactly one row
+        require(count >= minCount, s"db check failed: min count not reached for $name ($count < $minCount)")
+        logger.info(s"db check ok: min count $count > $minCount for $name")
+      }
+
+  }
+
+  case class SafetyChecks(localChannelsMaxAge: FiniteDuration,
+                          networkNodesMaxAge: FiniteDuration,
+                          auditRelayedMaxAge: FiniteDuration,
+                          localChannelsMinCount: Int,
+                          networkNodesMinCount: Int,
+                          networkChannelsMinCount: Int)
+
   case class SqliteDatabases private(network: SqliteNetworkDb,
                                      audit: SqliteAuditDb,
                                      channels: SqliteChannelsDb,
                                      peers: SqlitePeersDb,
                                      payments: SqlitePaymentsDb,
                                      pendingCommands: SqlitePendingCommandsDb,
-                                     private val backupConnection: Connection) extends Databases with FileBackup {
+                                     private val backupConnection: Connection) extends Databases with FileBackup with InitChecks {
     override def backup(backupFile: File): Unit = SqliteUtils.using(backupConnection.createStatement()) {
       statement => {
         statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
       }
+    }
+
+    override def check(initChecks: SafetyChecks): Unit = {
+
+      checkMaxAge(channels.sqlite,
+        name = "local channel",
+        maxAge = initChecks.localChannelsMaxAge,
+        sqlQuery =
+          """
+            |SELECT datetime(MAX(MAX(COALESCE(created_timestamp,0), COALESCE(last_payment_sent_timestamp,0), COALESCE(last_payment_received_timestamp,0), COALESCE(last_connected_timestamp,0), COALESCE(closed_timestamp,0)))/1000, 'unixepoch', 'localtime') as max
+            |FROM local_channels
+            |WHERE NOT is_closed""".stripMargin)
+
+      checkMaxAge(audit.sqlite,
+        name = "audit relayed",
+        maxAge = initChecks.auditRelayedMaxAge,
+        sqlQuery =
+          """
+            |SELECT datetime(MAX(timestamp)/1000, 'unixepoch', 'localtime') as max
+            |FROM relayed""".stripMargin)
+
+      checkMinCount(channels.sqlite,
+        name = "local channels",
+        minCount = initChecks.localChannelsMinCount,
+        sqlQuery = "SELECT COUNT(*) as count FROM local_channels")
+
+      checkMinCount(network.sqlite,
+        name = "network node",
+        minCount = initChecks.networkNodesMinCount,
+        sqlQuery = "SELECT COUNT(*) as count FROM nodes")
+
+      checkMinCount(network.sqlite,
+        name = "network channels",
+        minCount = initChecks.networkChannelsMinCount,
+        sqlQuery = "SELECT COUNT(*) as count FROM channels")
+
     }
   }
 
@@ -91,27 +164,63 @@ object Databases extends Logging {
                                        payments: PgPaymentsDb,
                                        pendingCommands: PgPendingCommandsDb,
                                        dataSource: HikariDataSource,
-                                       lock: PgLock) extends Databases with ExclusiveLock {
+                                       lock: PgLock) extends Databases with ExclusiveLock with InitChecks {
     override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock(dataSource)
-  }
+
+    override def check(initChecks: SafetyChecks): Unit =
+        PgUtils.inTransaction { connection =>
+
+            checkMaxAge(connection,
+              name = "local channel",
+              maxAge = initChecks.localChannelsMaxAge,
+              sqlQuery =
+                """
+                  |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp, closed_timestamp))
+                  |FROM local.channels
+                  |WHERE NOT is_closed""".stripMargin)
+
+            checkMaxAge(connection,
+              name = "network node",
+              maxAge = initChecks.networkNodesMaxAge,
+              sqlQuery =
+                """
+                  |SELECT MAX((json->'timestamp'->>'iso')::timestamptz)
+                  |FROM network.nodes""".stripMargin)
+
+            checkMaxAge(connection,
+              name = "audit relayed",
+              maxAge = initChecks.auditRelayedMaxAge,
+              sqlQuery =
+                """
+                  |SELECT MAX(timestamp)
+                  |FROM audit.relayed""".stripMargin)
+
+            checkMinCount(connection,
+              name = "local channels",
+              minCount = initChecks.localChannelsMinCount,
+              sqlQuery = "SELECT COUNT(*) FROM local.channels")
+
+            checkMinCount(connection,
+              name = "network node",
+              minCount = initChecks.networkNodesMinCount,
+              sqlQuery = "SELECT COUNT(*) FROM network.nodes")
+
+            checkMinCount(connection,
+              name = "network channels",
+              minCount = initChecks.networkChannelsMinCount,
+              sqlQuery = "SELECT COUNT(*) FROM network.public_channels")
+
+        }(dataSource)
+    }
 
   object PostgresDatabases {
-
-    case class SafetyChecks(localChannelsMaxAge: FiniteDuration,
-                            networkNodesMaxAge: FiniteDuration,
-                            auditRelayedMaxAge: FiniteDuration,
-                            localChannelsMinCount: Int,
-                            networkNodesMinCount: Int,
-                            networkChannelsMinCount: Int
-                           )
 
     def apply(hikariConfig: HikariConfig,
               instanceId: UUID,
               lock: PgLock = PgLock.NoLock,
               jdbcUrlFile_opt: Option[File],
               readOnlyUser_opt: Option[String],
-              resetJsonColumns: Boolean,
-              safetyChecks_opt: Option[SafetyChecks])(implicit system: ActorSystem): PostgresDatabases = {
+              resetJsonColumns: Boolean)(implicit system: ActorSystem): PostgresDatabases = {
 
       jdbcUrlFile_opt.foreach(jdbcUrlFile => checkIfDatabaseUrlIsUnchanged(hikariConfig.getJdbcUrl, jdbcUrlFile))
 
@@ -174,71 +283,6 @@ object Databases extends Logging {
         }
       }
 
-      safetyChecks_opt foreach { initChecks =>
-
-        PgUtils.inTransaction { connection =>
-          using(connection.createStatement()) { statement =>
-
-            def checkMaxAge(name: String, maxAge: FiniteDuration, sqlQuery: String): Unit = {
-              import ExtendedResultSet._
-              val smallestAge_opt = statement
-                .executeQuery(sqlQuery)
-                .headOption // sql max() will always return a result, with perhaps a null value if there was no records
-                .flatMap(_.getTimestampNullable("max"))
-                .map(ts => TimestampMilli.now() - TimestampMilli.fromSqlTimestamp(ts))
-              require(smallestAge_opt.isDefined, s"db check failed: no $name found")
-              require(smallestAge_opt.get <= maxAge, s"db check failed: most recent $name is too old (${smallestAge_opt.get.toMinutes} minutes > ${maxAge.toMinutes} minutes)")
-              logger.info(s"db check ok: max age ${smallestAge_opt.get.toMinutes} minutes <= ${maxAge.toMinutes} minutes for $name")
-            }
-
-            checkMaxAge(name = "local channel",
-              maxAge = initChecks.localChannelsMaxAge,
-              sqlQuery =
-                """
-                  |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp, closed_timestamp))
-                  |FROM local.channels
-                  |WHERE NOT is_closed""".stripMargin)
-
-            checkMaxAge(name = "network node",
-              maxAge = initChecks.networkNodesMaxAge,
-              sqlQuery =
-                """
-                  |SELECT MAX((json->'timestamp'->>'iso')::timestamptz)
-                  |FROM network.nodes""".stripMargin)
-
-            checkMaxAge(name = "audit relayed",
-              maxAge = initChecks.auditRelayedMaxAge,
-              sqlQuery =
-                """
-                  |SELECT MAX(timestamp)
-                  |FROM audit.relayed""".stripMargin)
-
-            def checkMinCount(name: String, minCount: Int, sqlQuery: String): Unit = {
-              import ExtendedResultSet._
-              val count = statement
-                .executeQuery(sqlQuery)
-                .map(_.getInt("count"))
-                .head // NB: COUNT(*) always returns exactly one row
-              require(count >= minCount, s"db check failed: min count not reached for $name ($count < $minCount)")
-              logger.info(s"db check ok: min count $count > $minCount for $name")
-            }
-
-            checkMinCount(name = "local channels",
-              minCount = initChecks.localChannelsMinCount,
-              sqlQuery = "SELECT COUNT(*) FROM local.channels")
-
-            checkMinCount(name = "network node",
-              minCount = initChecks.networkNodesMinCount,
-              sqlQuery = "SELECT COUNT(*) FROM network.nodes")
-
-            checkMinCount(name = "network channels",
-              minCount = initChecks.networkChannelsMinCount,
-              sqlQuery = "SELECT COUNT(*) FROM network.public_channels")
-
-          }
-        }
-      }
-
       databases
     }
 
@@ -261,7 +305,7 @@ object Databases extends Logging {
     db match {
       case Some(d) => d
       case None =>
-        dbConfig.getString("driver") match {
+        val databases = dbConfig.getString("driver") match {
           case "sqlite" => Databases.sqlite(chaindir)
           case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir)
           case "dual" =>
@@ -270,6 +314,23 @@ object Databases extends Logging {
             DualDatabases(sqlite, postgres)
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")
         }
+
+        if (dbConfig.getBoolean("safety-checks.enabled")) {
+          val safetyChecks = SafetyChecks(
+            localChannelsMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.local-channels").getSeconds, TimeUnit.SECONDS),
+            networkNodesMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.network-nodes").getSeconds, TimeUnit.SECONDS),
+            auditRelayedMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.audit-relayed").getSeconds, TimeUnit.SECONDS),
+            localChannelsMinCount = dbConfig.getInt("safety-checks.min-count.local-channels"),
+            networkNodesMinCount = dbConfig.getInt("safety-checks.min-count.network-nodes"),
+            networkChannelsMinCount = dbConfig.getInt("safety-checks.min-count.network-channels"),
+          )
+          databases match {
+            case databases: InitChecks => databases.check(safetyChecks)
+            case _ => throw new RuntimeException("safety checks are unsupported by this database")
+          }
+        }
+
+        databases
     }
   }
 
@@ -322,25 +383,13 @@ object Databases extends Logging {
 
     val jdbcUrlFile = new File(dbdir, "last_jdbcurl")
 
-    val safetyChecks_opt = if (dbConfig.getBoolean("postgres.safety-checks.enabled")) {
-      Some(PostgresDatabases.SafetyChecks(
-        localChannelsMaxAge = FiniteDuration(dbConfig.getDuration("postgres.safety-checks.max-age.local-channels").getSeconds, TimeUnit.SECONDS),
-        networkNodesMaxAge = FiniteDuration(dbConfig.getDuration("postgres.safety-checks.max-age.network-nodes").getSeconds, TimeUnit.SECONDS),
-        auditRelayedMaxAge = FiniteDuration(dbConfig.getDuration("postgres.safety-checks.max-age.audit-relayed").getSeconds, TimeUnit.SECONDS),
-        localChannelsMinCount = dbConfig.getInt("postgres.safety-checks.min-count.local-channels"),
-        networkNodesMinCount = dbConfig.getInt("postgres.safety-checks.min-count.network-nodes"),
-        networkChannelsMinCount = dbConfig.getInt("postgres.safety-checks.min-count.network-channels"),
-      ))
-    } else None
-
     Databases.PostgresDatabases(
       hikariConfig = hikariConfig,
       instanceId = instanceId,
       lock = lock,
       jdbcUrlFile_opt = Some(jdbcUrlFile),
       readOnlyUser_opt = readOnlyUser_opt,
-      resetJsonColumns = resetJsonColumns,
-      safetyChecks_opt = safetyChecks_opt
+      resetJsonColumns = resetJsonColumns
     )
   }
 
