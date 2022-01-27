@@ -41,7 +41,7 @@ object TestDatabases {
 
   def inMemoryDb(): Databases = {
     val connection = sqliteInMemory()
-    val dbs = Databases.SqliteDatabases(connection, connection, connection)
+    val dbs = Databases.SqliteDatabases(connection, connection, connection, jdbcUrlFile_opt = None)
     dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
   }
 
@@ -89,7 +89,9 @@ object TestDatabases {
     // @formatter:off
     override val connection: SQLiteConnection = sqliteInMemory()
     override lazy val db: Databases = {
-      val dbs = Databases.SqliteDatabases(connection, connection, connection)
+      val jdbcUrlFile: File = new File(TestUtils.BUILD_DIRECTORY, s"jdbcUrlFile_${UUID.randomUUID()}.tmp")
+      jdbcUrlFile.deleteOnExit()
+      val dbs = Databases.SqliteDatabases(connection, connection, connection, jdbcUrlFile_opt = Some(jdbcUrlFile))
       dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
     }
     override def close(): Unit = ()

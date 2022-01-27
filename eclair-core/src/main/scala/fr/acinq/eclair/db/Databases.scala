@@ -73,15 +73,18 @@ object Databases extends Logging {
   }
 
   object SqliteDatabases {
-    def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): SqliteDatabases = SqliteDatabases(
-      network = new SqliteNetworkDb(networkJdbc),
-      audit = new SqliteAuditDb(auditJdbc),
-      channels = new SqliteChannelsDb(eclairJdbc),
-      peers = new SqlitePeersDb(eclairJdbc),
-      payments = new SqlitePaymentsDb(eclairJdbc),
-      pendingCommands = new SqlitePendingCommandsDb(eclairJdbc),
-      backupConnection = eclairJdbc
-    )
+    def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection, jdbcUrlFile_opt: Option[File]): SqliteDatabases = {
+      jdbcUrlFile_opt.foreach(checkIfDatabaseUrlIsUnchanged("sqlite", _))
+      SqliteDatabases(
+        network = new SqliteNetworkDb(networkJdbc),
+        audit = new SqliteAuditDb(auditJdbc),
+        channels = new SqliteChannelsDb(eclairJdbc),
+        peers = new SqlitePeersDb(eclairJdbc),
+        payments = new SqlitePaymentsDb(eclairJdbc),
+        pendingCommands = new SqlitePendingCommandsDb(eclairJdbc),
+        backupConnection = eclairJdbc
+      )
+    }
   }
 
   case class PostgresDatabases private(network: PgNetworkDb,
@@ -241,19 +244,22 @@ object Databases extends Logging {
 
       databases
     }
+  }
 
-    private def checkIfDatabaseUrlIsUnchanged(url: String, urlFile: File): Unit = {
-      def readString(path: Path): String = Files.readAllLines(path).get(0)
+  /** We raise this exception when the jdbc url changes, to prevent using a different server involuntarily. */
+  case class JdbcUrlChanged(before: String, after: String) extends RuntimeException(s"The database URL has changed since the last start. It was `$before`, now it's `$after`. If this was intended, make sure you have migrated your data, otherwise your channels will be force-closed and you may lose funds.")
 
-      def writeString(path: Path, string: String): Unit = Files.write(path, java.util.Arrays.asList(string))
+  private def checkIfDatabaseUrlIsUnchanged(url: String, urlFile: File): Unit = {
+    def readString(path: Path): String = Files.readAllLines(path).get(0)
 
-      if (urlFile.exists()) {
-        val oldUrl = readString(urlFile.toPath)
-        if (oldUrl != url)
-          throw JdbcUrlChanged(oldUrl, url)
-      } else {
-        writeString(urlFile.toPath, url)
-      }
+    def writeString(path: Path, string: String): Unit = Files.write(path, java.util.Arrays.asList(string))
+
+    if (urlFile.exists()) {
+      val oldUrl = readString(urlFile.toPath)
+      if (oldUrl != url)
+        throw JdbcUrlChanged(oldUrl, url)
+    } else {
+      writeString(urlFile.toPath, url)
     }
   }
 
@@ -278,10 +284,12 @@ object Databases extends Logging {
    */
   def sqlite(dbdir: File): SqliteDatabases = {
     dbdir.mkdirs()
+    val jdbcUrlFile = new File(dbdir, "last_jdbcurl")
     SqliteDatabases(
       eclairJdbc = SqliteUtils.openSqliteFile(dbdir, "eclair.sqlite", exclusiveLock = true, journalMode = "wal", syncFlag = "full"), // there should only be one process writing to this file
       networkJdbc = SqliteUtils.openSqliteFile(dbdir, "network.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "normal"), // we don't need strong durability guarantees on the network db
-      auditJdbc = SqliteUtils.openSqliteFile(dbdir, "audit.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "full")
+      auditJdbc = SqliteUtils.openSqliteFile(dbdir, "audit.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "full"),
+      jdbcUrlFile_opt = Some(jdbcUrlFile)
     )
   }
 
