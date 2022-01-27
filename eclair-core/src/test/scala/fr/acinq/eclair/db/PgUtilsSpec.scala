@@ -1,11 +1,12 @@
 package fr.acinq.eclair.db
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
-import com.typesafe.config.{Config, ConfigFactory, ConfigValue}
+import com.typesafe.config.{Config, ConfigFactory}
+import fr.acinq.eclair.db.Databases.JdbcUrlChanged
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.pg.PgUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LeaseLock, LockFailure, LockFailureHandler}
-import fr.acinq.eclair.db.pg.PgUtils.{JdbcUrlChanged, migrateTable, using}
+import fr.acinq.eclair.db.pg.PgUtils.{migrateTable, using}
 import fr.acinq.eclair.payment.ChannelPaymentRelayed
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec

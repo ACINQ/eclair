@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.eclair.db.pg.PgUtils.JdbcUrlChanged
+import fr.acinq.eclair.db.Databases.JdbcUrlChanged
 import fr.acinq.eclair.db.sqlite.SqliteUtils.using
 import fr.acinq.eclair.{TestDatabases, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
