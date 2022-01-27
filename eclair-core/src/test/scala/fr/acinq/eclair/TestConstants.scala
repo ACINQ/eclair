@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
+import fr.acinq.eclair.channel.Channel.{ChannelConf, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll
@@ -99,8 +99,28 @@ object TestConstants {
       pluginParams = List(pluginParams),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
-      dustLimit = 1100 sat,
-      maxRemoteDustLimit = 1500 sat,
+      channelConf = ChannelConf(
+        dustLimit = 1100 sat,
+        maxRemoteDustLimit = 1500 sat,
+        maxHtlcValueInFlightMsat = UInt64(500000000),
+        maxAcceptedHtlcs = 100,
+        expiryDelta = CltvExpiryDelta(144),
+        fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
+        minFinalExpiryDelta = CltvExpiryDelta(18),
+        maxBlockProcessingDelay = 10 millis,
+        maxTxPublishRetryDelay = 10 millis,
+        htlcMinimum = 0 msat,
+        minDepthBlocks = 3,
+        toRemoteDelay = CltvExpiryDelta(144),
+        maxToLocalDelay = CltvExpiryDelta(1000),
+        reserveToFundingRatio = 0.01, // note: not used (overridden below)
+        maxReserveToFundingRatio = 0.05,
+        unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
+        revocationTimeout = 20 seconds,
+        channelFlags = ChannelFlags.Public,
+        minFundingSatoshis = 1000 sat,
+        maxFundingSatoshis = 16777215 sat,
+      ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
         feeEstimator = new TestFeeEstimator,
@@ -109,17 +129,6 @@ object TestConstants {
         defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw, DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)),
         perNodeFeerateTolerance = Map.empty
       ),
-      maxHtlcValueInFlightMsat = UInt64(500000000),
-      maxAcceptedHtlcs = 100,
-      expiryDelta = CltvExpiryDelta(144),
-      fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
-      minFinalExpiryDelta = CltvExpiryDelta(18),
-      maxBlockProcessingDelay = 10 millis,
-      maxTxPublishRetryDelay = 10 millis,
-      htlcMinimum = 0 msat,
-      minDepthBlocks = 3,
-      toRemoteDelay = CltvExpiryDelta(144),
-      maxToLocalDelay = CltvExpiryDelta(1000),
       relayParams = RelayParams(
         publicChannelFees = RelayFees(
           feeBase = 546000 msat,
@@ -130,21 +139,13 @@ object TestConstants {
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
           feeProportionalMillionths = 30)),
-      reserveToFundingRatio = 0.01, // note: not used (overridden below)
-      maxReserveToFundingRatio = 0.05,
-      unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
       db = TestDatabases.inMemoryDb(),
-      revocationTimeout = 20 seconds,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
-      channelFlags = ChannelFlags.Public,
-      watchSpentWindow = 1 second,
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
-      minFundingSatoshis = 1000 sat,
-      maxFundingSatoshis = 16777215 sat,
       peerConnectionConf = PeerConnection.Conf(
         authTimeout = 10 seconds,
         initTimeout = 10 seconds,
@@ -156,6 +157,7 @@ object TestConstants {
         maxOnionMessagesPerSecond = 10
       ),
       routerConf = RouterConf(
+        watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
         requestNodeAnnouncements = true,
@@ -232,8 +234,28 @@ object TestConstants {
       pluginParams = Nil,
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
-      dustLimit = 1000 sat,
-      maxRemoteDustLimit = 1500 sat,
+      channelConf = ChannelConf(
+        dustLimit = 1000 sat,
+        maxRemoteDustLimit = 1500 sat,
+        maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
+        maxAcceptedHtlcs = 30,
+        expiryDelta = CltvExpiryDelta(144),
+        fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
+        minFinalExpiryDelta = CltvExpiryDelta(18),
+        maxBlockProcessingDelay = 10 millis,
+        maxTxPublishRetryDelay = 10 millis,
+        htlcMinimum = 1000 msat,
+        minDepthBlocks = 3,
+        toRemoteDelay = CltvExpiryDelta(144),
+        maxToLocalDelay = CltvExpiryDelta(1000),
+        reserveToFundingRatio = 0.01, // note: not used (overridden below)
+        maxReserveToFundingRatio = 0.05,
+        unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
+        revocationTimeout = 20 seconds,
+        channelFlags = ChannelFlags.Public,
+        minFundingSatoshis = 1000 sat,
+        maxFundingSatoshis = 16777215 sat,
+      ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
         feeEstimator = new TestFeeEstimator,
@@ -242,17 +264,6 @@ object TestConstants {
         defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw, DustTolerance(30_000 sat, closeOnUpdateFeeOverflow = true)),
         perNodeFeerateTolerance = Map.empty
       ),
-      maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
-      maxAcceptedHtlcs = 30,
-      expiryDelta = CltvExpiryDelta(144),
-      fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
-      minFinalExpiryDelta = CltvExpiryDelta(18),
-      maxBlockProcessingDelay = 10 millis,
-      maxTxPublishRetryDelay = 10 millis,
-      htlcMinimum = 1000 msat,
-      minDepthBlocks = 3,
-      toRemoteDelay = CltvExpiryDelta(144),
-      maxToLocalDelay = CltvExpiryDelta(1000),
       relayParams = RelayParams(
         publicChannelFees = RelayFees(
           feeBase = 546000 msat,
@@ -263,21 +274,13 @@ object TestConstants {
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
           feeProportionalMillionths = 30)),
-      reserveToFundingRatio = 0.01, // note: not used (overridden below)
-      maxReserveToFundingRatio = 0.05,
-      unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
       db = TestDatabases.inMemoryDb(),
-      revocationTimeout = 20 seconds,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
-      channelFlags = ChannelFlags.Public,
-      watchSpentWindow = 1 second,
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
-      minFundingSatoshis = 1000 sat,
-      maxFundingSatoshis = 16777215 sat,
       peerConnectionConf = PeerConnection.Conf(
         authTimeout = 10 seconds,
         initTimeout = 10 seconds,
@@ -289,6 +292,7 @@ object TestConstants {
         maxOnionMessagesPerSecond = 10
       ),
       routerConf = RouterConf(
+        watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
         requestNodeAnnouncements = true,

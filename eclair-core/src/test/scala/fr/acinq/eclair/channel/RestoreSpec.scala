@@ -210,10 +210,10 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       Alice.nodeParams
         .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345),
       Alice.nodeParams
-        .modify(_.expiryDelta).setTo(CltvExpiryDelta(147)),
+        .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
       Alice.nodeParams
         .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345)
-        .modify(_.expiryDelta).setTo(CltvExpiryDelta(147)),
+        .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
     ) foreach { newConfig =>
 
       val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
@@ -223,7 +223,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       assert(!Announcements.areSameIgnoreFlags(u1.channelUpdate, oldStateData.channelUpdate))
       assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.privateChannelFees.feeBase)
       assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
-      assert(u1.channelUpdate.cltvExpiryDelta === newConfig.expiryDelta)
+      assert(u1.channelUpdate.cltvExpiryDelta === newConfig.channelConf.expiryDelta)
 
       newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
       bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)

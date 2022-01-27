@@ -136,7 +136,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
     context.system.eventStream ! EventStream.Subscribe(messageAdapter)
     Behaviors.receiveMessagePartial {
       case WrappedCurrentBlockHeight(currentBlockHeight) =>
-        timers.startSingleTimer(CheckTxConfirmationsKey, CheckTxConfirmations(currentBlockHeight), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
+        timers.startSingleTimer(CheckTxConfirmationsKey, CheckTxConfirmations(currentBlockHeight), (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis)
         Behaviors.same
       case CheckTxConfirmations(currentBlockHeight) =>
         context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.tx.txid)) {
@@ -149,7 +149,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
         if (confirmations == 0) {
           cmd.replyTo ! TxInMempool(cmd.tx.txid, currentBlockHeight)
           Behaviors.same
-        } else if (confirmations < nodeParams.minDepthBlocks) {
+        } else if (confirmations < nodeParams.channelConf.minDepthBlocks) {
           log.info("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
           cmd.replyTo ! TxRecentlyConfirmed(cmd.tx.txid, confirmations)
           Behaviors.same

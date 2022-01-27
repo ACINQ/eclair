@@ -141,7 +141,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !d.remoteFeatures.hasFeature(Wumbo)) {
           sender() ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
           stay()
-        } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
+        } else if (c.fundingSatoshis > nodeParams.channelConf.maxFundingSatoshis) {
           sender() ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
           stay()
         } else {
@@ -154,7 +154,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           val channelFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingSatoshis, None)
           val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
           log.info(s"requesting a new channel with type=$channelType fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-          channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelConfig, channelType)
+          channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType)
           stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         }
 
@@ -505,12 +505,12 @@ object Peer {
     LocalParams(
       nodeParams.nodeId,
       nodeParams.channelKeyManager.newFundingKeyPath(isFunder), // we make sure that funder and fundee key path end differently
-      dustLimit = nodeParams.dustLimit,
-      maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserve = (fundingAmount * nodeParams.reserveToFundingRatio).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
-      htlcMinimum = nodeParams.htlcMinimum,
-      toSelfDelay = nodeParams.toRemoteDelay, // we choose their delay
-      maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+      dustLimit = nodeParams.channelConf.dustLimit,
+      maxHtlcValueInFlightMsat = nodeParams.channelConf.maxHtlcValueInFlightMsat,
+      channelReserve = (fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
+      htlcMinimum = nodeParams.channelConf.htlcMinimum,
+      toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
+      maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
       isFunder = isFunder,
       defaultFinalScriptPubKey = defaultFinalScriptPubkey,
       walletStaticPaymentBasepoint = walletStaticPaymentBasepoint,

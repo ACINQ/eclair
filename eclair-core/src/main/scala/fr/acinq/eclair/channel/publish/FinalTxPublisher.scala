@@ -102,7 +102,7 @@ private class FinalTxPublisher(nodeParams: NodeParams,
           case ParentTxOk => publish()
           case ParentTxMissing =>
             log.debug("parent tx is missing, retrying after delay...")
-            timers.startSingleTimer(CheckParentTx, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
+            timers.startSingleTimer(CheckParentTx, (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis)
             Behaviors.same
           case UnknownFailure(reason) =>
             log.error("could not check parent tx: ", reason)

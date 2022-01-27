@@ -261,7 +261,7 @@ class StartupSpec extends AnyFunSuite {
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {
-    val noHtlcMinimumConf = ConfigFactory.parseString("htlc-minimum-msat = 0")
+    val noHtlcMinimumConf = ConfigFactory.parseString("channel.htlc-minimum-msat = 0")
     assert(Try(makeNodeParamsWithDefaults(noHtlcMinimumConf.withFallback(defaultConf))).isFailure)
   }
 

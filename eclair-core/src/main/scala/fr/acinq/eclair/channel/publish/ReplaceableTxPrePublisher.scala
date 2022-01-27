@@ -181,7 +181,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     //  - their commit is not confirmed: if it is, there is no need to publish our htlc transactions
     //  - if this is an htlc-success transaction, we have the preimage
     context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitments.remoteCommit.txid)) {
-      case Success(Some(depth)) if depth >= nodeParams.minDepthBlocks => RemoteCommitTxConfirmed
+      case Success(Some(depth)) if depth >= nodeParams.channelConf.minDepthBlocks => RemoteCommitTxConfirmed
       case Success(_) => ParentTxOk
       case Failure(reason) => UnknownFailure(reason)
     }
@@ -243,7 +243,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     //  - our commit is not confirmed: if it is, there is no need to publish our claim-htlc transactions
     //  - if this is a claim-htlc-success transaction, we have the preimage
     context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)) {
-      case Success(Some(depth)) if depth >= nodeParams.minDepthBlocks => LocalCommitTxConfirmed
+      case Success(Some(depth)) if depth >= nodeParams.channelConf.minDepthBlocks => LocalCommitTxConfirmed
       case Success(_) => ParentTxOk
       case Failure(reason) => UnknownFailure(reason)
     }

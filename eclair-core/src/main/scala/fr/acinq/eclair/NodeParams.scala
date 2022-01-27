@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.{Channel, ChannelFlags}
-import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
+import fr.acinq.eclair.channel.Channel.{ChannelConf, UnhandledExceptionStrategy}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
@@ -62,36 +62,16 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       private val overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
-                      dustLimit: Satoshi,
-                      maxRemoteDustLimit: Satoshi,
+                      channelConf: ChannelConf,
                       onChainFeeConf: OnChainFeeConf,
-                      maxHtlcValueInFlightMsat: UInt64,
-                      maxAcceptedHtlcs: Int,
-                      expiryDelta: CltvExpiryDelta,
-                      fulfillSafetyBeforeTimeout: CltvExpiryDelta,
-                      minFinalExpiryDelta: CltvExpiryDelta,
-                      maxBlockProcessingDelay: FiniteDuration,
-                      maxTxPublishRetryDelay: FiniteDuration,
-                      htlcMinimum: MilliSatoshi,
-                      toRemoteDelay: CltvExpiryDelta,
-                      maxToLocalDelay: CltvExpiryDelta,
-                      minDepthBlocks: Int,
                       relayParams: RelayParams,
-                      reserveToFundingRatio: Double,
-                      maxReserveToFundingRatio: Double,
-                      unhandledExceptionStrategy: UnhandledExceptionStrategy,
                       db: Databases,
-                      revocationTimeout: FiniteDuration,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
                       chainHash: ByteVector32,
-                      channelFlags: ChannelFlags,
-                      watchSpentWindow: FiniteDuration,
                       paymentRequestExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
-                      minFundingSatoshis: Satoshi,
-                      maxFundingSatoshis: Satoshi,
                       peerConnectionConf: PeerConnection.Conf,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
@@ -222,6 +202,26 @@ object NodeParams extends Logging {
       "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost.fee-proportional-millionths",
       // v0.6.3
       "channel-flags" -> "channel.channel-flags",
+      "dust-limit-satoshis" -> "channel.dust-limit-satoshis",
+      "max-remote-dust-limit-satoshis" -> "channel.max-remote-dust-limit-satoshis",
+      "htlc-minimum-msat" -> "channel.htlc-minimum-msat",
+      "max-htlc-value-in-flight-msat" -> "channel.max-htlc-value-in-flight-msat",
+      "max-accepted-htlcs" -> "channel.max-accepted-htlcs",
+      "reserve-to-funding-ratio" -> "channel.reserve-to-funding-ratio",
+      "max-reserve-to-funding-ratio" -> "channel.max-reserve-to-funding-ratio",
+      "min-funding-satoshis" -> "channel.min-funding-satoshis",
+      "max-funding-satoshis" -> "channel.max-funding-satoshis",
+      "to-remote-delay-blocks" -> "channel.to-remote-delay-blocks",
+      "max-to-local-delay-blocks" -> "channel.max-to-local-delay-blocks",
+      "mindepth-blocks" -> "channel.mindepth-blocks",
+      "expiry-delta-blocks" -> "channel.expiry-delta-blocks",
+      "fulfill-safety-before-timeout-blocks" -> "channel.fulfill-safety-before-timeout-blocks",
+      "min-final-expiry-delta-blocks" -> "channel.min-final-expiry-delta-blocks",
+      "max-block-processing-delay" -> "channel.max-block-processing-delay",
+      "max-tx-publish-retry-delay" -> "channel.max-tx-publish-retry-delay",
+      "unhandled-exception-strategy" -> "channel.unhandled-exception-strategy",
+      "revocation-timeout" -> "channel.revocation-timeout",
+      "watch-spent-window" -> "router.watch-spent-window",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -239,29 +239,29 @@ object NodeParams extends Logging {
     val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
-    val watchSpentWindow = FiniteDuration(config.getDuration("watch-spent-window").getSeconds, TimeUnit.SECONDS)
-    require(watchSpentWindow > 0.seconds, "watch-spent-window must be strictly greater than 0")
+    val watchSpentWindow = FiniteDuration(config.getDuration("router.watch-spent-window").getSeconds, TimeUnit.SECONDS)
+    require(watchSpentWindow > 0.seconds, "router.watch-spent-window must be strictly greater than 0")
 
-    val dustLimitSatoshis = Satoshi(config.getLong("dust-limit-satoshis"))
+    val dustLimitSatoshis = Satoshi(config.getLong("channel.dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
       require(dustLimitSatoshis >= Channel.MIN_DUST_LIMIT, s"dust limit must be greater than ${Channel.MIN_DUST_LIMIT}")
     }
 
-    val htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat"))
-    require(htlcMinimum > 0.msat, "htlc-minimum-msat must be strictly greater than 0")
+    val htlcMinimum = MilliSatoshi(config.getInt("channel.htlc-minimum-msat"))
+    require(htlcMinimum > 0.msat, "channel.htlc-minimum-msat must be strictly greater than 0")
 
-    val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
-    require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
+    val maxAcceptedHtlcs = config.getInt("channel.max-accepted-htlcs")
+    require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"channel.max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
-    val maxToLocalCLTV = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks"))
-    val offeredCLTV = CltvExpiryDelta(config.getInt("to-remote-delay-blocks"))
+    val maxToLocalCLTV = CltvExpiryDelta(config.getInt("channel.max-to-local-delay-blocks"))
+    val offeredCLTV = CltvExpiryDelta(config.getInt("channel.to-remote-delay-blocks"))
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
-    val expiryDelta = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
-    val fulfillSafetyBeforeTimeout = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
-    require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
-    val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("min-final-expiry-delta-blocks"))
-    require(minFinalExpiryDelta > fulfillSafetyBeforeTimeout, "min-final-expiry-delta-blocks must be strictly greater than fulfill-safety-before-timeout-blocks; otherwise it may lead to undesired channel closure")
+    val expiryDelta = CltvExpiryDelta(config.getInt("channel.expiry-delta-blocks"))
+    val fulfillSafetyBeforeTimeout = CltvExpiryDelta(config.getInt("channel.fulfill-safety-before-timeout-blocks"))
+    require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "channel.fulfill-safety-before-timeout-blocks must be smaller than channel.expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
+    val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("channel.min-final-expiry-delta-blocks"))
+    require(minFinalExpiryDelta > fulfillSafetyBeforeTimeout, "channel.min-final-expiry-delta-blocks must be strictly greater than channel.fulfill-safety-before-timeout-blocks; otherwise it may lead to undesired channel closure")
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
@@ -369,7 +369,7 @@ object NodeParams extends Logging {
       PathFindingExperimentConf(experiments.toMap)
     }
 
-    val unhandledExceptionStrategy = config.getString("unhandled-exception-strategy") match {
+    val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {
       case "local-close" => UnhandledExceptionStrategy.LocalClose
       case "stop" => UnhandledExceptionStrategy.Stop
     }
@@ -398,8 +398,28 @@ object NodeParams extends Logging {
       pluginParams = pluginParams,
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
-      dustLimit = dustLimitSatoshis,
-      maxRemoteDustLimit = Satoshi(config.getLong("max-remote-dust-limit-satoshis")),
+      channelConf = ChannelConf(
+        channelFlags = channelFlags,
+        dustLimit = dustLimitSatoshis,
+        maxRemoteDustLimit = Satoshi(config.getLong("channel.max-remote-dust-limit-satoshis")),
+        htlcMinimum = htlcMinimum,
+        maxHtlcValueInFlightMsat = UInt64(config.getLong("channel.max-htlc-value-in-flight-msat")),
+        maxAcceptedHtlcs = maxAcceptedHtlcs,
+        reserveToFundingRatio = config.getDouble("channel.reserve-to-funding-ratio"),
+        maxReserveToFundingRatio = config.getDouble("channel.max-reserve-to-funding-ratio"),
+        minFundingSatoshis = Satoshi(config.getLong("channel.min-funding-satoshis")),
+        maxFundingSatoshis = Satoshi(config.getLong("channel.max-funding-satoshis")),
+        toRemoteDelay = offeredCLTV,
+        maxToLocalDelay = maxToLocalCLTV,
+        minDepthBlocks = config.getInt("channel.mindepth-blocks"),
+        expiryDelta = expiryDelta,
+        fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
+        minFinalExpiryDelta = minFinalExpiryDelta,
+        maxBlockProcessingDelay = FiniteDuration(config.getDuration("channel.max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
+        maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
+        unhandledExceptionStrategy = unhandledExceptionStrategy,
+        revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS)
+      ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
@@ -428,37 +448,18 @@ object NodeParams extends Logging {
           nodeId -> tolerance
         }.toMap
       ),
-      maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
-      maxAcceptedHtlcs = maxAcceptedHtlcs,
-      expiryDelta = expiryDelta,
-      fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
-      minFinalExpiryDelta = minFinalExpiryDelta,
-      maxBlockProcessingDelay = FiniteDuration(config.getDuration("max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
-      maxTxPublishRetryDelay = FiniteDuration(config.getDuration("max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
-      htlcMinimum = htlcMinimum,
-      toRemoteDelay = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
-      maxToLocalDelay = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
-      minDepthBlocks = config.getInt("mindepth-blocks"),
       relayParams = RelayParams(
         publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
       ),
-      reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
-      maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
-      unhandledExceptionStrategy = unhandledExceptionStrategy,
       db = database,
-      revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
       autoReconnect = config.getBoolean("auto-reconnect"),
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
       chainHash = chainHash,
-      channelFlags = channelFlags,
-      watchSpentWindow = watchSpentWindow,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),
-      minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
-      maxFundingSatoshis = Satoshi(config.getLong("max-funding-satoshis")),
       peerConnectionConf = PeerConnection.Conf(
         authTimeout = FiniteDuration(config.getDuration("peer-connection.auth-timeout").getSeconds, TimeUnit.SECONDS),
         initTimeout = FiniteDuration(config.getDuration("peer-connection.init-timeout").getSeconds, TimeUnit.SECONDS),
@@ -470,6 +471,7 @@ object NodeParams extends Logging {
         maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second")
       ),
       routerConf = RouterConf(
+        watchSpentWindow = watchSpentWindow,
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
