@@ -168,50 +168,50 @@ object Databases extends Logging {
     override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock(dataSource)
 
     override def check(initChecks: SafetyChecks): Unit =
-        PgUtils.inTransaction { connection =>
+      PgUtils.inTransaction { connection =>
 
-            checkMaxAge(connection,
-              name = "local channel",
-              maxAge = initChecks.localChannelsMaxAge,
-              sqlQuery =
-                """
-                  |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp, closed_timestamp))
-                  |FROM local.channels
-                  |WHERE NOT is_closed""".stripMargin)
+        checkMaxAge(connection,
+          name = "local channel",
+          maxAge = initChecks.localChannelsMaxAge,
+          sqlQuery =
+            """
+              |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp, closed_timestamp))
+              |FROM local.channels
+              |WHERE NOT is_closed""".stripMargin)
 
-            checkMaxAge(connection,
-              name = "network node",
-              maxAge = initChecks.networkNodesMaxAge,
-              sqlQuery =
-                """
-                  |SELECT MAX((json->'timestamp'->>'iso')::timestamptz)
-                  |FROM network.nodes""".stripMargin)
+        checkMaxAge(connection,
+          name = "network node",
+          maxAge = initChecks.networkNodesMaxAge,
+          sqlQuery =
+            """
+              |SELECT MAX((json->'timestamp'->>'iso')::timestamptz)
+              |FROM network.nodes""".stripMargin)
 
-            checkMaxAge(connection,
-              name = "audit relayed",
-              maxAge = initChecks.auditRelayedMaxAge,
-              sqlQuery =
-                """
-                  |SELECT MAX(timestamp)
-                  |FROM audit.relayed""".stripMargin)
+        checkMaxAge(connection,
+          name = "audit relayed",
+          maxAge = initChecks.auditRelayedMaxAge,
+          sqlQuery =
+            """
+              |SELECT MAX(timestamp)
+              |FROM audit.relayed""".stripMargin)
 
-            checkMinCount(connection,
-              name = "local channels",
-              minCount = initChecks.localChannelsMinCount,
-              sqlQuery = "SELECT COUNT(*) FROM local.channels")
+        checkMinCount(connection,
+          name = "local channels",
+          minCount = initChecks.localChannelsMinCount,
+          sqlQuery = "SELECT COUNT(*) FROM local.channels")
 
-            checkMinCount(connection,
-              name = "network node",
-              minCount = initChecks.networkNodesMinCount,
-              sqlQuery = "SELECT COUNT(*) FROM network.nodes")
+        checkMinCount(connection,
+          name = "network node",
+          minCount = initChecks.networkNodesMinCount,
+          sqlQuery = "SELECT COUNT(*) FROM network.nodes")
 
-            checkMinCount(connection,
-              name = "network channels",
-              minCount = initChecks.networkChannelsMinCount,
-              sqlQuery = "SELECT COUNT(*) FROM network.public_channels")
+        checkMinCount(connection,
+          name = "network channels",
+          minCount = initChecks.networkChannelsMinCount,
+          sqlQuery = "SELECT COUNT(*) FROM network.public_channels")
 
-        }(dataSource)
-    }
+      }(dataSource)
+  }
 
   object PostgresDatabases {
 
@@ -301,37 +301,33 @@ object Databases extends Logging {
     }
   }
 
-  def init(dbConfig: Config, instanceId: UUID, chaindir: File, db: Option[Databases] = None)(implicit system: ActorSystem): Databases = {
-    db match {
-      case Some(d) => d
-      case None =>
-        val databases = dbConfig.getString("driver") match {
-          case "sqlite" => Databases.sqlite(chaindir)
-          case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir)
-          case "dual" =>
-            val sqlite = Databases.sqlite(chaindir)
-            val postgres = Databases.postgres(dbConfig, instanceId, chaindir)
-            DualDatabases(sqlite, postgres)
-          case driver => throw new RuntimeException(s"unknown database driver `$driver`")
-        }
-
-        if (dbConfig.getBoolean("safety-checks.enabled")) {
-          val safetyChecks = SafetyChecks(
-            localChannelsMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.local-channels").getSeconds, TimeUnit.SECONDS),
-            networkNodesMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.network-nodes").getSeconds, TimeUnit.SECONDS),
-            auditRelayedMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.audit-relayed").getSeconds, TimeUnit.SECONDS),
-            localChannelsMinCount = dbConfig.getInt("safety-checks.min-count.local-channels"),
-            networkNodesMinCount = dbConfig.getInt("safety-checks.min-count.network-nodes"),
-            networkChannelsMinCount = dbConfig.getInt("safety-checks.min-count.network-channels"),
-          )
-          databases match {
-            case databases: InitChecks => databases.check(safetyChecks)
-            case _ => throw new RuntimeException("safety checks are unsupported by this database")
-          }
-        }
-
-        databases
+  def init(dbConfig: Config, instanceId: UUID, chaindir: File, db_opt: Option[Databases] = None)(implicit system: ActorSystem): Databases = {
+    val db = db_opt getOrElse {
+      dbConfig.getString("driver") match {
+        case "sqlite" => Databases.sqlite(chaindir)
+        case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir)
+        case "dual" =>
+          val sqlite = Databases.sqlite(chaindir)
+          val postgres = Databases.postgres(dbConfig, instanceId, chaindir)
+          DualDatabases(sqlite, postgres)
+        case driver => throw new RuntimeException(s"unknown database driver `$driver`")
+      }
     }
+    if (dbConfig.getBoolean("safety-checks.enabled")) {
+      val safetyChecks = SafetyChecks(
+        localChannelsMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.local-channels").getSeconds, TimeUnit.SECONDS),
+        networkNodesMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.network-nodes").getSeconds, TimeUnit.SECONDS),
+        auditRelayedMaxAge = FiniteDuration(dbConfig.getDuration("safety-checks.max-age.audit-relayed").getSeconds, TimeUnit.SECONDS),
+        localChannelsMinCount = dbConfig.getInt("safety-checks.min-count.local-channels"),
+        networkNodesMinCount = dbConfig.getInt("safety-checks.min-count.network-nodes"),
+        networkChannelsMinCount = dbConfig.getInt("safety-checks.min-count.network-channels"),
+      )
+      db match {
+        case databases: InitChecks => databases.check(safetyChecks)
+        case _ => throw new RuntimeException("safety checks are unsupported by this database")
+      }
+    }
+    db
   }
 
   /**

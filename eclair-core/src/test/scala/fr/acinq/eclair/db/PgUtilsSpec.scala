@@ -1,7 +1,7 @@
 package fr.acinq.eclair.db
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
-import com.typesafe.config.{Config, ConfigFactory, ConfigValue}
+import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.db.Databases.SafetyChecks
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.pg.PgUtils.ExtendedResultSet._
@@ -271,20 +271,6 @@ object PgUtilsSpec extends Logging {
        |    auto-release-at-shutdown = false // automatically release the lock when eclair is stopping
        |  }
        |}
-       |  safety-checks {
-       |    // a set of basic checks on data to make sure we use the correct database
-       |    enabled = false
-       |    max-age {
-       |      local-channels = 3 minutes
-       |      network-nodes = 30 minutes
-       |      audit-relayed = 10 minutes
-       |    }
-       |    min-count {
-       |      local-channels = 10
-       |      network-nodes = 3000
-       |      network-channels = 20000
-       |    }
-       |  }
        |""".stripMargin
   )
 
