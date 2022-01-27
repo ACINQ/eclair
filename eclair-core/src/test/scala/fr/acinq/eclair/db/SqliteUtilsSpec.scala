@@ -16,10 +16,15 @@
 
 package fr.acinq.eclair.db
 
-import java.sql.SQLException
-import fr.acinq.eclair.{TestConstants, TestDatabases}
+import fr.acinq.eclair.db.pg.PgUtils.JdbcUrlChanged
 import fr.acinq.eclair.db.sqlite.SqliteUtils.using
+import fr.acinq.eclair.{TestDatabases, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
+
+import java.io.File
+import java.nio.file.Files
+import java.sql.SQLException
+import java.util.UUID
 
 class SqliteUtilsSpec extends AnyFunSuite {
 
@@ -71,6 +76,30 @@ class SqliteUtilsSpec extends AnyFunSuite {
       assert(results.next())
       assert(results.getLong("id") === 4)
       assert(!results.next())
+    }
+  }
+
+  test("jdbc url check") {
+    val datadir = new File(TestUtils.BUILD_DIRECTORY, s"sqlite_test_${UUID.randomUUID()}")
+    val jdbcUrlPath = new File(datadir, "last_jdbcurl")
+    datadir.mkdirs()
+
+    // first start : write to file
+    val db1 = Databases.sqlite(datadir)
+    db1.channels.close()
+
+    assert(Files.readString(jdbcUrlPath.toPath).trim == "sqlite")
+
+    // 2nd start : no-op
+    val db2 = Databases.sqlite(datadir)
+    db2.channels.close()
+
+    // we modify the file
+    Files.writeString(jdbcUrlPath.toPath, "postgres")
+
+    // boom
+    intercept[JdbcUrlChanged] {
+      Databases.sqlite(datadir)
     }
   }
 
