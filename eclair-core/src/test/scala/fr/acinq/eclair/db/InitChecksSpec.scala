@@ -19,7 +19,6 @@ package fr.acinq.eclair.db
 import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.db.Databases.SafetyChecks
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
-import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.payment.ChannelPaymentRelayed
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
@@ -27,7 +26,6 @@ import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, MilliSatoshiLong, TestDatabases, TimestampMilli, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
-import java.nio.file.{FileSystem, FileSystems, Files, Path, Paths}
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
 
@@ -56,13 +54,39 @@ class InitChecksSpec extends AnyFunSuite {
         networkChannelsMinCount = 0
       ))
 
-      // this check is failing
+      // this check is failing due to insufficient number of local channels
       intercept[IllegalArgumentException] {
         db.check(SafetyChecks(
           localChannelsMaxAge = 3 minutes,
           networkNodesMaxAge = 30 minutes,
           auditRelayedMaxAge = 10 minutes,
           localChannelsMinCount = 10,
+          networkNodesMinCount = 2,
+          networkChannelsMinCount = 0
+        ))
+      }
+
+      // this check is failing due to last update to local channels being too old
+      intercept[IllegalArgumentException] {
+        Thread.sleep(100)
+        db.check(SafetyChecks(
+          localChannelsMaxAge = 10 milliseconds,
+          networkNodesMaxAge = 30 minutes,
+          auditRelayedMaxAge = 10 minutes,
+          localChannelsMinCount = 1,
+          networkNodesMinCount = 2,
+          networkChannelsMinCount = 0
+        ))
+      }
+
+      // this check is failing due to last update to audit db being too old
+      intercept[IllegalArgumentException] {
+        Thread.sleep(100)
+        db.check(SafetyChecks(
+          localChannelsMaxAge = 3 minutes,
+          networkNodesMaxAge = 30 minutes,
+          auditRelayedMaxAge = 10 milliseconds,
+          localChannelsMinCount = 1,
           networkNodesMinCount = 2,
           networkChannelsMinCount = 0
         ))
