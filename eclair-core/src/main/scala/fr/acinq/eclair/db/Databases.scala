@@ -257,7 +257,7 @@ object Databases extends Logging {
     if (urlFile.exists()) {
       val oldUrl = readString(urlFile.toPath)
       if (oldUrl != url)
-          throw JdbcUrlChanged(oldUrl, url)
+        throw JdbcUrlChanged(oldUrl, url)
     } else {
       writeString(urlFile.toPath, url)
     }
