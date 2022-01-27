@@ -246,6 +246,9 @@ object Databases extends Logging {
     }
   }
 
+  /** We raise this exception when the jdbc url changes, to prevent using a different server involuntarily. */
+  case class JdbcUrlChanged(before: String, after: String) extends RuntimeException(s"The database URL has changed since the last start. It was `$before`, now it's `$after`. If this was intended, make sure you have migrated your data, otherwise your channels will be force-closed and you may lose funds.")
+
   private def checkIfDatabaseUrlIsUnchanged(url: String, urlFile: File): Unit = {
     def readString(path: Path): String = Files.readAllLines(path).get(0)
 
@@ -254,7 +257,7 @@ object Databases extends Logging {
     if (urlFile.exists()) {
       val oldUrl = readString(urlFile.toPath)
       if (oldUrl != url)
-        throw JdbcUrlChanged(oldUrl, url)
+          throw JdbcUrlChanged(oldUrl, url)
     } else {
       writeString(urlFile.toPath, url)
     }
