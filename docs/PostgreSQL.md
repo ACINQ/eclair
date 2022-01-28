@@ -111,4 +111,34 @@ Eclair stores the latest database settings in the `${data-dir}/last_jdbcurl` fil
 
 The node operator can force Eclair to accept new database 
 connection settings by removing the `last_jdbcurl` file. 
-    
+
+### Migrating from Sqlite to Postgres
+
+Eclair supports migrating your existing node from Sqlite to Postgres. Note that the opposite (from Postgres to Sqlite) is not supported.
+
+:warning: Once you have migrated from Sqlite to Postgres there is no going back!
+
+To migrate from Sqlite to Postgres, follow these steps:
+1. Stop Eclair
+2. Edit `eclair.conf`
+   1. Set `eclair.db.postgres.*` as explained in the section [Connection Settings](#connection-settings).
+   2. Set `eclair.db.driver=dual-sqlite-primary`. This will make Eclair use both databases backends. All calls to sqlite will be replicated in postgres.
+   3. Set `eclair.db.dual.migrate-on-restart=true`. This will make Eclair migrate the data from Sqlite to Postgres at startup.
+   4. Set `eclair.db.dual.compare-on-restart=true`. This will make Eclair compare Sqlite and Postgres at startup. The result of the comparison is displayed in the logs.
+3. Delete the file `~/.eclair/last_jdbcurl`. The purpose of this file is to prevent accidental change in the database backend.
+4. Start Eclair. You should see in the logs:
+   1. `migrating all tables...`
+   2. `migration complete`
+   3. `comparing all tables...`
+   4. `comparison complete identical=true` (NB: if `identical=false`, contact support)
+5. Eclair should then finish startup and operate normally. Data has been migrated to Postgres, and Sqlite/Postgres will be maintained in sync going forward.
+6. Edit `eclair.conf` and set `eclair.db.dual.migrate-on-restart=false` but do not restart Eclair yet.
+7. We recommend that you leave Eclair in dual db mode for a while, to make sure that you don't have issues with your new Postgres database. This a good time to set up [Backups and replication](#backups-and-replication).
+8. After some time has passed, restart Eclair. You should see in the logs:
+   1. `comparing all tables...`
+   2. `comparison complete identical=true` (NB: if `identical=false`, contact support)
+9. At this point we have confidence that the Postgres backend works normally, and we are ready to drop Sqlite for good.
+10. Edit `eclair.conf`
+    1. Set `eclair.db.driver=postgres`
+    2. Set `eclair.db.dual.compare-on-restart=false`
+11. Restart Eclair. From this moment, you cannot go back to Sqlite! If you try to do so, Eclair will refuse to start.
