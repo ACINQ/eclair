@@ -679,10 +679,10 @@ object Helpers {
       val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
         withTxGenerationLog("local-anchor") {
-          Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
+          Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, localParams.defaultFinalScriptPubKey, confirmCommitBefore)
         },
         withTxGenerationLog("remote-anchor") {
-          Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
+          Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey, localParams.defaultFinalScriptPubKey)
         }
       ).flatten
 
@@ -786,10 +786,10 @@ object Helpers {
       val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
         withTxGenerationLog("local-anchor") {
-          Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, confirmCommitBefore)
+          Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, commitments.localParams.defaultFinalScriptPubKey, confirmCommitBefore)
         },
         withTxGenerationLog("remote-anchor") {
-          Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
+          Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey, commitments.localParams.defaultFinalScriptPubKey)
         }
       ).flatten
 

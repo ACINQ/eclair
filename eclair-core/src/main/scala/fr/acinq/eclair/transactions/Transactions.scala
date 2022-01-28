@@ -40,7 +40,9 @@ object Transactions {
     def commitWeight: Int
     def htlcOutputWeight: Int
     def htlcTimeoutWeight: Int
+    def htlcTimeoutInputWeight: Int
     def htlcSuccessWeight: Int
+    def htlcSuccessInputWeight: Int
     // @formatter:on
   }
 
@@ -50,7 +52,9 @@ object Transactions {
   case object DefaultCommitmentFormat extends CommitmentFormat {
     override val commitWeight = 724
     override val htlcOutputWeight = 172
+    override val htlcTimeoutInputWeight = 451
     override val htlcTimeoutWeight = 663
+    override val htlcSuccessInputWeight = 490
     override val htlcSuccessWeight = 703
   }
 
@@ -61,12 +65,15 @@ object Transactions {
   sealed trait AnchorOutputsCommitmentFormat extends CommitmentFormat {
     override val commitWeight = 1124
     override val htlcOutputWeight = 172
+    override val htlcTimeoutInputWeight = 454
     override val htlcTimeoutWeight = 666
+    override val htlcSuccessInputWeight = 493
     override val htlcSuccessWeight = 706
   }
 
   object AnchorOutputsCommitmentFormat {
     val anchorAmount = Satoshi(330)
+    val anchorInputWeight = 279
   }
 
   /**
@@ -680,7 +687,7 @@ object Transactions {
     }
   }
 
-  private def makeClaimAnchorOutputTx(commitTx: Transaction, fundingPubkey: PublicKey): Either[TxGenerationSkipped, (InputInfo, Transaction)] = {
+  private def makeClaimAnchorOutputTx(commitTx: Transaction, fundingPubkey: PublicKey, localFinalScriptPubKey: ByteVector): Either[TxGenerationSkipped, (InputInfo, Transaction)] = {
     val redeemScript = anchor(fundingPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
     findPubKeyScriptIndex(commitTx, pubkeyScript) match {
@@ -691,18 +698,20 @@ object Transactions {
         val tx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
-          txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
+          // anchor is only used to bump fees, but transactions must always have an output, so we create a dummy one that
+          // will be removed once a real change output has been added
+          txOut = TxOut(input.txOut.amount, localFinalScriptPubKey) :: Nil,
           lockTime = 0)
         Right((input, tx))
     }
   }
 
-  def makeClaimLocalAnchorOutputTx(commitTx: Transaction, localFundingPubkey: PublicKey, confirmBefore: BlockHeight): Either[TxGenerationSkipped, ClaimLocalAnchorOutputTx] = {
-    makeClaimAnchorOutputTx(commitTx, localFundingPubkey).map { case (input, tx) => ClaimLocalAnchorOutputTx(input, tx, confirmBefore) }
+  def makeClaimLocalAnchorOutputTx(commitTx: Transaction, localFundingPubkey: PublicKey, localFinalScriptPubKey: ByteVector, confirmBefore: BlockHeight): Either[TxGenerationSkipped, ClaimLocalAnchorOutputTx] = {
+    makeClaimAnchorOutputTx(commitTx, localFundingPubkey, localFinalScriptPubKey).map { case (input, tx) => ClaimLocalAnchorOutputTx(input, tx, confirmBefore) }
   }
 
-  def makeClaimRemoteAnchorOutputTx(commitTx: Transaction, remoteFundingPubkey: PublicKey): Either[TxGenerationSkipped, ClaimRemoteAnchorOutputTx] = {
-    makeClaimAnchorOutputTx(commitTx, remoteFundingPubkey).map { case (input, tx) => ClaimRemoteAnchorOutputTx(input, tx) }
+  def makeClaimRemoteAnchorOutputTx(commitTx: Transaction, remoteFundingPubkey: PublicKey, localFinalScriptPubKey: ByteVector): Either[TxGenerationSkipped, ClaimRemoteAnchorOutputTx] = {
+    makeClaimAnchorOutputTx(commitTx, remoteFundingPubkey, localFinalScriptPubKey).map { case (input, tx) => ClaimRemoteAnchorOutputTx(input, tx) }
   }
 
   def makeClaimHtlcDelayedOutputPenaltyTxs(htlcTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Seq[Either[TxGenerationSkipped, ClaimHtlcDelayedOutputPenaltyTx]] = {

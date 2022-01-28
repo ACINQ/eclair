@@ -190,7 +190,7 @@ trait BitcoindService extends Logging {
       case amount: MilliBtc => amount.toBtc.toBigDecimal
       case amount: Btc => amount.toBigDecimal
     }
-    rpcClient.invoke("sendtoaddress", address, amountDecimal).pipeTo(sender.ref)
+    rpcClient.invoke("sendtoaddress", address, amountDecimal, "comment", "comment again", /* subtractfeefromamount */ false, /* replaceable */ true).pipeTo(sender.ref)
     val JString(txid) = sender.expectMsgType[JString]
     rpcClient.invoke("getrawtransaction", txid).pipeTo(sender.ref)
     val JString(rawTx) = sender.expectMsgType[JString]

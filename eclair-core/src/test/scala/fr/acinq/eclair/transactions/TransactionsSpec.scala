@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
 import fr.acinq.eclair.transactions.Scripts.{anchor, htlcOffered, htlcReceived, toLocalDelayed}
-import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.anchorAmount
+import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.{anchorAmount, anchorInputWeight}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import grizzled.slf4j.Logging
@@ -197,19 +197,21 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimAnchorOutputTx
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey, BlockHeight(1105))
-      assert(claimAnchorOutputTx.tx.txOut.isEmpty)
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey, finalPubKeyScript, BlockHeight(1105))
+      assert(claimAnchorOutputTx.tx.txOut === Seq(TxOut(anchorAmount, finalPubKeyScript)))
       assert(claimAnchorOutputTx.confirmBefore === BlockHeight(1105))
-      // we will always add at least one input and one output to be able to set our desired feerate
+      // we will always add at least one input and keep only one change output to be able to set our desired feerate
       // we use dummy signatures to compute the weight
       val p2wpkhWitness = ScriptWitness(Seq(Scripts.der(PlaceHolderSig), PlaceHolderPubKey.value))
       val claimAnchorOutputTxWithFees = claimAnchorOutputTx.copy(tx = claimAnchorOutputTx.tx.copy(
         txIn = claimAnchorOutputTx.tx.txIn :+ TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, p2wpkhWitness),
-        txOut = Seq(TxOut(1500 sat, Script.pay2wpkh(randomKey().publicKey)))
       ))
-      val weight = Transaction.weight(addSigs(claimAnchorOutputTxWithFees, PlaceHolderSig).tx)
+      val signedTx = addSigs(claimAnchorOutputTxWithFees, PlaceHolderSig).tx
+      val weight = Transaction.weight(signedTx)
       assert(weight === 717)
       assert(weight >= claimAnchorOutputMinWeight)
+      val inputWeight = Transaction.weight(signedTx) - Transaction.weight(signedTx.copy(txIn = signedTx.txIn.tail))
+      assert(anchorInputWeight === inputWeight)
     }
   }
 
@@ -316,6 +318,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val remoteSig = sign(htlcTimeoutTx, remoteHtlcPriv, TxOwner.Remote, DefaultCommitmentFormat)
         val signed = addSigs(htlcTimeoutTx, localSig, remoteSig, DefaultCommitmentFormat)
         assert(checkSpendable(signed).isSuccess)
+        // weights match our hardcoded estimations (only the signatures size will vary slightly)
+        val weight = signed.tx.weight()
+        val inputWeight = signed.tx.weight() - signed.tx.copy(txIn = signed.tx.txIn.tail).weight()
+        assert(0.95 * DefaultCommitmentFormat.htlcTimeoutWeight <= weight && weight <= DefaultCommitmentFormat.htlcTimeoutWeight)
+        assert(0.95 * DefaultCommitmentFormat.htlcTimeoutInputWeight <= inputWeight && inputWeight <= DefaultCommitmentFormat.htlcTimeoutInputWeight)
       }
     }
     {
@@ -342,10 +349,15 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       for ((htlcSuccessTx, paymentPreimage) <- (htlcSuccessTxs(1), paymentPreimage2) :: (htlcSuccessTxs(0), paymentPreimage4) :: Nil) {
         val localSig = sign(htlcSuccessTx, localHtlcPriv, TxOwner.Local, DefaultCommitmentFormat)
         val remoteSig = sign(htlcSuccessTx, remoteHtlcPriv, TxOwner.Remote, DefaultCommitmentFormat)
-        val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, DefaultCommitmentFormat)
-        assert(checkSpendable(signedTx).isSuccess)
+        val signed = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, DefaultCommitmentFormat)
+        assert(checkSpendable(signed).isSuccess)
         // check remote sig
         assert(checkSig(htlcSuccessTx, remoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, DefaultCommitmentFormat))
+        // weights match our hardcoded estimations (only the signatures size will vary slightly)
+        val weight = signed.tx.weight()
+        val inputWeight = signed.tx.weight() - signed.tx.copy(txIn = signed.tx.txIn.tail).weight()
+        assert(0.95 * DefaultCommitmentFormat.htlcSuccessWeight <= weight && weight <= DefaultCommitmentFormat.htlcSuccessWeight)
+        assert(0.95 * DefaultCommitmentFormat.htlcSuccessInputWeight <= inputWeight && inputWeight <= DefaultCommitmentFormat.htlcSuccessInputWeight)
       }
     }
     {
@@ -576,7 +588,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // local spends local anchor
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, BlockHeight(0))
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, finalPubKeyScript, BlockHeight(0))
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
       val localSig = sign(claimAnchorOutputTx, localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
@@ -584,7 +596,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends remote anchor
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey, BlockHeight(0))
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey, finalPubKeyScript, BlockHeight(0))
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
       val localSig = sign(claimAnchorOutputTx, remoteFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
@@ -602,8 +614,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       for (htlcTimeoutTx <- htlcTimeoutTxs) {
         val localSig = sign(htlcTimeoutTx, localHtlcPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
         val remoteSig = sign(htlcTimeoutTx, remoteHtlcPriv, TxOwner.Remote, UnsafeLegacyAnchorOutputsCommitmentFormat)
-        val signedTx = addSigs(htlcTimeoutTx, localSig, remoteSig, UnsafeLegacyAnchorOutputsCommitmentFormat)
-        assert(checkSpendable(signedTx).isSuccess)
+        val signed = addSigs(htlcTimeoutTx, localSig, remoteSig, UnsafeLegacyAnchorOutputsCommitmentFormat)
+        assert(checkSpendable(signed).isSuccess)
+        // weights match our hardcoded estimations (only the signatures size will vary slightly)
+        val weight = signed.tx.weight()
+        val inputWeight = signed.tx.weight() - signed.tx.copy(txIn = signed.tx.txIn.tail).weight()
+        assert(0.95 * UnsafeLegacyAnchorOutputsCommitmentFormat.htlcTimeoutWeight <= weight && weight <= UnsafeLegacyAnchorOutputsCommitmentFormat.htlcTimeoutWeight)
+        assert(0.95 * UnsafeLegacyAnchorOutputsCommitmentFormat.htlcTimeoutInputWeight <= inputWeight && inputWeight <= UnsafeLegacyAnchorOutputsCommitmentFormat.htlcTimeoutInputWeight)
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
@@ -617,8 +634,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // local spends delayed output of htlc1 timeout tx
       val Right(htlcDelayed) = makeHtlcDelayedTx(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       val localSig = sign(htlcDelayed, localDelayedPaymentPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
-      val signedTx = addSigs(htlcDelayed, localSig)
-      assert(checkSpendable(signedTx).isSuccess)
+      val signed = addSigs(htlcDelayed, localSig)
+      assert(checkSpendable(signed).isSuccess)
       // local can't claim delayed output of htlc3 timeout tx because it is below the dust limit
       val htlcDelayed1 = makeHtlcDelayedTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       assert(htlcDelayed1 === Left(OutputNotFound))
@@ -628,10 +645,15 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       for ((htlcSuccessTx, paymentPreimage) <- (htlcSuccessTxs(0), paymentPreimage4) :: (htlcSuccessTxs(1), paymentPreimage2) :: (htlcSuccessTxs(2), paymentPreimage2) :: Nil) {
         val localSig = sign(htlcSuccessTx, localHtlcPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
         val remoteSig = sign(htlcSuccessTx, remoteHtlcPriv, TxOwner.Remote, UnsafeLegacyAnchorOutputsCommitmentFormat)
-        val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, UnsafeLegacyAnchorOutputsCommitmentFormat)
-        assert(checkSpendable(signedTx).isSuccess)
+        val signed = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, UnsafeLegacyAnchorOutputsCommitmentFormat)
+        assert(checkSpendable(signed).isSuccess)
         // check remote sig
         assert(checkSig(htlcSuccessTx, remoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, UnsafeLegacyAnchorOutputsCommitmentFormat))
+        // weights match our hardcoded estimations (only the signatures size will vary slightly)
+        val weight = signed.tx.weight()
+        val inputWeight = signed.tx.weight() - signed.tx.copy(txIn = signed.tx.txIn.tail).weight()
+        assert(0.95 * UnsafeLegacyAnchorOutputsCommitmentFormat.htlcSuccessWeight <= weight && weight <= UnsafeLegacyAnchorOutputsCommitmentFormat.htlcSuccessWeight)
+        assert(0.95 * UnsafeLegacyAnchorOutputsCommitmentFormat.htlcSuccessInputWeight <= inputWeight && inputWeight <= UnsafeLegacyAnchorOutputsCommitmentFormat.htlcSuccessInputWeight)
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {

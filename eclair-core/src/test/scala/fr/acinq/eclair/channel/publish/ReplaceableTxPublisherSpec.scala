@@ -21,12 +21,12 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
@@ -104,6 +104,16 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     def isInMempool(txid: ByteVector32): Boolean = {
       getMempool().exists(_.txid == txid)
+    }
+
+    def replaceMinerUnconfirmedTx(unconfirmedTx: Transaction): Unit = {
+      val minerWallet = new BitcoinCoreClient(bitcoinrpcclient)
+      val updatedAmount = unconfirmedTx.txOut.map(_.amount).sum - 100_000.sat
+      val unsignedTx = unconfirmedTx.copy(txOut = Seq(TxOut(updatedAmount, Script.pay2wpkh(randomKey().publicKey))))
+      minerWallet.signTransaction(unsignedTx).pipeTo(probe.ref)
+      val signedTx = probe.expectMsgType[SignTransactionResponse].tx
+      minerWallet.publishTransaction(signedTx).pipeTo(probe.ref)
+      probe.expectMsg(signedTx.txid)
     }
 
   }
@@ -306,7 +316,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("not enough funds to increase commit tx feerate") {
-    withFixture(Seq(10.5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
+    withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       // close channel and wait for the commit tx to be published, anchor will not be published because we don't have enough funds
@@ -382,10 +392,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  test("commit tx feerate too low, spending anchor outputs with multiple wallet inputs") {
+  test("commit tx feerate too low, spending anchor output with multiple wallet inputs") {
     val utxos = Seq(
       // channel funding
-      10 millibtc,
+      10.2 millibtc,
       // bumping utxos
       25000 sat,
       22000 sat,
@@ -395,7 +405,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       import f._
 
       // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target than what's provided.
-      val targetFeerate = FeeratePerKw(10_000 sat)
+      val targetFeerate = FeeratePerKw(25_000 sat)
       setFeerate(targetFeerate, blockTarget = 12)
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 32)
       publisher ! Publish(probe.ref, anchorTx)
@@ -415,6 +425,45 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.tx.txid))
       assert(result.tx.txIn.length > 2) // we added more than 1 wallet input
       assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
+    }
+  }
+
+  test("commit tx feerate too low, spending anchor with unsafe inputs") {
+    withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
+      import f._
+
+      // We receive unconfirmed funds from another wallet, which could be replaced at any time.
+      wallet.getReceiveAddress().pipeTo(probe.ref)
+      val walletAddress = probe.expectMsgType[String]
+      val unsafeTx = sendToAddress(walletAddress, 5 millibtc, probe)
+
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(commitTx.tx.txid)
+
+      val targetFeerate = FeeratePerKw(25_000 sat)
+      setFeerate(targetFeerate)
+      publisher ! Publish(probe.ref, anchorTx)
+      // Wait for the unsafe tx, the commit tx and the anchor tx to be published.
+      val mempoolTxs = getMempoolTxs(3)
+      assert(mempoolTxs.map(_.txid).contains(commitTx.tx.txid))
+
+      // The anchor transaction must spend the unsafe outpoint to reach the desired feerate.
+      val mempoolAnchorTx = getMempool().filter(tx => tx.txid != commitTx.tx.txid && tx.txid != unsafeTx.txid).head
+      assert(mempoolAnchorTx.txIn.exists(_.outPoint.txid == unsafeTx.txid))
+      // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation
+      // The feerate should take into account the weight of all ancestors.
+      // val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+      // val actualFee = mempoolTxs.map(_.fees).sum
+      // assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+
+      // Our unsafe input disappears (the transaction that created it was replaced): hen a new block is found, we detect
+      // the eviction and notify our parent, which will restart the funding flow.
+      replaceMinerUnconfirmedTx(unsafeTx)
+      system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight()))
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd === anchorTx)
+      assert(result.reason === WalletInputGone)
     }
   }
 
@@ -531,7 +580,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("commit tx not confirming, cannot use new unconfirmed inputs to increase fees") {
-    withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
+    withFixture(Seq(10.5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -539,7 +588,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectMsg(commitTx.tx.txid)
 
       // The feerate is higher for higher block targets
-      val targetFeerate = FeeratePerKw(25_000 sat)
+      val targetFeerate = FeeratePerKw(50_000 sat)
       setFeerate(FeeratePerKw(3000 sat))
       setFeerate(targetFeerate, blockTarget = 6)
       publisher ! Publish(probe.ref, anchorTx)
@@ -550,7 +599,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // Our wallet receives new unconfirmed utxos: unfortunately, BIP 125 rule #2 doesn't let us use that input...
       wallet.getReceiveAddress().pipeTo(probe.ref)
       val walletAddress = probe.expectMsgType[String]
-      val walletTx = sendToAddress(walletAddress, 5 millibtc, probe)
+      val walletTx = sendToAddress(walletAddress, 10 millibtc, probe)
 
       // A new block is found, and the feerate has increased for our block target, but we can't use our unconfirmed input.
       system.eventStream.subscribe(probe.ref, classOf[NotifyNodeOperator])
@@ -594,38 +643,6 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val targetFee2 = Transactions.weight2fee(feerateHigh, mempoolTxs2.map(_.weight).sum.toInt)
       val actualFee2 = mempoolTxs2.map(_.fees).sum
       assert(targetFee2 * 0.9 <= actualFee2 && actualFee2 <= targetFee2 * 1.1, s"actualFee=$actualFee2 targetFee=$targetFee2")
-    }
-  }
-
-  test("unlock utxos when anchor tx cannot be published") {
-    withFixture(Seq(500 millibtc, 200 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
-      import f._
-
-      val targetFeerate = FeeratePerKw(3000 sat)
-      setFeerate(targetFeerate)
-      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 36)
-      publisher ! Publish(probe.ref, anchorTx)
-
-      // wait for the commit tx and anchor tx to be published
-      val mempoolTxs = getMempoolTxs(2)
-      assert(mempoolTxs.map(_.txid).contains(commitTx.tx.txid))
-
-      // we try to publish the anchor again (can be caused by a node restart): it will fail to replace the existing one
-      // in the mempool but we must ensure we don't leave some utxos locked.
-      val publisher2 = createPublisher()
-      publisher2 ! Publish(probe.ref, anchorTx)
-      val result = probe.expectMsgType[TxRejected]
-      assert(result.reason === ConflictingTxUnconfirmed)
-      getMempoolTxs(2) // the previous anchor tx and the commit tx are still in the mempool
-
-      // our parent will stop us when receiving the TxRejected message.
-      publisher2 ! Stop
-      awaitCond(getLocks(probe, walletRpcClient).isEmpty)
-
-      // the first publishing attempt succeeds
-      generateBlocks(5)
-      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
-      assert(probe.expectMsgType[TxConfirmed].cmd === anchorTx)
     }
   }
 
@@ -699,11 +716,13 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     import f._
 
     // Add htlcs in both directions and ensure that preimages are available.
-    addHtlc(5_000_000 msat, alice, bob, alice2bob, bob2alice)
+    val (r1, htlc1) = addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    val (r, htlc) = addHtlc(4_000_000 msat, bob, alice, bob2alice, alice2bob)
+    val (r2, htlc2) = addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
+    probe.send(bob, CMD_FULFILL_HTLC(htlc1.id, r1, replyTo_opt = Some(probe.ref)))
+    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.send(alice, CMD_FULFILL_HTLC(htlc2.id, r2, replyTo_opt = Some(probe.ref)))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
     // Force-close channel and verify txs sent to watcher.
@@ -899,6 +918,114 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  test("htlc tx feerate too low, adding unsafe inputs") {
+    withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
+      import f._
+
+      // NB: we set a confirmation target far in the future to avoid triggering RBF in the htlc-success publisher.
+      val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f, aliceBlockHeight() + 250)
+
+      // We generate enough blocks for the htlc to timeout.
+      generateBlocks(144)
+      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+
+      // We receive unconfirmed funds from another wallet, which could be replaced at any time.
+      wallet.getReceiveAddress().pipeTo(probe.ref)
+      val walletAddress = probe.expectMsgType[String]
+      val unsafeTx = sendToAddress(walletAddress, 5 millibtc, probe)
+
+      val targetFeerate = FeeratePerKw(15_000 sat)
+      setFeerate(targetFeerate)
+
+      // The HTLC-success transaction spends our unsafe input.
+      val htlcSuccessTx = {
+        val htlcSuccessPublisher = createPublisher()
+        htlcSuccessPublisher ! Publish(probe.ref, htlcSuccess)
+        val w = alice2blockchain.expectMsgType[WatchParentTxConfirmed]
+        w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
+        val mempoolTxs = getMempoolTxs(2)
+        val htlcSuccessTx = getMempool().filter(_.txid != unsafeTx.txid).head
+        assert(htlcSuccessTx.txIn.length > 1)
+        assert(htlcSuccessTx.txIn.map(_.outPoint.txid).contains(unsafeTx.txid))
+        // The feerate should take into account the weight of all ancestors.
+        // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation
+        // val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+        // val actualFee = mempoolTxs.map(_.fees).sum
+        // assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+        htlcSuccessTx
+      }
+
+      // The HTLC-timeout transaction spends the change output of the HTLC-success transaction.
+      {
+        val htlcTimeoutPublisher = createPublisher()
+        htlcTimeoutPublisher ! Publish(probe.ref, htlcTimeout)
+        alice2blockchain.expectNoMessage(100 millis)
+        system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+        val w = alice2blockchain.expectMsgType[WatchParentTxConfirmed]
+        w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
+        val mempoolTxs = getMempoolTxs(3)
+        val htlcTimeoutTx = getMempool().filter(tx => tx.txid != unsafeTx.txid && tx.txid != htlcSuccessTx.txid).head
+        assert(htlcTimeoutTx.txIn.length > 1)
+        assert(htlcTimeoutTx.txIn.map(_.outPoint.txid).contains(htlcSuccessTx.txid))
+        // The feerate should take into account the weight of all ancestors.
+        // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation
+        // val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+        // val actualFee = mempoolTxs.map(_.fees).sum
+        // assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+      }
+
+      // Our unsafe input disappears (the transaction that created it was replaced): hen a new block is found, we detect
+      // the eviction and notify our parent, which will restart the funding flow.
+      replaceMinerUnconfirmedTx(unsafeTx)
+      system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight()))
+      val results = Seq(probe.expectMsgType[TxRejected], probe.expectMsgType[TxRejected])
+      assert(results.map(_.cmd).toSet === Set(htlcSuccess, htlcTimeout))
+      results.foreach(r => assert(r.reason === WalletInputGone))
+    }
+  }
+
+  test("htlc tx replaces claim htlc tx") {
+    withFixture(Seq(25 millibtc, 20 millibtc, 15 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
+      import f._
+
+      setFeerate(FeeratePerKw(5_000 sat))
+      val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f, aliceBlockHeight() + 250)
+      val (claimHtlcSuccess, claimHtlcTimeout) = {
+        probe.send(bob, WatchFundingSpentTriggered(commitTx))
+        bob2blockchain.expectMsgType[PublishFinalTx] // claim main output
+        val claimHtlcSuccess = bob2blockchain.expectMsgType[PublishReplaceableTx]
+        assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
+        val claimHtlcTimeout = bob2blockchain.expectMsgType[PublishReplaceableTx]
+        assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
+        (claimHtlcSuccess.txInfo.tx, claimHtlcTimeout.txInfo.tx)
+      }
+
+      // The HTLCs have timed out and our peer has already published its claim-htlc transactions.
+      generateBlocks(144)
+      wallet.publishTransaction(claimHtlcSuccess).pipeTo(probe.ref)
+      probe.expectMsg(claimHtlcSuccess.txid)
+      wallet.publishTransaction(claimHtlcTimeout).pipeTo(probe.ref)
+      probe.expectMsg(claimHtlcTimeout.txid)
+      val claimHtlcTxs = getMempoolTxs(2).map(_.txid).toSet
+
+      // We publish our htlc transactions with a higher feerate: they will replace our peer's transactions.
+      setFeerate(FeeratePerKw(10_000 sat))
+      val htlcSuccessPublisher = createPublisher()
+      htlcSuccessPublisher ! Publish(probe.ref, htlcSuccess)
+      alice2blockchain.expectMsgType[WatchParentTxConfirmed].replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
+      val htlcTimeoutPublisher = createPublisher()
+      htlcTimeoutPublisher ! Publish(probe.ref, htlcTimeout)
+      alice2blockchain.expectNoMessage(100 millis)
+      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+      alice2blockchain.expectMsgType[WatchParentTxConfirmed].replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
+      // Our peer's transactions are replaced from the mempool.
+      awaitCond({
+        val mempoolTxs = getMempoolTxs(2)
+        mempoolTxs.map(_.txid).toSet.intersect(claimHtlcTxs).isEmpty
+      }, interval = 200 millis, max = 30 seconds)
+    }
+  }
+
   test("htlc success tx not confirming, lowering output amount") {
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
@@ -929,7 +1056,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("htlc success tx not confirming, adding other wallet inputs") {
-    withFixture(Seq(10.2 millibtc, 2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
+    withFixture(Seq(10.25 millibtc, 0.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
       import f._
 
       val initialFeerate = FeeratePerKw(15_000 sat)
@@ -944,14 +1071,14 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val htlcSuccessInputs1 = getMempool().head.txIn.map(_.outPoint).toSet
 
       // New blocks are found, which makes us aim for a more aggressive block target, so we bump the fees.
-      val targetFeerate = FeeratePerKw(75_000 sat)
+      val targetFeerate = FeeratePerKw(25_000 sat)
       setFeerate(targetFeerate, blockTarget = 2)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 10))
       awaitCond(!isInMempool(htlcSuccessTx1.txid), interval = 200 millis, max = 30 seconds)
       val htlcSuccessTx2 = getMempoolTxs(1).head
       val htlcSuccessInputs2 = getMempool().head.txIn.map(_.outPoint).toSet
       assert(htlcSuccessTx1.fees < htlcSuccessTx2.fees)
-      assert(htlcSuccessInputs1 !== htlcSuccessInputs2)
+      assert(htlcSuccessInputs1.size < htlcSuccessInputs2.size)
       val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx2.weight.toInt)
       assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx2.fees && htlcSuccessTx2.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx2.fees} targetFee=$htlcSuccessTargetFee")
     }
@@ -1032,41 +1159,6 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val htlcSuccessTx = getMempoolTxs(1).head
       val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx.weight.toInt)
       assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
-    }
-  }
-
-  test("unlock utxos when htlc tx cannot be published") {
-    withFixture(Seq(500 millibtc, 200 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx) { f =>
-      import f._
-
-      val targetFeerate = FeeratePerKw(5_000 sat)
-      setFeerate(targetFeerate)
-      val (commitTx, htlcSuccess, _) = closeChannelWithHtlcs(f, aliceBlockHeight() + 18)
-      val publisher1 = createPublisher()
-      publisher1 ! Publish(probe.ref, htlcSuccess)
-      val w1 = alice2blockchain.expectMsgType[WatchParentTxConfirmed]
-      w1.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
-      getMempoolTxs(1)
-
-      // we try to publish the htlc-success again (can be caused by a node restart): it will fail to replace the existing
-      // one in the mempool but we must ensure we don't leave some utxos locked.
-      val publisher2 = createPublisher()
-      publisher2 ! Publish(probe.ref, htlcSuccess)
-      val w2 = alice2blockchain.expectMsgType[WatchParentTxConfirmed]
-      w2.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
-      val result = probe.expectMsgType[TxRejected]
-      assert(result.reason === ConflictingTxUnconfirmed)
-      getMempoolTxs(1) // the previous htlc-success tx is still in the mempool
-
-      // our parent will stop us when receiving the TxRejected message.
-      publisher2 ! Stop
-      awaitCond(getLocks(probe, walletRpcClient).isEmpty)
-
-      // the first publishing attempt succeeds
-      generateBlocks(5)
-      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
-      assert(probe.expectMsgType[TxConfirmed].cmd === htlcSuccess)
-      publisher1 ! Stop
     }
   }
 
