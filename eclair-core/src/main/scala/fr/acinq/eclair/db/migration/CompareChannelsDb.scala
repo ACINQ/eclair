@@ -57,7 +57,7 @@ object CompareChannelsDb {
 
     def hash1(rs: ResultSet): ByteVector = {
       bytes(rs, "channel_id") ++
-        string(rs, "commitment_number") ++
+        long(rs, "commitment_number") ++
         bytes(rs, "payment_hash") ++
         long(rs, "cltv_expiry")
     }
