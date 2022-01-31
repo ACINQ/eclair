@@ -153,6 +153,11 @@ trait JdbcUtils {
       ByteVector.fromValidHex(s)
     }
 
+    def getByteVectorFromHexNullable(columnLabel: String): Option[ByteVector] = {
+      val s = rs.getString(columnLabel)
+      if (rs.wasNull()) None else Some(ByteVector.fromValidHex(s))
+    }
+
     def getByteVector32FromHex(columnLabel: String): ByteVector32 = {
       val s = rs.getString(columnLabel)
       ByteVector32(ByteVector.fromValidHex(s))

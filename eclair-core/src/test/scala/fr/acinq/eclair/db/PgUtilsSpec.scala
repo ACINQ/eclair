@@ -32,12 +32,12 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     datadir.mkdirs()
     val instanceId1 = UUID.randomUUID()
     // this will lock the database for this instance id
-    val db1 = Databases.postgres(config, instanceId1, datadir, LockFailureHandler.logAndThrow)
+    val db1 = Databases.postgres(config, instanceId1, datadir, None, LockFailureHandler.logAndThrow)
 
     assert(
       intercept[LockFailureHandler.LockException] {
         // this will fail because the database is already locked for a different instance id
-        Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+        Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
       }.lockFailure === LockFailure.AlreadyLocked(instanceId1))
 
     // we can renew the lease at will
@@ -48,7 +48,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     assert(
       intercept[LockFailureHandler.LockException] {
         // this will fail because the database is already locked for a different instance id
-        Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+        Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
       }.lockFailure === LockFailure.AlreadyLocked(instanceId1))
 
     // we close the first connection
@@ -59,7 +59,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
 
     // now we can put a lock with a different instance id
     val instanceId2 = UUID.randomUUID()
-    val db2 = Databases.postgres(config, instanceId2, datadir, LockFailureHandler.logAndThrow)
+    val db2 = Databases.postgres(config, instanceId2, datadir, None, LockFailureHandler.logAndThrow)
 
     // we close the second connection
     db2.dataSource.close()
@@ -68,7 +68,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     // but we don't wait for the previous lease to expire, so we can't take over right now
     assert(intercept[LockFailureHandler.LockException] {
       // this will fail because even if we have acquired the table lock, the previous lease still hasn't expired
-      Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+      Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
     }.lockFailure === LockFailure.AlreadyLocked(instanceId2))
 
     pg.close()
@@ -81,7 +81,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     datadir.mkdirs()
     val instanceId1 = UUID.randomUUID()
     // this will lock the database for this instance id
-    val db = Databases.postgres(config, instanceId1, datadir, LockFailureHandler.logAndThrow)
+    val db = Databases.postgres(config, instanceId1, datadir, None, LockFailureHandler.logAndThrow)
     implicit val ds: DataSource = db.dataSource
 
     // dummy query works
@@ -133,8 +133,9 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     val config = PgUtilsSpec.testConfig(pg.getPort)
     val datadir = new File(TestUtils.BUILD_DIRECTORY, s"pg_test_${UUID.randomUUID()}")
     datadir.mkdirs()
+    val jdbcUrlPath = new File(datadir, "last_jdbcurl")
     // this will lock the database for this instance id
-    val db = Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+    val db = Databases.postgres(config, UUID.randomUUID(), datadir, Some(jdbcUrlPath), LockFailureHandler.logAndThrow)
 
     // we close the first connection
     db.dataSource.close()
@@ -143,7 +144,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     // here we change the config to simulate an involuntary change in the server we connect to
     val config1 = ConfigFactory.parseString("postgres.port=1234").withFallback(config)
     intercept[JdbcUrlChanged] {
-      Databases.postgres(config1, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+      Databases.postgres(config1, UUID.randomUUID(), datadir, Some(jdbcUrlPath), LockFailureHandler.logAndThrow)
     }
 
     pg.close()
@@ -156,7 +157,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
       .withFallback(PgUtilsSpec.testConfig(pg.getPort))
     val datadir = new File(TestUtils.BUILD_DIRECTORY, s"pg_test_${UUID.randomUUID()}")
     datadir.mkdirs()
-    Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+    Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
   }
 
   test("safety checks") {
@@ -166,7 +167,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     datadir.mkdirs()
 
     {
-      val db = Databases.postgres(baseConfig, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+      val db = Databases.postgres(baseConfig, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
       db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
       db.channels.updateChannelMeta(ChannelCodecsSpec.normal.channelId, ChannelEvent.EventType.Created)
       db.network.addNode(Announcements.makeNodeAnnouncement(randomKey(), "node-A", Color(50, 99, -80), Nil, Features.empty, TimestampSecond.now() - 45.days))
@@ -196,7 +197,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
            |  }
            |}""".stripMargin)
       val config = safetyConfig.withFallback(baseConfig)
-      val db = Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+      val db = Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
       db.dataSource.close()
     }
 
@@ -221,7 +222,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
            |}""".stripMargin)
       val config = safetyConfig.withFallback(baseConfig)
       intercept[IllegalArgumentException] {
-        Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+        Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
       }
     }
 

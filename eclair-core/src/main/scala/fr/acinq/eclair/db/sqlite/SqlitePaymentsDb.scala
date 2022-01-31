@@ -33,7 +33,7 @@ import java.util.UUID
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
-class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
+class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
 
   import SqlitePaymentsDb._
   import SqliteUtils.ExtendedResultSet._

@@ -37,7 +37,7 @@ object SqliteAuditDb {
   val CURRENT_VERSION = 8
 }
 
-class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
+class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
 
   import SqliteUtils._
   import ExtendedResultSet._

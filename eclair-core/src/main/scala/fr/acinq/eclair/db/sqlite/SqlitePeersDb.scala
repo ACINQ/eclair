@@ -35,7 +35,7 @@ object SqlitePeersDb {
   val CURRENT_VERSION = 2
 }
 
-class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
+class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
 
   import SqlitePeersDb._
   import SqliteUtils.ExtendedResultSet._

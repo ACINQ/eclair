@@ -21,6 +21,7 @@ import akka.actor.{ActorSystem, CoordinatedShutdown}
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import fr.acinq.eclair.TimestampMilli
+import fr.acinq.eclair.db.migration.{CompareDb, MigrateDb}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils._
 import fr.acinq.eclair.db.pg._
@@ -267,13 +268,25 @@ object Databases extends Logging {
     db match {
       case Some(d) => d
       case None =>
+        val jdbcUrlFile = new File(chaindir, "last_jdbcurl")
         dbConfig.getString("driver") match {
-          case "sqlite" => Databases.sqlite(chaindir)
-          case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir)
-          case "dual" =>
-            val sqlite = Databases.sqlite(chaindir)
-            val postgres = Databases.postgres(dbConfig, instanceId, chaindir)
-            DualDatabases(sqlite, postgres)
+          case "sqlite" => Databases.sqlite(chaindir, jdbcUrlFile_opt = Some(jdbcUrlFile))
+          case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir, jdbcUrlFile_opt = Some(jdbcUrlFile))
+          case dual@("dual-sqlite-primary" | "dual-postgres-primary") =>
+            logger.info(s"using $dual database mode")
+            val sqlite = Databases.sqlite(chaindir, jdbcUrlFile_opt = None)
+            val postgres = Databases.postgres(dbConfig, instanceId, chaindir, jdbcUrlFile_opt = None)
+            val (primary, secondary) = if (dual == "dual-sqlite-primary") (sqlite, postgres) else (postgres, sqlite)
+            val dualDb = DualDatabases(primary, secondary)
+            if (primary == sqlite) {
+              if (dbConfig.getBoolean("dual.migrate-on-restart")) {
+                MigrateDb.migrateAll(dualDb)
+              }
+              if (dbConfig.getBoolean("dual.compare-on-restart")) {
+                CompareDb.compareAll(dualDb)
+              }
+            }
+            dualDb
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")
         }
     }
@@ -282,18 +295,17 @@ object Databases extends Logging {
   /**
    * Given a parent folder it creates or loads all the databases from a JDBC connection
    */
-  def sqlite(dbdir: File): SqliteDatabases = {
+  def sqlite(dbdir: File, jdbcUrlFile_opt: Option[File]): SqliteDatabases = {
     dbdir.mkdirs()
-    val jdbcUrlFile = new File(dbdir, "last_jdbcurl")
     SqliteDatabases(
       eclairJdbc = SqliteUtils.openSqliteFile(dbdir, "eclair.sqlite", exclusiveLock = true, journalMode = "wal", syncFlag = "full"), // there should only be one process writing to this file
       networkJdbc = SqliteUtils.openSqliteFile(dbdir, "network.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "normal"), // we don't need strong durability guarantees on the network db
       auditJdbc = SqliteUtils.openSqliteFile(dbdir, "audit.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "full"),
-      jdbcUrlFile_opt = Some(jdbcUrlFile)
+      jdbcUrlFile_opt = jdbcUrlFile_opt
     )
   }
 
-  def postgres(dbConfig: Config, instanceId: UUID, dbdir: File, lockExceptionHandler: LockFailureHandler = LockFailureHandler.logAndStop)(implicit system: ActorSystem): PostgresDatabases = {
+  def postgres(dbConfig: Config, instanceId: UUID, dbdir: File, jdbcUrlFile_opt: Option[File], lockExceptionHandler: LockFailureHandler = LockFailureHandler.logAndStop)(implicit system: ActorSystem): PostgresDatabases = {
     dbdir.mkdirs()
     val database = dbConfig.getString("postgres.database")
     val host = dbConfig.getString("postgres.host")
@@ -328,8 +340,6 @@ object Databases extends Logging {
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
 
-    val jdbcUrlFile = new File(dbdir, "last_jdbcurl")
-
     val safetyChecks_opt = if (dbConfig.getBoolean("postgres.safety-checks.enabled")) {
       Some(PostgresDatabases.SafetyChecks(
         localChannelsMaxAge = FiniteDuration(dbConfig.getDuration("postgres.safety-checks.max-age.local-channels").getSeconds, TimeUnit.SECONDS),
@@ -345,7 +355,7 @@ object Databases extends Logging {
       hikariConfig = hikariConfig,
       instanceId = instanceId,
       lock = lock,
-      jdbcUrlFile_opt = Some(jdbcUrlFile),
+      jdbcUrlFile_opt = jdbcUrlFile_opt,
       readOnlyUser_opt = readOnlyUser_opt,
       resetJsonColumns = resetJsonColumns,
       safetyChecks_opt = safetyChecks_opt
