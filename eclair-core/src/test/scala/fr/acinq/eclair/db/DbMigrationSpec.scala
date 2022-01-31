@@ -16,6 +16,11 @@ import java.sql.{Connection, DriverManager}
 import java.util.UUID
 import javax.sql.DataSource
 
+/**
+ * To run this test, create a `migration` directory in your project's `user.dir`
+ * and copy your sqlite files to it (eclair.sqlite, network.sqlite, audit.sqlite).
+ * Then remove the `Ignore` annotation and run the test.
+ */
 @Ignore
 class DbMigrationSpec extends AnyFunSuite {
 
