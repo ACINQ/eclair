@@ -1,5 +1,6 @@
 package fr.acinq.eclair.db.migration
 
+import fr.acinq.eclair.db.Databases.{PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DualDatabases
 import fr.acinq.eclair.db.jdbc.JdbcUtils
 import fr.acinq.eclair.db.pg.PgUtils
@@ -37,20 +38,14 @@ object MigrateDb extends Logging {
 
   def migrateAll(dualDatabases: DualDatabases): Unit = {
     logger.info("migrating all tables...")
-    val (sqliteDb, postgresDb) = DualDatabases.getDatabases(dualDatabases)
+    val (sqliteDb: SqliteDatabases, postgresDb: PostgresDatabases) = DualDatabases.getDatabases(dualDatabases)
     PgUtils.inTransaction { postgres =>
-      // eclair.sqlite
-      val eclair_sqlite = sqliteDb.channels.sqlite
-      MigrateChannelsDb.migrateAllTables(eclair_sqlite, postgres)
-      MigratePendingCommandsDb.migrateAllTables(eclair_sqlite, postgres)
-      MigratePeersDb.migrateAllTables(eclair_sqlite, postgres)
-      MigratePaymentsDb.migrateAllTables(eclair_sqlite, postgres)
-      // network.sqlite
-      val network_sqlite = sqliteDb.network.sqlite
-      MigrateNetworkDb.migrateAllTables(network_sqlite, postgres)
-      // audit.sqlite
-      val audit_sqlite = sqliteDb.audit.sqlite
-      MigrateAuditDb.migrateAllTables(audit_sqlite, postgres)
+      MigrateChannelsDb.migrateAllTables(sqliteDb.channels.sqlite, postgres)
+      MigratePendingCommandsDb.migrateAllTables(sqliteDb.pendingCommands.sqlite, postgres)
+      MigratePeersDb.migrateAllTables(sqliteDb.peers.sqlite, postgres)
+      MigratePaymentsDb.migrateAllTables(sqliteDb.payments.sqlite, postgres)
+      MigrateNetworkDb.migrateAllTables(sqliteDb.network.sqlite, postgres)
+      MigrateAuditDb.migrateAllTables(sqliteDb.audit.sqlite, postgres)
       logger.info("migration complete")
     }(postgresDb.dataSource)
   }

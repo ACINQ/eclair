@@ -1,5 +1,6 @@
 package fr.acinq.eclair.db.migration
 
+import fr.acinq.eclair.db.Databases.{PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DualDatabases
 import fr.acinq.eclair.db.pg.PgUtils
 import grizzled.slf4j.Logging
@@ -29,12 +30,12 @@ object CompareDb extends Logging {
     }
 
     val res = hashes1.sorted == hashes2.sorted
-    val diff1 = hashes1 diff hashes2
-    val diff2 = hashes2 diff hashes1
 
     if (res) {
       logger.info(s"tables $table1/$table2 are identical")
     } else {
+      val diff1 = hashes1 diff hashes2
+      val diff2 = hashes2 diff hashes1
       logger.warn(s"tables $table1/$table2 are different diff1=${diff1.take(3).map(_.toHex.take(128))} diff2=${diff2.take(3).map(_.toHex.take(128))}")
     }
 
@@ -46,7 +47,7 @@ object CompareDb extends Logging {
   def bytes(rs: ResultSet, columnName: String): ByteVector = rs.getByteVector(columnName)
   def bytesnull(rs: ResultSet, columnName: String): ByteVector = rs.getByteVectorNullable(columnName).getOrElse(ByteVector.fromValidHex("deadbeef"))
   def hex(rs: ResultSet, columnName: String): ByteVector = rs.getByteVectorFromHex(columnName)
-  def hexnull(rs: ResultSet, columnName: String): ByteVector = rs.getByteVector32FromHexNullable(columnName).map(_.bytes).getOrElse(ByteVector.fromValidHex("deadbeef"))
+  def hexnull(rs: ResultSet, columnName: String): ByteVector = rs.getByteVectorFromHexNullable(columnName).getOrElse(ByteVector.fromValidHex("deadbeef"))
   def string(rs: ResultSet, columnName: String): ByteVector = ByteVector(rs.getString(columnName).getBytes)
   def stringnull(rs: ResultSet, columnName: String): ByteVector = ByteVector(rs.getStringNullable(columnName).getOrElse("<null>").getBytes)
   def bool(rs: ResultSet, columnName: String): ByteVector = ByteVector.fromByte(if (rs.getBoolean(columnName)) 1 else 0)
@@ -63,13 +64,13 @@ object CompareDb extends Logging {
 
   def compareAll(dualDatabases: DualDatabases): Unit = {
     logger.info("comparing all tables...")
-    val (sqliteDb, postgresDb) = DualDatabases.getDatabases(dualDatabases)
+    val (sqliteDb: SqliteDatabases, postgresDb: PostgresDatabases) = DualDatabases.getDatabases(dualDatabases)
     PgUtils.inTransaction { postgres =>
       val result = List(
         CompareChannelsDb.compareAllTables(sqliteDb.channels.sqlite, postgres),
-        ComparePendingCommandsDb.compareAllTables(sqliteDb.channels.sqlite, postgres),
-        ComparePeersDb.compareAllTables(sqliteDb.channels.sqlite, postgres),
-        ComparePaymentsDb.compareAllTables(sqliteDb.channels.sqlite, postgres),
+        ComparePendingCommandsDb.compareAllTables(sqliteDb.pendingCommands.sqlite, postgres),
+        ComparePeersDb.compareAllTables(sqliteDb.peers.sqlite, postgres),
+        ComparePaymentsDb.compareAllTables(sqliteDb.payments.sqlite, postgres),
         CompareNetworkDb.compareAllTables(sqliteDb.network.sqlite, postgres),
         CompareAuditDb.compareAllTables(sqliteDb.audit.sqlite, postgres)
       ).forall(_ == true)

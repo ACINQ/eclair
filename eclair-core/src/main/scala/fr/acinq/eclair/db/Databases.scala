@@ -278,11 +278,13 @@ object Databases extends Logging {
             val postgres = Databases.postgres(dbConfig, instanceId, chaindir, jdbcUrlFile_opt = None)
             val (primary, secondary) = if (dual == "dual-sqlite-primary") (sqlite, postgres) else (postgres, sqlite)
             val dualDb = DualDatabases(primary, secondary)
-            if (primary == sqlite && dbConfig.getBoolean("dual.migrate-on-restart")) {
-              MigrateDb.migrateAll(dualDb)
-            }
-            if (dbConfig.getBoolean("dual.compare-on-restart")) {
-              CompareDb.compareAll(dualDb)
+            if (primary == sqlite) {
+              if (dbConfig.getBoolean("dual.migrate-on-restart")) {
+                MigrateDb.migrateAll(dualDb)
+              }
+              if (dbConfig.getBoolean("dual.compare-on-restart")) {
+                CompareDb.compareAll(dualDb)
+              }
             }
             dualDb
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")

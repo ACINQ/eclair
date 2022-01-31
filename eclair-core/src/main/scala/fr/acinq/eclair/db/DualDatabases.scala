@@ -66,7 +66,7 @@ object DualDatabases extends Logging {
         (sqliteDb, postgresDb)
       case (postgresDb: PostgresDatabases, sqliteDb: SqliteDatabases) =>
         (sqliteDb, postgresDb)
-      case _ => ???
+      case _ => throw new IllegalArgumentException("there must be one sqlite and one postgres in dual db mode")
     }
 }
 

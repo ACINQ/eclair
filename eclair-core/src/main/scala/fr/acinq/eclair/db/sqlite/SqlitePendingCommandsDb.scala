@@ -31,7 +31,7 @@ object SqlitePendingCommandsDb {
   val CURRENT_VERSION = 2
 }
 
-class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with Logging {
+class SqlitePendingCommandsDb(val sqlite: Connection) extends PendingCommandsDb with Logging {
 
   import SqlitePendingCommandsDb._
   import SqliteUtils.ExtendedResultSet._
