@@ -36,6 +36,16 @@ If you don't want to use anchor outputs, you can disable the feature in your `ec
 eclair.features.option_anchors_zero_fee_htlc_tx = disabled
 ```
 
+### Postgres database backend graduates to production-ready
+
+Postgres support was introduced in Eclair 0.4.1 as beta, and has since been improved continuously over several versions. It is now production-ready and is the recommended database backend for larger nodes.
+
+Postgres offers superior administration capabilities, advanced JSON queries over channel data, streaming replication, and more, which makes it a great choice for enterprise setups.
+
+A step-by-step migration guide from Sqlite to Postgres is provided for users who wish to do the switch.
+
+Sqlite remains fully supported.
+
 ### Alternate strategy to avoid mass force-close of channels in certain cases
 
 The default strategy, when an unhandled exception or internal error happens, is to locally force-close the channel. Not only is there a delay before the channel balance gets refunded, but if the exception was due to some misconfiguration or bug in eclair that affects all channels, we risk force-closing all channels.
