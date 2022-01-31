@@ -42,7 +42,7 @@ Postgres support was introduced in Eclair 0.4.1 as beta, and has since been impr
 
 Postgres offers superior administration capabilities, advanced JSON queries over channel data, streaming replication, and more, which makes it a great choice for enterprise setups.
 
-A step-by-step migration guide from Sqlite to Postgres is provided for users who wish to do the switch.
+A [step-by-step migration guide](https://github.com/ACINQ/eclair/blob/master/docs/PostgreSQL.md#migrating-from-sqlite-to-postgres) from Sqlite to Postgres is provided for users who wish to do the switch.
 
 Sqlite remains fully supported.
 
