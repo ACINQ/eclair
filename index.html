@@ -1712,11 +1712,13 @@ eclair-cli deleteinvoice --paymentHash<span class="o">=</span>&lt;payment_hash&g
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="err">deleted</span><span class="w"> </span><span class="err">invoice</span><span class="w"> </span><span class="mi">6</span><span class="err">f</span><span class="mi">0864735283</span><span class="err">ca</span><span class="mi">95</span><span class="err">eaf</span><span class="mi">9</span><span class="err">c</span><span class="mi">50</span><span class="err">ef</span><span class="mi">77893</span><span class="err">f</span><span class="mi">55</span><span class="err">ee</span><span class="mi">3</span><span class="err">dd</span><span class="mi">11</span><span class="err">cb</span><span class="mi">90710</span><span class="err">cbbfb</span><span class="mi">73</span><span class="err">f</span><span class="mi">018798</span><span class="err">a</span><span class="mi">68</span><span class="w">
 </span></code></pre>
-<p>Delete an unpaid <strong>BOLT11</strong> payment invoice.</p>
-
+<blockquote>
 <p>If the invoice has already been paid, this command returns:</p>
+</blockquote>
 <pre class="highlight json tab-json"><code><span class="err">Cannot</span><span class="w"> </span><span class="err">remove</span><span class="w"> </span><span class="err">a</span><span class="w"> </span><span class="err">received</span><span class="w"> </span><span class="err">incoming</span><span class="w"> </span><span class="err">payment</span><span class="w">
-</span></code></pre><h3 id='http-request-16'>HTTP Request</h3>
+</span></code></pre>
+<p>Delete an unpaid <strong>BOLT11</strong> payment invoice.</p>
+<h3 id='http-request-16'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/deleteinvoice</code></p>
 <h3 id='parameters-14'>Parameters</h3>
 <table><thead>
@@ -3080,18 +3082,24 @@ If that fails, or if you don&#39;t want to expose your <code>nodeId</code> by di
 Eclair will automatically create a corresponding blinded route to ensure that the recipient doesn&#39;t learn your <code>nodeId</code>.
 The API will then wait for a response (or timeout if it doesn&#39;t receive a response).</p>
 
+<blockquote>
 <p>When sending without a reply path, this command will return:</p>
+</blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
   </span><span class="s2">"sent"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
+<blockquote>
 <p>If the message cannot be sent, this command will return:</p>
+</blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
   </span><span class="s2">"sent"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w">
   </span><span class="s2">"failureMessage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;details_about_the_failure&gt;"</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
+<blockquote>
 <p>When sending with a reply path, this command will return the response we received (encoded inside application-specific tlv fields):</p>
+</blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
   </span><span class="s2">"sent"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
   </span><span class="s2">"response"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
@@ -3101,7 +3109,9 @@ The API will then wait for a response (or timeout if it doesn&#39;t receive a re
   </span><span class="p">}</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
+<blockquote>
 <p>If we don&#39;t receive a response, this command will return an error after a timeout:</p>
+</blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
   </span><span class="s2">"sent"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
   </span><span class="s2">"failureMessage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"No response"</span><span class="w">
