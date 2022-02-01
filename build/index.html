@@ -1710,13 +1710,13 @@ eclair-cli deleteinvoice --paymentHash<span class="o">=</span>&lt;payment_hash&g
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight json tab-json"><code><span class="err">deleted</span><span class="w"> </span><span class="err">invoice</span><span class="w"> </span><span class="mi">6</span><span class="err">f</span><span class="mi">0864735283</span><span class="err">ca</span><span class="mi">95</span><span class="err">eaf</span><span class="mi">9</span><span class="err">c</span><span class="mi">50</span><span class="err">ef</span><span class="mi">77893</span><span class="err">f</span><span class="mi">55</span><span class="err">ee</span><span class="mi">3</span><span class="err">dd</span><span class="mi">11</span><span class="err">cb</span><span class="mi">90710</span><span class="err">cbbfb</span><span class="mi">73</span><span class="err">f</span><span class="mi">018798</span><span class="err">a</span><span class="mi">68</span><span class="w">
-</span></code></pre>
+<pre class="highlight shell tab-shell"><code>deleted invoice 6f0864735283ca95eaf9c50ef77893f55ee3dd11cb90710cbbfb73f018798a68
+</code></pre>
 <blockquote>
 <p>If the invoice has already been paid, this command returns:</p>
 </blockquote>
-<pre class="highlight json tab-json"><code><span class="err">Cannot</span><span class="w"> </span><span class="err">remove</span><span class="w"> </span><span class="err">a</span><span class="w"> </span><span class="err">received</span><span class="w"> </span><span class="err">incoming</span><span class="w"> </span><span class="err">payment</span><span class="w">
-</span></code></pre>
+<pre class="highlight shell tab-shell"><code>Cannot remove a received incoming payment
+</code></pre>
 <p>Delete an unpaid <strong>BOLT11</strong> payment invoice.</p>
 <h3 id='http-request-16'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/deleteinvoice</code></p>
@@ -2922,8 +2922,8 @@ eclair-cli getnewaddress
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight json tab-json"><code><span class="s2">"bcrt1qaq9azfugal9usaffv3cj89gpeq36xst9ms53xl"</span><span class="w">
-</span></code></pre>
+<pre class="highlight shell tab-shell"><code>bcrt1qaq9azfugal9usaffv3cj89gpeq36xst9ms53xl
+</code></pre>
 <p>Get a new on-chain address from the wallet. This can be used to deposit funds that will later be used
 to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
 depend on the configured address-type in <code>bitcoin.conf</code>.</p>
@@ -3064,24 +3064,6 @@ eclair-cli onchaintransactions --count<span class="o">=</span>2 --skip<span clas
 <span class="c"># with eclair-cli</span>
 eclair-cli signmessage --content<span class="o">=</span>2b03ffffff --recipientNode<span class="o">=</span>&lt;node_id&gt;
 </code></pre>
-<p>Send an onion message to a remote recipient.</p>
-
-<p>There are two ways to specify that recipient:</p>
-
-<ul>
-<li>when you&#39;re sending to a known <code>nodeId</code>, you must set it in the <code>--recipientNode</code> field</li>
-<li>when you&#39;re sending to an unknown node behind a blinded route, you must provide the blinded route in the <code>--recipientBlindedRoute</code> field</li>
-</ul>
-
-<p>If you&#39;re not connected to the recipient and don&#39;t have channels with them, eclair will try connecting to them based on the best address it knows (usually from their <code>node_announcement</code>).
-If that fails, or if you don&#39;t want to expose your <code>nodeId</code> by directly connecting to the recipient, you should find a route to them and specify the nodes in that route in the <code>--intermediateNodes</code> field.</p>
-
-<p>You can send arbitrary data to the recipient, by providing a hex-encoded tlv stream in the <code>--content</code> field.</p>
-
-<p>If you expect a response, you should provide a route from the recipient back to you in the <code>--replyPath</code> field.
-Eclair will automatically create a corresponding blinded route to ensure that the recipient doesn&#39;t learn your <code>nodeId</code>.
-The API will then wait for a response (or timeout if it doesn&#39;t receive a response).</p>
-
 <blockquote>
 <p>When sending without a reply path, this command will return:</p>
 </blockquote>
@@ -3116,7 +3098,25 @@ The API will then wait for a response (or timeout if it doesn&#39;t receive a re
   </span><span class="s2">"sent"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
   </span><span class="s2">"failureMessage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"No response"</span><span class="w">
 </span><span class="p">}</span><span class="w">
-</span></code></pre><h3 id='http-request-32'>HTTP Request</h3>
+</span></code></pre>
+<p>Send an onion message to a remote recipient.</p>
+
+<p>There are two ways to specify that recipient:</p>
+
+<ul>
+<li>when you&#39;re sending to a known <code>nodeId</code>, you must set it in the <code>--recipientNode</code> field</li>
+<li>when you&#39;re sending to an unknown node behind a blinded route, you must provide the blinded route in the <code>--recipientBlindedRoute</code> field</li>
+</ul>
+
+<p>If you&#39;re not connected to the recipient and don&#39;t have channels with them, eclair will try connecting to them based on the best address it knows (usually from their <code>node_announcement</code>).
+If that fails, or if you don&#39;t want to expose your <code>nodeId</code> by directly connecting to the recipient, you should find a route to them and specify the nodes in that route in the <code>--intermediateNodes</code> field.</p>
+
+<p>You can send arbitrary data to the recipient, by providing a hex-encoded tlv stream in the <code>--content</code> field.</p>
+
+<p>If you expect a response, you should provide a route from the recipient back to you in the <code>--replyPath</code> field.
+Eclair will automatically create a corresponding blinded route to ensure that the recipient doesn&#39;t learn your <code>nodeId</code>.
+The API will then wait for a response (or timeout if it doesn&#39;t receive a response).</p>
+<h3 id='http-request-32'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendonionmessage</code></p>
 <h3 id='parameters-29'>Parameters</h3>
 <table><thead>
