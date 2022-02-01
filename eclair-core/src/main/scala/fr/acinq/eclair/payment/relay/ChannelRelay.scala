@@ -132,7 +132,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         safeSendAndStop(o.add.channelId, cmdFail)
 
       case WrappedAddResponse(addFailed@RES_ADD_FAILED(CMD_ADD_HTLC(_, _, _, _, _, _: Origin.ChannelRelayedHot, _), _, _)) =>
-        context.log.info("attempt failed with reason={}", addFailed.t.getClass.getSimpleName)
+        context.log.info("attempt failed with reason={}", addFailed.t.getClass.getPrettySimpleName)
         context.self ! DoRelay
         relay(previousFailures :+ PreviouslyTried(selectedShortChannelId, addFailed))
 

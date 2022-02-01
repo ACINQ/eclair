@@ -136,7 +136,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
       handleDownstreamFulfill(brokenHtlcs, o, htlc, fulfill.paymentPreimage)
 
     case RES_ADD_SETTLED(o: Origin.Cold, htlc, fail: HtlcResult.Fail) =>
-      log.info("htlc failed downstream: ({},{},{})", htlc.channelId, htlc.id, fail.getClass.getSimpleName)
+      log.info("htlc failed downstream: ({},{},{})", htlc.channelId, htlc.id, fail.getClass.getPrettySimpleName)
       handleDownstreamFailure(brokenHtlcs, o, htlc, fail)
 
     case GetBrokenHtlcs => sender() ! brokenHtlcs

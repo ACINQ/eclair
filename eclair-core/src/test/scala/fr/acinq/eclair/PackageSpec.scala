@@ -109,4 +109,19 @@ class PackageSpec extends AnyFunSuite {
     assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
   }
 
+  test("non-reg getPrettySimpleName") {
+    Map(
+      Foo() -> "Foo",
+      Foo.Bar -> "Bar",
+      Foo.Baz(42) -> "Baz"
+    ).foreach { case (o, ref) => assert(o.getClass.getPrettySimpleName == ref)
+    }
+  }
+
+}
+
+case class Foo()
+object Foo {
+  case object Bar
+  case class Baz(i: Int)
 }

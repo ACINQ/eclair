@@ -38,7 +38,7 @@ class PaymentHandler(nodeParams: NodeParams, register: ActorRef) extends Actor w
 
   private def addReceiveHandler(handle: Receive): Receive = {
     case handler: ReceiveHandler =>
-      log.info(s"registering handler of type=${handler.getClass.getSimpleName}")
+      log.info(s"registering handler of type=${handler.getClass.getPrettySimpleName}")
       // NB: the last handler that was added will be the first called
       context become normal(handler.handle(context, log) orElse handle)
   }

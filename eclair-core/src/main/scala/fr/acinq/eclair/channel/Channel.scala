@@ -2143,7 +2143,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   }
 
   private def handleAddHtlcCommandError(c: CMD_ADD_HTLC, cause: ChannelException, channelUpdate: Option[ChannelUpdate]) = {
-    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
+    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getPrettySimpleName} in state=$stateName")
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_ADD_FAILED(c, cause, channelUpdate)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = false))
@@ -2151,7 +2151,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   }
 
   private def handleCommandError(cause: ChannelException, c: channel.Command) = {
-    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
+    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getPrettySimpleName} in state=$stateName")
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender()) else Some(hasReplyTo.replyTo)
@@ -2335,9 +2335,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         log.warning(s"force-closing channel at user request")
       case _ if msg.exists(_.isInstanceOf[OpenChannel]) || msg.exists(_.isInstanceOf[AcceptChannel]) =>
         // invalid remote channel parameters are logged as warning
-        log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
+        log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getPrettySimpleName} in state=$stateName")
       case _: ChannelException =>
-        log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
+        log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getPrettySimpleName} in state=$stateName")
       case _ =>
         // unhandled error: we dump the channel data, and print the stack trace
         log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData:")
@@ -2724,7 +2724,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
 
   override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
-    KamonExt.time(ProcessMessage.withTag("MessageType", msg.getClass.getSimpleName)) {
+    KamonExt.time(ProcessMessage.withTag("MessageType", msg.getClass.getPrettySimpleName)) {
       super.aroundReceive(receive, msg)
     }
   }

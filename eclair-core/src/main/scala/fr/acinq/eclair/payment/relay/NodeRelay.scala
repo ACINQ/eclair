@@ -187,7 +187,7 @@ class NodeRelay private(nodeParams: NodeParams,
         receiving(htlcs :+ add, nextPayload, nextPacket, handler)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
-        Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
+        Metrics.recordPaymentRelayFailed(failure.getClass.getPrettySimpleName, Tags.RelayType.Trampoline)
         parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
         stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
@@ -319,7 +319,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }
 
   private def rejectPayment(upstream: Upstream.Trampoline, failure: Option[FailureMessage]): Unit = {
-    Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
+    Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getPrettySimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
     upstream.adds.foreach(add => rejectHtlc(add.id, add.channelId, upstream.amountIn, failure))
   }
 
