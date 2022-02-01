@@ -44,13 +44,13 @@ trait PaymentRequest {
 
   val features: Features
 
-  def isExpired: Boolean = timestamp + relativeExpiry <= TimestampSecond.now()
+  def isExpired(): Boolean = timestamp + relativeExpiry <= TimestampSecond.now()
 
-  def write: String
+  def toString: String
 }
 
 object PaymentRequest {
-  def read(input: String): PaymentRequest = {
-    Bolt11Invoice.read(input)
+  def fromString(input: String): PaymentRequest = {
+    Bolt11Invoice.fromString(input)
   }
 }

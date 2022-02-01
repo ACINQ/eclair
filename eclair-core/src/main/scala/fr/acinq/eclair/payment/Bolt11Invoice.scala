@@ -120,7 +120,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], times
   /**
    * @return a bech32-encoded payment invoice
    */
-  def write: String = {
+  override def toString: String = {
     // currency unit is Satoshi, but we compute amounts in Millisatoshis
     val hramount = Amount.encode(amount_opt)
     val hrp = s"${prefix}$hramount"
@@ -514,7 +514,7 @@ object Bolt11Invoice {
    * @param input bech32-encoded payment request
    * @return a payment request
    */
-  def read(input: String): Bolt11Invoice = {
+  def fromString(input: String): Bolt11Invoice = {
     // used only for data validation
     Bech32.decode(input)
     val lowercaseInput = input.toLowerCase

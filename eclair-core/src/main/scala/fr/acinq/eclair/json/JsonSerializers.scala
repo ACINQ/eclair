@@ -364,7 +364,7 @@ object PaymentRequestSerializer extends MinimalSerializer({
       JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp.toLong)),
       JField("nodeId", JString(p.nodeId.toString())),
-      JField("serialized", JString(p.write)),
+      JField("serialized", JString(p.toString)),
       p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
       JField("paymentHash", JString(p.paymentHash.toString()))) ++
       paymentMetadata ++

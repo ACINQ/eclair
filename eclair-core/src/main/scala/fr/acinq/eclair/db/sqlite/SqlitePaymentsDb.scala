@@ -132,7 +132,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(7, sent.recipientAmount.toLong)
       statement.setBytes(8, sent.recipientNodeId.value.toArray)
       statement.setLong(9, sent.createdAt.toLong)
-      statement.setString(10, sent.paymentRequest.map(_.write).orNull)
+      statement.setString(10, sent.paymentRequest.map(_.toString).orNull)
       statement.executeUpdate()
     }
   }
@@ -178,7 +178,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       MilliSatoshi(rs.getLong("recipient_amount_msat")),
       PublicKey(rs.getByteVector("recipient_node_id")),
       TimestampMilli(rs.getLong("created_at")),
-      rs.getStringNullable("payment_request").map(PaymentRequest.read),
+      rs.getStringNullable("payment_request").map(PaymentRequest.fromString),
       status
     )
   }
@@ -236,7 +236,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(1, pr.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, paymentType)
-      statement.setString(4, pr.write)
+      statement.setString(4, pr.toString)
       statement.setLong(5, pr.timestamp.toTimestampMilli.toLong) // BOLT11 timestamp is in seconds
       statement.setLong(6, (pr.timestamp + pr.relativeExpiry).toLong.seconds.toMillis)
       statement.executeUpdate()
@@ -256,7 +256,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val paymentRequest = rs.getString("payment_request")
     IncomingPayment(
-      Bolt11Invoice.read(paymentRequest),
+      Bolt11Invoice.fromString(paymentRequest),
       rs.getByteVector32("payment_preimage"),
       rs.getString("payment_type"),
       TimestampMilli(rs.getLong("created_at")),

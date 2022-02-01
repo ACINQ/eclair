@@ -163,7 +163,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         using(connection.prepareStatement("INSERT INTO received_payments (payment_hash, preimage, payment_request, received_msat, created_at, received_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, i1.paymentHash.toArray)
           statement.setBytes(2, pr1.paymentPreimage.toArray)
-          statement.setString(3, i1.write)
+          statement.setString(3, i1.toString)
           statement.setLong(4, pr1.status.asInstanceOf[IncomingPaymentStatus.Received].amount.toLong)
           statement.setLong(5, pr1.createdAt.toLong)
           statement.setLong(6, pr1.status.asInstanceOf[IncomingPaymentStatus.Received].receivedAt.toLong)
@@ -173,7 +173,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         using(connection.prepareStatement("INSERT INTO received_payments (payment_hash, preimage, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, i2.paymentHash.toArray)
           statement.setBytes(2, pr2.paymentPreimage.toArray)
-          statement.setString(3, i2.write)
+          statement.setString(3, i2.toString)
           statement.setLong(4, pr2.createdAt.toLong)
           statement.setLong(5, (i2.timestamp + i2.relativeExpiry).toLong)
           statement.executeUpdate()
@@ -256,7 +256,7 @@ class PaymentsDbSpec extends AnyFunSuite {
           statement.setLong(5, ps2.amount.toLong)
           statement.setBytes(6, ps2.recipientNodeId.value.toArray)
           statement.setLong(7, ps2.createdAt.toLong)
-          statement.setString(8, invoice1.write)
+          statement.setString(8, invoice1.toString)
           statement.executeUpdate()
         }
 
@@ -331,7 +331,7 @@ class PaymentsDbSpec extends AnyFunSuite {
             statement.setLong(7, sent.recipientAmount.toLong)
             statement.setString(8, sent.recipientNodeId.value.toHex)
             statement.setLong(9, sent.createdAt.toLong)
-            statement.setString(10, sent.paymentRequest.map(_.write).orNull)
+            statement.setString(10, sent.paymentRequest.map(_.toString).orNull)
             sent.status match {
               case s: OutgoingPaymentStatus.Succeeded =>
                 statement.setLong(11, s.completedAt.toLong)
@@ -352,7 +352,7 @@ class PaymentsDbSpec extends AnyFunSuite {
             statement.setString(1, pr.paymentHash.toHex)
             statement.setString(2, preimage.toHex)
             statement.setString(3, PaymentType.Standard)
-            statement.setString(4, pr.write)
+            statement.setString(4, pr.toString)
             statement.setLong(5, pr.timestamp.toTimestampMilli.toLong) // BOLT11 timestamp is in seconds
             statement.setLong(6, (pr.timestamp + pr.relativeExpiry).toTimestampMilli.toLong)
             statement.executeUpdate()

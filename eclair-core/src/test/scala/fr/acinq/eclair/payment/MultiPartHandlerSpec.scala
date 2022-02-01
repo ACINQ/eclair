@@ -90,7 +90,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val incoming = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
       assert(incoming.isDefined)
       assert(incoming.get.status === IncomingPaymentStatus.Pending)
-      assert(!incoming.get.paymentRequest.isExpired)
+      assert(!incoming.get.paymentRequest.isExpired())
       assert(Crypto.sha256(incoming.get.paymentPreimage) === pr.paymentHash)
 
       val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, pr.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
@@ -239,13 +239,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(handlerWithoutMpp, ReceivePayment(Some(1000 msat), Left("some desc"), expirySeconds_opt = Some(0)))
     val pr = sender.expectMsgType[PaymentRequest]
     assert(!pr.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(pr.isExpired)
+    assert(pr.isExpired())
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, pr.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
     sender.send(handlerWithoutMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, pr.paymentSecret.get, pr.paymentMetadata)))
     register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     val Some(incoming) = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
-    assert(incoming.paymentRequest.isExpired && incoming.status === IncomingPaymentStatus.Expired)
+    assert(incoming.paymentRequest.isExpired() && incoming.status === IncomingPaymentStatus.Expired)
   }
 
   test("PaymentHandler should reject incoming multi-part payment if the payment request is expired") { f =>
@@ -254,14 +254,14 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(handlerWithMpp, ReceivePayment(Some(1000 msat), Left("multi-part expired"), expirySeconds_opt = Some(0)))
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(pr.isExpired)
+    assert(pr.isExpired())
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, pr.paymentSecret.get, pr.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
     val Some(incoming) = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
-    assert(incoming.paymentRequest.isExpired && incoming.status === IncomingPaymentStatus.Expired)
+    assert(incoming.paymentRequest.isExpired() && incoming.status === IncomingPaymentStatus.Expired)
   }
 
   test("PaymentHandler should reject incoming multi-part payment if the payment request does not allow it") { f =>

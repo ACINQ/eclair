@@ -106,7 +106,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setLong(7, sent.recipientAmount.toLong)
         statement.setString(8, sent.recipientNodeId.value.toHex)
         statement.setTimestamp(9, sent.createdAt.toSqlTimestamp)
-        statement.setString(10, sent.paymentRequest.map(_.write).orNull)
+        statement.setString(10, sent.paymentRequest.map(_.toString).orNull)
         statement.executeUpdate()
       }
     }
@@ -157,7 +157,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       MilliSatoshi(rs.getLong("recipient_amount_msat")),
       PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
       TimestampMilli(rs.getTimestamp("created_at").getTime),
-      rs.getStringNullable("payment_request").map(PaymentRequest.read),
+      rs.getStringNullable("payment_request").map(PaymentRequest.fromString),
       status
     )
   }
@@ -226,7 +226,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setString(1, pr.paymentHash.toHex)
         statement.setString(2, preimage.toHex)
         statement.setString(3, paymentType)
-        statement.setString(4, pr.write)
+        statement.setString(4, pr.toString)
         statement.setTimestamp(5, pr.timestamp.toSqlTimestamp)
         statement.setTimestamp(6, (pr.timestamp + pr.relativeExpiry.seconds).toSqlTimestamp)
         statement.executeUpdate()
@@ -249,7 +249,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val paymentRequest = rs.getString("payment_request")
     IncomingPayment(
-      Bolt11Invoice.read(paymentRequest),
+      Bolt11Invoice.fromString(paymentRequest),
       rs.getByteVector32FromHex("payment_preimage"),
       rs.getString("payment_type"),
       TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),

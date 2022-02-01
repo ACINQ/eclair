@@ -102,7 +102,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               }
               // Insert a fake invoice and then restart the incoming payment handler
               val paymentRequest = Bolt11Invoice(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
-              log.debug("generated fake payment request={} from amount={} (KeySend)", paymentRequest.write, amount)
+              log.debug("generated fake payment request={} from amount={} (KeySend)", paymentRequest.toString, amount)
               db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
             case _ =>
@@ -251,14 +251,12 @@ object MultiPartHandler {
                 paymentMetadata = Some(paymentMetadata),
                 features = invoiceFeatures
               )
-              context.log.debug("generated payment request={} from amount={}", paymentRequest.write, amount_opt)
+              context.log.debug("generated payment request={} from amount={}", paymentRequest.toString, amount_opt)
               nodeParams.db.payments.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
               paymentRequest
             } match {
               case Success(paymentRequest) => replyTo ! paymentRequest
-              case Failure(exception) =>
-                exception.printStackTrace()
-                replyTo ! Status.Failure(exception)
+              case Failure(exception) => replyTo ! Status.Failure(exception)
             }
             Behaviors.stopped
         }
@@ -286,7 +284,7 @@ object MultiPartHandler {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
       log.warning("ignoring incoming payment for which has already been paid")
       false
-    } else if (record.paymentRequest.isExpired) {
+    } else if (record.paymentRequest.isExpired()) {
       log.warning("received payment for expired amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {

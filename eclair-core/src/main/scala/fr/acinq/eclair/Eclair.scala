@@ -70,8 +70,6 @@ case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
 case class SendOnionMessageResponsePayload(encodedReplyPath: Option[String], replyPath: Option[Sphinx.RouteBlinding.BlindedRoute], unknownTlvs: Map[String, ByteVector])
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
-
-case class PayOfferResponse(invoice: Option[String], invoiceRequest: Option[String], payerKey: Option[String], preimage: Option[String], failureMessage: Option[String])
 // @formatter:on
 
 object SignedMessage {
@@ -167,8 +165,6 @@ trait Eclair {
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   implicit val ec: ExecutionContext = appKit.system.dispatcher
-
-  implicit val typedSystem: typed.ActorSystem[Nothing] = appKit.system.toTyped
 
   // We constrain external identifiers. This allows uuid, long and pubkey to be used.
   private val externalIdMaxLength = 66
@@ -316,7 +312,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, finalCltvExpiryDelta: CltvExpiryDelta, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32], trampolineFees_opt: Option[MilliSatoshi], trampolineExpiryDelta_opt: Option[CltvExpiryDelta], trampolineNodes_opt: Seq[PublicKey])(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
     val recipientAmount = recipientAmount_opt.getOrElse(invoice.amount_opt.getOrElse(amount))
     val sendPayment = SendPaymentToRoute(amount, recipientAmount, invoice, finalCltvExpiryDelta, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFees_opt.getOrElse(0 msat), trampolineExpiryDelta_opt.getOrElse(CltvExpiryDelta(0)), trampolineNodes_opt)
-    if (invoice.isExpired) {
+    if (invoice.isExpired()) {
       Future.failed(new IllegalArgumentException("invoice has expired"))
     } else if (route.isEmpty) {
       Future.failed(new IllegalArgumentException("missing payment route"))
@@ -340,7 +336,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
         externalId_opt match {
           case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
-          case _ if invoice.isExpired => Left(new IllegalArgumentException("invoice has expired"))
+          case _ if invoice.isExpired() => Left(new IllegalArgumentException("invoice has expired"))
           case _ => invoice.minFinalCltvExpiryDelta match {
             case Some(minFinalCltvExpiryDelta) => Right(SendPaymentToNode(ActorRef.noSender, amount, invoice, maxAttempts, minFinalCltvExpiryDelta, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = routeParams))
             case None => Right(SendPaymentToNode(ActorRef.noSender, amount, invoice, maxAttempts, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = routeParams))
