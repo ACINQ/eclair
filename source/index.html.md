@@ -1136,13 +1136,13 @@ eclair-cli deleteinvoice --paymentHash=<payment_hash>
 deleted invoice 6f0864735283ca95eaf9c50ef77893f55ee3dd11cb90710cbbfb73f018798a68
 ```
 
-Delete an unpaid **BOLT11** payment invoice.
-
-If the invoice has already been paid, this command returns:
+> If the invoice has already been paid, this command returns:
 
 ```json
 Cannot remove a received incoming payment
 ```
+
+Delete an unpaid **BOLT11** payment invoice.
 
 ### HTTP Request
 
@@ -2166,7 +2166,7 @@ If you expect a response, you should provide a route from the recipient back to 
 Eclair will automatically create a corresponding blinded route to ensure that the recipient doesn't learn your `nodeId`.
 The API will then wait for a response (or timeout if it doesn't receive a response).
 
-When sending without a reply path, this command will return:
+> When sending without a reply path, this command will return:
 
 ```json
 {
@@ -2174,7 +2174,7 @@ When sending without a reply path, this command will return:
 }
 ```
 
-If the message cannot be sent, this command will return:
+> If the message cannot be sent, this command will return:
 
 ```json
 {
@@ -2183,7 +2183,7 @@ If the message cannot be sent, this command will return:
 }
 ```
 
-When sending with a reply path, this command will return the response we received (encoded inside application-specific tlv fields):
+> When sending with a reply path, this command will return the response we received (encoded inside application-specific tlv fields):
 
 ```json
 {
@@ -2196,7 +2196,7 @@ When sending with a reply path, this command will return the response we receive
 }
 ```
 
-If we don't receive a response, this command will return an error after a timeout:
+> If we don't receive a response, this command will return an error after a timeout:
 
 ```json
 {
