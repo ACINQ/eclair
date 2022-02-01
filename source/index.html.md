@@ -1132,13 +1132,13 @@ eclair-cli deleteinvoice --paymentHash=<payment_hash>
 
 > The above command returns:
 
-```json
+```shell
 deleted invoice 6f0864735283ca95eaf9c50ef77893f55ee3dd11cb90710cbbfb73f018798a68
 ```
 
 > If the invoice has already been paid, this command returns:
 
-```json
+```shell
 Cannot remove a received incoming payment
 ```
 
@@ -2021,8 +2021,8 @@ eclair-cli getnewaddress
 
 > The above command returns:
 
-```json
-"bcrt1qaq9azfugal9usaffv3cj89gpeq36xst9ms53xl"
+```shell
+bcrt1qaq9azfugal9usaffv3cj89gpeq36xst9ms53xl
 ```
 
 Get a new on-chain address from the wallet. This can be used to deposit funds that will later be used
@@ -2150,22 +2150,6 @@ curl -s -u :<eclair_api_password> -X POST -F content=2b03ffffff -F recipientNode
 eclair-cli signmessage --content=2b03ffffff --recipientNode=<node_id>
 ```
 
-Send an onion message to a remote recipient.
-
-There are two ways to specify that recipient:
-
-- when you're sending to a known `nodeId`, you must set it in the `--recipientNode` field
-- when you're sending to an unknown node behind a blinded route, you must provide the blinded route in the `--recipientBlindedRoute` field
-
-If you're not connected to the recipient and don't have channels with them, eclair will try connecting to them based on the best address it knows (usually from their `node_announcement`).
-If that fails, or if you don't want to expose your `nodeId` by directly connecting to the recipient, you should find a route to them and specify the nodes in that route in the `--intermediateNodes` field.
-
-You can send arbitrary data to the recipient, by providing a hex-encoded tlv stream in the `--content` field.
-
-If you expect a response, you should provide a route from the recipient back to you in the `--replyPath` field.
-Eclair will automatically create a corresponding blinded route to ensure that the recipient doesn't learn your `nodeId`.
-The API will then wait for a response (or timeout if it doesn't receive a response).
-
 > When sending without a reply path, this command will return:
 
 ```json
@@ -2204,6 +2188,22 @@ The API will then wait for a response (or timeout if it doesn't receive a respon
   "failureMessage": "No response"
 }
 ```
+
+Send an onion message to a remote recipient.
+
+There are two ways to specify that recipient:
+
+- when you're sending to a known `nodeId`, you must set it in the `--recipientNode` field
+- when you're sending to an unknown node behind a blinded route, you must provide the blinded route in the `--recipientBlindedRoute` field
+
+If you're not connected to the recipient and don't have channels with them, eclair will try connecting to them based on the best address it knows (usually from their `node_announcement`).
+If that fails, or if you don't want to expose your `nodeId` by directly connecting to the recipient, you should find a route to them and specify the nodes in that route in the `--intermediateNodes` field.
+
+You can send arbitrary data to the recipient, by providing a hex-encoded tlv stream in the `--content` field.
+
+If you expect a response, you should provide a route from the recipient back to you in the `--replyPath` field.
+Eclair will automatically create a corresponding blinded route to ensure that the recipient doesn't learn your `nodeId`.
+The API will then wait for a response (or timeout if it doesn't receive a response).
 
 ### HTTP Request
 
