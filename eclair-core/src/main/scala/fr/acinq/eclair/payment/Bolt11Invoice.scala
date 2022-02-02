@@ -31,12 +31,12 @@ import scala.util.{Failure, Success, Try}
  *
  * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
  * @param amount_opt    amount to pay (empty string means no amount is specified)
- * @param timestamp invoice timestamp (UNIX format)
+ * @param createdAt invoice timestamp (UNIX format)
  * @param nodeId    id of the node emitting the payment request
  * @param tags      payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
  * @param signature invoice signature that will be checked against node id
  */
-case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], timestamp: TimestampSecond, nodeId: PublicKey, tags: List[Bolt11Invoice.TaggedField], signature: ByteVector) extends PaymentRequest {
+case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], createdAt: TimestampSecond, nodeId: PublicKey, tags: List[Bolt11Invoice.TaggedField], signature: ByteVector) extends Invoice {
 
   import fr.acinq.eclair.payment.Bolt11Invoice._
 
@@ -98,7 +98,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], times
    */
   def hash: ByteVector32 = {
     val hrp = s"$prefix${Amount.encode(amount_opt)}".getBytes("UTF-8")
-    val data = Bolt11Data(timestamp, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
+    val data = Bolt11Data(createdAt, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
     val bin = Codecs.bolt11DataCodec.encode(data).require
     val message = ByteVector.view(hrp) ++ bin.dropRight(520).toByteVector
     Crypto.sha256(message)
@@ -124,7 +124,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], times
     // currency unit is Satoshi, but we compute amounts in Millisatoshis
     val hramount = Amount.encode(amount_opt)
     val hrp = s"${prefix}$hramount"
-    val data = Codecs.bolt11DataCodec.encode(Bolt11Data(timestamp, tags, signature)).require
+    val data = Codecs.bolt11DataCodec.encode(Bolt11Data(createdAt, tags, signature)).require
     val int5s = eight2fiveCodec.decode(data).require.value
     Bech32.encode(hrp, int5s.toArray)
   }
@@ -173,7 +173,7 @@ object Bolt11Invoice {
     Bolt11Invoice(
       prefix = prefix,
       amount_opt = amount,
-      timestamp = timestamp,
+      createdAt = timestamp,
       nodeId = privateKey.publicKey,
       tags = tags,
       signature = ByteVector.empty
@@ -536,7 +536,7 @@ object Bolt11Invoice {
     Bolt11Invoice(
       prefix = prefix,
       amount_opt = amount_opt,
-      timestamp = bolt11Data.timestamp,
+      createdAt = bolt11Data.timestamp,
       nodeId = pub,
       tags = bolt11Data.taggedFields,
       signature = bolt11Data.signature)

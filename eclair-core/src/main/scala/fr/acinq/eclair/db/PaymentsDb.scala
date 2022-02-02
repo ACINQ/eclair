@@ -99,13 +99,13 @@ case object PaymentType {
  * At first it is in a pending state once the payment request has been generated, then will become either a success (if
  * we receive a valid HTLC) or a failure (if the payment request expires).
  *
- * @param paymentRequest  Bolt 11 payment request.
+ * @param invoice         Bolt 11 invoice.
  * @param paymentPreimage pre-image associated with the payment request's payment_hash.
  * @param paymentType     distinguish different payment types (standard, swaps, etc).
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
  * @param status          current status of the payment.
  */
-case class IncomingPayment(paymentRequest: Bolt11Invoice,
+case class IncomingPayment(invoice: Bolt11Invoice,
                            paymentPreimage: ByteVector32,
                            paymentType: String,
                            createdAt: TimestampMilli,
@@ -144,7 +144,7 @@ object IncomingPaymentStatus {
  * @param recipientAmount amount that will be received by the final recipient.
  * @param recipientNodeId id of the final recipient.
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment was created.
- * @param paymentRequest  payment request (if paying from an invoice).
+ * @param invoice         payment request (if paying from an invoice).
  * @param status          current status of the payment.
  */
 case class OutgoingPayment(id: UUID,
@@ -156,7 +156,7 @@ case class OutgoingPayment(id: UUID,
                            recipientAmount: MilliSatoshi,
                            recipientNodeId: PublicKey,
                            createdAt: TimestampMilli,
-                           paymentRequest: Option[PaymentRequest],
+                           invoice: Option[Invoice],
                            status: OutgoingPaymentStatus)
 
 sealed trait OutgoingPaymentStatus
@@ -241,7 +241,7 @@ trait PaymentsOverviewDb {
 sealed trait PlainPayment {
   val paymentHash: ByteVector32
   val paymentType: String
-  val paymentRequest: Option[String]
+  val invoice: Option[String]
   val finalAmount: Option[MilliSatoshi]
   val createdAt: TimestampMilli
   val completedAt: Option[TimestampMilli]
@@ -250,7 +250,7 @@ sealed trait PlainPayment {
 case class PlainIncomingPayment(paymentHash: ByteVector32,
                                 paymentType: String,
                                 finalAmount: Option[MilliSatoshi],
-                                paymentRequest: Option[String],
+                                invoice: Option[String],
                                 status: IncomingPaymentStatus,
                                 createdAt: TimestampMilli,
                                 completedAt: Option[TimestampMilli],
@@ -261,7 +261,7 @@ case class PlainOutgoingPayment(parentId: Option[UUID],
                                 paymentHash: ByteVector32,
                                 paymentType: String,
                                 finalAmount: Option[MilliSatoshi],
-                                paymentRequest: Option[String],
+                                invoice: Option[String],
                                 status: OutgoingPaymentStatus,
                                 createdAt: TimestampMilli,
                                 completedAt: Option[TimestampMilli]) extends PlainPayment

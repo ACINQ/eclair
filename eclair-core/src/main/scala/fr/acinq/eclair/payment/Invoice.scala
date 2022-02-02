@@ -21,10 +21,10 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
 import scodec.bits.ByteVector
 
-trait PaymentRequest {
+trait Invoice {
   val amount_opt: Option[MilliSatoshi]
 
-  val timestamp: TimestampSecond
+  val createdAt: TimestampSecond
 
   val nodeId: PublicKey
 
@@ -44,13 +44,13 @@ trait PaymentRequest {
 
   val features: Features[InvoiceFeature]
 
-  def isExpired(): Boolean = timestamp + relativeExpiry <= TimestampSecond.now()
+  def isExpired(): Boolean = createdAt + relativeExpiry <= TimestampSecond.now()
 
   def toString: String
 }
 
-object PaymentRequest {
-  def fromString(input: String): PaymentRequest = {
+object Invoice {
+  def fromString(input: String): Invoice = {
     Bolt11Invoice.fromString(input)
   }
 }

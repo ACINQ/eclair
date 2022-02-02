@@ -568,9 +568,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive an upstream multi-part payment.
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val features = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional)
-    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18), extraHops = hints, paymentMetadata = Some(hex"123456"), features = features)
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18), extraHops = hints, paymentMetadata = Some(hex"123456"), features = features)
     val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(
-      incoming.innerPayload.amountToForward, outgoingAmount * 3, outgoingExpiry, outgoingNodeId, pr
+      incoming.innerPayload.amountToForward, outgoingAmount * 3, outgoingExpiry, outgoingNodeId, invoice
     )))
     val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
@@ -578,8 +578,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
-    assert(outgoingPayment.paymentSecret === pr.paymentSecret.get) // we should use the provided secret
-    assert(outgoingPayment.paymentMetadata === pr.paymentMetadata) // we should use the provided metadata
+    assert(outgoingPayment.paymentSecret === invoice.paymentSecret.get) // we should use the provided secret
+    assert(outgoingPayment.paymentMetadata === invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.totalAmount === outgoingAmount)
     assert(outgoingPayment.targetExpiry === outgoingExpiry)
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
@@ -609,10 +609,10 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // Receive an upstream multi-part payment.
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18), extraHops = hints, paymentMetadata = Some(hex"123456"))
-    assert(!pr.features.hasFeature(BasicMultiPartPayment))
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18), extraHops = hints, paymentMetadata = Some(hex"123456"))
+    assert(!invoice.features.hasFeature(BasicMultiPartPayment))
     val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(
-      incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, pr
+      incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, invoice
     )))
     val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
@@ -622,7 +622,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.finalPayload.amount === outgoingAmount)
     assert(outgoingPayment.finalPayload.expiry === outgoingExpiry)
-    assert(outgoingPayment.finalPayload.paymentMetadata === pr.paymentMetadata) // we should use the provided metadata
+    assert(outgoingPayment.finalPayload.paymentMetadata === invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
     assert(outgoingPayment.assistedRoutes === hints)
     // those are adapters for pay-fsm messages
@@ -648,9 +648,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
-    val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18))
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18))
     val incomingPayments = incomingMultiPart.map(incoming => {
-      val innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, pr)
+      val innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, invoice)
       val invalidPayload = innerPayload.copy(records = TlvStream(innerPayload.records.records.collect { case r if !r.isInstanceOf[OnionPaymentPayloadTlv.PaymentData] => r })) // we remove the payment secret
       incoming.copy(innerPayload = invalidPayload)
     })
@@ -668,7 +668,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(!outgoingCfg.publishEvent)
     assert(!outgoingCfg.storeInDb)
     assert(outgoingCfg.paymentHash === paymentHash)
-    assert(outgoingCfg.paymentRequest === None)
+    assert(outgoingCfg.invoice === None)
     assert(outgoingCfg.recipientAmount === outgoingAmount)
     assert(outgoingCfg.recipientNodeId === outgoingNodeId)
     assert(outgoingCfg.upstream === upstream)

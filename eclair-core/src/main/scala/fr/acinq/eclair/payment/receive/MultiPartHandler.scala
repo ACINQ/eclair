@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentMetadataReceived, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentMetadataReceived, PaymentReceived, Invoice}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, randomBytes32}
 import scodec.bits.HexStringSyntax
@@ -59,7 +59,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case receivePayment: ReceivePayment =>
       val child = ctx.spawnAnonymous(CreateInvoiceActor(nodeParams))
-      child ! CreateInvoiceActor.CreatePaymentRequest(ctx.sender(), receivePayment)
+      child ! CreateInvoiceActor.CreateInvoice(ctx.sender(), receivePayment)
 
     case p: IncomingPaymentPacket.FinalPacket if doHandle(p.add.paymentHash) =>
       val child = ctx.spawnAnonymous(GetIncomingPaymentActor(nodeParams))
@@ -99,9 +99,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 Features[InvoiceFeature](Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               }
               // Insert a fake invoice and then restart the incoming payment handler
-              val paymentRequest = Bolt11Invoice(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
-              log.debug("generated fake payment request={} from amount={} (KeySend)", paymentRequest.toString, amount)
-              db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
+              val invoice = Bolt11Invoice(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
+              log.debug("generated fake payment request={} from amount={} (KeySend)", invoice.toString, amount)
+              db.addIncomingPayment(invoice, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
             case _ =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
@@ -218,25 +218,25 @@ object MultiPartHandler {
 
     // @formatter:off
     sealed trait Command
-    case class CreatePaymentRequest(replyTo: ActorRef, receivePayment: ReceivePayment) extends Command
+    case class CreateInvoice(replyTo: ActorRef, receivePayment: ReceivePayment) extends Command
     // @formatter:on
 
     def apply(nodeParams: NodeParams): Behavior[Command] = {
       Behaviors.setup { context =>
         Behaviors.receiveMessage {
-          case CreatePaymentRequest(replyTo, receivePayment) =>
+          case CreateInvoice(replyTo, receivePayment) =>
             Try {
               import receivePayment._
               val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
               val paymentHash = Crypto.sha256(paymentPreimage)
-              val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
+              val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
               val paymentMetadata = hex"2a"
               val invoiceFeatures = if (nodeParams.enableTrampolinePayment) {
                 Features[InvoiceFeature](nodeParams.features.invoiceFeatures().activated + (Features.TrampolinePayment -> FeatureSupport.Optional))
               } else {
                 nodeParams.features.invoiceFeatures()
               }
-              val paymentRequest = Bolt11Invoice(
+              val invoice = Bolt11Invoice(
                 nodeParams.chainHash,
                 amount_opt,
                 paymentHash,
@@ -249,11 +249,11 @@ object MultiPartHandler {
                 paymentMetadata = Some(paymentMetadata),
                 features = invoiceFeatures
               )
-              context.log.debug("generated payment request={} from amount={}", paymentRequest.toString, amount_opt)
-              nodeParams.db.payments.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
-              paymentRequest
+              context.log.debug("generated payment request={} from amount={}", invoice.toString, amount_opt)
+              nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, paymentType)
+              invoice
             } match {
-              case Success(paymentRequest) => replyTo ! paymentRequest
+              case Success(invoice) => replyTo ! invoice
               case Failure(exception) => replyTo ! Status.Failure(exception)
             }
             Behaviors.stopped
@@ -282,7 +282,7 @@ object MultiPartHandler {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
       log.warning("ignoring incoming payment for which has already been paid")
       false
-    } else if (record.paymentRequest.isExpired()) {
+    } else if (record.invoice.isExpired()) {
       log.warning("received payment for expired amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {
@@ -306,7 +306,7 @@ object MultiPartHandler {
   }
 
   private def validatePaymentCltv(nodeParams: NodeParams, payment: IncomingPaymentPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
-    val minExpiry = record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(nodeParams.channelConf.minFinalExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight)
+    val minExpiry = record.invoice.minFinalCltvExpiryDelta.getOrElse(nodeParams.channelConf.minFinalExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight)
     if (payment.add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
@@ -315,14 +315,14 @@ object MultiPartHandler {
     }
   }
 
-  private def validateInvoiceFeatures(payment: IncomingPaymentPacket.FinalPacket, pr: PaymentRequest)(implicit log: LoggingAdapter): Boolean = {
-    if (payment.payload.amount < payment.payload.totalAmount && !pr.features.hasFeature(Features.BasicMultiPartPayment)) {
+  private def validateInvoiceFeatures(payment: IncomingPaymentPacket.FinalPacket, invoice: Invoice)(implicit log: LoggingAdapter): Boolean = {
+    if (payment.payload.amount < payment.payload.totalAmount && !invoice.features.hasFeature(Features.BasicMultiPartPayment)) {
       log.warning("received multi-part payment but invoice doesn't support it for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
-    } else if (payment.payload.amount < payment.payload.totalAmount && !pr.paymentSecret.contains(payment.payload.paymentSecret)) {
+    } else if (payment.payload.amount < payment.payload.totalAmount && !invoice.paymentSecret.contains(payment.payload.paymentSecret)) {
       log.warning("received multi-part payment with invalid secret={} for amount={} totalAmount={}", payment.payload.paymentSecret, payment.add.amountMsat, payment.payload.totalAmount)
       false
-    } else if (!pr.paymentSecret.contains(payment.payload.paymentSecret)) {
+    } else if (!invoice.paymentSecret.contains(payment.payload.paymentSecret)) {
       log.warning("received payment with invalid secret={} for amount={} totalAmount={}", payment.payload.paymentSecret, payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {
@@ -333,10 +333,10 @@ object MultiPartHandler {
   private def validatePayment(nodeParams: NodeParams, payment: IncomingPaymentPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
-    val paymentAmountOk = record.paymentRequest.amount_opt.forall(a => validatePaymentAmount(payment, a))
+    val paymentAmountOk = record.invoice.amount_opt.forall(a => validatePaymentAmount(payment, a))
     val paymentCltvOk = validatePaymentCltv(nodeParams, payment, record)
     val paymentStatusOk = validatePaymentStatus(payment, record)
-    val paymentFeaturesOk = validateInvoiceFeatures(payment, record.paymentRequest)
+    val paymentFeaturesOk = validateInvoiceFeatures(payment, record.invoice)
     if (paymentAmountOk && paymentCltvOk && paymentStatusOk && paymentFeaturesOk) None else Some(cmdFail)
   }
 }

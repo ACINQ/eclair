@@ -105,7 +105,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         if (cfg.storeInDb && d.pending.isEmpty && d.failures.isEmpty) {
           // In cases where we fail early (router error during the first attempt), the DB won't have an entry for that
           // payment, which may be confusing for users.
-          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.paymentRequest, OutgoingPaymentStatus.Pending)
+          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending)
           nodeParams.db.payments.addOutgoingPayment(dummyPayment)
           nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, paymentHash, failure :: Nil))
         }

@@ -149,7 +149,7 @@ object TestConstants {
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
-      paymentRequestExpiry = 1 hour,
+      invoiceExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
       peerConnectionConf = PeerConnection.Conf(
         authTimeout = 10 seconds,
@@ -284,7 +284,7 @@ object TestConstants {
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
-      paymentRequestExpiry = 1 hour,
+      invoiceExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
       peerConnectionConf = PeerConnection.Conf(
         authTimeout = 10 seconds,

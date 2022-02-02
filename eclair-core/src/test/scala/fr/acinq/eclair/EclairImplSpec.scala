@@ -36,7 +36,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator._
-import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest}
+import fr.acinq.eclair.payment.{PaymentFailed, Invoice}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, Router}
@@ -119,7 +119,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send.recipientNodeId === nodePrivKey.publicKey)
     assert(send.recipientAmount === 123.msat)
     assert(send.paymentHash === ByteVector32.Zeroes)
-    assert(send.paymentRequest === invoice0)
+    assert(send.invoice === invoice0)
     assert(send.assistedRoutes === Seq.empty)
 
     // with assisted routes
@@ -132,7 +132,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send1.recipientNodeId === nodePrivKey.publicKey)
     assert(send1.recipientAmount === 123.msat)
     assert(send1.paymentHash === ByteVector32.Zeroes)
-    assert(send1.paymentRequest === invoice1)
+    assert(send1.invoice === invoice1)
     assert(send1.assistedRoutes === hints)
 
     // with finalCltvExpiry
@@ -144,7 +144,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send2.recipientNodeId === nodePrivKey.publicKey)
     assert(send2.recipientAmount === 123.msat)
     assert(send2.paymentHash === ByteVector32.Zeroes)
-    assert(send2.paymentRequest === invoice2)
+    assert(send2.invoice === invoice2)
     assert(send2.fallbackFinalExpiryDelta === CltvExpiryDelta(96))
 
     // with custom route fees parameters
@@ -160,7 +160,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
     assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), 123 msat, invoice0), 50 millis))
 
-    val expiredInvoice = invoice2.copy(timestamp = 0.unixsec)
+    val expiredInvoice = invoice2.copy(createdAt = 0.unixsec)
     assertThrows[IllegalArgumentException](Await.result(eclair.send(None, 123 msat, expiredInvoice), 50 millis))
   }
 
@@ -298,7 +298,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val paymentPreimage = randomBytes32()
 
     eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage)).pipeTo(sender.ref)
-    assert(sender.expectMsgType[PaymentRequest].paymentHash === Crypto.sha256(paymentPreimage))
+    assert(sender.expectMsgType[Invoice].paymentHash === Crypto.sha256(paymentPreimage))
   }
 
   test("sendtoroute should pass the parameters correctly") { f =>

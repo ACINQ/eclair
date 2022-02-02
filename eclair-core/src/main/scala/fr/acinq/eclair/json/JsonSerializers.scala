@@ -339,7 +339,7 @@ private case class DirectedHtlcJson(direction: String, add: UpdateAddHtlc)
 object DirectedHtlcSerializer extends ConvertClassSerializer[DirectedHtlc](h => DirectedHtlcJson(direction = h.direction, add = h.add))
 // @formatter:on
 
-object PaymentRequestSerializer extends MinimalSerializer({
+object InvoiceSerializer extends MinimalSerializer({
   case p: Bolt11Invoice =>
     val expiry = p.relativeExpiry_opt.map(ex => JField("expiry", JLong(ex))).toSeq
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
@@ -362,7 +362,7 @@ object PaymentRequestSerializer extends MinimalSerializer({
     ))
     val fieldList = List(
       JField("prefix", JString(p.prefix)),
-      JField("timestamp", JLong(p.timestamp.toLong)),
+      JField("timestamp", JLong(p.createdAt.toLong)),
       JField("nodeId", JString(p.nodeId.toString())),
       JField("serialized", JString(p.toString)),
       p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
@@ -533,7 +533,7 @@ object JsonSerializers {
     FailureTypeSerializer +
     NodeAddressSerializer +
     DirectedHtlcSerializer +
-    PaymentRequestSerializer +
+    InvoiceSerializer +
     JavaUUIDSerializer +
     OriginSerializer +
     ByteVector32KeySerializer +

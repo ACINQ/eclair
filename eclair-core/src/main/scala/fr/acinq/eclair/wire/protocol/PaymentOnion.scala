@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentRequest}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
@@ -295,7 +295,7 @@ object PaymentOnion {
     NodeRelayPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(nextNodeId)))
 
   /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
-  def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload = {
+  def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Invoice): NodeRelayPayload = {
     val tlvs = Seq(
       Some(AmountToForward(amount)),
       Some(OutgoingCltv(expiry)),
