@@ -23,6 +23,8 @@ import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
 
+import java.util.concurrent.TimeUnit
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -85,7 +87,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
     case expiry: Bolt11Invoice.Expiry => expiry.toLong
   }
 
-  lazy val relativeExpiry: Long = relativeExpiry_opt.getOrElse(DEFAULT_EXPIRY_SECONDS)
+  lazy val relativeExpiry: FiniteDuration = FiniteDuration(relativeExpiry_opt.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
 
   lazy val minFinalCltvExpiryDelta: Option[CltvExpiryDelta] = tags.collectFirst {
     case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta

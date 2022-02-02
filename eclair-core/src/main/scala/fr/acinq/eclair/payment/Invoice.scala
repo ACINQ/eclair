@@ -21,6 +21,8 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
 import scodec.bits.ByteVector
 
+import scala.concurrent.duration.FiniteDuration
+
 trait Invoice {
   val amount_opt: Option[MilliSatoshi]
 
@@ -38,13 +40,13 @@ trait Invoice {
 
   val routingInfo: Seq[Seq[Bolt11Invoice.ExtraHop]]
 
-  val relativeExpiry: Long
+  val relativeExpiry: FiniteDuration
 
   val minFinalCltvExpiryDelta: Option[CltvExpiryDelta]
 
   val features: Features[InvoiceFeature]
 
-  def isExpired(): Boolean = createdAt + relativeExpiry <= TimestampSecond.now()
+  def isExpired(): Boolean = createdAt + relativeExpiry.toSeconds <= TimestampSecond.now()
 
   def toString: String
 }

@@ -228,7 +228,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setString(3, paymentType)
         statement.setString(4, invoice.toString)
         statement.setTimestamp(5, invoice.createdAt.toSqlTimestamp)
-        statement.setTimestamp(6, (invoice.createdAt + invoice.relativeExpiry.seconds).toSqlTimestamp)
+        statement.setTimestamp(6, (invoice.createdAt + invoice.relativeExpiry.toSeconds).toSqlTimestamp)
         statement.executeUpdate()
       }
     }
