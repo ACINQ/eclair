@@ -257,10 +257,17 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
           reason match {
             case TxRejectedReason.WalletInputGone =>
               // Our transaction has been evicted from the mempool because it depended on an unconfirmed input that has
-              // been replaced. We should be able to retry right now with new wallet inputs (no need to wait for a new
-              // block).
-              timers.startSingleTimer(cmd, (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis)
-              run(pending2, retryNextBlock, channelContext)
+              // been replaced.
+              cmd match {
+                case _: PublishReplaceableTx =>
+                  // We should be able to retry right now with new wallet inputs (no need to wait for a new block).
+                  timers.startSingleTimer(cmd, (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis)
+                  run(pending2, retryNextBlock, channelContext)
+                case _: PublishFinalTx =>
+                  // The transaction cannot be replaced, so there is no point in retrying immediately, let's wait until
+                  // the next block to see if our input comes back to the mempool.
+                  run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelContext)
+              }
             case TxRejectedReason.CouldNotFund =>
               // We don't have enough funds at the moment to afford our target feerate, but it may change once pending
               // transactions confirm, so we retry when a new block is found.

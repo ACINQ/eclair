@@ -195,6 +195,26 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(attempt3.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd2)
   }
 
+  test("publishing attempt fails (main input gone)") { f =>
+    import f._
+
+    val input = OutPoint(randomBytes32(), 3)
+    val tx = Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)
+    val cmd = PublishFinalTx(tx, input, "final-tx", 0 sat, None)
+    txPublisher ! cmd
+    val attempt1 = factory.expectMsgType[FinalTxPublisherSpawned]
+    attempt1.actor.expectMsgType[FinalTxPublisher.Publish]
+
+    txPublisher ! TxRejected(attempt1.id, cmd, WalletInputGone)
+    attempt1.actor.expectMsg(FinalTxPublisher.Stop)
+
+    // We don't retry until a new block is found.
+    factory.expectNoMessage(100 millis)
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned]
+    assert(attempt2.actor.expectMsgType[FinalTxPublisher.Publish].cmd === cmd)
+  }
+
   test("publishing attempt fails (not enough funds)") { f =>
     import f._
 
