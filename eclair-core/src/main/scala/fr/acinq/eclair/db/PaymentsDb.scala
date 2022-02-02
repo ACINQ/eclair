@@ -31,11 +31,11 @@ trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with Payment
 trait IncomingPaymentsDb {
 
   /** Add a new expected incoming payment (not yet received). */
-  def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
+  def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
   /**
-   * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
-   * If there was no matching payment request in the DB, this will return false.
+   * Mark an incoming payment as received (paid). The received amount may exceed the invoice amount.
+   * If there was no matching invoice in the DB, this will return false.
    */
   def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
 
@@ -96,16 +96,16 @@ case object PaymentType {
 
 /**
  * An incoming payment received by this node.
- * At first it is in a pending state once the payment request has been generated, then will become either a success (if
- * we receive a valid HTLC) or a failure (if the payment request expires).
+ * At first it is in a pending state once the invoice has been generated, then will become either a success (if
+ * we receive a valid HTLC) or a failure (if the invoice expires).
  *
- * @param paymentRequest  Bolt 11 payment request.
- * @param paymentPreimage pre-image associated with the payment request's payment_hash.
+ * @param invoice         Bolt 11 invoice.
+ * @param paymentPreimage pre-image associated with the invoice's payment_hash.
  * @param paymentType     distinguish different payment types (standard, swaps, etc).
- * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
+ * @param createdAt       absolute time in milli-seconds since UNIX epoch when the invoice was generated.
  * @param status          current status of the payment.
  */
-case class IncomingPayment(paymentRequest: PaymentRequest,
+case class IncomingPayment(invoice: Bolt11Invoice,
                            paymentPreimage: ByteVector32,
                            paymentType: String,
                            createdAt: TimestampMilli,
@@ -124,7 +124,7 @@ object IncomingPaymentStatus {
   /**
    * Payment has been successfully received.
    *
-   * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
+   * @param amount     amount of the payment received, in milli-satoshis (may exceed the invoice amount).
    * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
    */
   case class Received(amount: MilliSatoshi, receivedAt: TimestampMilli) extends IncomingPaymentStatus
@@ -144,7 +144,7 @@ object IncomingPaymentStatus {
  * @param recipientAmount amount that will be received by the final recipient.
  * @param recipientNodeId id of the final recipient.
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment was created.
- * @param paymentRequest  Bolt 11 payment request (if paying from an invoice).
+ * @param invoice         invoice (if paying from an invoice).
  * @param status          current status of the payment.
  */
 case class OutgoingPayment(id: UUID,
@@ -156,7 +156,7 @@ case class OutgoingPayment(id: UUID,
                            recipientAmount: MilliSatoshi,
                            recipientNodeId: PublicKey,
                            createdAt: TimestampMilli,
-                           paymentRequest: Option[PaymentRequest],
+                           invoice: Option[Invoice],
                            status: OutgoingPaymentStatus)
 
 sealed trait OutgoingPaymentStatus
@@ -231,7 +231,7 @@ trait PaymentsOverviewDb {
 }
 
 /**
- * Generic payment trait holding only the minimum information in the most plain type possible. Notably, payment request
+ * Generic payment trait holding only the minimum information in the most plain type possible. Notably, the invoice
  * is kept as a String, because deserialization is costly.
  * <p>
  * This object should only be used for a high level snapshot of the payments stored in the payment database.
@@ -241,7 +241,7 @@ trait PaymentsOverviewDb {
 sealed trait PlainPayment {
   val paymentHash: ByteVector32
   val paymentType: String
-  val paymentRequest: Option[String]
+  val invoice: Option[String]
   val finalAmount: Option[MilliSatoshi]
   val createdAt: TimestampMilli
   val completedAt: Option[TimestampMilli]
@@ -250,7 +250,7 @@ sealed trait PlainPayment {
 case class PlainIncomingPayment(paymentHash: ByteVector32,
                                 paymentType: String,
                                 finalAmount: Option[MilliSatoshi],
-                                paymentRequest: Option[String],
+                                invoice: Option[String],
                                 status: IncomingPaymentStatus,
                                 createdAt: TimestampMilli,
                                 completedAt: Option[TimestampMilli],
@@ -261,7 +261,7 @@ case class PlainOutgoingPayment(parentId: Option[UUID],
                                 paymentHash: ByteVector32,
                                 paymentType: String,
                                 finalAmount: Option[MilliSatoshi],
-                                paymentRequest: Option[String],
+                                invoice: Option[String],
                                 status: OutgoingPaymentStatus,
                                 createdAt: TimestampMilli,
                                 completedAt: Option[TimestampMilli]) extends PlainPayment

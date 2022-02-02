@@ -129,7 +129,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       if (remaining > 0) {
         paymentHandler ! ReceivePayment(Some(requiredAmount), Left("One coffee"))
         context become {
-          case req: PaymentRequest =>
+          case req: Invoice =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId, req.paymentSecret.get)
             context become {
               case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()

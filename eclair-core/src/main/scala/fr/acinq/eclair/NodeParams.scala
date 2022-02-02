@@ -70,7 +70,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
                       chainHash: ByteVector32,
-                      paymentRequestExpiry: FiniteDuration,
+                      invoiceExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
                       peerConnectionConf: PeerConnection.Conf,
                       routerConf: RouterConf,
@@ -222,6 +222,8 @@ object NodeParams extends Logging {
       "unhandled-exception-strategy" -> "channel.unhandled-exception-strategy",
       "revocation-timeout" -> "channel.revocation-timeout",
       "watch-spent-window" -> "router.watch-spent-window",
+      // v0.7.1
+      "payment-request-expiry" -> "invoice-expiry",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -458,7 +460,7 @@ object NodeParams extends Logging {
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
       chainHash = chainHash,
-      paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
+      invoiceExpiry = FiniteDuration(config.getDuration("invoice-expiry").getSeconds, TimeUnit.SECONDS),
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),
       peerConnectionConf = PeerConnection.Conf(
         authTimeout = FiniteDuration(config.getDuration("peer-connection.auth-timeout").getSeconds, TimeUnit.SECONDS),

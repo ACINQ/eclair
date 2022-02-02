@@ -159,7 +159,7 @@ object OutgoingPaymentPacket {
   /**
    * Build the onion payloads for each hop.
    *
-   * @param hops         the hops as computed by the router + extra routes from payment request
+   * @param hops         the hops as computed by the router + extra routes from the invoice
    * @param finalPayload payload data for the final node (amount, expiry, etc)
    * @return a (firstAmount, firstExpiry, payloads) tuple where:
    *         - firstAmount is the amount for the first htlc in the route
@@ -180,7 +180,7 @@ object OutgoingPaymentPacket {
   /**
    * Build an encrypted onion packet with the given final payload.
    *
-   * @param hops         the hops as computed by the router + extra routes from payment request, including ourselves in the first hop
+   * @param hops         the hops as computed by the router + extra routes from the invoice, including ourselves in the first hop
    * @param finalPayload payload data for the final node (amount, expiry, etc)
    * @return a (firstAmount, firstExpiry, onion) tuple where:
    *         - firstAmount is the amount for the first htlc in the route
@@ -212,7 +212,7 @@ object OutgoingPaymentPacket {
    *         - firstExpiry is the cltv expiry for the first trampoline node in the route
    *         - the trampoline onion to include in final payload of a normal onion
    */
-  def buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: Seq[NodeHop], finalPayload: PaymentOnion.FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
+  def buildTrampolineToLegacyPacket(invoice: Invoice, hops: Seq[NodeHop], finalPayload: PaymentOnion.FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
     // NB: the final payload will never reach the recipient, since the next-to-last node in the trampoline route will convert that to a non-trampoline payment.
     // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
     val dummyFinalPayload = PaymentOnion.createSinglePartPayload(finalPayload.amount, finalPayload.expiry, finalPayload.paymentSecret, None)

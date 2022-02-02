@@ -419,7 +419,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       new FailureMessageSerializer +
       new NodeAddressSerializer +
       new DirectionSerializer +
-      new PaymentRequestSerializer +
+      new InvoiceSerializer +
       ShortTypeHints(List(
         classOf[QueryChannelRange],
         classOf[ReplyChannelRange],

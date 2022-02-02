@@ -18,89 +18,89 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
 
+import java.util.concurrent.TimeUnit
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
- * Lightning Payment Request
+ * Lightning Bolt 11 invoice
  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
  *
- * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
- * @param amount    amount to pay (empty string means no amount is specified)
- * @param timestamp request timestamp (UNIX format)
- * @param nodeId    id of the node emitting the payment request
- * @param tags      payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
- * @param signature request signature that will be checked against node id
+ * @param prefix     currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
+ * @param amount_opt amount to pay (empty string means no amount is specified)
+ * @param createdAt  invoice timestamp (UNIX format)
+ * @param nodeId     id of the node emitting the invoice
+ * @param tags       payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
+ * @param signature  invoice signature that will be checked against node id
  */
-case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: TimestampSecond, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
+case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], createdAt: TimestampSecond, nodeId: PublicKey, tags: List[Bolt11Invoice.TaggedField], signature: ByteVector) extends Invoice {
 
-  amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
-  require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
-  require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
-  private val featuresErr = Features.validateFeatureGraph(features.features)
+  import fr.acinq.eclair.payment.Bolt11Invoice._
+
+  amount_opt.foreach(a => require(a > 0.msat, s"amount is not valid"))
+  require(tags.collect { case _: Bolt11Invoice.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
+  require(tags.collect { case Bolt11Invoice.Description(_) | Bolt11Invoice.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
+  private val featuresErr = Features.validateFeatureGraph(features)
   require(featuresErr.isEmpty, featuresErr.map(_.message))
-  if (features.allowPaymentSecret) {
-    require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
+  if (features.hasFeature(Features.PaymentSecret)) {
+    require(tags.collect { case _: Bolt11Invoice.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
   }
 
   /**
    * @return the payment hash
    */
-  lazy val paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHash => p.hash }.get
+  lazy val paymentHash = tags.collectFirst { case p: Bolt11Invoice.PaymentHash => p.hash }.get
 
   /**
    * @return the payment secret
    */
-  lazy val paymentSecret = tags.collectFirst { case p: PaymentRequest.PaymentSecret => p.secret }
+  lazy val paymentSecret = tags.collectFirst { case p: Bolt11Invoice.PaymentSecret => p.secret }
 
   /**
    * @return the description of the payment, or its hash
    */
   lazy val description: Either[String, ByteVector32] = tags.collectFirst {
-    case PaymentRequest.Description(d) => Left(d)
-    case PaymentRequest.DescriptionHash(h) => Right(h)
+    case Bolt11Invoice.Description(d) => Left(d)
+    case Bolt11Invoice.DescriptionHash(h) => Right(h)
   }.get
 
   /**
    * @return metadata about the payment (see option_payment_metadata).
    */
-  lazy val paymentMetadata: Option[ByteVector] = tags.collectFirst { case m: PaymentRequest.PaymentMetadata => m.data }
+  lazy val paymentMetadata: Option[ByteVector] = tags.collectFirst { case m: Bolt11Invoice.PaymentMetadata => m.data }
 
   /**
    * @return the fallback address if any. It could be a script address, pubkey address, ..
    */
   def fallbackAddress(): Option[String] = tags.collectFirst {
-    case f: PaymentRequest.FallbackAddress => PaymentRequest.FallbackAddress.toAddress(f, prefix)
+    case f: Bolt11Invoice.FallbackAddress => Bolt11Invoice.FallbackAddress.toAddress(f, prefix)
   }
 
   lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfo => t.path }
 
-  lazy val expiry: Option[Long] = tags.collectFirst {
-    case expiry: PaymentRequest.Expiry => expiry.toLong
+  lazy val relativeExpiry_opt: Option[Long] = tags.collectFirst {
+    case expiry: Bolt11Invoice.Expiry => expiry.toLong
   }
+
+  lazy val relativeExpiry: FiniteDuration = FiniteDuration(relativeExpiry_opt.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
 
   lazy val minFinalCltvExpiryDelta: Option[CltvExpiryDelta] = tags.collectFirst {
-    case cltvExpiry: PaymentRequest.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
+    case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
   }
 
-  lazy val features: PaymentRequestFeatures = tags.collectFirst { case f: PaymentRequestFeatures => f }.getOrElse(PaymentRequestFeatures(BitVector.empty))
-
-  def isExpired: Boolean = expiry match {
-    case Some(expiryTime) => timestamp + expiryTime <= TimestampSecond.now()
-    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now()
-  }
+  lazy val features: Features = tags.collectFirst { case f: InvoiceFeatures => f.features }.getOrElse(Features(BitVector.empty))
 
   /**
-   * @return the hash of this payment request
+   * @return the hash of this payment invoice
    */
   def hash: ByteVector32 = {
-    val hrp = s"$prefix${Amount.encode(amount)}".getBytes("UTF-8")
-    val data = Bolt11Data(timestamp, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
+    val hrp = s"$prefix${Amount.encode(amount_opt)}".getBytes("UTF-8")
+    val data = Bolt11Data(createdAt, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
     val bin = Codecs.bolt11DataCodec.encode(data).require
     val message = ByteVector.view(hrp) ++ bin.dropRight(520).toByteVector
     Crypto.sha256(message)
@@ -108,9 +108,9 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
   /**
    * @param priv private key
-   * @return a signed payment request
+   * @return a signed payment invoice
    */
-  def sign(priv: PrivateKey): PaymentRequest = {
+  def sign(priv: PrivateKey): Bolt11Invoice = {
     val sig64 = Crypto.sign(hash, priv)
     // in order to tell what the recovery id is, we actually recover the pubkey ourselves and compare it to the real one
     val pub0 = Crypto.recoverPublicKey(sig64, hash, 0.toByte)
@@ -118,10 +118,21 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     val signature = sig64 :+ recid
     this.copy(signature = signature)
   }
+
+  /**
+   * @return a bech32-encoded payment invoice
+   */
+  override def toString: String = {
+    // currency unit is Satoshi, but we compute amounts in Millisatoshis
+    val hramount = Amount.encode(amount_opt)
+    val hrp = s"${prefix}$hramount"
+    val data = Codecs.bolt11DataCodec.encode(Bolt11Data(createdAt, tags, signature)).require
+    val int5s = eight2fiveCodec.decode(data).require.value
+    Bech32.encode(hrp, int5s.toArray)
+  }
 }
 
-object PaymentRequest {
-
+object Bolt11Invoice {
   val DEFAULT_EXPIRY_SECONDS: Long = 3600
 
   val prefixes = Map(
@@ -130,10 +141,7 @@ object PaymentRequest {
     Block.LivenetGenesisBlock.hash -> "lnbc"
   )
 
-  val defaultFeatures: Map[Feature with InvoiceFeature, FeatureSupport] = Map(
-    Features.VariableLengthOnion -> FeatureSupport.Mandatory,
-    Features.PaymentSecret -> FeatureSupport.Mandatory,
-  )
+  val defaultFeatures: Features = Features((Features.VariableLengthOnion, FeatureSupport.Mandatory), (Features.PaymentSecret, FeatureSupport.Mandatory))
 
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
@@ -147,8 +155,8 @@ object PaymentRequest {
             timestamp: TimestampSecond = TimestampSecond.now(),
             paymentSecret: ByteVector32 = randomBytes32(),
             paymentMetadata: Option[ByteVector] = None,
-            features: PaymentRequestFeatures = PaymentRequestFeatures(defaultFeatures)): PaymentRequest = {
-    require(features.requirePaymentSecret, "invoices must require a payment secret")
+            features: Features = defaultFeatures): Bolt11Invoice = {
+    require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), "invoices must require a payment secret")
     val prefix = prefixes(chainHash)
     val tags = {
       val defaultTags = List(
@@ -159,15 +167,15 @@ object PaymentRequest {
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
-        Some(features)
+        Some(InvoiceFeatures(features))
       ).flatten
       val routingInfoTags = extraHops.map(RoutingInfo)
       defaultTags ++ routingInfoTags
     }
-    PaymentRequest(
+    Bolt11Invoice(
       prefix = prefix,
-      amount = amount,
-      timestamp = timestamp,
+      amount_opt = amount,
+      createdAt = timestamp,
       nodeId = privateKey.publicKey,
       tags = tags,
       signature = ByteVector.empty
@@ -227,15 +235,15 @@ object PaymentRequest {
   /**
    * Description
    *
-   * @param description a free-format string that will be included in the payment request
+   * @param description a free-format string that will be included in the invoice
    */
   case class Description(description: String) extends TaggedField
 
   /**
    * Hash
    *
-   * @param hash hash that will be included in the payment request, and can be checked against the hash of a
-   *             long description, an invoice, ...
+   * @param hash hash that will be included in the invoice, and can be checked against the hash of a
+   *             long description, an SKU, ...
    */
   case class DescriptionHash(hash: ByteVector32) extends TaggedField
 
@@ -288,16 +296,23 @@ object PaymentRequest {
   }
 
   /**
-   * This returns a bitvector with the minimum size necessary to encode the long, left padded
-   * to have a length (in bits) multiples of 5
+   * This returns a bitvector with the minimum size necessary to encode the long, left padded to have a length (in bits)
+   * that is a multiple of 5.
    */
-  def long2bits(l: Long) = {
-    val bin = BitVector.fromLong(l)
+  def long2bits(l: Long): BitVector = leftPaddedBits(BitVector.fromLong(l))
+
+  /**
+   * This returns a bitvector with the minimum size necessary to encode the features, left padded to have a length (in
+   * bits) that is a multiple of 5.
+   */
+  def features2bits(features: Features): BitVector = leftPaddedBits(features.toByteVector.bits)
+
+  private def leftPaddedBits(bits: BitVector): BitVector = {
     var highest = -1
-    for (i <- 0 until bin.size.toInt) {
-      if (highest == -1 && bin(i)) highest = i
+    for (i <- 0 until bits.size.toInt) {
+      if (highest == -1 && bits(i)) highest = i
     }
-    val nonPadded = if (highest == -1) BitVector.empty else bin.drop(highest)
+    val nonPadded = if (highest == -1) BitVector.empty else bits.drop(highest)
     nonPadded.size % 5 match {
       case 0 => nonPadded
       case remaining => BitVector.fill(5 - remaining)(high = false) ++ nonPadded
@@ -315,6 +330,7 @@ object PaymentRequest {
    */
   case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta)
 
+
   /**
    * Routing Info
    *
@@ -331,7 +347,7 @@ object PaymentRequest {
 
   object Expiry {
     /**
-     * @param seconds expiry data for this payment request
+     * @param seconds expiry data for this invoice
      */
     def apply(seconds: Long): Expiry = Expiry(long2bits(seconds))
   }
@@ -355,25 +371,7 @@ object PaymentRequest {
   /**
    * Features supported or required for receiving this payment.
    */
-  case class PaymentRequestFeatures(bitmask: BitVector) extends TaggedField {
-    lazy val features: Features = Features(bitmask)
-    lazy val allowMultiPart: Boolean = features.hasFeature(Features.BasicMultiPartPayment)
-    lazy val allowPaymentSecret: Boolean = features.hasFeature(Features.PaymentSecret)
-    lazy val requirePaymentSecret: Boolean = features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory))
-    lazy val allowTrampoline: Boolean = features.hasFeature(Features.TrampolinePayment)
-
-    def toByteVector: ByteVector = features.toByteVector
-
-    def areSupported(nodeParams: NodeParams): Boolean = nodeParams.features.areSupported(features)
-
-    override def toString: String = s"Features(${bitmask.toBin})"
-  }
-
-  object PaymentRequestFeatures {
-    def apply(features: Map[Feature with InvoiceFeature, FeatureSupport]): PaymentRequestFeatures = PaymentRequestFeatures(long2bits(features.foldLeft(0L) {
-      case (current, (feature, support)) => current + (1L << feature.supportBit(support))
-    }))
-  }
+  case class InvoiceFeatures(features: Features) extends TaggedField
 
   object Codecs {
 
@@ -416,7 +414,7 @@ object PaymentRequest {
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(5, dataCodec(bits).as[PaymentRequestFeatures])
+      .typecase(5, dataCodec(bits).xmap[Features](Features(_), features2bits).as[InvoiceFeatures])
       .typecase(6, dataCodec(bits).as[Expiry])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])
@@ -512,10 +510,10 @@ object PaymentRequest {
   val eight2fiveCodec: Codec[List[Byte]] = list(ubyte(5))
 
   /**
-   * @param input bech32-encoded payment request
-   * @return a payment request
+   * @param input bech32-encoded invoice
+   * @return a Bolt11 invoice
    */
-  def read(input: String): PaymentRequest = {
+  def fromString(input: String): Bolt11Invoice = {
     // used only for data validation
     Bech32.decode(input)
     val lowercaseInput = input.toLowerCase
@@ -534,10 +532,10 @@ object PaymentRequest {
       case Success(value) => value
       case Failure(e) => throw e
     }
-    PaymentRequest(
+    Bolt11Invoice(
       prefix = prefix,
-      amount = amount_opt,
-      timestamp = bolt11Data.timestamp,
+      amount_opt = amount_opt,
+      createdAt = bolt11Data.timestamp,
       nodeId = pub,
       tags = bolt11Data.taggedFields,
       signature = bolt11Data.signature)
@@ -553,47 +551,34 @@ object PaymentRequest {
   }
 
   /**
-   * Extracts the description from a serialized payment request that is **expected to be valid**.
-   * Throws an error if the payment request is not valid.
+   * Extracts the description from a serialized invoice that is **expected to be valid**.
+   * Throws an error if the invoice is not valid.
    *
-   * @param input valid serialized payment request
+   * @param input valid serialized invoice
    * @return description as a String. If the description is a hash, returns the hash value as a String.
    */
   def fastReadDescription(input: String): String = {
     readBoltData(input).taggedFields.collectFirst {
-      case PaymentRequest.Description(d) => d
-      case PaymentRequest.DescriptionHash(h) => h.toString()
+      case Bolt11Invoice.Description(d) => d
+      case Bolt11Invoice.DescriptionHash(h) => h.toString()
     }.get
   }
 
   /**
-   * Checks if a serialized payment request is expired. Timestamp is compared to the System's current time.
+   * Checks if a serialized invoice is expired. Timestamp is compared to the System's current time.
    *
-   * @param input valid serialized payment request
-   * @return true if the payment request has expired, false otherwise.
+   * @param input valid serialized invoice
+   * @return true if the invoice has expired, false otherwise.
    */
   def fastHasExpired(input: String): Boolean = {
     val bolt11Data = readBoltData(input)
     val expiry_opt = bolt11Data.taggedFields.collectFirst {
-      case p: PaymentRequest.Expiry => p
+      case p: Bolt11Invoice.Expiry => p
     }
     val timestamp = bolt11Data.timestamp
     expiry_opt match {
       case Some(expiry) => timestamp + expiry.toLong <= TimestampSecond.now()
       case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now()
     }
-  }
-
-  /**
-   * @param pr payment request
-   * @return a bech32-encoded payment request
-   */
-  def write(pr: PaymentRequest): String = {
-    // currency unit is Satoshi, but we compute amounts in Millisatoshis
-    val hramount = Amount.encode(pr.amount)
-    val hrp = s"${pr.prefix}$hramount"
-    val data = Codecs.bolt11DataCodec.encode(Bolt11Data(pr.timestamp, pr.tags, pr.signature)).require
-    val int5s = eight2fiveCodec.decode(data).require.value
-    Bech32.encode(hrp, int5s.toArray)
   }
 }
