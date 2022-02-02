@@ -266,7 +266,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       assert(invoice.createdAt === TimestampSecond(1496314658L))
       assert(invoice.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
       assert(invoice.description === Left("coffee beans"))
-      assert(featuresBitmask(invoice.features) === bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
+      assert(features2bits(invoice.features) === bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
       assert(!invoice.features.hasFeature(BasicMultiPartPayment))
       assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
       assert(!invoice.features.hasFeature(TrampolinePayment))
@@ -286,7 +286,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(invoice.description === Left("coffee beans"))
     assert(invoice.fallbackAddress().isEmpty)
-    assert(featuresBitmask(invoice.features) === bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
+    assert(features2bits(invoice.features) === bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
     assert(!invoice.features.hasFeature(BasicMultiPartPayment))
     assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
     assert(!invoice.features.hasFeature(TrampolinePayment))
@@ -418,7 +418,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     val ref = "lnbc1000m1pdkmqhusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5n2ees808r98m0rh4472yyth0c5fptzcxmexcjznrzmq8xald0cgqdqsf4ujqarfwqsxymmccqp2pv37ezvhth477nu0yhhjlcry372eef57qmldhreqnr0kx82jkupp3n7nw42u3kdyyjskdr8jhjy2vugr3skdmy8ersft36969xplkxsp2v7c58"
     val invoice = Bolt11Invoice.fromString(ref)
     assert(invoice.amount_opt === Some(100000000000L msat))
-    assert(featuresBitmask(invoice.features) === BitVector.empty)
+    assert(features2bits(invoice.features) === BitVector.empty)
   }
 
   test("supported invoice features") {

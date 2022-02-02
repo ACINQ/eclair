@@ -296,16 +296,23 @@ object Bolt11Invoice {
   }
 
   /**
-   * This returns a bitvector with the minimum size necessary to encode the long, left padded
-   * to have a length (in bits) multiples of 5
+   * This returns a bitvector with the minimum size necessary to encode the long, left padded to have a length (in bits)
+   * that is a multiple of 5.
    */
-  def long2bits(l: Long) = {
-    val bin = BitVector.fromLong(l)
+  def long2bits(l: Long): BitVector = leftPaddedBits(BitVector.fromLong(l))
+
+  /**
+   * This returns a bitvector with the minimum size necessary to encode the features, left padded to have a length (in
+   * bits) that is a multiple of 5.
+   */
+  def features2bits(features: Features): BitVector = leftPaddedBits(features.toByteVector.bits)
+
+  private def leftPaddedBits(bits: BitVector): BitVector = {
     var highest = -1
-    for (i <- 0 until bin.size.toInt) {
-      if (highest == -1 && bin(i)) highest = i
+    for (i <- 0 until bits.size.toInt) {
+      if (highest == -1 && bits(i)) highest = i
     }
-    val nonPadded = if (highest == -1) BitVector.empty else bin.drop(highest)
+    val nonPadded = if (highest == -1) BitVector.empty else bits.drop(highest)
     nonPadded.size % 5 match {
       case 0 => nonPadded
       case remaining => BitVector.fill(5 - remaining)(high = false) ++ nonPadded
@@ -366,16 +373,6 @@ object Bolt11Invoice {
    */
   case class InvoiceFeatures(features: Features) extends TaggedField
 
-  def featuresBitmask(features: Features): BitVector = {
-    val bits = features.toByteVector.bits
-    val highest = bits.toIndexedSeq.indexOf(true)
-    val nonPadded = if (highest == -1) BitVector.empty else bits.drop(highest)
-    nonPadded.size % 5 match {
-      case 0 => nonPadded
-      case remaining => BitVector.fill(5 - remaining)(high = false) ++ nonPadded
-    }
-  }
-
   object Codecs {
 
     import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -417,7 +414,7 @@ object Bolt11Invoice {
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(5, dataCodec(bits).xmap[Features](Features(_), featuresBitmask).as[InvoiceFeatures])
+      .typecase(5, dataCodec(bits).xmap[Features](Features(_), features2bits).as[InvoiceFeatures])
       .typecase(6, dataCodec(bits).as[Expiry])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])
