@@ -70,7 +70,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey)),
       walletStaticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
-      initFeatures = Features(randomBytes(256)).initFeatures())
+      initFeatures = Features(randomBytes(256)))
     val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32()).publicKey))
 
     roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
@@ -92,7 +92,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       paymentBasepoint = randomKey().publicKey,
       delayedPaymentBasepoint = randomKey().publicKey,
       htlcBasepoint = randomKey().publicKey,
-      initFeatures = TestConstants.Alice.nodeParams.features.initFeatures(),
+      initFeatures = TestConstants.Alice.nodeParams.features,
       shutdownScript = None)
     val encoded = remoteParamsCodec.encode(o).require
     val decoded = remoteParamsCodec.decodeValue(encoded).require

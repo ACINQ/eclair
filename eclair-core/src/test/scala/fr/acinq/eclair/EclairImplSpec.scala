@@ -168,13 +168,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val remoteNodeAnn1 = NodeAnnouncement(randomBytes64(), Features.empty.nodeAnnouncementFeatures(), TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "LN-rocks", Nil)
-    val remoteNodeAnn2 = NodeAnnouncement(randomBytes64(), Features.empty.nodeAnnouncementFeatures(), TimestampSecond(43L), randomKey().publicKey, Color(43, 43, 43), "LN-papers", Nil)
+    val remoteNodeAnn1 = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "LN-rocks", Nil)
+    val remoteNodeAnn2 = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(43L), randomKey().publicKey, Color(43, 43, 43), "LN-papers", Nil)
     val allNodes = Seq(
-      NodeAnnouncement(randomBytes64(), Features.empty.nodeAnnouncementFeatures(), TimestampSecond(561L), randomKey().publicKey, Color(0, 0, 0), "some-node", Nil),
+      NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(561L), randomKey().publicKey, Color(0, 0, 0), "some-node", Nil),
       remoteNodeAnn1,
       remoteNodeAnn2,
-      NodeAnnouncement(randomBytes64(), Features.empty.nodeAnnouncementFeatures(), TimestampSecond(1105L), randomKey().publicKey, Color(0, 0, 0), "some-other-node", Nil),
+      NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(1105L), randomKey().publicKey, Color(0, 0, 0), "some-other-node", Nil),
     )
 
     {

@@ -25,13 +25,12 @@ import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentMetadataReceived, PaymentReceived, Invoice}
-import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, randomBytes32}
-import scodec.bits.HexStringSyntax
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
-import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.payment.{Bolt11Invoice, IncomingPaymentPacket, Invoice, PaymentMetadataReceived, PaymentReceived}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{FeatureSupport, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Success, Try}
 
@@ -94,9 +93,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = Left("Donation")
               val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
-                Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
+                Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               } else {
-                Features[InvoiceFeature](Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
+                Features(Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               }
               // Insert a fake invoice and then restart the incoming payment handler
               val invoice = Bolt11Invoice(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
@@ -232,7 +231,7 @@ object MultiPartHandler {
               val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
               val paymentMetadata = hex"2a"
               val invoiceFeatures = if (nodeParams.enableTrampolinePayment) {
-                Features[InvoiceFeature](nodeParams.features.invoiceFeatures().activated + (Features.TrampolinePayment -> FeatureSupport.Optional))
+                Features(nodeParams.features.invoiceFeatures().activated + (Features.TrampolinePayment -> FeatureSupport.Optional))
               } else {
                 nodeParams.features.invoiceFeatures()
               }

@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -93,7 +93,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
     case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
   }
 
-  lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features }.getOrElse(Features.empty.invoiceFeatures())
+  lazy val features: Features = tags.collectFirst { case f: InvoiceFeatures => f.features }.getOrElse(Features(BitVector.empty))
 
   /**
    * @return the hash of this payment invoice
@@ -141,7 +141,7 @@ object Bolt11Invoice {
     Block.LivenetGenesisBlock.hash -> "lnbc"
   )
 
-  val defaultFeatures: Features[InvoiceFeature] = Features((Features.VariableLengthOnion, FeatureSupport.Mandatory), (Features.PaymentSecret, FeatureSupport.Mandatory))
+  val defaultFeatures: Features = Features((Features.VariableLengthOnion, FeatureSupport.Mandatory), (Features.PaymentSecret, FeatureSupport.Mandatory))
 
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
@@ -155,7 +155,7 @@ object Bolt11Invoice {
             timestamp: TimestampSecond = TimestampSecond.now(),
             paymentSecret: ByteVector32 = randomBytes32(),
             paymentMetadata: Option[ByteVector] = None,
-            features: Features[InvoiceFeature] = defaultFeatures): Bolt11Invoice = {
+            features: Features = defaultFeatures): Bolt11Invoice = {
     require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), "invoices must require a payment secret")
     val prefix = prefixes(chainHash)
     val tags = {
@@ -364,9 +364,9 @@ object Bolt11Invoice {
   /**
    * Features supported or required for receiving this payment.
    */
-  case class InvoiceFeatures(features: Features[InvoiceFeature]) extends TaggedField
+  case class InvoiceFeatures(features: Features) extends TaggedField
 
-  def featuresBitmask(features: Features[InvoiceFeature]): BitVector = {
+  def featuresBitmask(features: Features): BitVector = {
     val bits = features.toByteVector.bits
     val highest = bits.toIndexedSeq.indexOf(true)
     val nonPadded = if (highest == -1) BitVector.empty else bits.drop(highest)
@@ -417,7 +417,7 @@ object Bolt11Invoice {
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(5, dataCodec(bits).xmap[Features[InvoiceFeature]](Features(_).invoiceFeatures(), featuresBitmask).as[InvoiceFeatures])
+      .typecase(5, dataCodec(bits).xmap[Features](Features(_), featuresBitmask).as[InvoiceFeatures])
       .typecase(6, dataCodec(bits).as[Expiry])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])
