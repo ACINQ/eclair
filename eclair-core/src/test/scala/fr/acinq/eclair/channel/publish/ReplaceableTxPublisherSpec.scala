@@ -278,7 +278,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd === anchorTx)
-      assert(result.reason === WalletInputGone)
+      assert(result.reason === InputGone)
 
       // Since our wallet input is gone, we will retry and discover that a commit tx has been confirmed.
       val publisher2 = createPublisher()

@@ -122,8 +122,8 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
           log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
           sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
         } else {
-          log.info("could not publish tx: one of our wallet inputs is not available")
-          sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.WalletInputGone))
+          log.info("could not publish tx: one of our inputs cannot be found")
+          sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.InputGone))
         }
       case CheckInputFailed(reason) =>
         log.error("could not check input status: ", reason)
@@ -174,8 +174,8 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
           log.info("tx was evicted from the mempool: a conflicting transaction replaced it")
           sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
         } else {
-          log.info("tx was evicted from the mempool: one of our wallet inputs disappeared")
-          sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.WalletInputGone))
+          log.info("tx was evicted from the mempool: one of our inputs disappeared")
+          sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.InputGone))
         }
       case CheckInputFailed(reason) =>
         log.error("could not check input status: ", reason)

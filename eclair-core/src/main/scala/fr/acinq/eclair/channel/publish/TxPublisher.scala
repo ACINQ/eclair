@@ -107,8 +107,8 @@ object TxPublisher {
   object TxRejectedReason {
     /** We don't have enough funds in our wallet to reach the given feerate. */
     case object CouldNotFund extends TxRejectedReason
-    /** The transaction was published but then evicted from the mempool, because one of its wallet inputs disappeared (e.g. unconfirmed output of a transaction that was replaced). */
-    case object WalletInputGone extends TxRejectedReason
+    /** The transaction was published but then evicted from the mempool, because one of its inputs disappeared (e.g. unconfirmed output of a transaction that was replaced). */
+    case object InputGone extends TxRejectedReason
     /** A conflicting transaction spending the same input has been confirmed. */
     case object ConflictingTxConfirmed extends TxRejectedReason
     /** A conflicting transaction spending the same input is in the mempool and we failed to replace it. */
@@ -255,7 +255,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
           stopAttempts(rejectedAttempts)
           val pending2 = if (remainingAttempts.isEmpty) pending - cmd.input else pending + (cmd.input -> remainingAttempts)
           reason match {
-            case TxRejectedReason.WalletInputGone =>
+            case TxRejectedReason.InputGone =>
               // Our transaction has been evicted from the mempool because it depended on an unconfirmed input that has
               // been replaced.
               cmd match {

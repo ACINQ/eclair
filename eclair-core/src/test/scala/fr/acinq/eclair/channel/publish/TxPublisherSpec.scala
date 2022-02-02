@@ -186,7 +186,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]
 
-    txPublisher ! TxRejected(attempt2.id, cmd2, WalletInputGone)
+    txPublisher ! TxRejected(attempt2.id, cmd2, InputGone)
     attempt2.actor.expectMsg(ReplaceableTxPublisher.Stop)
     attempt1.actor.expectNoMessage(100 millis) // this error doesn't impact other publishing attempts
 
@@ -205,7 +205,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt1 = factory.expectMsgType[FinalTxPublisherSpawned]
     attempt1.actor.expectMsgType[FinalTxPublisher.Publish]
 
-    txPublisher ! TxRejected(attempt1.id, cmd, WalletInputGone)
+    txPublisher ! TxRejected(attempt1.id, cmd, InputGone)
     attempt1.actor.expectMsg(FinalTxPublisher.Stop)
 
     // We don't retry until a new block is found.

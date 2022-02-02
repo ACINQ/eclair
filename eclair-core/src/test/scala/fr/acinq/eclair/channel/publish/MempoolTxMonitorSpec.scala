@@ -148,7 +148,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
     val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomBytes32(), 13), Nil, 0)))
     monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, "test-tx", 10 sat)
-    probe.expectMsg(TxRejected(txUnknownInput.txid, WalletInputGone))
+    probe.expectMsg(TxRejected(txUnknownInput.txid, InputGone))
   }
 
   test("publish failed (confirmed parent, wallet input doesn't exist)") {
@@ -161,7 +161,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
     val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomBytes32(), 13), Nil, 0)))
     monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, "test-tx", 10 sat)
-    probe.expectMsg(TxRejected(txUnknownInput.txid, WalletInputGone))
+    probe.expectMsg(TxRejected(txUnknownInput.txid, InputGone))
   }
 
   test("publish failed (wallet input spent by conflicting confirmed transaction)") {
@@ -176,7 +176,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx = createSpendManyP2WPKH(Seq(parentTx, walletTx), priv, priv.publicKey, 5_000 sat, 0, 0)
     monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 10 sat)
-    probe.expectMsg(TxRejected(tx.txid, WalletInputGone))
+    probe.expectMsg(TxRejected(tx.txid, InputGone))
   }
 
   test("publish succeeds then transaction is replaced by an unconfirmed tx") {
@@ -235,7 +235,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     // When a new block is found, we detect that the transaction has been evicted.
     generateBlocks(1)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
-    probe.expectMsg(TxRejected(tx.txid, WalletInputGone))
+    probe.expectMsg(TxRejected(tx.txid, InputGone))
   }
 
   test("emit transaction events") {
