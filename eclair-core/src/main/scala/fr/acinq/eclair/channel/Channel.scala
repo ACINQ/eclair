@@ -2391,6 +2391,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       case negotiating@DATA_NEGOTIATING(_, _, _, _, Some(bestUnpublishedClosingTx)) =>
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED if Closing.nothingAtStake(d) => goto(CLOSED) // the channel was never used and the funding tx may be double-spent
       case hasCommitments: HasCommitments => spendLocalCurrent(hasCommitments) // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
       case _ => goto(CLOSED) // when there is no commitment yet, we just go to CLOSED state in case an error occurs
     }
