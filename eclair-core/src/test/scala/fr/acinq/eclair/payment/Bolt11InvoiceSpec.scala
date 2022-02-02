@@ -360,7 +360,6 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     val field1 = codec.decodeValue(serializedExpiry).require
     assert(field1 == field)
 
-    // Now with a payment request
     val invoice = Bolt11Invoice(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = Left("Some invoice"), minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345 unixsec)
     assert(invoice.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(18)))
     val serialized = invoice.toString
@@ -410,7 +409,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     }
   }
 
-  test("accept uppercase payment request") {
+  test("accept uppercase invoices") {
     val input = "lntb1500n1pwxx94fsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5q3xzmwuvxpkyhz6pvg3fcfxz0259kgh367qazj62af9rs0pw07dsdpa2fjkzep6yp58garswvaz7tmvd9nksarwd9hxw6n0w4kx2tnrdakj7grfwvs8wcqzysxqr23swwl9egjej7rvvt9zdxrtpy8xuu6cckdwajfccmtz7n90ea34k3j595w77pt69s5dx5a46f4k4w5avtvjkc4l4rm8n4xmk7fe3pms3pspdd032j"
     assert(Bolt11Invoice.fromString(input.toUpperCase()).toString == input)
   }
@@ -422,7 +421,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(featuresBitmask(invoice.features) === BitVector.empty)
   }
 
-  test("supported payment request features") {
+  test("supported invoice features") {
     val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(knownFeatures.map(f => f -> Optional).toMap))
     case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule
     val featureBits = Map(

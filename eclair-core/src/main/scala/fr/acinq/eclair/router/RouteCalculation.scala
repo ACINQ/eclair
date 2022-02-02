@@ -104,7 +104,7 @@ object RouteCalculation {
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      // we convert extra routing info provided in the payment request to fake channel_update
+      // we convert extra routing info provided in the invoice to fake channel_update
       // it takes precedence over all other channel_updates we know
       val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount))
         .filterNot { case (_, ac) => ac.extraHop.nodeId == r.source } // we ignore routing hints for our own channels, we have more accurate information

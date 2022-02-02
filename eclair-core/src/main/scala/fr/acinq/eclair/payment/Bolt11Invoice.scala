@@ -28,15 +28,15 @@ import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
- * Lightning Payment Request
+ * Lightning Bolt 11 invoice
  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
  *
- * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
- * @param amount_opt    amount to pay (empty string means no amount is specified)
- * @param createdAt invoice timestamp (UNIX format)
- * @param nodeId    id of the node emitting the payment request
- * @param tags      payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
- * @param signature invoice signature that will be checked against node id
+ * @param prefix     currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
+ * @param amount_opt amount to pay (empty string means no amount is specified)
+ * @param createdAt  invoice timestamp (UNIX format)
+ * @param nodeId     id of the node emitting the invoice
+ * @param tags       payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
+ * @param signature  invoice signature that will be checked against node id
  */
 case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], createdAt: TimestampSecond, nodeId: PublicKey, tags: List[Bolt11Invoice.TaggedField], signature: ByteVector) extends Invoice {
 
@@ -235,15 +235,15 @@ object Bolt11Invoice {
   /**
    * Description
    *
-   * @param description a free-format string that will be included in the payment request
+   * @param description a free-format string that will be included in the invoice
    */
   case class Description(description: String) extends TaggedField
 
   /**
    * Hash
    *
-   * @param hash hash that will be included in the payment request, and can be checked against the hash of a
-   *             long description, an invoice, ...
+   * @param hash hash that will be included in the invoice, and can be checked against the hash of a
+   *             long description, an SKU, ...
    */
   case class DescriptionHash(hash: ByteVector32) extends TaggedField
 
@@ -340,7 +340,7 @@ object Bolt11Invoice {
 
   object Expiry {
     /**
-     * @param seconds expiry data for this payment request
+     * @param seconds expiry data for this invoice
      */
     def apply(seconds: Long): Expiry = Expiry(long2bits(seconds))
   }
@@ -513,8 +513,8 @@ object Bolt11Invoice {
   val eight2fiveCodec: Codec[List[Byte]] = list(ubyte(5))
 
   /**
-   * @param input bech32-encoded payment request
-   * @return a payment request
+   * @param input bech32-encoded invoice
+   * @return a Bolt11 invoice
    */
   def fromString(input: String): Bolt11Invoice = {
     // used only for data validation
@@ -554,10 +554,10 @@ object Bolt11Invoice {
   }
 
   /**
-   * Extracts the description from a serialized payment request that is **expected to be valid**.
-   * Throws an error if the payment request is not valid.
+   * Extracts the description from a serialized invoice that is **expected to be valid**.
+   * Throws an error if the invoice is not valid.
    *
-   * @param input valid serialized payment request
+   * @param input valid serialized invoice
    * @return description as a String. If the description is a hash, returns the hash value as a String.
    */
   def fastReadDescription(input: String): String = {
@@ -568,10 +568,10 @@ object Bolt11Invoice {
   }
 
   /**
-   * Checks if a serialized payment request is expired. Timestamp is compared to the System's current time.
+   * Checks if a serialized invoice is expired. Timestamp is compared to the System's current time.
    *
-   * @param input valid serialized payment request
-   * @return true if the payment request has expired, false otherwise.
+   * @param input valid serialized invoice
+   * @return true if the invoice has expired, false otherwise.
    */
   def fastHasExpired(input: String): Boolean = {
     val bolt11Data = readBoltData(input)

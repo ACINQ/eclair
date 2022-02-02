@@ -34,8 +34,8 @@ trait IncomingPaymentsDb {
   def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
   /**
-   * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
-   * If there was no matching payment request in the DB, this will return false.
+   * Mark an incoming payment as received (paid). The received amount may exceed the invoice amount.
+   * If there was no matching invoice in the DB, this will return false.
    */
   def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
 
@@ -96,13 +96,13 @@ case object PaymentType {
 
 /**
  * An incoming payment received by this node.
- * At first it is in a pending state once the payment request has been generated, then will become either a success (if
- * we receive a valid HTLC) or a failure (if the payment request expires).
+ * At first it is in a pending state once the invoice has been generated, then will become either a success (if
+ * we receive a valid HTLC) or a failure (if the invoice expires).
  *
  * @param invoice         Bolt 11 invoice.
- * @param paymentPreimage pre-image associated with the payment request's payment_hash.
+ * @param paymentPreimage pre-image associated with the invoice's payment_hash.
  * @param paymentType     distinguish different payment types (standard, swaps, etc).
- * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
+ * @param createdAt       absolute time in milli-seconds since UNIX epoch when the invoice was generated.
  * @param status          current status of the payment.
  */
 case class IncomingPayment(invoice: Bolt11Invoice,
@@ -124,7 +124,7 @@ object IncomingPaymentStatus {
   /**
    * Payment has been successfully received.
    *
-   * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
+   * @param amount     amount of the payment received, in milli-satoshis (may exceed the invoice amount).
    * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
    */
   case class Received(amount: MilliSatoshi, receivedAt: TimestampMilli) extends IncomingPaymentStatus
@@ -144,7 +144,7 @@ object IncomingPaymentStatus {
  * @param recipientAmount amount that will be received by the final recipient.
  * @param recipientNodeId id of the final recipient.
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment was created.
- * @param invoice         payment request (if paying from an invoice).
+ * @param invoice         invoice (if paying from an invoice).
  * @param status          current status of the payment.
  */
 case class OutgoingPayment(id: UUID,
@@ -231,7 +231,7 @@ trait PaymentsOverviewDb {
 }
 
 /**
- * Generic payment trait holding only the minimum information in the most plain type possible. Notably, payment request
+ * Generic payment trait holding only the minimum information in the most plain type possible. Notably, the invoice
  * is kept as a String, because deserialization is costly.
  * <p>
  * This object should only be used for a high level snapshot of the payments stored in the payment database.

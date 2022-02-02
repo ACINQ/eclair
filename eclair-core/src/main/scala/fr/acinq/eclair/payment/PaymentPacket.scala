@@ -159,7 +159,7 @@ object OutgoingPaymentPacket {
   /**
    * Build the onion payloads for each hop.
    *
-   * @param hops         the hops as computed by the router + extra routes from payment request
+   * @param hops         the hops as computed by the router + extra routes from the invoice
    * @param finalPayload payload data for the final node (amount, expiry, etc)
    * @return a (firstAmount, firstExpiry, payloads) tuple where:
    *         - firstAmount is the amount for the first htlc in the route
@@ -180,7 +180,7 @@ object OutgoingPaymentPacket {
   /**
    * Build an encrypted onion packet with the given final payload.
    *
-   * @param hops         the hops as computed by the router + extra routes from payment request, including ourselves in the first hop
+   * @param hops         the hops as computed by the router + extra routes from the invoice, including ourselves in the first hop
    * @param finalPayload payload data for the final node (amount, expiry, etc)
    * @return a (firstAmount, firstExpiry, onion) tuple where:
    *         - firstAmount is the amount for the first htlc in the route

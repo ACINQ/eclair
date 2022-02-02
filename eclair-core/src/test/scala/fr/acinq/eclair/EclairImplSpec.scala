@@ -294,7 +294,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val kitWithPaymentHandler = kit.copy(paymentHandler = system.actorOf(PaymentHandler.props(Alice.nodeParams, TestProbe().ref)))
     val eclair = new EclairImpl(kitWithPaymentHandler)
-    val probe = TestProbe()
     val paymentPreimage = randomBytes32()
 
     eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage)).pipeTo(sender.ref)

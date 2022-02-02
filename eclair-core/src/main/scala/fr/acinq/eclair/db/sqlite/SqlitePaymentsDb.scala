@@ -58,7 +58,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.executeUpdate("DROP table _sent_payments_old")
 
       statement.executeUpdate("ALTER TABLE received_payments RENAME TO _received_payments_old")
-      // We make payment request expiration not null in the received_payments table.
+      // We make invoice expiration not null in the received_payments table.
       // When it was previously set to NULL the default expiry should apply.
       statement.executeUpdate(s"UPDATE _received_payments_old SET expire_at = created_at + ${Bolt11Invoice.DEFAULT_EXPIRY_SECONDS} WHERE expire_at IS NULL")
       statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")

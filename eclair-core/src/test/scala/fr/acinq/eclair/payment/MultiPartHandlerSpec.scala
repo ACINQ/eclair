@@ -141,7 +141,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
   }
 
-  test("Payment request generation should fail when the amount is not valid") { f =>
+  test("Invoice generation should fail when the amount is not valid") { f =>
     import f._
 
     // negative amount should fail
@@ -160,7 +160,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.amount_opt.contains(100000000 msat) && invoice.nodeId.toString == nodeParams.nodeId.toString)
   }
 
-  test("Payment request generation should succeed when the amount is not set") { f =>
+  test("Invoice generation should succeed when the amount is not set") { f =>
     import f._
 
     sender.send(handlerWithMpp, ReceivePayment(None, Left("This is a donation PR")))
@@ -168,7 +168,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.amount_opt.isEmpty && invoice.nodeId.toString == Alice.nodeParams.nodeId.toString)
   }
 
-  test("Payment request generation should handle custom expiries or use the default otherwise") { f =>
+  test("Invoice generation should handle custom expiries or use the default otherwise") { f =>
     import f._
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee")))
@@ -182,7 +182,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(pr2.relativeExpiry === 60.seconds)
   }
 
-  test("Payment request generation with trampoline support") { _ =>
+  test("Invoice generation with trampoline support") { _ =>
     val sender = TestProbe()
 
     {
@@ -215,7 +215,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
   }
 
-  test("Generated payment request contains the provided extra hops") { f =>
+  test("Generated invoice contains the provided extra hops") { f =>
     import f._
 
     val x = randomKey().publicKey
@@ -233,7 +233,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(sender.expectMsgType[Invoice].routingInfo === Nil)
   }
 
-  test("PaymentHandler should reject incoming payments if the payment request is expired") { f =>
+  test("PaymentHandler should reject incoming payments if the invoice is expired") { f =>
     import f._
 
     sender.send(handlerWithoutMpp, ReceivePayment(Some(1000 msat), Left("some desc"), expirySeconds_opt = Some(0)))
@@ -248,7 +248,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(incoming.invoice.isExpired() && incoming.status === IncomingPaymentStatus.Expired)
   }
 
-  test("PaymentHandler should reject incoming multi-part payment if the payment request is expired") { f =>
+  test("PaymentHandler should reject incoming multi-part payment if the invoice is expired") { f =>
     import f._
 
     sender.send(handlerWithMpp, ReceivePayment(Some(1000 msat), Left("multi-part expired"), expirySeconds_opt = Some(0)))
@@ -264,7 +264,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(incoming.invoice.isExpired() && incoming.status === IncomingPaymentStatus.Expired)
   }
 
-  test("PaymentHandler should reject incoming multi-part payment if the payment request does not allow it") { f =>
+  test("PaymentHandler should reject incoming multi-part payment if the invoice does not allow it") { f =>
     import f._
 
     sender.send(handlerWithoutMpp, ReceivePayment(Some(1000 msat), Left("no multi-part support")))
@@ -514,7 +514,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
   }
 
-  test("PaymentHandler should reject incoming payments if the payment request doesn't exist") { f =>
+  test("PaymentHandler should reject incoming payments if the invoice doesn't exist") { f =>
     import f._
 
     val paymentHash = randomBytes32()
@@ -528,7 +528,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(cmd.reason === Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
   }
 
-  test("PaymentHandler should reject incoming multi-part payment if the payment request doesn't exist") { f =>
+  test("PaymentHandler should reject incoming multi-part payment if the invoice doesn't exist") { f =>
     import f._
 
     val paymentHash = randomBytes32()
@@ -542,7 +542,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(cmd.reason === Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
   }
 
-  test("PaymentHandler should fail fulfilling incoming payments if the payment request doesn't exist") { f =>
+  test("PaymentHandler should fail fulfilling incoming payments if the invoice doesn't exist") { f =>
     import f._
 
     val paymentPreimage = randomBytes32()

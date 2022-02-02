@@ -35,7 +35,7 @@ import scodec.bits.HexStringSyntax
 import scala.util.{Failure, Success, Try}
 
 /**
- * Simple payment handler that generates payment requests and fulfills incoming htlcs.
+ * Simple payment handler that generates invoices and fulfills incoming htlcs.
  *
  * Created by PM on 17/06/2016.
  */
@@ -99,7 +99,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               }
               // Insert a fake invoice and then restart the incoming payment handler
               val invoice = Bolt11Invoice(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
-              log.debug("generated fake payment request={} from amount={} (KeySend)", invoice.toString, amount)
+              log.debug("generated fake invoice={} from amount={} (KeySend)", invoice.toString, amount)
               db.addIncomingPayment(invoice, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
             case _ =>
@@ -248,7 +248,7 @@ object MultiPartHandler {
                 paymentMetadata = Some(paymentMetadata),
                 features = invoiceFeatures
               )
-              context.log.debug("generated payment request={} from amount={}", invoice.toString, amount_opt)
+              context.log.debug("generated invoice={} from amount={}", invoice.toString, amount_opt)
               nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, paymentType)
               invoice
             } match {
