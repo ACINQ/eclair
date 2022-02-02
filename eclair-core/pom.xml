@@ -234,7 +234,7 @@
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
-            <version>42.2.23</version>
+            <version>42.2.25</version>
             <artifactId>postgresql</artifactId>
         </dependency>
         <dependency>
