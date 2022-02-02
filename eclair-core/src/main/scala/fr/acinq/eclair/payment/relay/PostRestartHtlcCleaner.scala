@@ -366,11 +366,13 @@ object PostRestartHtlcCleaner {
             val overriddenHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) => Closing.overriddenOutgoingHtlcs(d, c.localCommitPublished.commitTx)
               case Some(c: Closing.RemoteClose) => Closing.overriddenOutgoingHtlcs(d, c.remoteCommitPublished.commitTx)
+              case Some(c: Closing.RevokedClose) => Closing.overriddenOutgoingHtlcs(d, c.revokedCommitPublished.commitTx)
               case _ => Set.empty[UpdateAddHtlc]
             }).map(_.id)
             val irrevocablySpent = closingType_opt match {
               case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSeq
               case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSeq
+              case Some(c: Closing.RevokedClose) => c.revokedCommitPublished.irrevocablySpent.values.toSeq
               case _ => Nil
             }
             val timedOutHtlcs: Set[Long] = (closingType_opt match {

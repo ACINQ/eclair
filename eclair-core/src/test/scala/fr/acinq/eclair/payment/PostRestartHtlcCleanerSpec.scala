@@ -21,8 +21,9 @@ import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
@@ -30,10 +31,11 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.{Upstream, buildCommand}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.router.Router.ChannelHop
+import fr.acinq.eclair.transactions.Transactions.{ClaimRemoteDelayedOutputTx, InputInfo}
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits.ByteVector
@@ -284,7 +286,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     register.expectNoMessage(100 millis)
   }
 
-  test("ignore htlcs in closing downstream channels that have already been settled upstream") { f =>
+  test("ignore htlcs in downstream channels that have already been settled upstream") { f =>
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
@@ -439,6 +441,50 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val brokenHtlcs = sender.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
     assert(brokenHtlcs.relayedOut.isEmpty)
     assert(brokenHtlcs.notRelayed.isEmpty)
+  }
+
+  test("ignore htlcs in downstream revoked close") { f =>
+    import f._
+
+    val (paymentHash1, paymentHash2) = (randomBytes32(), randomBytes32())
+    val htlc_ab = Seq(
+      buildHtlcIn(1, channelId_ab_1, paymentHash1),
+      buildHtlcIn(2, channelId_ab_1, paymentHash1),
+      buildHtlcIn(4, channelId_ab_1, paymentHash2),
+    )
+    val upstreamChannel = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab, Map.empty)
+    val htlc_bc = Seq(
+      buildHtlcOut(2, channelId_bc_1, paymentHash1),
+      buildHtlcOut(3, channelId_bc_1, paymentHash1),
+      buildHtlcOut(4, channelId_bc_1, paymentHash1),
+      buildHtlcOut(5, channelId_bc_1, paymentHash2),
+    )
+    val origins: Map[Long, Origin] = Map(
+      2L -> Origin.TrampolineRelayedCold((channelId_ab_1, 1L) :: (channelId_ab_1, 2L) :: Nil),
+      3L -> Origin.TrampolineRelayedCold((channelId_ab_1, 1L) :: (channelId_ab_1, 2L) :: Nil),
+      4L -> Origin.TrampolineRelayedCold((channelId_ab_1, 1L) :: (channelId_ab_1, 2L) :: Nil),
+      5L -> Origin.ChannelRelayedCold(channelId_ab_1, 4, 550 msat, 500 msat),
+    )
+    val downstreamChannel = {
+      val normal = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, origins)
+      // NB: this isn't actually a revoked commit tx, but we don't check that here, if the channel says it's a revoked
+      // commit we accept it as such, so it simplifies the test.
+      val revokedCommitTx = normal.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.copy(txOut = Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))))
+      val dummyClaimMainTx = Transaction(2, Seq(TxIn(OutPoint(revokedCommitTx, 0), Nil, 0)), Seq(revokedCommitTx.txOut.head.copy(amount = 4000 sat)), 0)
+      val dummyClaimMain = ClaimRemoteDelayedOutputTx(InputInfo(OutPoint(revokedCommitTx, 0), revokedCommitTx.txOut.head, Nil), dummyClaimMainTx)
+      val rcp = RevokedCommitPublished(revokedCommitTx, Some(dummyClaimMain), None, Nil, Nil, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
+      DATA_CLOSING(normal.commitments, None, BlockHeight(0), Nil, revokedCommitPublished = List(rcp))
+    }
+
+    nodeParams.db.channels.addOrUpdateChannel(upstreamChannel)
+    nodeParams.db.channels.addOrUpdateChannel(downstreamChannel)
+    assert(Closing.isClosed(downstreamChannel, None) === None)
+
+    val (_, postRestart) = f.createRelayer(nodeParams)
+    sender.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
+    val brokenHtlcs = sender.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
+    assert(brokenHtlcs.relayedOut.isEmpty)
+    assert(brokenHtlcs.notRelayed === htlc_ab.map(htlc => PostRestartHtlcCleaner.IncomingHtlc(htlc.add, None)))
   }
 
   test("handle a channel relay htlc-fail") { f =>
@@ -687,13 +733,13 @@ object PostRestartHtlcCleanerSpec {
     IncomingHtlc(UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion))
   }
 
-  def buildForwardFail(add: UpdateAddHtlc, origin: Origin.Cold) =
+  def buildForwardFail(add: UpdateAddHtlc, origin: Origin.Cold): RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fail] =
     RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFail(UpdateFailHtlc(add.channelId, add.id, ByteVector.empty)))
 
-  def buildForwardOnChainFail(add: UpdateAddHtlc, origin: Origin.Cold) =
+  def buildForwardOnChainFail(add: UpdateAddHtlc, origin: Origin.Cold): RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fail] =
     RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(add.channelId, Set(add))))
 
-  def buildForwardFulfill(add: UpdateAddHtlc, origin: Origin.Cold, preimage: ByteVector32) =
+  def buildForwardFulfill(add: UpdateAddHtlc, origin: Origin.Cold, preimage: ByteVector32): RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fulfill] =
     RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add.channelId, add.id, preimage)))
 
   case class LocalPaymentTest(parentId: UUID, childIds: Seq[UUID], fails: Seq[RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fail]], fulfills: Seq[RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fulfill]])
