@@ -128,7 +128,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       Bolt11Invoice.Description("Some invoice"),
       Bolt11Invoice.PaymentSecret(randomBytes32()),
       Bolt11Invoice.Expiry(3600),
-      Bolt11Invoice.InvoiceFeatures(Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(42))))
+      Bolt11Invoice.InvoiceFeatures(Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(42))).unscoped())
     )
     val invoice = Bolt11Invoice("lnbc", Some(finalAmount), TimestampSecond.now(), randomKey().publicKey, taggedFields, ByteVector.empty)
     val req = SendPaymentToNode(finalAmount + 100.msat, invoice, 1, CltvExpiryDelta(42), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)

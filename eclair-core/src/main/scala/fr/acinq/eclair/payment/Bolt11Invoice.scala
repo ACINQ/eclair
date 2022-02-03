@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureScope, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -93,7 +93,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
     case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
   }
 
-  lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features }.getOrElse(Features.empty[InvoiceFeature])
+  lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeaturesWithUnknown() }.getOrElse(Features.empty[InvoiceFeature])
 
   /**
    * @return the hash of this payment invoice
@@ -167,7 +167,7 @@ object Bolt11Invoice {
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
-        Some(InvoiceFeatures(features))
+        Some(InvoiceFeatures(features.unscoped()))
       ).flatten
       val routingInfoTags = extraHops.map(RoutingInfo)
       defaultTags ++ routingInfoTags
@@ -305,7 +305,7 @@ object Bolt11Invoice {
    * This returns a bitvector with the minimum size necessary to encode the features, left padded to have a length (in
    * bits) that is a multiple of 5.
    */
-  def features2bits(features: Features[InvoiceFeature]): BitVector = leftPaddedBits(features.toByteVector.bits)
+  def features2bits[T <: FeatureScope](features: Features[T]): BitVector = leftPaddedBits(features.toByteVector.bits)
 
   private def leftPaddedBits(bits: BitVector): BitVector = {
     var highest = -1
@@ -371,7 +371,7 @@ object Bolt11Invoice {
   /**
    * Features supported or required for receiving this payment.
    */
-  case class InvoiceFeatures(features: Features[InvoiceFeature]) extends TaggedField
+  case class InvoiceFeatures(features: Features[FeatureScope]) extends TaggedField
 
   object Codecs {
 
@@ -414,7 +414,7 @@ object Bolt11Invoice {
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(5, dataCodec(bits).xmap[Features[InvoiceFeature]](Features(_).invoiceFeaturesWithUnknown(), features2bits).as[InvoiceFeatures])
+      .typecase(5, dataCodec(bits).xmap[Features[FeatureScope]](Features(_), features2bits).as[InvoiceFeatures])
       .typecase(6, dataCodec(bits).as[Expiry])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])

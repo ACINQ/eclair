@@ -55,11 +55,6 @@ object TestConstants {
     val mandatory = 50000
   }
 
-  case object LowTestFeature extends Feature with InitFeature with NodeFeature {
-    val rfcName = "low_test_feature"
-    val mandatory = 600
-  }
-
   val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
     // @formatter:off
     override def messageTags: Set[Int] = Set(60003)
@@ -99,7 +94,7 @@ object TestConstants {
           BasicMultiPartPayment -> Optional,
           PaymentMetadata -> Optional,
         ),
-        Set(UnknownFeature(TestFeature.optional), UnknownFeature(LowTestFeature.optional))
+        Set(UnknownFeature(TestFeature.optional))
       ),
       pluginParams = List(pluginParams),
       overrideFeatures = Map.empty,
