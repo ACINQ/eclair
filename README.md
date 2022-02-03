@@ -25,6 +25,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 * [Docker](#docker)
 * [Plugins](#plugins)
 * [Testnet usage](#testnet-usage)
+* [Tools](#tools)
 * [Resources](#resources)
 
 ---
@@ -43,10 +44,10 @@ For more information please visit the [API documentation website](https://acinq.
 
 ## Documentation
 
-Please visit our [docs](./docs) and [wiki](https://github.com/acinq/eclair/wiki) to find detailed instructions on how to configure your
-node, connect to other nodes, open channels, send and receive payments, and more advanced scenario.
+Please visit our [docs](./docs) folder to find detailed instructions on how to [configure](./docs/Configure.md) your
+node, connect to other nodes, open channels, send and receive payments, and help with more advanced scenarios. 
 
-You will find detailed guides and frequently asked questions there.
+You will also find detailed [guides](./docs/Guides.md) and [frequently asked questions](./docs/FAQ.md) there.
 
 ## Installation
 
@@ -95,7 +96,7 @@ Then download our latest [release](https://github.com/ACINQ/eclair/releases), un
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 ```
 
-You can then control your node via the [eclair-cli](https://github.com/ACINQ/eclair/wiki/Usage) or the [API](https://github.com/ACINQ/eclair/wiki/API).
+You can then control your node via [eclair-cli](./docs/Usage.md) or the [API](./docs/API.md).
 
 :warning: Be careful when following tutorials/guides that may be outdated or incomplete. You must thoroughly read the official eclair documentation before running your own node.
 
@@ -271,6 +272,11 @@ rpcpassword=<your-testnet-rpc-password-here>
 zmqpubhashblock=tcp://127.0.0.1:29001
 zmqpubrawtx=tcp://127.0.0.1:29001
 ```
+
+## Tools
+
+* [Demo Shop](https://starblocks.acinq.co/) - an example testnet Lightning web shop.
+* [Network Explorer](https://explorer.acinq.co/) - a Lightning network visualization tool.
 
 ## Resources
 
