@@ -271,7 +271,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       assert(!invoice.features.hasFeature(BasicMultiPartPayment))
       assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
       assert(!invoice.features.hasFeature(TrampolinePayment))
-      assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(invoice.features))
+      assert(TestConstants.Alice.nodeParams.features.invoiceFeaturesWithUnknown().areSupported(invoice.features))
       assert(invoice.sign(priv).toString === ref.toLowerCase)
     }
   }
@@ -291,7 +291,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(!invoice.features.hasFeature(BasicMultiPartPayment))
     assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
     assert(!invoice.features.hasFeature(TrampolinePayment))
-    assert(!TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(invoice.features))
+    assert(!TestConstants.Alice.nodeParams.features.invoiceFeaturesWithUnknown().areSupported(invoice.features))
     assert(invoice.sign(priv).toString === ref)
   }
 
@@ -302,7 +302,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.amount_opt === Some(967878534 msat))
     assert(invoice.paymentHash.bytes === hex"462264ede7e14047e9b249da94fefc47f41f7d02ee9b091815a5506bc8abf75f")
     assert(invoice.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
-    assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(invoice.features))
+    assert(TestConstants.Alice.nodeParams.features.invoiceFeaturesWithUnknown().areSupported(invoice.features))
     assert(invoice.createdAt === TimestampSecond(1572468703L))
     assert(invoice.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(invoice.description === Left("Blockstream Store: 88.85 USD for Blockstream Ledger Nano S x 1, \"Back In My Day\" Sticker x 2, \"I Got Lightning Working\" Sticker x 2 and 1 more items"))
@@ -446,8 +446,8 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     )
 
     for ((features, res) <- featureBits) {
-      val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features.invoiceFeatures())
-      assert(Result(invoice.features.hasFeature(BasicMultiPartPayment), invoice.features.hasFeature(PaymentSecret, Some(Mandatory)), nodeParams.features.invoiceFeatures().areSupported(invoice.features)) === res)
+      val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features.invoiceFeaturesWithUnknown())
+      assert(Result(invoice.features.hasFeature(BasicMultiPartPayment), invoice.features.hasFeature(PaymentSecret, Some(Mandatory)), nodeParams.features.invoiceFeaturesWithUnknown().areSupported(invoice.features)) === res)
       assert(Bolt11Invoice.fromString(invoice.toString) === invoice)
     }
   }
@@ -578,11 +578,8 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("high unknown feature"){
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = TestConstants.Alice.nodeParams.features.invoiceFeatures())
-    assert(invoice.features === Features[InvoiceFeature](
-      Map[Feature with InvoiceFeature, FeatureSupport](PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory),
-      Set(UnknownFeature(LowTestFeature.optional))
-    ))
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = TestConstants.Alice.nodeParams.features.invoiceFeaturesNoUnknown())
+    assert(invoice.features === Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory)))
     assert(Bolt11Invoice.fromString(invoice.toString) === invoice)
   }
 

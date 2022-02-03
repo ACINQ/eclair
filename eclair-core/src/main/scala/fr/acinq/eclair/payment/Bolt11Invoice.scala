@@ -414,7 +414,7 @@ object Bolt11Invoice {
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(5, dataCodec(bits).xmap[Features[InvoiceFeature]](Features(_).invoiceFeatures(), features2bits).as[InvoiceFeatures])
+      .typecase(5, dataCodec(bits).xmap[Features[InvoiceFeature]](Features(_).invoiceFeaturesWithUnknown(), features2bits).as[InvoiceFeatures])
       .typecase(6, dataCodec(bits).as[Expiry])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])

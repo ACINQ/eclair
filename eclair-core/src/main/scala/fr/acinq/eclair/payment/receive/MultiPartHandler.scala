@@ -232,9 +232,9 @@ object MultiPartHandler {
               val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
               val paymentMetadata = hex"2a"
               val invoiceFeatures = if (nodeParams.enableTrampolinePayment) {
-                Features[InvoiceFeature](nodeParams.features.invoiceFeatures().activated + (Features.TrampolinePayment -> FeatureSupport.Optional))
+                Features[InvoiceFeature](nodeParams.features.invoiceFeaturesNoUnknown().activated + (Features.TrampolinePayment -> FeatureSupport.Optional))
               } else {
-                nodeParams.features.invoiceFeatures()
+                nodeParams.features.invoiceFeaturesNoUnknown()
               }
               val invoice = Bolt11Invoice(
                 nodeParams.chainHash,
