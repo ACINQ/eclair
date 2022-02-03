@@ -577,11 +577,16 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     }
   }
 
-  test("large unknown feature"){
+  test("high unknown feature"){
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = TestConstants.Alice.nodeParams.features.invoiceFeatures())
     assert(invoice.features === Features[InvoiceFeature](
       Map[Feature with InvoiceFeature, FeatureSupport](PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory),
       Set(UnknownFeature(LowTestFeature.optional))
     ))
+    assert(Bolt11Invoice.fromString(invoice.toString) === invoice)
+  }
+
+  test("Invoices can't have high features"){
+    assertThrows[Exception](Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(424242)))))
   }
 }

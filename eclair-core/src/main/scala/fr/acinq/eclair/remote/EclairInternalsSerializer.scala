@@ -146,7 +146,7 @@ object EclairInternalsSerializer {
   def initializeConnectionCodec(system: ExtendedActorSystem): Codec[PeerConnection.InitializeConnection] = (
     ("peer" | actorRefCodec(system)) ::
       ("chainHash" | bytes32) ::
-      ("features" | variableSizeBytes(uint16, featuresCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped()))) ::
+      ("features" | variableSizeBytes(uint16, initFeaturesCodec)) ::
       ("doSync" | bool(8))).as[PeerConnection.InitializeConnection]
 
   def connectionReadyCodec(system: ExtendedActorSystem): Codec[PeerConnection.ConnectionReady] = (

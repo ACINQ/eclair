@@ -34,6 +34,8 @@ object LightningMessageCodecs {
     { features => features.toByteVector }
   )
 
+  val initFeaturesCodec: Codec[Features[InitFeature]] = featuresCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
+
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
   val combinedFeaturesCodec: Codec[Features[InitFeature]] = (
     ("globalFeatures" | varsizebinarydata) ::
