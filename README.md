@@ -169,7 +169,7 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Declair.datadir=/tmp/node1
 
 ### Logging
 
-Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different configuration, and override the internal logback.xml, run:
+Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a [different configuration](./docs/Logging.md), and override the internal logback.xml, run:
 
 ```shell
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile=/path/to/logback-custom.xml
