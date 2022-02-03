@@ -35,16 +35,16 @@ object LightningMessageCodecs {
   )
 
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
-  val combinedFeaturesCodec: Codec[Features[FeatureScope]] = (
+  val combinedFeaturesCodec: Codec[Features[InitFeature]] = (
     ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[Features[FeatureScope]](
+      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[Features[InitFeature]](
     { case (gf, lf) =>
       val length = gf.length.max(lf.length)
-      Features(gf.padLeft(length) | lf.padLeft(length))
+      Features(gf.padLeft(length) | lf.padLeft(length)).initFeatures()
     },
     { features => (ByteVector.empty, features.toByteVector) })
 
-  val initCodec: Codec[Init] = (("features" | combinedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
+  val initCodec: Codec[Init] = (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
 
   val errorCodec: Codec[Error] = (
     ("channelId" | bytes32) ::

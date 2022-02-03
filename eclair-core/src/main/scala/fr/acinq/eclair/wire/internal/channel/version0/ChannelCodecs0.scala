@@ -72,7 +72,7 @@ private[channel] object ChannelCodecs0 {
         ("isFunder" | bool) ::
         ("defaultFinalScriptPubKey" | varsizebinarydata) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
-        ("features" | combinedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped()))).as[LocalParams].decodeOnly
+        ("features" | combinedFeaturesCodec)).as[LocalParams].decodeOnly
 
     val remoteParamsCodec: Codec[RemoteParams] = (
       ("nodeId" | publicKey) ::
@@ -87,7 +87,7 @@ private[channel] object ChannelCodecs0 {
         ("paymentBasepoint" | publicKey) ::
         ("delayedPaymentBasepoint" | publicKey) ::
         ("htlcBasepoint" | publicKey) ::
-        ("features" | combinedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())) ::
+        ("features" | combinedFeaturesCodec) ::
         ("shutdownScript" | provide[Option[ByteVector]](None))).as[RemoteParams].decodeOnly
 
     val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
