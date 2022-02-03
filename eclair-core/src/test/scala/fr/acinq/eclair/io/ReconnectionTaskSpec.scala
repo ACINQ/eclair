@@ -52,7 +52,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
     if (test.tags.contains("with_node_announcements")) {
-      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty.nodeAnnouncementFeatures(), 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
@@ -213,7 +213,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // we create a dummy tcp server and update bob's announcement to point to it
     val (mockServer, serverAddress) = PeerSpec.createMockServer()
     val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
-    val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty.nodeAnnouncementFeatures(), 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(bobAnnouncement)
 
     val peer = TestProbe()

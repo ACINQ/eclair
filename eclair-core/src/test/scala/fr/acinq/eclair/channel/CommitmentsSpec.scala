@@ -474,8 +474,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments = {
-    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, None, Features.empty.initFeatures())
-    val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty.initFeatures(), None)
+    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, None, Features.empty)
+    val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
     Commitments(
       channelId = randomBytes32(),
@@ -497,8 +497,8 @@ object CommitmentsSpec {
   }
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments = {
-    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, None, Features.empty.initFeatures())
-    val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty.initFeatures(), None)
+    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, None, Features.empty)
+    val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
     Commitments(
       channelId = randomBytes32(),

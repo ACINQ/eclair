@@ -225,7 +225,7 @@ object Helpers {
   }
 
   def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: ShortChannelId): AnnouncementSignatures = {
-    val features = Features.empty // empty features for now
+    val features = Features.empty[FeatureScope] // empty features for now
     val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
     val witness = Announcements.generateChannelAnnouncementWitness(
       nodeParams.chainHash,

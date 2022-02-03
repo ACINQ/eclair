@@ -115,7 +115,7 @@ case class Features[T <: FeatureScope](activated: Map[Feature with T, FeatureSup
 
 object Features {
 
-  def empty: Features[FeatureScope] = Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport])
+  def empty[T <: FeatureScope]: Features[T] = Features[T](Map.empty[Feature with T, FeatureSupport])
 
   def apply[T <: FeatureScope](features: (Feature with T, FeatureSupport)*): Features[T] = Features[T](Map.from(features))
 

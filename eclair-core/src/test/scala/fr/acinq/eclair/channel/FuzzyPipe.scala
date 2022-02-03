@@ -71,7 +71,7 @@ class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
       log.debug(f"  X-${msg2String(msg)}%-6s--- B")
     case Symbol("reconnect") =>
       log.debug("RECONNECTED")
-      val dummyInit = Init(Features.empty.initFeatures())
+      val dummyInit = Init(Features.empty)
       a ! INPUT_RECONNECTED(self, dummyInit, dummyInit)
       b ! INPUT_RECONNECTED(self, dummyInit, dummyInit)
       context become connected(a, b, Random.nextInt(40))
