@@ -178,13 +178,13 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile
 ### Backup
 
 You need to backup:
-- your bitcoin core wallet
-- your eclair channels
+- your Bitcoin core wallet
+- your Eclair channels
 
-For bitcoin core, you need to backup the wallet file for the wallet that eclair is using. You only need to this once, when the wallet is 
-created (see https://github.com/bitcoin/bitcoin/blob/master/doc/managing-wallets.md for more information). 
+For Bitcoin core, you need to backup the wallet file for the wallet that Eclair is using. You only need to do this once, when the wallet is 
+created. See [Managing Wallets](https://github.com/bitcoin/bitcoin/blob/master/doc/managing-wallets.md) in the Bitcoin Core documentation for more information. 
 
-For eclair, the files that you need to backup are located in your data directory. You must backup:
+For Eclair, the files that you need to backup are located in your data directory. You must backup:
 
 * your seeds (`node_seed.dat` and `channel_seed.dat`)
 * your channel database (`eclair.sqlite.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
@@ -220,7 +220,7 @@ If you want to persist the data directory, you can make the volume to your host 
 docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq/eclair
 ```
 
-If you enabled the API you can check the status of eclair using the command line tool:
+If you enabled the API you can check the status of Eclair using the command line tool:
 
 ```shell
 docker exec <container_name> eclair-cli -p foobar getinfo
@@ -240,14 +240,14 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar>
 
 ### Non-exhaustive plugins list
 
-Here are some plugins created by the eclair community.
+Here are some plugins created by the Eclair community.
 If you need support for these plugins, head over to their respective github repository.
 
-* [Telegram Bot for eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
+* [Telegram Bot for Eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
 
 ## Testnet usage
 
-Eclair is configured to run on mainnet by default, but you can still run it on testnet (or regtest): start your Bitcoin Node in
+Eclair is configured to run on mainnet by default, but you can still run it on testnet (or regtest): start your Bitcoin node in
  testnet mode (add `testnet=1` in `bitcoin.conf` or start with `-testnet`), and change Eclair's chain parameter and Bitcoin RPC port:
 
 ```conf
@@ -256,7 +256,7 @@ eclair.bitcoind.rpcport=18332
 ```
 
 You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific,
-so you can easily run your bitcoin node on both mainnet and testnet. For example you could use:
+so you can easily run your Bitcoin node on both mainnet and testnet. For example you could use:
 
 ```conf
 server=1
