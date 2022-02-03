@@ -4,7 +4,7 @@ Eclair started supporting [trampoline payments](https://github.com/lightning/bol
 
 It is disabled by default, as it is still being reviewed for spec acceptance. However, if you want to experiment with it, here is what you can do.
 
-First of all, you need to activate the feature. Update your `eclair.conf` with the following values:
+First of all, you need to activate the feature for any node that will act as s trampoline node. Update your `eclair.conf` with the following values:
 
 ```conf
 eclair.trampoline-payments-enable=true
@@ -20,7 +20,7 @@ Let's imagine that the network looks like this:
 Alice -----> Bob -----> Carol -----> Dave
 ```
 
-Where Alice and Bob are trampoline nodes and Carol and Dave are "normal" nodes.
+Where Bob is a trampoline node and Alice, Carol and Dave are "normal" nodes.
 
 Let's imagine that Dave has generated an MPP invoice for 400000 msat: `lntb1500n1pwxx94fp...`.
 Alice wants to pay that invoice using Bob as a trampoline.
