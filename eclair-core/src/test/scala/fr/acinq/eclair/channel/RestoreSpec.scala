@@ -38,9 +38,9 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     }
   }
 
-  def aliceInit = Init(Alice.nodeParams.features)
+  def aliceInit = Init(Alice.nodeParams.features.initFeatures())
 
-  def bobInit = Init(Bob.nodeParams.features)
+  def bobInit = Init(Bob.nodeParams.features.initFeatures())
 
   test("use funding pubkeys from publish commitment to spend our output") { f =>
     import f._

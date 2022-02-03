@@ -58,8 +58,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       torAddress_opt: Option[NodeAddress],
-                      features: Features,
-                      private val overrideFeatures: Map[PublicKey, Features],
+                      features: Features[FeatureScope],
+                      private val overrideFeatures: Map[PublicKey, Features[InitFeature]],
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       channelConf: ChannelConf,
@@ -91,7 +91,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
 
   /** Returns the features that should be used in our init message with the given peer. */
-  def initFeaturesFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features).initFeatures()
+  def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideFeatures.getOrElse(nodeId, features).initFeatures()
 }
 
 object NodeParams extends Logging {
@@ -268,7 +268,7 @@ object NodeParams extends Logging {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    def validateFeatures(features: Features): Unit = {
+    def validateFeatures(features: Features[FeatureScope]): Unit = {
       val featuresErr = Features.validateFeatureGraph(features)
       require(featuresErr.isEmpty, featuresErr.map(_.message))
       require(features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)), s"${Features.VariableLengthOnion.rfcName} must be enabled and mandatory")
@@ -288,13 +288,13 @@ object NodeParams extends Logging {
     require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
     require(pluginFeatureSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
 
-    val coreAndPluginFeatures = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
+    val coreAndPluginFeatures: Features[FeatureScope] = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
 
-    val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
+    val overrideFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = Features.fromConfiguration(e)
       validateFeatures(f)
-      p -> f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature))
+      p -> (f.initFeatures().copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
     }.toMap
 
     val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet

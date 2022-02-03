@@ -37,7 +37,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, KeySend, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalTlvPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{BinStringSyntax, ByteVector, HexStringSyntax}
@@ -53,18 +53,18 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
-  val featuresWithoutMpp: Features = Features(
+  val featuresWithoutMpp: Features[InvoiceFeature] = Features[InvoiceFeature](
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory
   )
 
-  val featuresWithMpp: Features = Features(
+  val featuresWithMpp: Features[InvoiceFeature] = Features[InvoiceFeature](
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
   )
 
-  val featuresWithTrampoline: Features = Features(
+  val featuresWithTrampoline: Features[InvoiceFeature] = Features[InvoiceFeature](
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
@@ -86,7 +86,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   override def withFixture(test: OneArgTest): Outcome = {
     val features = if (test.tags.contains("mpp_disabled")) featuresWithoutMpp else featuresWithMpp
-    val nodeParams = TestConstants.Alice.nodeParams.copy(features = features)
+    val nodeParams = TestConstants.Alice.nodeParams.copy(features = features.unscoped())
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
@@ -128,7 +128,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       Bolt11Invoice.Description("Some invoice"),
       Bolt11Invoice.PaymentSecret(randomBytes32()),
       Bolt11Invoice.Expiry(3600),
-      Bolt11Invoice.InvoiceFeatures(Features(bin"000001000000000000000000000000000100000100000000")) // feature 42
+      Bolt11Invoice.InvoiceFeatures(Features(bin"000001000000000000000000000000000100000100000000").invoiceFeatures()) // feature 42
     )
     val invoice = Bolt11Invoice("lnbc", Some(finalAmount), TimestampSecond.now(), randomKey().publicKey, taggedFields, ByteVector.empty)
     val req = SendPaymentToNode(finalAmount + 100.msat, invoice, 1, CltvExpiryDelta(42), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)

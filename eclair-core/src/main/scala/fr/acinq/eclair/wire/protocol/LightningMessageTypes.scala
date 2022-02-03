@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, FeatureScope, Features, InitFeature, MilliSatoshi, NodeFeature, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
@@ -47,7 +47,7 @@ sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 // @formatter:on
 
-case class Init(features: Features, tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
+case class Init(features: Features[InitFeature], tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
   val remoteAddress_opt = tlvStream.get[InitTlv.RemoteAddress].map(_.address)
 }
@@ -200,7 +200,7 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeSignature2: ByteVector64,
                                bitcoinSignature1: ByteVector64,
                                bitcoinSignature2: ByteVector64,
-                               features: Features,
+                               features: Features[FeatureScope],
                                chainHash: ByteVector32,
                                shortChannelId: ShortChannelId,
                                nodeId1: PublicKey,
@@ -263,7 +263,7 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def soc
 // @formatter:on
 
 case class NodeAnnouncement(signature: ByteVector64,
-                            features: Features,
+                            features: Features[NodeFeature],
                             timestamp: TimestampSecond,
                             nodeId: PublicKey,
                             rgbColor: Color,

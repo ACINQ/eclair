@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.{Features, KamonExt}
+import fr.acinq.eclair.{FeatureScope, Features, InitFeature, KamonExt, NodeFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -29,22 +29,22 @@ import shapeless._
  */
 object LightningMessageCodecs {
 
-  val featuresCodec: Codec[Features] = varsizebinarydata.xmap[Features](
+  val featuresCodec: Codec[Features[FeatureScope]] = varsizebinarydata.xmap[Features[FeatureScope]](
     { bytes => Features(bytes) },
     { features => features.toByteVector }
   )
 
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
-  val combinedFeaturesCodec: Codec[Features] = (
+  val combinedFeaturesCodec: Codec[Features[FeatureScope]] = (
     ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[Features](
+      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[Features[FeatureScope]](
     { case (gf, lf) =>
       val length = gf.length.max(lf.length)
       Features(gf.padLeft(length) | lf.padLeft(length))
     },
     { features => (ByteVector.empty, features.toByteVector) })
 
-  val initCodec: Codec[Init] = (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
+  val initCodec: Codec[Init] = (("features" | combinedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
 
   val errorCodec: Codec[Error] = (
     ("channelId" | bytes32) ::
@@ -209,7 +209,7 @@ object LightningMessageCodecs {
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec =
-    ("features" | featuresCodec) ::
+    ("features" | featuresCodec.xmap[Features[NodeFeature]](_.nodeAnnouncementFeatures(), _.unscoped())) ::
       ("timestamp" | timestampSecond) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::

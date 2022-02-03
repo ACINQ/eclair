@@ -57,8 +57,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
   }
 
-  val aliceInit = Init(TestConstants.Alice.nodeParams.features)
-  val bobInit = Init(TestConstants.Bob.nodeParams.features)
+  val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
+  val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
 
   test("re-send lost htlc and signature after first commitment") { f =>
     import f._

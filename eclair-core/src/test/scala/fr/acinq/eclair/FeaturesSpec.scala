@@ -109,7 +109,7 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("features compatibility") {
-    case class TestCase(ours: Features, theirs: Features, oursSupportTheirs: Boolean, theirsSupportOurs: Boolean, compatible: Boolean)
+    case class TestCase(ours: Features[FeatureScope], theirs: Features[FeatureScope], oursSupportTheirs: Boolean, theirsSupportOurs: Boolean, compatible: Boolean)
     val testCases = Seq(
       // Empty features
       TestCase(
@@ -168,7 +168,7 @@ class FeaturesSpec extends AnyFunSuite {
       // They have unknown optional features
       TestCase(
         Features(VariableLengthOnion -> Optional),
-        Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(141))),
+        Features[FeatureScope](Map[Feature with FeatureScope, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(141))),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
@@ -176,7 +176,7 @@ class FeaturesSpec extends AnyFunSuite {
       // They have unknown mandatory features
       TestCase(
         Features(VariableLengthOnion -> Optional),
-        Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(142))),
+        Features[FeatureScope](Map[Feature with FeatureScope, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(142))),
         oursSupportTheirs = false,
         theirsSupportOurs = true,
         compatible = false
@@ -198,10 +198,10 @@ class FeaturesSpec extends AnyFunSuite {
         compatible = false
       ),
       // nonreg testing of future features (needs to be updated with every new supported mandatory bit)
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(28))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(29))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+      TestCase(Features.empty, Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+      TestCase(Features.empty, Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(28))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(29))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
     )
 
     for (testCase <- testCases) {
@@ -212,19 +212,22 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("filter features based on their usage") {
-    val features = Features(
-      Map[Feature, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
-      Set(UnknownFeature(753), UnknownFeature(852))
+    val features = Features[FeatureScope](
+      Map[Feature with FeatureScope, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
+      Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     )
-    assert(features.initFeatures() === Features(
-      Map[Feature, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
+    assert(features.initFeatures() === Features[InitFeature](
+      Map[Feature with InitFeature, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
+      Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
+    ))
+    assert(features.nodeAnnouncementFeatures() === Features[NodeFeature](
+      Map[Feature with NodeFeature, FeatureSupport](DataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
+      Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
+    ))
+    assert(features.invoiceFeatures() === Features[InvoiceFeature](
+      Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
       Set(UnknownFeature(753), UnknownFeature(852))
     ))
-    assert(features.nodeAnnouncementFeatures() === Features(
-      Map[Feature, FeatureSupport](DataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
-      Set(UnknownFeature(753), UnknownFeature(852))
-    ))
-    assert(features.invoiceFeatures() === Features(VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional))
   }
 
   test("features to bytes") {
@@ -232,8 +235,8 @@ class FeaturesSpec extends AnyFunSuite {
       hex"" -> Features.empty,
       hex"0100" -> Features(VariableLengthOnion -> Mandatory),
       hex"028a8a" -> Features(DataLossProtect -> Optional, InitialRoutingSync -> Optional, ChannelRangeQueries -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueriesExtended -> Optional, PaymentSecret -> Optional, BasicMultiPartPayment -> Optional),
-      hex"09004200" -> Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, ShutdownAnySegwit -> Optional), Set(UnknownFeature(24))),
-      hex"52000000" -> Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
+      hex"09004200" -> Features[FeatureScope](Map[Feature with FeatureScope, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, ShutdownAnySegwit -> Optional), Set(UnknownFeature(24))),
+      hex"52000000" -> Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
     )
 
     for ((bin, features) <- testCases) {

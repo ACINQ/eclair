@@ -53,7 +53,7 @@ class AnnouncementsSpec extends AnyFunSuite {
   }
 
   test("create valid signed node announcement") {
-    val features = Features(
+    val features = Features[FeatureScope](
       Features.DataLossProtect -> FeatureSupport.Optional,
       Features.InitialRoutingSync -> FeatureSupport.Optional,
       Features.ChannelRangeQueries -> FeatureSupport.Optional,

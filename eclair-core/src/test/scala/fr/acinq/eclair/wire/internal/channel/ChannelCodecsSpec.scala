@@ -262,7 +262,7 @@ object ChannelCodecsSpec {
     defaultFinalScriptPubKey = ByteVector.empty,
     walletStaticPaymentBasepoint = None,
     isFunder = true,
-    initFeatures = Features.empty)
+    initFeatures = Features.empty.initFeatures())
 
   val remoteParams: RemoteParams = RemoteParams(
     nodeId = randomKey().publicKey,
@@ -277,7 +277,7 @@ object ChannelCodecsSpec {
     paymentBasepoint = PrivateKey(ByteVector.fill(32)(3)).publicKey,
     delayedPaymentBasepoint = PrivateKey(ByteVector.fill(32)(4)).publicKey,
     htlcBasepoint = PrivateKey(ByteVector.fill(32)(6)).publicKey,
-    initFeatures = Features.empty,
+    initFeatures = Features.empty.initFeatures(),
     shutdownScript = None)
 
   val paymentPreimages = Seq(

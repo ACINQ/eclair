@@ -31,7 +31,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.queryFlagsCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Features}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureScope, Features, InitFeature}
 import scodec._
 import scodec.codecs._
 
@@ -98,7 +98,7 @@ object EclairInternalsSerializer {
       ("channelQueryChunkSize" | int32) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec)).as[RouterConf]
 
-  val overrideFeaturesListCodec: Codec[List[(PublicKey, Features)]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
+  val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[FeatureScope])]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
 
   val peerConnectionConfCodec: Codec[PeerConnection.Conf] = (
     ("authTimeout" | finiteDurationCodec) ::
@@ -146,7 +146,7 @@ object EclairInternalsSerializer {
   def initializeConnectionCodec(system: ExtendedActorSystem): Codec[PeerConnection.InitializeConnection] = (
     ("peer" | actorRefCodec(system)) ::
       ("chainHash" | bytes32) ::
-      ("features" | variableSizeBytes(uint16, featuresCodec)) ::
+      ("features" | variableSizeBytes(uint16, featuresCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped()))) ::
       ("doSync" | bool(8))).as[PeerConnection.InitializeConnection]
 
   def connectionReadyCodec(system: ExtendedActorSystem): Codec[PeerConnection.ConnectionReady] = (

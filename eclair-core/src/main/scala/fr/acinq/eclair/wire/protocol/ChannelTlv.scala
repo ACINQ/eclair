@@ -42,7 +42,7 @@ object ChannelTlv {
   case class ChannelTypeTlv(channelType: ChannelType) extends OpenChannelTlv with AcceptChannelTlv
 
   val channelTypeCodec: Codec[ChannelTypeTlv] = variableSizeBytesLong(varintoverflow, bytes).xmap(
-    b => ChannelTypeTlv(ChannelTypes.fromFeatures(Features(b))),
+    b => ChannelTypeTlv(ChannelTypes.fromFeatures(Features(b).initFeatures())),
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
   )
 

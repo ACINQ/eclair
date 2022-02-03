@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.{BlockHeight, Feature, Features, channel}
+import fr.acinq.eclair.{BlockHeight, Feature, FeatureScope, Features, channel}
 import scodec.bits.BitVector
 
 private[channel] object ChannelTypes0 {
@@ -196,8 +196,8 @@ private[channel] object ChannelTypes0 {
         ChannelConfig()
       }
       val isWumboChannel = commitInput.txOut.amount > Satoshi(16777215)
-      val baseChannelFeatures: Set[Feature] = if (isWumboChannel) Set(Features.Wumbo) else Set.empty
-      val commitmentFeatures: Set[Feature] = if (channelVersion.hasAnchorOutputs) {
+      val baseChannelFeatures: Set[Feature with FeatureScope] = if (isWumboChannel) Set(Features.Wumbo) else Set.empty
+      val commitmentFeatures: Set[Feature with FeatureScope] = if (channelVersion.hasAnchorOutputs) {
         Set(Features.StaticRemoteKey, Features.AnchorOutputs)
       } else if (channelVersion.hasStaticRemotekey) {
         Set(Features.StaticRemoteKey)
