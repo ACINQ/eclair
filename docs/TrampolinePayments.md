@@ -29,7 +29,7 @@ To spice things up, Alice will use MPP between Bob and her, splitting the paymen
 Initiate the payment by sending the first part:
 
 ```sh
-eclair-cli sendtoroute --amountMsat=150000 --route=$ALICE_ID,$BOB_ID --trampolineNodes=$BOB_ID,$DAVE_ID --trampolineFeesMsat=100000 --trampolineCltvExpiry=450 --finalCltvExpiry=16 --invoice=lntb1500n1pwxx94fp...
+eclair-cli sendtoroute --amountMsat=150000 --nodeIds=$ALICE_ID,$BOB_ID --trampolineNodes=$BOB_ID,$DAVE_ID --trampolineFeesMsat=100000 --trampolineCltvExpiry=450 --finalCltvExpiry=16 --invoice=lntb1500n1pwxx94fp...
 ```
 
 Note the `trampolineFeesMsat` and `trampolineCltvExpiry`. At the moment you have to estimate those yourself. If the values you provide are too low, Bob will send an error and you can retry with higher values. In future versions, we will automatically fill those values for you.
@@ -51,7 +51,7 @@ The `trampolineSecret` is also important: this is what prevents a malicious tram
 Now that you have those, you can send the second part:
 
 ```sh
-eclair-cli sendtoroute --amountMsat=250000 --parentId=cd083b31-5939-46ac-bf90-8ac5b286a9e2 --trampolineSecret=9e13d1b602496871bb647b48e8ff8f15a91c07affb0a3599e995d470ac488715 --route=$ALICE_ID,$BOB_ID --trampolineNodes=$BOB_ID,$DAVE_ID --trampolineFeesMsat=100000 --trampolineCltvExpiry=450 --finalCltvExpiry=16 --invoice=lntb1500n1pwxx94fp...
+eclair-cli sendtoroute --amountMsat=250000 --parentId=cd083b31-5939-46ac-bf90-8ac5b286a9e2 --trampolineSecret=9e13d1b602496871bb647b48e8ff8f15a91c07affb0a3599e995d470ac488715 --nodeIds=$ALICE_ID,$BOB_ID --trampolineNodes=$BOB_ID,$DAVE_ID --trampolineFeesMsat=100000 --trampolineCltvExpiry=450 --finalCltvExpiry=16 --invoice=lntb1500n1pwxx94fp...
 ```
 
 Note that Alice didn't need to know about Carol. Bob will find the route to Dave through Carol on his own. That's the magic of trampoline!

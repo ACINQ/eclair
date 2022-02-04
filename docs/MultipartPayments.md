@@ -51,7 +51,7 @@ You want to send 150000 msat through Bob and 250000 msat through Carol.
 Initiate the payment by sending the first part:
 
 ```sh
-eclair-cli sendtoroute --amountMsat=150000 --route=$ALICE_ID,$BOB_ID,$DAVE_ID --finalCltvExpiry=16 --invoice=lntb1500n1pwxx94fp...
+eclair-cli sendtoroute --amountMsat=150000 --nodeIds=$ALICE_ID,$BOB_ID,$DAVE_ID --finalCltvExpiry=16 --invoice=lntb1500n1pwxx94fp...
 ```
 
 This will return some identifiers that must be used for the other parts:
@@ -68,7 +68,7 @@ The `parentId` is important: this is the identifier used to link the parts toget
 Now that you have those, you can send the second part:
 
 ```sh
-eclair-cli sendtoroute --parentId=cd083b31-5939-46ac-bf90-8ac5b286a9e2 --amountMsat=250000 --route=$ALICE_ID,$CAROL_ID,$DAVE_ID --finalCltvExpiry=16 --invoice=lntb1500n1pwxx94fp...
+eclair-cli sendtoroute --parentId=cd083b31-5939-46ac-bf90-8ac5b286a9e2 --amountMsat=250000 --nodeIds=$ALICE_ID,$CAROL_ID,$DAVE_ID --finalCltvExpiry=16 --invoice=lntb1500n1pwxx94fp...
 ```
 
 You can then check the status of the payment with the `getsentinfo` command:
