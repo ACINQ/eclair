@@ -2,7 +2,7 @@
 
 ## What does it mean for a channel to be "enabled" or "disabled" ?
 
-A channel is disabled if a `channel_update` message has been broadcast for that channel with the `disable` bit set (see [BOLT 7](https://github.com/lightning/bolts/blob/master/07-routing-gossip.md#the-channel_update-message)). It means that it the channel still exists but cannot be used to route payments, until it has been re-enabled.
+A channel is disabled if a `channel_update` message has been broadcast for that channel with the `disable` bit set (see [BOLT 7](https://github.com/lightning/bolts/blob/master/07-routing-gossip.md#the-channel_update-message)). It means that the channel still exists but cannot be used to route payments, until it has been re-enabled.
 
 Suppose you're A, with the following setup:
 ```
