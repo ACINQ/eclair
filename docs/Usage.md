@@ -61,7 +61,7 @@ eclair-cli payinvoice --invoice=lntb17u1pdthhsdpp5z5am8.......
 ## Example 3: generate a payment request for 1 mBTC
 
 ```shell
-eclair-cli createinvoice --amountMsat=100000000 --description="my first invoice"
+eclair-cli createinvoice --amountMsat=100000000 --description="my first invoice" | jq .serialized
 ```
 
 This command will return a lightning payment request, such as:
