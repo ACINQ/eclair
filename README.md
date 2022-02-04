@@ -178,10 +178,10 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile
 ### Backup
 
 You need to backup:
-- your Bitcoin core wallet
+- your Bitcoin Core wallet
 - your Eclair channels
 
-For Bitcoin core, you need to backup the wallet file for the wallet that Eclair is using. You only need to do this once, when the wallet is 
+For Bitcoin Core, you need to backup the wallet file for the wallet that Eclair is using. You only need to do this once, when the wallet is 
 created. See [Managing Wallets](https://github.com/bitcoin/bitcoin/blob/master/doc/managing-wallets.md) in the Bitcoin Core documentation for more information. 
 
 For Eclair, the files that you need to backup are located in your data directory. You must backup:
