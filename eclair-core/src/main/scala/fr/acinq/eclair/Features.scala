@@ -88,9 +88,7 @@ case class Features[T <: FeatureScope](activated: Map[Feature with T, FeatureSup
 
   def nodeAnnouncementFeatures(): Features[NodeFeature] = Features[NodeFeature](activated.collect { case (f: NodeFeature, s) => (f, s) }, unknown)
 
-  def invoiceFeaturesNoUnknown(): Features[InvoiceFeature] = Features[InvoiceFeature](activated.collect { case (f: InvoiceFeature, s) => (f, s) })
-
-  def invoiceFeaturesWithUnknown(): Features[InvoiceFeature] = Features[InvoiceFeature](activated.collect { case (f: InvoiceFeature, s) => (f, s) }, unknown)
+  def invoiceFeatures(): Features[InvoiceFeature] = Features[InvoiceFeature](activated.collect { case (f: InvoiceFeature, s) => (f, s) }, unknown)
 
   def unscoped(): Features[FeatureScope] = Features[FeatureScope](activated.collect { case (f, s) => (f: Feature with FeatureScope, s) }, unknown)
 

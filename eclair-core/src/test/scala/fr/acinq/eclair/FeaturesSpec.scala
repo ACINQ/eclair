@@ -224,8 +224,7 @@ class FeaturesSpec extends AnyFunSuite {
       Map[Feature with NodeFeature, FeatureSupport](DataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
       Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     ))
-    assert(features.invoiceFeaturesNoUnknown() === Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional)))
-    assert(features.invoiceFeaturesWithUnknown() === Features[InvoiceFeature](
+    assert(features.invoiceFeatures() === Features[InvoiceFeature](
       Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
       Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     ))

@@ -133,6 +133,7 @@ class AnnouncementsSpec extends AnyFunSuite {
     // This announcement has option_payment_metadata which is not a node feature
     val encoded = hex"25d8bf19e2c6562a85b3109122118a50728d42c9054537b5a26c1e982407f0923a6f162cf0939bfaf58d7e7a7a7c86d7dfd02dda9b0d2036e8fd35a7afc78daa00070100000000000061fcfc1d039093816bb908c043341f3ee47ea86179627d26aa00704593503e684a0b9a38cb01020374657374206e6f646500000000000000000000000000000000000000000000000007018c5279042607"
     val ann = nodeAnnouncementCodec.decode(encoded.bits).require.value
+    assert(ann.features.hasFeature(Features.PaymentMetadata))
     assert(checkSig(ann))
     assert(nodeAnnouncementCodec.encode(ann).require.bytes === encoded)
   }

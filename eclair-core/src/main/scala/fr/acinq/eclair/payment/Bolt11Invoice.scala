@@ -93,7 +93,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
     case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
   }
 
-  lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeaturesWithUnknown() }.getOrElse(Features.empty[InvoiceFeature])
+  lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeatures() }.getOrElse(Features.empty[InvoiceFeature])
 
   /**
    * @return the hash of this payment invoice
@@ -167,7 +167,7 @@ object Bolt11Invoice {
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
-        Some(InvoiceFeatures(features.unscoped()))
+        Some(InvoiceFeatures(features.copy(unknown = Set.empty).unscoped()))
       ).flatten
       val routingInfoTags = extraHops.map(RoutingInfo)
       defaultTags ++ routingInfoTags
