@@ -160,7 +160,7 @@
         </dependency>
         <!-- HTTP CLIENT -->
         <dependency>
-            <groupId>com.softwaremill.sttp</groupId>
+            <groupId>com.softwaremill.sttp.client3</groupId>
             <artifactId>okhttp-backend_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
         </dependency>
@@ -168,10 +168,10 @@
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>3.6.11</version>
+            <version>4.0.3</version>
         </dependency>
         <dependency>
-            <groupId>com.softwaremill.sttp</groupId>
+            <groupId>com.softwaremill.sttp.client3</groupId>
             <artifactId>json4s_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
         </dependency>

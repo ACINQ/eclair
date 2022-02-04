@@ -20,9 +20,6 @@ import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.pattern.after
-import com.softwaremill.sttp.json4s.asJson
-import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import com.softwaremill.sttp.{StatusCodes, SttpBackend, SttpBackendOptions, Uri, UriContext, sttp}
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{BlockHeaderAt, LatestHeaders, SupportsTor}
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
@@ -31,6 +28,11 @@ import fr.acinq.eclair.{BlockHeight, randomBytes}
 import org.json4s.JsonAST.{JArray, JInt, JObject, JString}
 import org.json4s.jackson.Serialization
 import org.json4s.{DefaultFormats, Serialization}
+import sttp.capabilities
+import sttp.client3._
+import sttp.client3.json4s._
+import sttp.client3.okhttp.OkHttpFutureBackend
+import sttp.model.{StatusCode, Uri}
 
 import java.time.OffsetDateTime
 import scala.concurrent.duration.DurationInt
@@ -92,7 +94,7 @@ object ExplorerApi {
     }
   }
 
-  def createSttpBackend(socksProxy_opt: Option[Socks5ProxyParams]): SttpBackend[Future, Nothing] = {
+  def createSttpBackend(socksProxy_opt: Option[Socks5ProxyParams]): SttpBackend[Future, capabilities.WebSockets] = {
     val options = SttpBackendOptions(connectionTimeout = 30.seconds, proxy = None)
     val sttpBackendOptions = socksProxy_opt match {
       case Some(proxy) =>
@@ -111,7 +113,7 @@ object ExplorerApi {
    * Query https://blockcypher.com/ to fetch block headers.
    * See https://www.blockcypher.com/dev/bitcoin/#introduction.
    */
-  case class BlockcypherExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, Nothing]) extends Explorer with SupportsTor {
+  case class BlockcypherExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, capabilities.WebSockets]) extends Explorer with SupportsTor {
     override val name = "blockcypher.com"
     override val baseUris = Map(
       Block.TestnetGenesisBlock.hash -> uri"https://api.blockcypher.com/v1/btc/test3",
@@ -130,60 +132,58 @@ object ExplorerApi {
       } yield headers
     }
 
-    private def getTip(baseUri: Uri)(implicit ec: ExecutionContext, sb: SttpBackend[Future, Nothing]): Future[BlockHeight] = {
+    private def getTip(baseUri: Uri)(implicit ec: ExecutionContext): Future[BlockHeight] = {
       for {
-        tip <- sttp.readTimeout(30 seconds).get(baseUri)
+        tip <- basicRequest.readTimeout(30 seconds).get(baseUri)
           .headers(Socks5ProxyParams.FakeFirefoxHeaders)
           .response(asJson[JObject])
-          .send()
-          .map(r => {
-            val JInt(latestHeight) = r.unsafeBody \ "height"
+          .send(sb)
+          .map(_.body.fold(exc => throw exc, jvalue => jvalue))
+          .map(json => {
+            val JInt(latestHeight) = json \ "height"
             BlockHeight(latestHeight.toLong)
           })
       } yield tip
     }
 
-    private def getHeader(baseUri: Uri, blockCount: Long)(implicit ec: ExecutionContext, sb: SttpBackend[Future, Nothing]): Future[Seq[BlockHeaderAt]] = for {
-      header <- sttp.readTimeout(30 seconds).get(baseUri.path(baseUri.path :+ "blocks" :+ blockCount.toString))
+    private def getHeader(baseUri: Uri, blockCount: Long)(implicit ec: ExecutionContext): Future[Seq[BlockHeaderAt]] = for {
+      header <- basicRequest.readTimeout(30 seconds).get(baseUri.addPath("blocks", blockCount.toString))
         .headers(Socks5ProxyParams.FakeFirefoxHeaders)
         .response(asJson[JObject])
-        .send()
-        .map(r => r.code match {
+        .send(sb)
+        .map(r => r.body match {
           // HTTP 404 is a "normal" error: we're trying to lookup future blocks that haven't been mined.
-          case StatusCodes.NotFound => Seq.empty
-          case _ => r.unsafeBody \ "error" match {
-            case JString(error) if error == s"Block $blockCount not found." => Seq.empty
-            case _ => Seq(r.unsafeBody)
-          }
+          case Left(res: HttpError[_]) if res.statusCode == StatusCode.NotFound => Seq.empty
+          case Left(otherError) => throw otherError
+          case Right(json) if json \ "error" == JString(s"Block $blockCount not found.") => Seq.empty
+          case Right(block) =>
+            val JInt(height) = block \ "height"
+            val JInt(version) = block \ "ver"
+            val JString(time) = block \ "time"
+            val JInt(bits) = block \ "bits"
+            val JInt(nonce) = block \ "nonce"
+            val previousBlockHash = (block \ "prev_block").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
+            val merkleRoot = (block \ "mrkl_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
+            val header = BlockHeader(version.toLong, previousBlockHash, merkleRoot, OffsetDateTime.parse(time).toEpochSecond, bits.toLong, nonce.toLong)
+            Seq(BlockHeaderAt(BlockHeight(height.toLong), header))
         })
-        .map(blocks => blocks.map(block => {
-          val JInt(height) = block \ "height"
-          val JInt(version) = block \ "ver"
-          val JString(time) = block \ "time"
-          val JInt(bits) = block \ "bits"
-          val JInt(nonce) = block \ "nonce"
-          val previousBlockHash = (block \ "prev_block").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-          val merkleRoot = (block \ "mrkl_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-          val header = BlockHeader(version.toLong, previousBlockHash, merkleRoot, OffsetDateTime.parse(time).toEpochSecond, bits.toLong, nonce.toLong)
-          BlockHeaderAt(BlockHeight(height.toLong), header)
-        }))
     } yield header
   }
 
   /** Explorer API based on Esplora: see https://github.com/Blockstream/esplora/blob/master/API.md. */
   sealed trait Esplora extends Explorer with SupportsTor {
-    implicit val sb: SttpBackend[Future, Nothing]
+    implicit val sb: SttpBackend[Future, capabilities.WebSockets]
 
     override def getLatestHeaders(baseUri: Uri, currentBlockHeight: BlockHeight)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
       implicit val ec: ExecutionContext = context.system.executionContext
       for {
-        headers <- sttp.readTimeout(10 seconds).get(baseUri.path(baseUri.path :+ "blocks"))
+        headers <- basicRequest.readTimeout(10 seconds).get(baseUri.addPath("blocks"))
           .response(asJson[JArray])
-          .send()
+          .send(sb)
           .map(r => r.code match {
             // HTTP 404 is a "normal" error: we're trying to lookup future blocks that haven't been mined.
-            case StatusCodes.NotFound => Seq.empty
-            case _ => r.unsafeBody.arr
+            case StatusCode.NotFound => Seq.empty
+            case _ => r.body.fold(exc => throw exc, jvalue => jvalue).arr
           })
           .map(blocks => blocks.map(block => {
             val JInt(height) = block \ "height"
@@ -202,7 +202,7 @@ object ExplorerApi {
   }
 
   /** Query https://blockstream.info/ to fetch block headers. */
-  case class BlockstreamExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, Nothing]) extends Esplora {
+  case class BlockstreamExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, capabilities.WebSockets]) extends Esplora {
     override val name = "blockstream.info"
     override val baseUris = socksProxy_opt match {
       case Some(_) =>
@@ -219,7 +219,7 @@ object ExplorerApi {
   }
 
   /** Query https://mempool.space/ to fetch block headers. */
-  case class MempoolSpaceExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, Nothing]) extends Esplora {
+  case class MempoolSpaceExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, capabilities.WebSockets]) extends Esplora {
     override val name = "mempool.space"
     override val baseUris = socksProxy_opt match {
       case Some(_) =>

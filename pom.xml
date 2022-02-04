@@ -71,7 +71,7 @@
         <scala.version.short>2.13</scala.version.short>
         <akka.version>2.6.18</akka.version>
         <akka.http.version>10.2.7</akka.http.version>
-        <sttp.version>1.7.2</sttp.version>
+        <sttp.version>3.4.1</sttp.version>
         <bitcoinlib.version>0.19</bitcoinlib.version>
         <guava.version>24.0-android</guava.version>
         <kamon.version>2.4.6</kamon.version>
