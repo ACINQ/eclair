@@ -166,7 +166,7 @@ class StartupSpec extends AnyFunSuite {
   test("parse human readable override features") {
     val perNodeConf = ConfigFactory.parseString(
       """
-        |  override-features = [ // optional per-node features
+        |  override-init-features = [ // optional per-node features
         |      {
         |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         |          features {
@@ -188,7 +188,7 @@ class StartupSpec extends AnyFunSuite {
   test("filter out non-init features in node override") {
     val perNodeConf = ConfigFactory.parseString(
       """
-        |  override-features = [ // optional per-node features
+        |  override-init-features = [ // optional per-node features
         |      {
         |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         |          features {

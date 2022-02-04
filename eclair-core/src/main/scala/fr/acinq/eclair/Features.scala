@@ -20,6 +20,8 @@ import com.typesafe.config.Config
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import scodec.bits.{BitVector, ByteVector}
 
+import scala.jdk.CollectionConverters.CollectionHasAsScala
+
 /**
  * Created by PM on 13/02/2017.
  */
@@ -134,29 +136,19 @@ object Features {
     )
   }
 
-  /** expects to have a top level config block named "features" */
-  def fromConfiguration(config: Config): Features[FeatureScope] = Features[FeatureScope](
-    knownFeatures.flatMap {
-      feature =>
-        getFeature(config, feature.rfcName) match {
-          case Some(support) => Some(feature -> support)
-          case _ => None
-        }
-    }.toMap)
-
-  /** tries to extract the given feature name from the config, if successful returns its feature support */
-  private def getFeature(config: Config, name: String): Option[FeatureSupport] = {
-    if (!config.hasPath(s"features.$name")) {
-      None
-    } else {
-      config.getString(s"features.$name") match {
-        case support if support == Mandatory.toString => Some(Mandatory)
-        case support if support == Optional.toString => Some(Optional)
+  def fromConfiguration[T <: FeatureScope](config: Config, validFeatures: Set[Feature with T]): Features[T] = Features[T](
+    config.root().entrySet().asScala.flatMap { entry =>
+      val featureName = entry.getKey
+      val feature: Feature with T = validFeatures.find(_.rfcName == featureName).getOrElse(throw new IllegalArgumentException(s"Invalid feature name ($featureName)"))
+      config.getString(featureName) match {
+        case support if support == Mandatory.toString => Some(feature -> Mandatory)
+        case support if support == Optional.toString => Some(feature -> Optional)
         case support if support == "disabled" => None
         case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
       }
-    }
-  }
+    }.toMap)
+
+  def fromConfiguration(config: Config): Features[FeatureScope] = fromConfiguration[FeatureScope](config, knownFeatures)
 
   case object DataLossProtect extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_data_loss_protect"

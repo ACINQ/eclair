@@ -59,7 +59,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       publicAddresses: List[NodeAddress],
                       torAddress_opt: Option[NodeAddress],
                       features: Features[FeatureScope],
-                      private val overrideFeatures: Map[PublicKey, Features[InitFeature]],
+                      private val overrideInitFeatures: Map[PublicKey, Features[InitFeature]],
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       channelConf: ChannelConf,
@@ -91,7 +91,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
 
   /** Returns the features that should be used in our init message with the given peer. */
-  def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideFeatures.getOrElse(nodeId, features).initFeatures()
+  def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
 }
 
 object NodeParams extends Logging {
@@ -224,6 +224,7 @@ object NodeParams extends Logging {
       "watch-spent-window" -> "router.watch-spent-window",
       // v0.7.1
       "payment-request-expiry" -> "invoice-expiry",
+      "override-features" -> "override-init-features",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -268,7 +269,7 @@ object NodeParams extends Logging {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    def validateFeatures(features: Features[FeatureScope]): Unit = {
+    def validateFeatures(features: Features[InitFeature]): Unit = {
       val featuresErr = Features.validateFeatureGraph(features)
       require(featuresErr.isEmpty, featuresErr.map(_.message))
       require(features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)), s"${Features.VariableLengthOnion.rfcName} must be enabled and mandatory")
@@ -278,8 +279,8 @@ object NodeParams extends Logging {
     }
 
     val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
-    val features = Features.fromConfiguration(config)
-    validateFeatures(features)
+    val features = Features.fromConfiguration(config.getConfig("features"))
+    validateFeatures(features.initFeatures())
 
     require(pluginMessageParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
     require(pluginMessageParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
@@ -290,9 +291,9 @@ object NodeParams extends Logging {
 
     val coreAndPluginFeatures: Features[FeatureScope] = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
 
-    val overrideFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-features").asScala.map { e =>
+    val overrideInitFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-init-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = Features.fromConfiguration(e)
+      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: Feature with InitFeature => f })
       validateFeatures(f)
       p -> (f.initFeatures().copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
     }.toMap
@@ -398,7 +399,7 @@ object NodeParams extends Logging {
       torAddress_opt = torAddress_opt,
       features = coreAndPluginFeatures,
       pluginParams = pluginParams,
-      overrideFeatures = overrideFeatures,
+      overrideInitFeatures = overrideInitFeatures,
       syncWhitelist = syncWhitelist,
       channelConf = ChannelConf(
         channelFlags = channelFlags,

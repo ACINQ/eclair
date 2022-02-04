@@ -97,7 +97,7 @@ object TestConstants {
         Set(UnknownFeature(TestFeature.optional))
       ),
       pluginParams = List(pluginParams),
-      overrideFeatures = Map.empty,
+      overrideInitFeatures = Map.empty,
       syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1100 sat,
@@ -232,7 +232,7 @@ object TestConstants {
         PaymentMetadata -> Optional,
       ),
       pluginParams = Nil,
-      overrideFeatures = Map.empty,
+      overrideInitFeatures = Map.empty,
       syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1000 sat,

@@ -253,16 +253,14 @@ class FeaturesSpec extends AnyFunSuite {
     {
       val conf = ConfigFactory.parseString(
         """
-          |features {
-          |  option_data_loss_protect = optional
-          |  initial_routing_sync = optional
-          |  gossip_queries = optional
-          |  gossip_queries_ex = optional
-          |  var_onion_optin = optional
-          |  payment_secret = optional
-          |  basic_mpp = optional
-          |}
-      """.stripMargin)
+          option_data_loss_protect = optional
+          initial_routing_sync = optional
+          gossip_queries = optional
+          gossip_queries_ex = optional
+          var_onion_optin = optional
+          payment_secret = optional
+          basic_mpp = optional
+        """)
 
       val features = fromConfiguration(conf)
       assert(features.toByteVector === hex"028a8a")
@@ -280,16 +278,12 @@ class FeaturesSpec extends AnyFunSuite {
     {
       val conf = ConfigFactory.parseString(
         """
-          |  features {
-          |    initial_routing_sync = optional
-          |    option_data_loss_protect = optional
-          |    gossip_queries = optional
-          |    gossip_queries_ex = mandatory
-          |    var_onion_optin = optional
-          |  }
-          |
-      """.stripMargin
-      )
+          initial_routing_sync = optional
+          option_data_loss_protect = optional
+          gossip_queries = optional
+          gossip_queries_ex = mandatory
+          var_onion_optin = optional
+        """)
 
       val features = fromConfiguration(conf)
       assert(features.toByteVector === hex"068a")
@@ -307,29 +301,21 @@ class FeaturesSpec extends AnyFunSuite {
     {
       val confWithUnknownFeatures = ConfigFactory.parseString(
         """
-          |features {
-          |  option_non_existent = mandatory # this is ignored
-          |  gossip_queries = optional
-          |  payment_secret = mandatory
-          |}
-      """.stripMargin)
+          option_non_existent = mandatory
+          gossip_queries = optional
+          payment_secret = mandatory
+        """)
 
-      val features = fromConfiguration(confWithUnknownFeatures)
-      assert(features.toByteVector === hex"4080")
-      assert(Features(hex"4080") === features)
-      assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
-      assert(features.hasFeature(PaymentSecret, Some(Mandatory)))
+      assertThrows[RuntimeException](fromConfiguration(confWithUnknownFeatures))
     }
 
     {
       val confWithUnknownSupport = ConfigFactory.parseString(
         """
-          |features {
-          |  option_data_loss_protect = what
-          |  gossip_queries = optional
-          |  payment_secret = mandatory
-          |}
-      """.stripMargin)
+          option_data_loss_protect = what
+          gossip_queries = optional
+          payment_secret = mandatory
+        """)
 
       assertThrows[RuntimeException](fromConfiguration(confWithUnknownSupport))
     }
@@ -337,14 +323,12 @@ class FeaturesSpec extends AnyFunSuite {
     {
       val confWithDisabledFeatures = ConfigFactory.parseString(
         """
-          |features {
-          |  option_data_loss_protect = disabled
-          |  gossip_queries = optional
-          |  payment_secret = mandatory
-          |  option_support_large_channel = disabled
-          |  gossip_queries_ex = mandatory
-          |}
-        """.stripMargin)
+          option_data_loss_protect = disabled
+          gossip_queries = optional
+          payment_secret = mandatory
+          option_support_large_channel = disabled
+          gossip_queries_ex = mandatory
+        """)
 
       val features = fromConfiguration(confWithDisabledFeatures)
       assert(!features.hasFeature(DataLossProtect))
