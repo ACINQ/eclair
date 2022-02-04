@@ -1,6 +1,6 @@
 # Trampoline Payments
 
-Eclair started supporting [trampoline payments](https://github.com/lightning/bolts/pull/654) in v0.3.3.
+Eclair started supporting [trampoline payments](https://github.com/lightning/bolts/pull/829) in v0.3.3.
 
 It is disabled by default, as it is still being reviewed for spec acceptance. However, if you want to experiment with it, here is what you can do.
 
