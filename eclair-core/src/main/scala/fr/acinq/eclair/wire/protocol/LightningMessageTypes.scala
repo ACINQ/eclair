@@ -263,7 +263,7 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def soc
 // @formatter:on
 
 case class NodeAnnouncement(signature: ByteVector64,
-                            features: Features[NodeFeature],
+                            features: Features[FeatureScope],
                             timestamp: TimestampSecond,
                             nodeId: PublicKey,
                             rgbColor: Color,

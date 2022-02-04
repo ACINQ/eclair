@@ -31,7 +31,7 @@ object Announcements {
   def channelAnnouncementWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: Features[FeatureScope], tlvStream: TlvStream[ChannelAnnouncementTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelAnnouncementWitnessCodec.encode(features :: chainHash :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: tlvStream :: HNil))))
 
-  def nodeAnnouncementWitnessEncode(timestamp: TimestampSecond, nodeId: PublicKey, rgbColor: Color, alias: String, features: Features[NodeFeature], addresses: List[NodeAddress], tlvStream: TlvStream[NodeAnnouncementTlv]): ByteVector =
+  def nodeAnnouncementWitnessEncode(timestamp: TimestampSecond, nodeId: PublicKey, rgbColor: Color, alias: String, features: Features[FeatureScope], addresses: List[NodeAddress], tlvStream: TlvStream[NodeAnnouncementTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.nodeAnnouncementWitnessCodec.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: tlvStream :: HNil))))
 
   def channelUpdateWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: TimestampSecond, channelFlags: ChannelUpdate.ChannelFlags, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: Option[MilliSatoshi], tlvStream: TlvStream[ChannelUpdateTlv]): ByteVector =
@@ -68,7 +68,7 @@ object Announcements {
     )
   }
 
-  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: Features[FeatureScope], timestamp: TimestampSecond = TimestampSecond.now()): NodeAnnouncement = {
+  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: Features[NodeFeature], timestamp: TimestampSecond = TimestampSecond.now()): NodeAnnouncement = {
     require(alias.length <= 32)
     val sortedAddresses = nodeAddresses.map {
       case address@(_: IPv4) => (1, address)
@@ -76,8 +76,7 @@ object Announcements {
       case address@(_: Tor2) => (3, address)
       case address@(_: Tor3) => (4, address)
     }.sortBy(_._1).map(_._2)
-    val nodeAnnouncementFeatures = features.nodeAnnouncementFeatures()
-    val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, nodeAnnouncementFeatures, sortedAddresses, TlvStream.empty)
+    val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features.unscoped(), sortedAddresses, TlvStream.empty)
     val sig = Crypto.sign(witness, nodeSecret)
     NodeAnnouncement(
       signature = sig,
@@ -85,7 +84,7 @@ object Announcements {
       nodeId = nodeSecret.publicKey,
       rgbColor = color,
       alias = alias,
-      features = nodeAnnouncementFeatures,
+      features = features.unscoped(),
       addresses = sortedAddresses
     )
   }

@@ -211,7 +211,7 @@ object LightningMessageCodecs {
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec =
-    ("features" | featuresCodec.xmap[Features[NodeFeature]](_.nodeAnnouncementFeatures(), _.unscoped())) ::
+    ("features" | featuresCodec) ::
       ("timestamp" | timestampSecond) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::

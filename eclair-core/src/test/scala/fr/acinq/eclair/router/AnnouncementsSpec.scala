@@ -22,7 +22,8 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate.ChannelFlags
-import fr.acinq.eclair.wire.protocol.NodeAddress
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.nodeAnnouncementCodec
+import fr.acinq.eclair.wire.protocol.{Color, NodeAddress}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -63,7 +64,7 @@ class AnnouncementsSpec extends AnyFunSuite {
       Features.BasicMultiPartPayment -> FeatureSupport.Optional,
       Features.PaymentMetadata -> FeatureSupport.Optional,
     )
-    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, features)
+    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, features.nodeAnnouncementFeatures())
     // Features should be filtered to only include node_announcement related features.
     assert(ann.features === Features(
       Features.DataLossProtect -> FeatureSupport.Optional,
@@ -84,7 +85,7 @@ class AnnouncementsSpec extends AnyFunSuite {
       NodeAddress.fromParts("140.82.121.4", 9735).get,
       NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get,
     )
-    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, addresses, Alice.nodeParams.features)
+    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, addresses, Alice.nodeParams.features.nodeAnnouncementFeatures())
     assert(checkSig(ann))
     assert(ann.addresses === List(
       NodeAddress.fromParts("140.82.121.4", 9735).get,
@@ -128,4 +129,11 @@ class AnnouncementsSpec extends AnyFunSuite {
     assert(!channelUpdate2_disabled.channelFlags.isEnabled)
   }
 
+  test("announce irrelevant features") {
+    // This announcement has option_payment_metadata which is not a node feature
+    val encoded = hex"25d8bf19e2c6562a85b3109122118a50728d42c9054537b5a26c1e982407f0923a6f162cf0939bfaf58d7e7a7a7c86d7dfd02dda9b0d2036e8fd35a7afc78daa00070100000000000061fcfc1d039093816bb908c043341f3ee47ea86179627d26aa00704593503e684a0b9a38cb01020374657374206e6f646500000000000000000000000000000000000000000000000007018c5279042607"
+    val ann = nodeAnnouncementCodec.decode(encoded.bits).require.value
+    assert(checkSig(ann))
+    assert(nodeAnnouncementCodec.encode(ann).require.bytes === encoded)
+  }
 }
