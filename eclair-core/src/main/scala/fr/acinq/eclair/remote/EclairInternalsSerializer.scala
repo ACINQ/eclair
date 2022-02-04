@@ -46,7 +46,7 @@ object EclairInternalsSerializer {
 
   def finiteDurationCodec: Codec[FiniteDuration] = int64.xmap(_.milliseconds, _.toMillis)
 
-  def iterable[A](codec: Codec[A]): Codec[Iterable[A]] = listOfN(uint16, codec).xmap(_.toIterable, _.toList)
+  def iterable[A](codec: Codec[A]): Codec[Iterable[A]] = listOfN(uint16, codec).xmap(_.toList, _.toList)
 
   val searchBoundariesCodec: Codec[SearchBoundaries] = (
     ("maxFee" | millisatoshi) ::
