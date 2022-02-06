@@ -19,8 +19,7 @@
 ## Configuration file
 
 The configuration file for eclair is named `eclair.conf`. It is located in the data directory, which is `~/.eclair` by
-default. Note that eclair won't create a configuration file by itself: if you want to change eclair's configuration, you
-need to **actually create the configuration file first**. The encoding must be UTF-8.
+default (on Windows it is `C:\Users\YOUR_NAME\.eclair`). Note that eclair won't create a configuration file by itself: if you want to change eclair's configuration, you need to **actually create the configuration file first**. The encoding must be UTF-8.
 
 ```sh
 # this is the default data directory, it will be created at eclair first startup

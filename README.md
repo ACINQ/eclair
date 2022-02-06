@@ -6,7 +6,7 @@
 
 **Eclair** (French for Lightning) is a Scala implementation of the Lightning Network.
 
-This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning), [lnd](https://github.com/LightningNetwork/lnd), [electrum](https://github.com/spesmilo/electrum/), and [rust-lightning](https://github.com/rust-bitcoin/rust-lightning).
+This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightning/bolts). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning), [lnd](https://github.com/LightningNetwork/lnd), [electrum](https://github.com/spesmilo/electrum/), and [rust-lightning](https://github.com/rust-bitcoin/rust-lightning).
 
 ---
 
@@ -25,6 +25,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 * [Docker](#docker)
 * [Plugins](#plugins)
 * [Testnet usage](#testnet-usage)
+* [Tools](#tools)
 * [Resources](#resources)
 
 ---
@@ -43,10 +44,10 @@ For more information please visit the [API documentation website](https://acinq.
 
 ## Documentation
 
-Please visit our [docs](./docs) and [wiki](https://github.com/acinq/eclair/wiki) to find detailed instructions on how to configure your
-node, connect to other nodes, open channels, send and receive payments, and more advanced scenario.
+Please visit our [docs](./docs) folder to find detailed instructions on how to [configure](./docs/Configure.md) your
+node, connect to other nodes, open channels, send and receive payments, and help with more advanced scenarios. 
 
-You will find detailed guides and frequently asked questions there.
+You will also find detailed [guides](./docs/Guides.md) and [frequently asked questions](./docs/FAQ.md) there.
 
 ## Installation
 
@@ -95,7 +96,7 @@ Then download our latest [release](https://github.com/ACINQ/eclair/releases), un
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 ```
 
-You can then control your node via the [eclair-cli](https://github.com/ACINQ/eclair/wiki/Usage) or the [API](https://github.com/ACINQ/eclair/wiki/API).
+You can then control your node via [eclair-cli](./docs/Usage.md) or the [API](./docs/API.md).
 
 :warning: Be careful when following tutorials/guides that may be outdated or incomplete. You must thoroughly read the official eclair documentation before running your own node.
 
@@ -168,7 +169,7 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Declair.datadir=/tmp/node1
 
 ### Logging
 
-Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different configuration, and override the internal logback.xml, run:
+Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a [different configuration](./docs/Logging.md), and override the internal logback.xml, run:
 
 ```shell
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile=/path/to/logback-custom.xml
@@ -177,13 +178,13 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile
 ### Backup
 
 You need to backup:
-- your bitcoin core wallet
-- your eclair channels
+- your Bitcoin Core wallet
+- your Eclair channels
 
-For bitcoin core, you need to backup the wallet file for the wallet that eclair is using. You only need to this once, when the wallet is 
-created (see https://github.com/bitcoin/bitcoin/blob/master/doc/managing-wallets.md for more information). 
+For Bitcoin Core, you need to backup the wallet file for the wallet that Eclair is using. You only need to do this once, when the wallet is 
+created. See [Managing Wallets](https://github.com/bitcoin/bitcoin/blob/master/doc/managing-wallets.md) in the Bitcoin Core documentation for more information. 
 
-For eclair, the files that you need to backup are located in your data directory. You must backup:
+For Eclair, the files that you need to backup are located in your data directory. You must backup:
 
 * your seeds (`node_seed.dat` and `channel_seed.dat`)
 * your channel database (`eclair.sqlite.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
@@ -219,7 +220,7 @@ If you want to persist the data directory, you can make the volume to your host 
 docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq/eclair
 ```
 
-If you enabled the API you can check the status of eclair using the command line tool:
+If you enabled the API you can check the status of Eclair using the command line tool:
 
 ```shell
 docker exec <container_name> eclair-cli -p foobar getinfo
@@ -239,14 +240,14 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar>
 
 ### Non-exhaustive plugins list
 
-Here are some plugins created by the eclair community.
+Here are some plugins created by the Eclair community.
 If you need support for these plugins, head over to their respective github repository.
 
-* [Telegram Bot for eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
+* [Telegram Bot for Eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
 
 ## Testnet usage
 
-Eclair is configured to run on mainnet by default, but you can still run it on testnet (or regtest): start your Bitcoin Node in
+Eclair is configured to run on mainnet by default, but you can still run it on testnet (or regtest): start your Bitcoin node in
  testnet mode (add `testnet=1` in `bitcoin.conf` or start with `-testnet`), and change Eclair's chain parameter and Bitcoin RPC port:
 
 ```conf
@@ -255,7 +256,7 @@ eclair.bitcoind.rpcport=18332
 ```
 
 You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific,
-so you can easily run your bitcoin node on both mainnet and testnet. For example you could use:
+so you can easily run your Bitcoin node on both mainnet and testnet. For example you could use:
 
 ```conf
 server=1
@@ -271,6 +272,11 @@ rpcpassword=<your-testnet-rpc-password-here>
 zmqpubhashblock=tcp://127.0.0.1:29001
 zmqpubrawtx=tcp://127.0.0.1:29001
 ```
+
+## Tools
+
+* [Demo Shop](https://starblocks.acinq.co/) - an example testnet Lightning web shop.
+* [Network Explorer](https://explorer.acinq.co/) - a Lightning network visualization tool.
 
 ## Resources
 

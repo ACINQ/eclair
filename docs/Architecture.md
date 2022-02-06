@@ -106,13 +106,13 @@ Here is a high-level view of the hierarchy of some of the main actors in the sys
 And a short description of each actor's role:
 
 - Switchboard: creates and deletes peers
-- Peer: p2p connection to another lightning node (standard lightning messages described in [Bolt 1](https://github.com/lightningnetwork/lightning-rfc/blob/master/01-messaging.md))
-- Channel: channel with another lightning node ([Bolt 2](https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md))
+- Peer: p2p connection to another lightning node (standard lightning messages described in [Bolt 1](https://github.com/lightning/bolts/blob/master/01-messaging.md))
+- Channel: channel with another lightning node ([Bolt 2](https://github.com/lightning/bolts/blob/master/02-peer-protocol.md))
 - Register: maps channel IDs to actors (provides a clean boundary between channel and payment components)
 - PaymentInitiator: entry point for sending payments
 - Relayer: entry point for relaying payments
 - PaymentHandler: entry point for receiving payments
-- Router: p2p gossip and the network graph ([Bolt 7](https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md))
+- Router: p2p gossip and the network graph ([Bolt 7](https://github.com/lightning/bolts/blob/master/07-routing-gossip.md))
 
 Actors have two ways of communicating:
 
@@ -128,7 +128,7 @@ Let's dive into a few payment scenarios to show which actors are involved.
 When we send a payment:
 
 - we run a path-finding algorithm (`Router`)
-- we split the payment into smaller chunks if [MPP](https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#basic-multi-part-payments) is used (`MultiPartPaymentLifecycle`)
+- we split the payment into smaller chunks if [MPP](https://github.com/lightning/bolts/blob/master/04-onion-routing.md#basic-multi-part-payments) is used (`MultiPartPaymentLifecycle`)
 - we retry with alternative routes in some failure cases and record failing channels/payments (`PaymentLifecycle`)
 - we add HTLCs to some of our channels
 
@@ -175,7 +175,7 @@ When we relay a payment:
 
 - htlcs are forwarded by channels to the relayer
 - the relayer identifies the type of relay requested and delegates work to a channel relayer or a node relayer
-- if a node relayer is used ([trampoline payments](https://github.com/lightningnetwork/lightning-rfc/pull/829)):
+- if a node relayer is used ([trampoline payments](https://github.com/lightning/bolts/pull/829)):
   - incoming htlcs are validated by a payment handler (similar to the flow to receive payments)
   - outgoing htlcs are sent out (similar to the flow to send payments)
 
