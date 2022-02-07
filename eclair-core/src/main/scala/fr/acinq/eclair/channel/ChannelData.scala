@@ -252,19 +252,6 @@ object ChannelOpenResponse {
       8888888P" d88P     888     888  d88P     888
  */
 
-sealed trait ChannelData extends PossiblyHarmful {
-  def channelId: ByteVector32
-}
-
-case object Nothing extends ChannelData {
-  val channelId: ByteVector32 = ByteVector32.Zeroes
-}
-
-sealed trait HasCommitments extends ChannelData {
-  val channelId: ByteVector32 = commitments.channelId
-  def commitments: Commitments
-}
-
 case class ClosingTxProposed(unsignedTx: ClosingTx, localClosingSigned: ClosingSigned)
 
 sealed trait CommitPublished {
@@ -375,6 +362,63 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
   }
 }
 
+/**
+ * @param initFeatures current connection features, or last features used if the channel is disconnected. Note that these
+ *                     features are updated at each reconnection and may be different from the channel permanent features
+ *                     (see [[ChannelFeatures]]).
+ */
+case class LocalParams(nodeId: PublicKey,
+                       fundingKeyPath: DeterministicWallet.KeyPath,
+                       dustLimit: Satoshi,
+                       maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                       channelReserve: Satoshi,
+                       htlcMinimum: MilliSatoshi,
+                       toSelfDelay: CltvExpiryDelta,
+                       maxAcceptedHtlcs: Int,
+                       isFunder: Boolean,
+                       defaultFinalScriptPubKey: ByteVector,
+                       walletStaticPaymentBasepoint: Option[PublicKey],
+                       initFeatures: Features[InitFeature])
+
+/**
+ * @param initFeatures see [[LocalParams.initFeatures]]
+ */
+case class RemoteParams(nodeId: PublicKey,
+                        dustLimit: Satoshi,
+                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                        channelReserve: Satoshi,
+                        htlcMinimum: MilliSatoshi,
+                        toSelfDelay: CltvExpiryDelta,
+                        maxAcceptedHtlcs: Int,
+                        fundingPubKey: PublicKey,
+                        revocationBasepoint: PublicKey,
+                        paymentBasepoint: PublicKey,
+                        delayedPaymentBasepoint: PublicKey,
+                        htlcBasepoint: PublicKey,
+                        initFeatures: Features[InitFeature],
+                        shutdownScript: Option[ByteVector])
+
+case class ChannelFlags(announceChannel: Boolean) {
+  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"
+}
+object ChannelFlags {
+  val Private: ChannelFlags = ChannelFlags(announceChannel = false)
+  val Public: ChannelFlags = ChannelFlags(announceChannel = true)
+}
+
+sealed trait ChannelData extends PossiblyHarmful {
+  def channelId: ByteVector32
+}
+
+case object Nothing extends ChannelData {
+  val channelId: ByteVector32 = ByteVector32.Zeroes
+}
+
+sealed trait HasCommitments extends ChannelData {
+  val channelId: ByteVector32 = commitments.channelId
+  def commitments: Commitments
+}
+
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends ChannelData {
   val channelId: ByteVector32 = initFundee.temporaryChannelId
 }
@@ -456,47 +500,4 @@ final case class DATA_CLOSING(commitments: Commitments,
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends ChannelData with HasCommitments
 
-/**
- * @param initFeatures current connection features, or last features used if the channel is disconnected. Note that these
- *                     features are updated at each reconnection and may be different from the channel permanent features
- *                     (see [[ChannelFeatures]]).
- */
-case class LocalParams(nodeId: PublicKey,
-                       fundingKeyPath: DeterministicWallet.KeyPath,
-                       dustLimit: Satoshi,
-                       maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                       channelReserve: Satoshi,
-                       htlcMinimum: MilliSatoshi,
-                       toSelfDelay: CltvExpiryDelta,
-                       maxAcceptedHtlcs: Int,
-                       isFunder: Boolean,
-                       defaultFinalScriptPubKey: ByteVector,
-                       walletStaticPaymentBasepoint: Option[PublicKey],
-                       initFeatures: Features[InitFeature])
-
-/**
- * @param initFeatures see [[LocalParams.initFeatures]]
- */
-case class RemoteParams(nodeId: PublicKey,
-                        dustLimit: Satoshi,
-                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                        channelReserve: Satoshi,
-                        htlcMinimum: MilliSatoshi,
-                        toSelfDelay: CltvExpiryDelta,
-                        maxAcceptedHtlcs: Int,
-                        fundingPubKey: PublicKey,
-                        revocationBasepoint: PublicKey,
-                        paymentBasepoint: PublicKey,
-                        delayedPaymentBasepoint: PublicKey,
-                        htlcBasepoint: PublicKey,
-                        initFeatures: Features[InitFeature],
-                        shutdownScript: Option[ByteVector])
-
-case class ChannelFlags(announceChannel: Boolean) {
-  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"
-}
-object ChannelFlags {
-  val Private: ChannelFlags = ChannelFlags(announceChannel = false)
-  val Public: ChannelFlags = ChannelFlags(announceChannel = true)
-}
 // @formatter:on
