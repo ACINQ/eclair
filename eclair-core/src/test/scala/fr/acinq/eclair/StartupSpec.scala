@@ -185,7 +185,7 @@ class StartupSpec extends AnyFunSuite {
     assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelType -> Optional))
   }
 
-  test("filter out non-init features in node override") {
+  test("reject non-init features in node override") {
     val perNodeConf = ConfigFactory.parseString(
       """
         |  override-init-features = [ // optional per-node features

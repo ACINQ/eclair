@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble,
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
 import fr.acinq.eclair.payment.Bolt11Invoice._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureScope, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -54,7 +54,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
             timestamp: TimestampSecond = TimestampSecond.now(),
             paymentSecret: ByteVector32 = randomBytes32(),
             paymentMetadata: Option[ByteVector] = None,
-            features: Features[InvoiceFeature] = defaultFeatures): Bolt11Invoice = {
+            features: Features[FeatureScope] = defaultFeatures.unscoped()): Bolt11Invoice = {
     require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), "invoices must require a payment secret")
     val prefix = prefixes(chainHash)
     val tags = {
@@ -66,7 +66,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
-        Some(InvoiceFeatures(features.unscoped()))
+        Some(InvoiceFeatures(features))
       ).flatten
       val routingInfoTags = extraHops.map(RoutingInfo)
       defaultTags ++ routingInfoTags
@@ -485,7 +485,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     )
 
     for ((features, res) <- featureBits) {
-      val invoice = createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features.invoiceFeatures())
+      val invoice = createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features)
       assert(Result(invoice.features.hasFeature(BasicMultiPartPayment), invoice.features.hasFeature(PaymentSecret, Some(Mandatory)), nodeParams.features.invoiceFeatures().areSupported(invoice.features)) === res)
       assert(Bolt11Invoice.fromString(invoice.toString) === invoice)
     }
@@ -622,12 +622,13 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("no unknown feature in invoice"){
+    assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().unknown.nonEmpty)
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = TestConstants.Alice.nodeParams.features.invoiceFeatures())
     assert(invoice.features === Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory)))
     assert(Bolt11Invoice.fromString(invoice.toString) === invoice)
   }
 
   test("Invoices can't have high features"){
-    assertThrows[Exception](createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(424242)))))
+    assertThrows[Exception](createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features[FeatureScope](Map[Feature with FeatureScope, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(424242)))))
   }
 }

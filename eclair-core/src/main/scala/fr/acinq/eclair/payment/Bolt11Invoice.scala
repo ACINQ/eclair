@@ -167,6 +167,7 @@ object Bolt11Invoice {
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
+        // We want to keep invoices as small as possible, so we explicitly remove unknown features.
         Some(InvoiceFeatures(features.copy(unknown = Set.empty).unscoped()))
       ).flatten
       val routingInfoTags = extraHops.map(RoutingInfo)
