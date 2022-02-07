@@ -20,6 +20,8 @@ import com.typesafe.config.Config
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import scodec.bits.{BitVector, ByteVector}
 
+import scala.jdk.CollectionConverters.CollectionHasAsScala
+
 /**
  * Created by PM on 13/02/2017.
  */
@@ -61,9 +63,9 @@ trait InvoiceFeature extends FeatureScope
 
 case class UnknownFeature(bitIndex: Int)
 
-case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[UnknownFeature] = Set.empty) {
+case class Features[T <: FeatureScope](activated: Map[Feature with T, FeatureSupport], unknown: Set[UnknownFeature] = Set.empty) {
 
-  def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
+  def hasFeature(feature: Feature with T, support: Option[FeatureSupport] = None): Boolean = support match {
     case Some(s) => activated.get(feature).contains(s)
     case None => activated.contains(feature)
   }
@@ -71,7 +73,7 @@ case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[Unknow
   def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
 
   /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
-  def areSupported(remoteFeatures: Features): Boolean = {
+  def areSupported(remoteFeatures: Features[T]): Boolean = {
     // we allow unknown odd features (it's ok to be odd)
     val unknownFeaturesOk = remoteFeatures.unknown.forall(_.bitIndex % 2 == 1)
     // we verify that we activated every mandatory feature they require
@@ -82,12 +84,13 @@ case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[Unknow
     unknownFeaturesOk && knownFeaturesOk
   }
 
-  def initFeatures(): Features = Features(activated.collect { case (f: InitFeature, s) => (f: Feature, s) }, unknown)
+  def initFeatures(): Features[InitFeature] = Features[InitFeature](activated.collect { case (f: InitFeature, s) => (f, s) }, unknown)
 
-  def nodeAnnouncementFeatures(): Features = Features(activated.collect { case (f: NodeFeature, s) => (f: Feature, s) }, unknown)
+  def nodeAnnouncementFeatures(): Features[NodeFeature] = Features[NodeFeature](activated.collect { case (f: NodeFeature, s) => (f, s) }, unknown)
 
-  // NB: we don't include unknown features in invoices, which means plugins cannot inject invoice features.
-  def invoiceFeatures(): Features = Features(activated.collect { case (f: InvoiceFeature, s) => (f: Feature, s) })
+  def invoiceFeatures(): Features[InvoiceFeature] = Features[InvoiceFeature](activated.collect { case (f: InvoiceFeature, s) => (f, s) }, unknown)
+
+  def unscoped(): Features[FeatureScope] = Features[FeatureScope](activated.collect { case (f, s) => (f: Feature with FeatureScope, s) }, unknown)
 
   def toByteVector: ByteVector = {
     val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature.supportBit(support) }.toSet)
@@ -113,47 +116,37 @@ case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[Unknow
 
 object Features {
 
-  def empty = Features(Map.empty[Feature, FeatureSupport])
+  def empty[T <: FeatureScope]: Features[T] = Features[T](Map.empty[Feature with T, FeatureSupport])
 
-  def apply(features: (Feature, FeatureSupport)*): Features = Features(Map.from(features))
+  def apply[T <: FeatureScope](features: (Feature with T, FeatureSupport)*): Features[T] = Features[T](Map.from(features))
 
-  def apply(bytes: ByteVector): Features = apply(bytes.bits)
+  def apply(bytes: ByteVector): Features[FeatureScope] = apply(bytes.bits)
 
-  def apply(bits: BitVector): Features = {
+  def apply(bits: BitVector): Features[FeatureScope] = {
     val all = bits.toIndexedSeq.reverse.zipWithIndex.collect {
       case (true, idx) if knownFeatures.exists(_.optional == idx) => Right((knownFeatures.find(_.optional == idx).get, Optional))
       case (true, idx) if knownFeatures.exists(_.mandatory == idx) => Right((knownFeatures.find(_.mandatory == idx).get, Mandatory))
       case (true, idx) => Left(UnknownFeature(idx))
     }
-    Features(
+    Features[FeatureScope](
       activated = all.collect { case Right((feature, support)) => feature -> support }.toMap,
       unknown = all.collect { case Left(inf) => inf }.toSet
     )
   }
 
-  /** expects to have a top level config block named "features" */
-  def fromConfiguration(config: Config): Features = Features(
-    knownFeatures.flatMap {
-      feature =>
-        getFeature(config, feature.rfcName) match {
-          case Some(support) => Some(feature -> support)
-          case _ => None
-        }
-    }.toMap)
-
-  /** tries to extract the given feature name from the config, if successful returns its feature support */
-  private def getFeature(config: Config, name: String): Option[FeatureSupport] = {
-    if (!config.hasPath(s"features.$name")) {
-      None
-    } else {
-      config.getString(s"features.$name") match {
-        case support if support == Mandatory.toString => Some(Mandatory)
-        case support if support == Optional.toString => Some(Optional)
+  def fromConfiguration[T <: FeatureScope](config: Config, validFeatures: Set[Feature with T]): Features[T] = Features[T](
+    config.root().entrySet().asScala.flatMap { entry =>
+      val featureName = entry.getKey
+      val feature: Feature with T = validFeatures.find(_.rfcName == featureName).getOrElse(throw new IllegalArgumentException(s"Invalid feature name ($featureName)"))
+      config.getString(featureName) match {
+        case support if support == Mandatory.toString => Some(feature -> Mandatory)
+        case support if support == Optional.toString => Some(feature -> Optional)
         case support if support == "disabled" => None
         case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
       }
-    }
-  }
+    }.toMap)
+
+  def fromConfiguration(config: Config): Features[FeatureScope] = fromConfiguration[FeatureScope](config, knownFeatures)
 
   case object DataLossProtect extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_data_loss_protect"
@@ -249,7 +242,7 @@ object Features {
     val mandatory = 54
   }
 
-  val knownFeatures: Set[Feature] = Set(
+  val knownFeatures: Set[Feature with FeatureScope] = Set(
     DataLossProtect,
     InitialRoutingSync,
     UpfrontShutdownScript,
@@ -285,16 +278,16 @@ object Features {
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
 
-  def validateFeatureGraph(features: Features): Option[FeatureException] = featuresDependency.collectFirst {
-    case (feature, dependencies) if features.hasFeature(feature) && dependencies.exists(d => !features.hasFeature(d)) =>
-      FeatureException(s"$feature is set but is missing a dependency (${dependencies.filter(d => !features.hasFeature(d)).mkString(" and ")})")
+  def validateFeatureGraph[T <: FeatureScope](features: Features[T]): Option[FeatureException] = featuresDependency.collectFirst {
+    case (feature, dependencies) if features.unscoped().hasFeature(feature) && dependencies.exists(d => !features.unscoped().hasFeature(d)) =>
+      FeatureException(s"$feature is set but is missing a dependency (${dependencies.filter(d => !features.unscoped().hasFeature(d)).mkString(" and ")})")
   }
 
   /** Returns true if both feature sets are compatible. */
-  def areCompatible(ours: Features, theirs: Features): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
+  def areCompatible[T <: FeatureScope](ours: Features[T], theirs: Features[T]): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
 
   /** returns true if both have at least optional support */
-  def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {
+  def canUseFeature[T <: FeatureScope](localFeatures: Features[T], remoteFeatures: Features[T], feature: Feature with T): Boolean = {
     localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
   }
 

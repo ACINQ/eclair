@@ -10,7 +10,7 @@ import fr.acinq.eclair.channel.ChannelIdAssigned
 import fr.acinq.eclair.io.Switchboard._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, NodeParams, TestKitBaseClass, TimestampSecondLong, randomBytes32, randomKey}
+import fr.acinq.eclair.{Features, InitFeature, NodeParams, TestKitBaseClass, TimestampSecondLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
@@ -63,7 +63,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     peer.expectMsg(Peer.Disconnect(remoteNodeId))
   }
 
-  def sendFeatures(nodeParams: NodeParams, remoteNodeId: PublicKey, expectedFeatures: Features, expectedSync: Boolean): Unit = {
+  def sendFeatures(nodeParams: NodeParams, remoteNodeId: PublicKey, expectedFeatures: Features[InitFeature], expectedSync: Boolean): Unit = {
     val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)

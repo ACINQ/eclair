@@ -320,12 +320,12 @@ object FrontRouterSpec {
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
 
-  val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, Features(hex"0200"))
-  val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, Features(hex""))
-  val ann_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, Features(hex"0200"))
-  val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, Features(hex"00"))
-  val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, Features(hex"00"))
-  val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, Features(hex"00"))
+  val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, Features(Features.VariableLengthOnion -> FeatureSupport.Optional))
+  val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, Features.empty)
+  val ann_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, Features(Features.VariableLengthOnion -> FeatureSupport.Optional))
+  val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, Features.empty)
+  val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, Features.empty)
+  val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, Features.empty)
 
   val channelId_ab = ShortChannelId(BlockHeight(420000), 1, 0)
   val channelId_bc = ShortChannelId(BlockHeight(420000), 2, 0)

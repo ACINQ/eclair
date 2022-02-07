@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -44,7 +44,7 @@ trait Invoice {
 
   val minFinalCltvExpiryDelta: Option[CltvExpiryDelta]
 
-  val features: Features
+  val features: Features[InvoiceFeature]
 
   def isExpired(): Boolean = createdAt + relativeExpiry.toSeconds <= TimestampSecond.now()
 

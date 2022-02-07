@@ -84,8 +84,8 @@ object TestConstants {
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       torAddress_opt = None,
-      features = Features(
-        Map[Feature, FeatureSupport](
+      features = Features[FeatureScope](
+        Map[Feature with FeatureScope, FeatureSupport](
           DataLossProtect -> Optional,
           ChannelRangeQueries -> Optional,
           ChannelRangeQueriesExtended -> Optional,
@@ -97,7 +97,7 @@ object TestConstants {
         Set(UnknownFeature(TestFeature.optional))
       ),
       pluginParams = List(pluginParams),
-      overrideFeatures = Map.empty,
+      overrideInitFeatures = Map.empty,
       syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1100 sat,
@@ -199,7 +199,7 @@ object TestConstants {
 
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
-      nodeParams.features,
+      nodeParams.features.initFeatures(),
       Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
       isFunder = true,
@@ -232,7 +232,7 @@ object TestConstants {
         PaymentMetadata -> Optional,
       ),
       pluginParams = Nil,
-      overrideFeatures = Map.empty,
+      overrideInitFeatures = Map.empty,
       syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1000 sat,
@@ -334,7 +334,7 @@ object TestConstants {
 
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
-      nodeParams.features,
+      nodeParams.features.initFeatures(),
       Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
       isFunder = false,

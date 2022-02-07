@@ -99,10 +99,10 @@ It's usually risky to activate non-default features or disable default features:
 Eclair supports per-peer features. Suppose you are connected to Alice and Bob, you can use a different set of features with Alice than the one you use with Bob.
 When experimenting with non-default features, we recommend using this to scope the peers you want to experiment with.
 
-This is done with the `override-features` configuration parameter in your `eclair.conf`:
+This is done with the `override-init-features` configuration parameter in your `eclair.conf`:
 
 ```conf
-eclair.override-features = [
+eclair.override-init-features = [
     {
         nodeId = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"
         features {

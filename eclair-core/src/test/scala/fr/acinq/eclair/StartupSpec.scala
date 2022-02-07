@@ -166,7 +166,7 @@ class StartupSpec extends AnyFunSuite {
   test("parse human readable override features") {
     val perNodeConf = ConfigFactory.parseString(
       """
-        |  override-features = [ // optional per-node features
+        |  override-init-features = [ // optional per-node features
         |      {
         |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         |          features {
@@ -185,10 +185,10 @@ class StartupSpec extends AnyFunSuite {
     assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelType -> Optional))
   }
 
-  test("filter out non-init features in node override") {
+  test("reject non-init features in node override") {
     val perNodeConf = ConfigFactory.parseString(
       """
-        |  override-features = [ // optional per-node features
+        |  override-init-features = [ // optional per-node features
         |      {
         |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         |          features {
@@ -211,15 +211,7 @@ class StartupSpec extends AnyFunSuite {
       """.stripMargin
     )
 
-    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    val perNodeFeaturesA = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
-    val perNodeFeaturesB = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")))
-    val defaultNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")))
-    // Some features should never be sent in init messages.
-    assert(nodeParams.features.hasFeature(PaymentMetadata))
-    assert(!perNodeFeaturesA.hasFeature(PaymentMetadata))
-    assert(!perNodeFeaturesB.hasFeature(PaymentMetadata))
-    assert(!defaultNodeFeatures.hasFeature(PaymentMetadata))
+    assertThrows[IllegalArgumentException](makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf)))
   }
 
   test("override feerate mismatch tolerance") {

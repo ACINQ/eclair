@@ -109,7 +109,7 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("features compatibility") {
-    case class TestCase(ours: Features, theirs: Features, oursSupportTheirs: Boolean, theirsSupportOurs: Boolean, compatible: Boolean)
+    case class TestCase(ours: Features[FeatureScope], theirs: Features[FeatureScope], oursSupportTheirs: Boolean, theirsSupportOurs: Boolean, compatible: Boolean)
     val testCases = Seq(
       // Empty features
       TestCase(
@@ -168,7 +168,7 @@ class FeaturesSpec extends AnyFunSuite {
       // They have unknown optional features
       TestCase(
         Features(VariableLengthOnion -> Optional),
-        Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(141))),
+        Features[FeatureScope](Map[Feature with FeatureScope, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(141))),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
@@ -176,7 +176,7 @@ class FeaturesSpec extends AnyFunSuite {
       // They have unknown mandatory features
       TestCase(
         Features(VariableLengthOnion -> Optional),
-        Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(142))),
+        Features[FeatureScope](Map[Feature with FeatureScope, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(142))),
         oursSupportTheirs = false,
         theirsSupportOurs = true,
         compatible = false
@@ -198,10 +198,10 @@ class FeaturesSpec extends AnyFunSuite {
         compatible = false
       ),
       // nonreg testing of future features (needs to be updated with every new supported mandatory bit)
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(28))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(29))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+      TestCase(Features.empty, Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+      TestCase(Features.empty, Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(28))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(29))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
     )
 
     for (testCase <- testCases) {
@@ -212,19 +212,22 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("filter features based on their usage") {
-    val features = Features(
-      Map[Feature, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
-      Set(UnknownFeature(753), UnknownFeature(852))
+    val features = Features[FeatureScope](
+      Map[Feature with FeatureScope, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
+      Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     )
-    assert(features.initFeatures() === Features(
-      Map[Feature, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
-      Set(UnknownFeature(753), UnknownFeature(852))
+    assert(features.initFeatures() === Features[InitFeature](
+      Map[Feature with InitFeature, FeatureSupport](DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
+      Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     ))
-    assert(features.nodeAnnouncementFeatures() === Features(
-      Map[Feature, FeatureSupport](DataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
-      Set(UnknownFeature(753), UnknownFeature(852))
+    assert(features.nodeAnnouncementFeatures() === Features[NodeFeature](
+      Map[Feature with NodeFeature, FeatureSupport](DataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
+      Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     ))
-    assert(features.invoiceFeatures() === Features(VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional))
+    assert(features.invoiceFeatures() === Features[InvoiceFeature](
+      Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
+      Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
+    ))
   }
 
   test("features to bytes") {
@@ -232,8 +235,8 @@ class FeaturesSpec extends AnyFunSuite {
       hex"" -> Features.empty,
       hex"0100" -> Features(VariableLengthOnion -> Mandatory),
       hex"028a8a" -> Features(DataLossProtect -> Optional, InitialRoutingSync -> Optional, ChannelRangeQueries -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueriesExtended -> Optional, PaymentSecret -> Optional, BasicMultiPartPayment -> Optional),
-      hex"09004200" -> Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, ShutdownAnySegwit -> Optional), Set(UnknownFeature(24))),
-      hex"52000000" -> Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
+      hex"09004200" -> Features[FeatureScope](Map[Feature with FeatureScope, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, ShutdownAnySegwit -> Optional), Set(UnknownFeature(24))),
+      hex"52000000" -> Features[FeatureScope](Map.empty[Feature with FeatureScope, FeatureSupport], Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
     )
 
     for ((bin, features) <- testCases) {
@@ -249,16 +252,14 @@ class FeaturesSpec extends AnyFunSuite {
     {
       val conf = ConfigFactory.parseString(
         """
-          |features {
-          |  option_data_loss_protect = optional
-          |  initial_routing_sync = optional
-          |  gossip_queries = optional
-          |  gossip_queries_ex = optional
-          |  var_onion_optin = optional
-          |  payment_secret = optional
-          |  basic_mpp = optional
-          |}
-      """.stripMargin)
+          option_data_loss_protect = optional
+          initial_routing_sync = optional
+          gossip_queries = optional
+          gossip_queries_ex = optional
+          var_onion_optin = optional
+          payment_secret = optional
+          basic_mpp = optional
+        """)
 
       val features = fromConfiguration(conf)
       assert(features.toByteVector === hex"028a8a")
@@ -276,16 +277,12 @@ class FeaturesSpec extends AnyFunSuite {
     {
       val conf = ConfigFactory.parseString(
         """
-          |  features {
-          |    initial_routing_sync = optional
-          |    option_data_loss_protect = optional
-          |    gossip_queries = optional
-          |    gossip_queries_ex = mandatory
-          |    var_onion_optin = optional
-          |  }
-          |
-      """.stripMargin
-      )
+          initial_routing_sync = optional
+          option_data_loss_protect = optional
+          gossip_queries = optional
+          gossip_queries_ex = mandatory
+          var_onion_optin = optional
+        """)
 
       val features = fromConfiguration(conf)
       assert(features.toByteVector === hex"068a")
@@ -303,29 +300,21 @@ class FeaturesSpec extends AnyFunSuite {
     {
       val confWithUnknownFeatures = ConfigFactory.parseString(
         """
-          |features {
-          |  option_non_existent = mandatory # this is ignored
-          |  gossip_queries = optional
-          |  payment_secret = mandatory
-          |}
-      """.stripMargin)
+          option_non_existent = mandatory
+          gossip_queries = optional
+          payment_secret = mandatory
+        """)
 
-      val features = fromConfiguration(confWithUnknownFeatures)
-      assert(features.toByteVector === hex"4080")
-      assert(Features(hex"4080") === features)
-      assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
-      assert(features.hasFeature(PaymentSecret, Some(Mandatory)))
+      assertThrows[RuntimeException](fromConfiguration(confWithUnknownFeatures))
     }
 
     {
       val confWithUnknownSupport = ConfigFactory.parseString(
         """
-          |features {
-          |  option_data_loss_protect = what
-          |  gossip_queries = optional
-          |  payment_secret = mandatory
-          |}
-      """.stripMargin)
+          option_data_loss_protect = what
+          gossip_queries = optional
+          payment_secret = mandatory
+        """)
 
       assertThrows[RuntimeException](fromConfiguration(confWithUnknownSupport))
     }
@@ -333,14 +322,12 @@ class FeaturesSpec extends AnyFunSuite {
     {
       val confWithDisabledFeatures = ConfigFactory.parseString(
         """
-          |features {
-          |  option_data_loss_protect = disabled
-          |  gossip_queries = optional
-          |  payment_secret = mandatory
-          |  option_support_large_channel = disabled
-          |  gossip_queries_ex = mandatory
-          |}
-        """.stripMargin)
+          option_data_loss_protect = disabled
+          gossip_queries = optional
+          payment_secret = mandatory
+          option_support_large_channel = disabled
+          gossip_queries_ex = mandatory
+        """)
 
       val features = fromConfiguration(confWithDisabledFeatures)
       assert(!features.hasFeature(DataLossProtect))

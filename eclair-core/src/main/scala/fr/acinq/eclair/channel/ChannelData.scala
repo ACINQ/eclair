@@ -24,7 +24,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -472,7 +472,7 @@ case class LocalParams(nodeId: PublicKey,
                        isFunder: Boolean,
                        defaultFinalScriptPubKey: ByteVector,
                        walletStaticPaymentBasepoint: Option[PublicKey],
-                       initFeatures: Features)
+                       initFeatures: Features[InitFeature])
 
 /**
  * @param initFeatures see [[LocalParams.initFeatures]]
@@ -489,7 +489,7 @@ case class RemoteParams(nodeId: PublicKey,
                         paymentBasepoint: PublicKey,
                         delayedPaymentBasepoint: PublicKey,
                         htlcBasepoint: PublicKey,
-                        initFeatures: Features,
+                        initFeatures: Features[InitFeature],
                         shutdownScript: Option[ByteVector])
 
 case class ChannelFlags(announceChannel: Boolean) {
