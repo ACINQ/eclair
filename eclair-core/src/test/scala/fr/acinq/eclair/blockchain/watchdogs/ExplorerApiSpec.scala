@@ -28,7 +28,7 @@ class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
   implicit val sttpBackend = ExplorerApi.createSttpBackend(None)
 
-  val explorers = Seq(BlockcypherExplorer(None), BlockstreamExplorer(None), MempoolSpaceExplorer(None))
+  val explorers = Seq(BlockcypherExplorer(), BlockstreamExplorer(useTorEndpoints = false), MempoolSpaceExplorer(useTorEndpoints = false))
 
   test("fetch latest block headers", TestTags.ExternalApi) {
     for (explorer <- explorers) {

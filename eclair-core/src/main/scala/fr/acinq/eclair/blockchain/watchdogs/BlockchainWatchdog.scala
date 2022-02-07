@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.{BlockHeight, NodeParams, NotificationsLogger}
 import sttp.client3.SttpBackend
 
@@ -42,11 +41,6 @@ object BlockchainWatchdog {
   // @formatter:off
   case class BlockHeaderAt(blockHeight: BlockHeight, blockHeader: BlockHeader)
   case object NoBlockReceivedTimer
-
-  trait SupportsTor {
-    /** Tor proxy connection parameters */
-    def socksProxy_opt: Option[Socks5ProxyParams]
-  }
 
   sealed trait BlockchainWatchdogEvent
   /**
@@ -75,9 +69,10 @@ object BlockchainWatchdog {
       implicit val sb: SttpBackend[Future, _] = ExplorerApi.createSttpBackend(socksProxy_opt)
 
       val explorers = Seq(
-        ExplorerApi.BlockstreamExplorer(socksProxy_opt),
-        ExplorerApi.BlockcypherExplorer(socksProxy_opt),
-        ExplorerApi.MempoolSpaceExplorer(socksProxy_opt)
+        ExplorerApi.BlockcypherExplorer(),
+        // NB: if there is a proxy, we assume it is a tor proxy
+        ExplorerApi.BlockstreamExplorer(useTorEndpoints = socksProxy_opt.isDefined),
+        ExplorerApi.MempoolSpaceExplorer(useTorEndpoints = socksProxy_opt.isDefined)
       ).filter { e =>
         val enabled = nodeParams.blockchainWatchdogSources.contains(e.name)
         if (!enabled) {
