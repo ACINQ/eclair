@@ -25,7 +25,6 @@ import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.{BlockHeight, NodeParams, NotificationsLogger}
-import sttp.capabilities
 import sttp.client3.SttpBackend
 
 import java.util.UUID
@@ -73,7 +72,7 @@ object BlockchainWatchdog {
   def apply(nodeParams: NodeParams, maxRandomDelay: FiniteDuration, blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
       val socksProxy_opt = nodeParams.socksProxy_opt.flatMap(params => if (params.useForWatchdogs) Some(params) else None)
-      implicit val sb: SttpBackend[Future, capabilities.WebSockets] = ExplorerApi.createSttpBackend(socksProxy_opt)
+      implicit val sb: SttpBackend[Future, _] = ExplorerApi.createSttpBackend(socksProxy_opt)
 
       val explorers = Seq(
         ExplorerApi.BlockstreamExplorer(socksProxy_opt),

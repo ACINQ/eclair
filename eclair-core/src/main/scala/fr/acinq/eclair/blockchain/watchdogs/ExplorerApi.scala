@@ -28,7 +28,6 @@ import fr.acinq.eclair.{BlockHeight, randomBytes}
 import org.json4s.JsonAST.{JArray, JInt, JObject, JString}
 import org.json4s.jackson.Serialization
 import org.json4s.{DefaultFormats, Serialization}
-import sttp.capabilities
 import sttp.client3._
 import sttp.client3.json4s._
 import sttp.client3.okhttp.OkHttpFutureBackend
@@ -94,7 +93,7 @@ object ExplorerApi {
     }
   }
 
-  def createSttpBackend(socksProxy_opt: Option[Socks5ProxyParams]): SttpBackend[Future, capabilities.WebSockets] = {
+  def createSttpBackend(socksProxy_opt: Option[Socks5ProxyParams]): SttpBackend[Future, _] = {
     val options = SttpBackendOptions(connectionTimeout = 30.seconds, proxy = None)
     val sttpBackendOptions = socksProxy_opt match {
       case Some(proxy) =>
@@ -113,7 +112,7 @@ object ExplorerApi {
    * Query https://blockcypher.com/ to fetch block headers.
    * See https://www.blockcypher.com/dev/bitcoin/#introduction.
    */
-  case class BlockcypherExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, capabilities.WebSockets]) extends Explorer with SupportsTor {
+  case class BlockcypherExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, _]) extends Explorer with SupportsTor {
     override val name = "blockcypher.com"
     override val baseUris = Map(
       Block.TestnetGenesisBlock.hash -> uri"https://api.blockcypher.com/v1/btc/test3",
@@ -172,7 +171,7 @@ object ExplorerApi {
 
   /** Explorer API based on Esplora: see https://github.com/Blockstream/esplora/blob/master/API.md. */
   sealed trait Esplora extends Explorer with SupportsTor {
-    implicit val sb: SttpBackend[Future, capabilities.WebSockets]
+    implicit val sb: SttpBackend[Future, _]
 
     override def getLatestHeaders(baseUri: Uri, currentBlockHeight: BlockHeight)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
       implicit val ec: ExecutionContext = context.system.executionContext
@@ -202,7 +201,7 @@ object ExplorerApi {
   }
 
   /** Query https://blockstream.info/ to fetch block headers. */
-  case class BlockstreamExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, capabilities.WebSockets]) extends Esplora {
+  case class BlockstreamExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, _]) extends Esplora {
     override val name = "blockstream.info"
     override val baseUris = socksProxy_opt match {
       case Some(_) =>
@@ -219,7 +218,7 @@ object ExplorerApi {
   }
 
   /** Query https://mempool.space/ to fetch block headers. */
-  case class MempoolSpaceExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, capabilities.WebSockets]) extends Esplora {
+  case class MempoolSpaceExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, _]) extends Esplora {
     override val name = "mempool.space"
     override val baseUris = socksProxy_opt match {
       case Some(_) =>

@@ -22,7 +22,6 @@ import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
 import org.json4s.JsonAST.{JString, JValue}
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomSerializer, DefaultFormats}
-import sttp.capabilities
 import sttp.client3._
 import sttp.client3.json4s._
 import sttp.model.StatusCode
@@ -33,7 +32,7 @@ import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
-class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit sb: SttpBackend[Future, capabilities.WebSockets]) extends BitcoinJsonRPCClient {
+class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit sb: SttpBackend[Future, _]) extends BitcoinJsonRPCClient {
 
   // necessary to properly serialize ByteVector32 into String readable by bitcoind
   object ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {

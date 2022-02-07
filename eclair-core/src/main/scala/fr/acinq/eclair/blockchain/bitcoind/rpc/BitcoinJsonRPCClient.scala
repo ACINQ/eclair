@@ -16,10 +16,9 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
-import java.io.IOException
-
 import org.json4s.JsonAST.JValue
 
+import java.io.IOException
 import scala.concurrent.{ExecutionContext, Future}
 
 trait BitcoinJsonRPCClient {
