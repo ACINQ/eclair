@@ -15,7 +15,7 @@ Then you'll have to install jq:
 
 - Download the eclair-cli file from [our sources](https://github.com/ACINQ/eclair/blob/master/eclair-core/eclair-cli)
 - (optional) Move the file to `~/bin`
-- Enable the [JSON API](https://github.com/ACINQ/eclair/wiki/API) in your `eclair.conf` settings.
+- Enable the [JSON API](./API.md) in your `eclair.conf` settings.
 
 Run this command to list the available calls:
 
