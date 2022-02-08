@@ -33,7 +33,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val payerKey = randomKey()
     val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey)
     val request = InvoiceRequest(offer, 10000 msat, 1, Features.empty, payerKey)
-    val invoice = Bolt12Invoice(offer, request, hex"013a9e", nodeKey)
+    val invoice = Bolt12Invoice(offer, request, hex"013a9e", nodeKey, Features.empty)
     assert(invoice.isValidFor(offer, request))
     assert(Bolt12Invoice.fromString(invoice.toString).toString === invoice.toString)
   }

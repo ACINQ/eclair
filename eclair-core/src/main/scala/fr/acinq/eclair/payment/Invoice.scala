@@ -53,7 +53,7 @@ trait Invoice {
 
 object Invoice {
   def fromString(input: String): Invoice = {
-    if (input.startsWith("lni")) {
+    if (input.toLowerCase.startsWith("lni")) {
       Bolt12Invoice.fromString(input)
     } else {
       Bolt11Invoice.fromString(input)

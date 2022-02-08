@@ -45,9 +45,9 @@ object OfferCodecs {
 
   private val absoluteExpiry: Codec[AbsoluteExpiry] = variableSizeBytesLong(varintoverflow, tu64overflow).as[TimestampSecond].as[AbsoluteExpiry]
 
-  private val hopCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encTlv" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
+  private val blindedNodeCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
 
-  private val pathCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | listOfN(uint8, hopCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
+  private val pathCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | listOfN(uint8, blindedNodeCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
 
   private val paths: Codec[Paths] = variableSizeBytesLong(varintoverflow, list(pathCodec)).xmap[Seq[BlindedRoute]](_.toSeq, _.toList).as[Paths]
 
@@ -79,8 +79,8 @@ object OfferCodecs {
     .typecase(UInt64(22), quantityMin)
     .typecase(UInt64(24), quantityMax)
     .typecase(UInt64(30), nodeId)
-    .typecase(UInt64(54), sendInvoice)
     .typecase(UInt64(34), refundFor)
+    .typecase(UInt64(54), sendInvoice)
     .typecase(UInt64(240), signature)).complete
 
   val offerCodec: Codec[Offer] = offerTlvCodec.narrow({ tlvs =>
@@ -230,10 +230,27 @@ object OfferCodecs {
       hrp + "1" + new String(int5s.map(i => Bech32.alphabet(i)))
     }
 
-    val surroundedSpaces: Regex = raw"([0-9a-z])\+\p{Space}*([0-9a-z])".r
+    def stripPluses(s: String): String = {
+      val builder = new StringBuilder(s.length)
+      require('a' <= s(0) && s(0) <= 'z')
+      builder += s(0)
+      var i = 1
+      while(i < s.length){
+        if (s(i) == '+') {
+          i += 1
+          while(s(i).isWhitespace) {
+            i += 1
+          }
+        }
+        require(('a' <= s(i) && s(i) <= 'z') || ('0' <= s(i) && s(i) <= '9'))
+        builder += s(i)
+        i += 1
+      }
+      builder.result()
+    }
 
     def decode[A](hrp: String, codec: Codec[A], s: String): Try[A] = Try {
-      val bech32withoutChecksum = surroundedSpaces.replaceAllIn(s, _ match { case surroundedSpaces(a, b) => a + b })
+      val bech32withoutChecksum = stripPluses(s)
       val pos = bech32withoutChecksum.lastIndexOf('1')
       require(bech32withoutChecksum.take(pos) == hrp, s"unexpected hrp: ${bech32withoutChecksum.take(pos)}")
       val data = new Array[Bech32.Int5](bech32withoutChecksum.length - pos - 1)

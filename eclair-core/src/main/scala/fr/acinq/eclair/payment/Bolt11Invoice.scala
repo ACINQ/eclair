@@ -30,7 +30,7 @@ import scala.util.{Failure, Success, Try}
 
 /**
  * Lightning Bolt 11 invoice
- * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
+ * see https://github.com/lightning/bolts/blob/master/11-payment-encoding.md
  *
  * @param prefix     currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
  * @param amount_opt amount to pay (empty string means no amount is specified)

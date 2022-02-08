@@ -43,10 +43,19 @@ object OnionMessagePayloadTlv {
    */
   case class EncryptedData(data: ByteVector) extends OnionMessagePayloadTlv
 
+  /**
+   * If an onion message has this TLV, it is an invoice request.
+   */
   case class InvoiceRequest(request: Offers.InvoiceRequest) extends OnionMessagePayloadTlv
 
+  /**
+   * If an onion message has this TLV, it is an invoice sent as a response to an invoice request.
+   */
   case class Invoice(invoice: Bolt12Invoice) extends OnionMessagePayloadTlv
 
+  /**
+   * If an onion message has this TLV, it is a response to an invoice request that couldn't be processed properly.
+   */
   case class InvoiceError(error: Offers.InvoiceError) extends OnionMessagePayloadTlv
 
 }
