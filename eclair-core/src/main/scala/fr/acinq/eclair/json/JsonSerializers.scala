@@ -432,16 +432,17 @@ object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessag
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
+  override def typeHintFieldName: String = "type"
+
   override val hints: List[Class[_]] = custom.keys.toList
 
-  override def hintFor(clazz: Class[_]): String = custom.getOrElse(clazz, {
-    throw new IllegalArgumentException(s"No type hint mapping found for $clazz")
-  })
+  override def hintFor(clazz: Class[_]): Option[String] = custom.get(clazz)
 
-  override def classFor(hint: String): Option[Class[_]] = reverse.get(hint)
+  override def classFor(hint: String, parent: Class[_]): Option[Class[_]] = reverse.get(hint)
 }
 
 object CustomTypeHints {
+
   val incomingPaymentStatus: CustomTypeHints = CustomTypeHints(Map(
     IncomingPaymentStatus.Pending.getClass -> "pending",
     IncomingPaymentStatus.Expired.getClass -> "expired",
@@ -482,14 +483,14 @@ object CustomTypeHints {
       classOf[DATA_NEGOTIATING],
       classOf[DATA_CLOSING],
       classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
-    ))
+    ), typeHintFieldName = "type")
 }
 
 object JsonSerializers {
 
   implicit val serialization: Serialization.type = jackson.Serialization
 
-  implicit val formats: Formats = org.json4s.DefaultFormats.withTypeHintFieldName("type") +
+  implicit val formats: Formats = org.json4s.DefaultFormats +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +

@@ -177,7 +177,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
   when(Normal) {
     handleExceptions {
-      case Event(Tcp.Received(data), d: NormalData[T]) =>
+      case Event(Tcp.Received(data), d: NormalData[T @unchecked]) =>
         val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
         if (plaintextMessages.isEmpty) {
           connection ! Tcp.ResumeReading
@@ -188,7 +188,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           stay() using NormalData(d.encryptor, dec1, d.listener, d.sendBuffer, unackedReceived, d.unackedSent)
         }
 
-      case Event(ReadAck(msg: T), d: NormalData[T]) =>
+      case Event(ReadAck(msg: T), d: NormalData[T @unchecked]) =>
         // how many occurences of this message are still unacked?
         val remaining = d.unackedReceived.getOrElse(msg, 0) - 1
         log.debug("acking message {}", msg)
@@ -203,7 +203,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           stay() using d.copy(unackedReceived = unackedReceived1)
         }
 
-      case Event(t: T, d: NormalData[T]) =>
+      case Event(t: T, d: NormalData[T @unchecked]) =>
         if (d.sendBuffer.normalPriority.size + d.sendBuffer.lowPriority.size >= MAX_BUFFERED) {
           log.warning("send buffer overrun, closing connection")
           connection ! PoisonPill
@@ -224,7 +224,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           stay() using d.copy(encryptor = enc1, unackedSent = Some(t))
         }
 
-      case Event(WriteAck, d: NormalData[T]) =>
+      case Event(WriteAck, d: NormalData[T @unchecked]) =>
         def send(t: T) = {
           diag(t, "OUT")
           val blob = codec.encode(t).require.toByteVector
@@ -262,7 +262,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
       case Event(msg, d) =>
         d match {
-          case n: NormalData[T] => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
+          case n: NormalData[_] => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
           case _ => log.warning(s"unhandled message $msg in state ${d.getClass.getSimpleName}")
         }
         stay()

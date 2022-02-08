@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.ActorSystem
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
+import sttp.client3.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.ValidateResult

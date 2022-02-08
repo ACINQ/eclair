@@ -19,7 +19,6 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
-import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
@@ -28,6 +27,7 @@ import fr.acinq.eclair.integration.IntegrationSpec
 import fr.acinq.eclair.{BlockHeight, TestUtils, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
+import sttp.client3.okhttp.OkHttpFutureBackend
 
 import java.io.File
 import java.nio.file.Files

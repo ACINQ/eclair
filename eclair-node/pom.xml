@@ -101,7 +101,7 @@
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.37.0</version>
+            <version>1.39.2</version>
         </dependency>
         <!-- metrics -->
         <dependency>

@@ -160,7 +160,7 @@
         </dependency>
         <!-- HTTP CLIENT -->
         <dependency>
-            <groupId>com.softwaremill.sttp</groupId>
+            <groupId>com.softwaremill.sttp.client3</groupId>
             <artifactId>okhttp-backend_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
         </dependency>
@@ -168,10 +168,10 @@
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>3.6.11</version>
+            <version>4.0.3</version>
         </dependency>
         <dependency>
-            <groupId>com.softwaremill.sttp</groupId>
+            <groupId>com.softwaremill.sttp.client3</groupId>
             <artifactId>json4s_${scala.version.short}</artifactId>
             <version>${sttp.version}</version>
         </dependency>
@@ -202,13 +202,13 @@
         <dependency>
             <groupId>org.scodec</groupId>
             <artifactId>scodec-core_${scala.version.short}</artifactId>
-            <version>1.11.8</version>
+            <version>1.11.9</version>
         </dependency>
         <dependency>
             <!-- needed to fix "No implicit Ordering defined for scodec.bits.ByteVector" -->
             <groupId>org.scodec</groupId>
             <artifactId>scodec-bits_${scala.version.short}</artifactId>
-            <version>1.1.25</version>
+            <version>1.1.30</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>
@@ -234,8 +234,8 @@
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
-            <version>42.2.23</version>
             <artifactId>postgresql</artifactId>
+            <version>42.3.2</version>
         </dependency>
         <dependency>
             <groupId>com.zaxxer</groupId>
