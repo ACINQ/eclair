@@ -687,28 +687,35 @@ object Helpers {
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index.toInt)
 
         // those are the preimages to existing received htlcs
-        val hash2Preimage = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
+        val hash2Preimage: Map[ByteVector32, ByteVector32] = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
+        val failedIncomingHtlcs: Set[Long] = commitments.localChanges.all.collect {
+          case u: UpdateFailHtlc => u.id
+          case u: UpdateFailMalformedHtlc => u.id
+        }.toSet
 
         localCommit.htlcTxsAndRemoteSigs.collect {
           case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
             if (hash2Preimage.contains(paymentHash)) {
               // incoming htlc for which we have the preimage: we can spend it immediately
-              txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
+              Some(txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
                 val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
                 Right(Transactions.addSigs(txInfo, localSig, remoteSig, hash2Preimage(paymentHash), commitmentFormat))
-              }
+              })
+            } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
+              // incoming htlc that we know for sure will never be fulfilled downstream: we can safely discard it
+              None
             } else {
               // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
               // preimage later, otherwise it will eventually timeout and they will get their funds back
-              txInfo.input.outPoint -> None
+              Some(txInfo.input.outPoint -> None)
             }
           case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
             // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-            txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
+            Some(txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
               val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
               Right(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
-            }
-        }.toMap
+            })
+        }.flatten.toMap
       }
 
       /**

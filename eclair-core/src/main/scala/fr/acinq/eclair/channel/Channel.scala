@@ -1421,10 +1421,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   })
 
   when(CLOSING)(handleExceptions {
-    case Event(c: CMD_FULFILL_HTLC, d: DATA_CLOSING) =>
-      Commitments.sendFulfill(d.commitments, c) match {
+    case Event(c: HtlcSettlementCommand, d: DATA_CLOSING) =>
+      (c match {
+        case c: CMD_FULFILL_HTLC => Commitments.sendFulfill(d.commitments, c)
+        case c: CMD_FAIL_HTLC => Commitments.sendFail(d.commitments, c, nodeParams.privateKey)
+        case c: CMD_FAIL_MALFORMED_HTLC => Commitments.sendFailMalformed(d.commitments, c)
+      }) match {
         case Right((commitments1, _)) =>
-          log.info("got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain")
+          log.info("got valid fulfill/fail for htlc={}, recalculating htlc transactions", c.id)
 
           val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => localCommitPublished.copy(htlcTxs = Closing.LocalClose.claimHtlcOutputs(keyManager, commitments1)))
           val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(keyManager, commitments1, commitments1.remoteCommit, nodeParams.onChainFeeConf.feeEstimator)))
