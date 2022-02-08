@@ -159,8 +159,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     case htlcTx: HtlcTimeoutTx => htlcTx.copy(htlcId = 0)
   }
 
-  private def removeHtlcIds(htlcTxs: Map[OutPoint, Option[HtlcTx]]): Map[OutPoint, Option[HtlcTx]] = {
-    htlcTxs.map { case (outpoint, htlcTx_opt) => (outpoint, htlcTx_opt.map(removeHtlcId)) }
+  private def removeHtlcIds(htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus]): Map[OutPoint, LocalCommitPublished.HtlcOutputStatus] = {
+    htlcTxs.map {
+      case (outpoint, spendable: LocalCommitPublished.HtlcOutputStatus.Spendable) => (outpoint, spendable.modify(_.htlcTx).using(removeHtlcId))
+      case (outpoint, otherStatus) => (outpoint, otherStatus)
+    }
   }
 
   private def removeHtlcId(claimHtlcTx: ClaimHtlcTx): ClaimHtlcTx = claimHtlcTx match {

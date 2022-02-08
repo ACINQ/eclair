@@ -292,7 +292,7 @@ sealed trait CommitPublished {
  *                                 We currently only claim our local anchor, but it would be nice to claim both when it
  *                                 is economical to do so to avoid polluting the utxo set.
  */
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
   /**
    * A local commit is considered done when:
    * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
@@ -313,6 +313,22 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
       // has the tx already been confirmed?
       .filterNot(input => irrevocablySpent.contains(input))
     isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent && unconfirmedHtlcDelayedTxs.isEmpty
+  }
+}
+
+object LocalCommitPublished {
+  /**
+   * We can always spend outgoing htlc outputs after the refund timeout expires, but for incoming htlcs it depends on
+   * what happens at the next hop. We track their status so that we know when we can consider a channel closed.
+   */
+  sealed trait HtlcOutputStatus
+  object HtlcOutputStatus {
+    /** We know how to spend this output */
+    case class Spendable(htlcTx: HtlcTx) extends HtlcOutputStatus
+    /** We may be able to spend incoming htlcs outputs if we get the preimage for the next node */
+    case object Unknown extends HtlcOutputStatus
+    /** We know for sure that we will never be able to spend this incoming htlc output, because we got a failure from the next node in the route*/
+    case object Unspendable extends HtlcOutputStatus
   }
 }
 
