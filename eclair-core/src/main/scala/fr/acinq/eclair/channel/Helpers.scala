@@ -652,7 +652,11 @@ object Helpers {
       }
 
       // those are the preimages to existing received htlcs
-      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
+      val preimages: Map[ByteVector32, ByteVector32] = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
+      val failedIncomingHtlcs: Set[Long] = commitments.localChanges.all.collect {
+        case u: UpdateFailHtlc => u.id
+        case u: UpdateFailMalformedHtlc => u.id
+      }.toSet
 
       val htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus] = localCommit.htlcTxsAndRemoteSigs.collect {
         case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
@@ -662,6 +666,9 @@ object Helpers {
               val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
               Right(Transactions.addSigs(txInfo, localSig, remoteSig, preimages(paymentHash), commitmentFormat))
             }.map(LocalCommitPublished.HtlcOutputStatus.Spendable).getOrElse(LocalCommitPublished.HtlcOutputStatus.Unknown)
+          } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
+            // incoming htlc that we know for sure will never be fulfilled downstream: we can safely discard it
+            txInfo.input.outPoint -> LocalCommitPublished.HtlcOutputStatus.Unspendable
           } else {
             // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
             // preimage later, otherwise it will eventually timeout and they will get their funds back

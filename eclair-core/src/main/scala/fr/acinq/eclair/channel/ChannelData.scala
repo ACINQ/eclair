@@ -305,7 +305,11 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
     // is our main output confirmed (if we have one)?
     val isMainOutputConfirmed = claimMainDelayedOutputTx.forall(tx => irrevocablySpent.contains(tx.input.outPoint))
     // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-    val allHtlcsSpent = (htlcTxs.keySet -- irrevocablySpent.keys).isEmpty
+    val allHtlcsSpent = htlcTxs.forall {
+      case (outPoint, _: LocalCommitPublished.HtlcOutputStatus.Spendable) => irrevocablySpent.contains(outPoint)
+      case (outPoint, LocalCommitPublished.HtlcOutputStatus.Unknown) => irrevocablySpent.contains(outPoint)
+      case (_, LocalCommitPublished.HtlcOutputStatus.Unspendable) => true // we will never be able to spend this output so we ignore it (our counterparty may forget to spend it and cause us to wait forever)
+    }
     // are all outputs from htlc txs spent?
     val unconfirmedHtlcDelayedTxs = claimHtlcDelayedTxs.map(_.input.outPoint)
       // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
