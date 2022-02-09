@@ -19,13 +19,13 @@ package fr.acinq.eclair.db.pg
 import com.zaxxer.hikari.util.IsolationLevel
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.channel.ChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -89,12 +89,12 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           (rs, statement) => {
             // This forces a re-serialization of the channel data with latest codecs, because as of codecs v3 we don't
             // store local commitment signatures anymore, and we want to clean up existing data
-            val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-            val data = stateDataCodec.encode(state).require.toByteArray
-            val json = serialization.writePretty(state)
-            statement.setBytes(1, data)
+            val decoded = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+            val reEncoded = channelDataCodec.encode(decoded).require.toByteArray
+            val json = serialization.writePretty(decoded)
+            statement.setBytes(1, reEncoded)
             statement.setString(2, json)
-            statement.setString(3, state.channelId.toHex)
+            statement.setString(3, decoded.channelId.toHex)
           }
         )(logger)
       }
@@ -140,17 +140,17 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       table,
       s"UPDATE $table SET json=?::JSONB WHERE channel_id=?",
       (rs, statement) => {
-        val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-        val json = serialization.writePretty(state)
+        val data = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+        val json = serialization.writePretty(data)
         statement.setString(1, json)
-        statement.setString(2, state.channelId.toHex)
+        statement.setString(2, data.channelId.toHex)
       }
     )(logger)
   }
 
-  override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Postgres) {
+  override def addOrUpdateChannel(data: ChannelData): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Postgres) {
     withLock { pg =>
-      val data = stateDataCodec.encode(state).require.toByteArray
+      val bin = channelDataCodec.encode(data).require.toByteArray
       using(pg.prepareStatement(
         """
           | INSERT INTO local.channels (channel_id, data, json, is_closed)
@@ -158,19 +158,19 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           | ON CONFLICT (channel_id)
           | DO UPDATE SET data = EXCLUDED.data, json = EXCLUDED.json ;
           | """.stripMargin)) { statement =>
-        statement.setString(1, state.channelId.toHex)
-        statement.setBytes(2, data)
-        statement.setString(3, serialization.writePretty(state))
+        statement.setString(1, data.channelId.toHex)
+        statement.setBytes(2, bin)
+        statement.setString(3, serialization.writePretty(data))
         statement.executeUpdate()
       }
     }
   }
 
-  override def getChannel(channelId: ByteVector32): Option[HasCommitments] = withMetrics("channels/get-channel", DbBackends.Postgres) {
+  override def getChannel(channelId: ByteVector32): Option[ChannelData] = withMetrics("channels/get-channel", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT data FROM local.channels WHERE channel_id=? AND is_closed=FALSE")) { statement =>
         statement.setString(1, channelId.toHex)
-        statement.executeQuery.mapCodec(stateDataCodec).lastOption
+        statement.executeQuery.mapCodec(channelDataCodec).lastOption
       }
     }
   }
@@ -219,11 +219,11 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
-  override def listLocalChannels(): Seq[HasCommitments] = withMetrics("channels/list-local-channels", DbBackends.Postgres) {
+  override def listLocalChannels(): Seq[ChannelData] = withMetrics("channels/list-local-channels", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.createStatement) { statement =>
         statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=FALSE")
-          .mapCodec(stateDataCodec).toSeq
+          .mapCodec(channelDataCodec).toSeq
       }
     }
   }

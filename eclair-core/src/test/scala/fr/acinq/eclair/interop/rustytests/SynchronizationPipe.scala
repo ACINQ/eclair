@@ -128,10 +128,10 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       exec(script.drop(1), a, b)
     case RES_GETSTATEDATA(d: DATA_NORMAL) if script.head.endsWith(":dump") =>
       def rtrim(s: String) = s.replaceAll("\\s+$", "")
-      import d.commitments._
+      import d.data.commitments._
       val l = List(
         "LOCAL COMMITS:",
-        s" Commit ${d.commitments.localCommit.index}:",
+        s" Commit ${d.data.commitments.localCommit.index}:",
         s"  Offered htlcs: ${localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Received htlcs: ${localCommit.spec.htlcs.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Balance us: ${localCommit.spec.toLocal}",

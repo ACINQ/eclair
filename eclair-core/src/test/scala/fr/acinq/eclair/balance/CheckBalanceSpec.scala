@@ -12,7 +12,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.{CLOSING, CMD_SIGN, DATA_CLOSING, DATA_NORMAL}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, Error, RevokeAndAck}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32}
 import org.scalatest.Outcome
@@ -47,7 +47,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
-    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ===
+    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL].data), knownPreimages = Set.empty).normal ===
       MainAndHtlcBalance(
         toLocal = (TestConstants.fundingSatoshis - TestConstants.pushMsat - 30_000_000.msat).truncateToSatoshi,
         htlcs = 30_000.sat
@@ -64,7 +64,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob ! CMD_SIGN()
     bob2alice.expectMsgType[CommitSig]
 
-    assert(CheckBalance.computeOffChainBalance(Seq(bob.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ===
+    assert(CheckBalance.computeOffChainBalance(Seq(bob.stateData.asInstanceOf[DATA_NORMAL].data), knownPreimages = Set.empty).normal ===
       MainAndHtlcBalance(
         toLocal = TestConstants.pushMsat.truncateToSatoshi,
         htlcs = htlc.amountMsat.truncateToSatoshi
@@ -87,15 +87,15 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     fulfillHtlc(htlcb1.id, rb1, alice, bob, alice2bob, bob2alice)
 
     // bob publishes his current commit tx
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // in response to that, alice publishes her claim txs
     alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
 
-    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
-    val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
+    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].data.commitments
+    val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].data.remoteCommitPublished.get
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages) ===
       PossiblyPublishedMainAndHtlcBalance(
@@ -134,7 +134,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // as far as alice knows, bob currently has two valid unrevoked commitment transactions
     // bob publishes his current commit tx
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(bobCommitTx.txOut.size == 5) // two main outputs and 3 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
@@ -142,8 +142,8 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
 
-    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
-    val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get
+    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].data.commitments
+    val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].data.nextRemoteCommitPublished.get
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
     val Left(waitingForRevocation) = commitments.remoteNextCommitInfo
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages) ===
@@ -177,14 +177,14 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     fulfillHtlc(htlcb1.id, rb1, alice, bob, alice2bob, bob2alice)
 
     // alice publishes her commit tx
-    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
     assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
     awaitCond(alice.stateName == CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
-    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
-    val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.isDefined)
+    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].data.commitments
+    val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.get
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
     assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, localCommitPublished), knownPreimages) ===
       PossiblyPublishedMainAndHtlcBalance(
@@ -213,9 +213,9 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimHtlcDelayedTx.txid)
       claimHtlcDelayedTx
     }
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 3)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.get.claimHtlcDelayedTxs.length == 3)
 
-    assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), knownPreimages) ===
+    assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.get), knownPreimages) ===
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcDelayedTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
@@ -230,7 +230,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:$dbFile", sqliteConfig.toProperties)
     val channels = using(sqlite.createStatement) { statement =>
       statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-        .mapCodec(stateDataCodec)
+        .mapCodec(channelDataCodec)
     }
     val knownPreimages: Set[(ByteVector32, Long)] = using(sqlite.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
       val rs = statement.executeQuery()

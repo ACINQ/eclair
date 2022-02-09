@@ -61,12 +61,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val bobShutdown = bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice, bobShutdown)
     awaitCond(alice.stateName == NEGOTIATING)
-    if (alice.stateData.asInstanceOf[HasCommitments].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
+    if (alice.stateData.channelData().get.commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+      assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localParams.defaultFinalScriptPubKey)
     }
     awaitCond(bob.stateName == NEGOTIATING)
-    if (bob.stateData.asInstanceOf[HasCommitments].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
+    if (bob.stateData.channelData().get.commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+      assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localParams.defaultFinalScriptPubKey)
     }
   }
 
@@ -80,12 +80,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val aliceShutdown = alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob, aliceShutdown)
     awaitCond(alice.stateName == NEGOTIATING)
-    if (alice.stateData.asInstanceOf[HasCommitments].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
+    if (alice.stateData.channelData().get.commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+      assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localParams.defaultFinalScriptPubKey)
     }
     awaitCond(bob.stateName == NEGOTIATING)
-    if (bob.stateData.asInstanceOf[HasCommitments].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
+    if (bob.stateData.channelData().get.commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+      assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localParams.defaultFinalScriptPubKey)
     }
   }
 
@@ -126,14 +126,14 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(aliceCloseSig1.feeRange_opt.nonEmpty)
     assert(aliceCloseSig1.feeRange_opt.get.min < aliceCloseSig1.feeSatoshis)
     assert(aliceCloseSig1.feeSatoshis < aliceCloseSig1.feeRange_opt.get.max)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.length === 1)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 1)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.isEmpty)
-    if (alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.length === 1)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 1)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.isEmpty)
+    if (alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
       // check that the closing tx uses Alice and Bob's default closing scripts
-      val closingTx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.head.unsignedTx.tx
-      val expectedLocalScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey
-      val expectedRemoteScript = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey
+      val closingTx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.head.unsignedTx.tx
+      val expectedLocalScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localParams.defaultFinalScriptPubKey
+      val expectedRemoteScript = bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localParams.defaultFinalScriptPubKey
       assert(closingTx.txOut.map(_.publicKeyScript).toSet === Set(expectedLocalScript, expectedRemoteScript))
     }
     alice2bob.forward(bob)
@@ -143,7 +143,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(bobCloseSig1.feeSatoshis < aliceCloseSig1.feeRange_opt.get.max)
     assert(bobCloseSig1.feeRange_opt.nonEmpty)
     assert(aliceCloseSig1.feeSatoshis < bobCloseSig1.feeSatoshis)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.nonEmpty)
     bob2alice.forward(alice)
     // alice accepts this proposition
     val aliceCloseSig2 = alice2bob.expectMsgType[ClosingSigned]
@@ -158,8 +158,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(aliceCloseSig2.feeSatoshis > Transactions.weight2fee(TestConstants.anchorOutputsFeeratePerKw, mutualCloseTx.weight())) // NB: closing fee is allowed to be higher than commit tx fee when using anchor outputs
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === mutualCloseTx.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === mutualCloseTx.txid)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.map(_.tx) === List(mutualCloseTx))
-    assert(bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.map(_.tx) === List(mutualCloseTx))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.mutualClosePublished.map(_.tx) === List(mutualCloseTx))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].data.mutualClosePublished.map(_.tx) === List(mutualCloseTx))
   }
 
   test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { f =>
@@ -304,12 +304,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val aliceState = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
     val aliceKeyManager = alice.underlyingActor.nodeParams.channelKeyManager
-    val aliceScript = aliceState.localShutdown.scriptPubKey
+    val aliceScript = aliceState.data.localShutdown.scriptPubKey
     val bobState = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
     val bobKeyManager = bob.underlyingActor.nodeParams.channelKeyManager
-    val bobScript = bobState.localShutdown.scriptPubKey
-    val (_, aliceClosingSigned) = Closing.makeClosingTx(aliceKeyManager, aliceState.commitments, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
-    val (_, bobClosingSigned) = Closing.makeClosingTx(bobKeyManager, bobState.commitments, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
+    val bobScript = bobState.data.localShutdown.scriptPubKey
+    val (_, aliceClosingSigned) = Closing.makeClosingTx(aliceKeyManager, aliceState.data.commitments, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
+    val (_, bobClosingSigned) = Closing.makeClosingTx(bobKeyManager, bobState.data.commitments, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
     (aliceClosingSigned.copy(tlvStream = TlvStream.empty), bobClosingSigned.copy(tlvStream = TlvStream.empty))
   }
 
@@ -321,35 +321,35 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val Some(FeeRange(_, maxFee)) = aliceClosing1.feeRange_opt
     assert(aliceClosing1.feeSatoshis === 674.sat)
     assert(maxFee === 1348.sat)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 1)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 1)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.isEmpty)
     // bob makes a proposal outside our fee range
     val (_, bobClosing1) = makeLegacyClosingSigned(f, 2500 sat)
     bob2alice.send(alice, bobClosing1)
     val aliceClosing2 = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceClosing1.feeSatoshis < aliceClosing2.feeSatoshis)
     assert(aliceClosing2.feeSatoshis < 1600.sat)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 2)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 2)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.nonEmpty)
     val (_, bobClosing2) = makeLegacyClosingSigned(f, 2000 sat)
     bob2alice.send(alice, bobClosing2)
     val aliceClosing3 = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceClosing2.feeSatoshis < aliceClosing3.feeSatoshis)
     assert(aliceClosing3.feeSatoshis < 1800.sat)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 3)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 3)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.nonEmpty)
     val (_, bobClosing3) = makeLegacyClosingSigned(f, 1800 sat)
     bob2alice.send(alice, bobClosing3)
     val aliceClosing4 = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceClosing3.feeSatoshis < aliceClosing4.feeSatoshis)
     assert(aliceClosing4.feeSatoshis < 1800.sat)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 4)
-    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 4)
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.nonEmpty)
     val (_, bobClosing4) = makeLegacyClosingSigned(f, aliceClosing4.feeSatoshis)
     bob2alice.send(alice, bobClosing4)
     awaitCond(alice.stateName === CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.length === 1)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.head.tx)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.mutualClosePublished.length === 1)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === alice.stateData.asInstanceOf[DATA_CLOSING].data.mutualClosePublished.head.tx)
   }
 
   test("recv ClosingSigned (other side ignores our fee range, fundee)") { f =>
@@ -361,34 +361,34 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice2bob.send(bob, aliceClosing1)
     val bobClosing1 = bob2alice.expectMsgType[ClosingSigned]
     assert(3000.sat < bobClosing1.feeSatoshis)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 1)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 1)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.nonEmpty)
     val (aliceClosing2, _) = makeLegacyClosingSigned(f, 750 sat)
     alice2bob.send(bob, aliceClosing2)
     val bobClosing2 = bob2alice.expectMsgType[ClosingSigned]
     assert(bobClosing2.feeSatoshis < bobClosing1.feeSatoshis)
     assert(2000.sat < bobClosing2.feeSatoshis)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 2)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 2)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.nonEmpty)
     val (aliceClosing3, _) = makeLegacyClosingSigned(f, 1000 sat)
     alice2bob.send(bob, aliceClosing3)
     val bobClosing3 = bob2alice.expectMsgType[ClosingSigned]
     assert(bobClosing3.feeSatoshis < bobClosing2.feeSatoshis)
     assert(1500.sat < bobClosing3.feeSatoshis)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 3)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 3)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.nonEmpty)
     val (aliceClosing4, _) = makeLegacyClosingSigned(f, 1300 sat)
     alice2bob.send(bob, aliceClosing4)
     val bobClosing4 = bob2alice.expectMsgType[ClosingSigned]
     assert(bobClosing4.feeSatoshis < bobClosing3.feeSatoshis)
     assert(1300.sat < bobClosing4.feeSatoshis)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length === 4)
-    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.nonEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.closingTxProposed.last.length === 4)
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.nonEmpty)
     val (aliceClosing5, _) = makeLegacyClosingSigned(f, bobClosing4.feeSatoshis)
     alice2bob.send(bob, aliceClosing5)
     awaitCond(bob.stateName === CLOSING)
-    assert(bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.length === 1)
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx === bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.head.tx)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].data.mutualClosePublished.length === 1)
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx === bob.stateData.asInstanceOf[DATA_CLOSING].data.mutualClosePublished.head.tx)
   }
 
   test("recv ClosingSigned (other side ignores our fee range, max iterations reached)") { f =>
@@ -403,8 +403,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       bob2alice.send(alice, bobClosing)
     }
     awaitCond(alice.stateName === CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.length === 1)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.head.tx)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.mutualClosePublished.length === 1)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === alice.stateData.asInstanceOf[DATA_CLOSING].data.mutualClosePublished.head.tx)
   }
 
   test("recv ClosingSigned (fee too low, fundee)") { f =>
@@ -424,7 +424,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     bobClose(f)
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
-    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice2bob.forward(bob, aliceCloseSig.copy(feeSatoshis = 99000 sat)) // sig doesn't matter, it is checked later
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid close fee: fee_satoshis=99000 sat"))
@@ -437,7 +437,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     aliceClose(f)
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
-    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! aliceCloseSig.copy(signature = ByteVector64.Zeroes)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid close signature"))
@@ -471,13 +471,13 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val aliceClosing1 = alice2bob.expectMsgType[ClosingSigned]
     alice2bob.forward(bob, aliceClosing1)
     bob2alice.expectMsgType[ClosingSigned]
-    val Some(firstMutualCloseTx) = bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
+    val Some(firstMutualCloseTx) = bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt
     val (_, bobClosing1) = makeLegacyClosingSigned(f, 3000 sat)
     assert(bobClosing1.feeSatoshis !== aliceClosing1.feeSatoshis)
     bob2alice.send(alice, bobClosing1)
     val aliceClosing2 = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceClosing2.feeSatoshis !== bobClosing1.feeSatoshis)
-    val Some(latestMutualCloseTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
+    val Some(latestMutualCloseTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt
     assert(firstMutualCloseTx.tx.txid !== latestMutualCloseTx.tx.txid)
     // at this point bob will receive a new signature, but he decides instead to publish the first mutual close
     alice ! WatchFundingSpentTriggered(firstMutualCloseTx.tx)
@@ -498,7 +498,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // at this point bob has received a mutual close signature from alice, but doesn't yet agree on the fee
     // bob's mutual close is published from the outside of the actor
     assert(bob.stateName === NEGOTIATING)
-    val mutualCloseTx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.get.tx
+    val mutualCloseTx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].data.bestUnpublishedClosingTx_opt.get.tx
     bob ! WatchFundingSpentTriggered(mutualCloseTx)
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx === mutualCloseTx)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === mutualCloseTx.txid)
@@ -527,7 +527,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2alice.expectNoMessage(100 millis)
     // Alice offered a fee range that was too low: she notices the warning sent by Bob and retries with higher fees.
     val sender = TestProbe()
-    val closingScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].localShutdown.scriptPubKey
+    val closingScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.localShutdown.scriptPubKey
     val closingFeerates = ClosingFeerates(FeeratePerKw(1000 sat), FeeratePerKw(500 sat), FeeratePerKw(2000 sat))
     alice ! CMD_CLOSE(sender.ref, Some(closingScript.reverse), Some(closingFeerates))
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
@@ -550,7 +550,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     bobClose(f)
     alice2bob.expectMsgType[ClosingSigned]
-    val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === tx.txid)

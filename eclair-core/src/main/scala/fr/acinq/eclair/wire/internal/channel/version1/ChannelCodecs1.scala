@@ -18,6 +18,7 @@ package fr.acinq.eclair.wire.internal.channel.version1
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -27,7 +28,6 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSi
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Features, InitFeature}
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -229,19 +229,19 @@ private[channel] object ChannelCodecs1 {
         ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
         ("spent" | spentMapCodec)).as[ChannelTypes0.RevokedCommitPublished].decodeOnly.map[RevokedCommitPublished](_.migrate()).decodeOnly
 
-    val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+    val waitingForFundingConfirmedCodec: Codec[ChannelData.WaitingForFundingConfirmed] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | optional(bool8, txCodec)) ::
         ("waitingSince" | int64.as[BlockHeight]) ::
         ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec))) ::
-        ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+        ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[ChannelData.WaitingForFundingConfirmed]
 
-    val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
+    val waitingForFundingLockedCodec: Codec[ChannelData.WaitingForFundingLocked] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
-        ("lastSent" | lengthDelimited(fundingLockedCodec))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
+        ("lastSent" | lengthDelimited(fundingLockedCodec))).as[ChannelData.WaitingForFundingLocked]
 
-    val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
+    val normalCodec: Codec[ChannelData.Normal] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
         ("buried" | bool8) ::
@@ -249,22 +249,22 @@ private[channel] object ChannelCodecs1 {
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_NORMAL]
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[ChannelData.Normal]
 
-    val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
+    val shuttingDownCodec: Codec[ChannelData.ShuttingDown] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_SHUTDOWN]
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[ChannelData.ShuttingDown]
 
-    val DATA_NEGOTIATING_Codec: Codec[DATA_NEGOTIATING] = (
+    val negotiatingCodec: Codec[ChannelData.Negotiating] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
-        ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[DATA_NEGOTIATING]
+        ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[ChannelData.Negotiating]
 
-    val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
+    val closingCodec: Codec[ChannelData.Closing] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | optional(bool8, txCodec)) ::
         ("waitingSince" | int64.as[BlockHeight]) ::
@@ -274,20 +274,20 @@ private[channel] object ChannelCodecs1 {
         ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[ChannelData.Closing]
 
-    val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
+    val waitingForRemotePublishFutureCommitmentCodec: Codec[ChannelData.WaitingForRemotePublishFutureCommitment] = (
       ("commitments" | commitmentsCodec) ::
-        ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
+        ("remoteChannelReestablish" | channelReestablishCodec)).as[ChannelData.WaitingForRemotePublishFutureCommitment]
   }
 
   // Order matters!
-  val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
-    .typecase(0x20, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-    .typecase(0x21, Codecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-    .typecase(0x22, Codecs.DATA_NORMAL_Codec)
-    .typecase(0x23, Codecs.DATA_SHUTDOWN_Codec)
-    .typecase(0x24, Codecs.DATA_NEGOTIATING_Codec)
-    .typecase(0x25, Codecs.DATA_CLOSING_Codec)
-    .typecase(0x26, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
+  val channelDataCodec: Codec[ChannelData] = discriminated[ChannelData].by(uint16)
+    .typecase(0x20, Codecs.waitingForFundingConfirmedCodec)
+    .typecase(0x21, Codecs.waitingForFundingLockedCodec)
+    .typecase(0x22, Codecs.normalCodec)
+    .typecase(0x23, Codecs.shuttingDownCodec)
+    .typecase(0x24, Codecs.negotiatingCodec)
+    .typecase(0x25, Codecs.closingCodec)
+    .typecase(0x26, Codecs.waitingForRemotePublishFutureCommitmentCodec)
 }

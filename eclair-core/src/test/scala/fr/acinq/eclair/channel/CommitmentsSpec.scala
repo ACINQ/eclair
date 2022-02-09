@@ -69,8 +69,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
     val maxDustExposure = 500000 sat
 
-    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].data.commitments
+    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].data.commitments
 
     assert(ac0.availableBalanceForSend > p) // alice can afford the payment
     assert(ac0.availableBalanceForSend == a)
@@ -154,8 +154,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
     val maxDustExposure = 500000 sat
 
-    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].data.commitments
+    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].data.commitments
 
     assert(ac0.availableBalanceForSend > p) // alice can afford the payment
     assert(ac0.availableBalanceForSend == a)
@@ -241,8 +241,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
     val maxDustExposure = 500000 sat
 
-    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].data.commitments
+    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].data.commitments
 
     assert(ac0.availableBalanceForSend > (p1 + p2)) // alice can afford the payments
     assert(bc0.availableBalanceForSend > p3) // bob can afford the payment

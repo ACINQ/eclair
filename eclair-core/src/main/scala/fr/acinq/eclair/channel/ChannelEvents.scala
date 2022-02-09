@@ -19,10 +19,10 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
-import fr.acinq.eclair.{BlockHeight, ShortChannelId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
+import fr.acinq.eclair.{BlockHeight, ShortChannelId}
 
 /**
  * Created by PM on 17/08/2016.
@@ -40,7 +40,7 @@ trait AbstractChannelRestored extends ChannelEvent {
   val remoteNodeId: PublicKey
 }
 
-case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, data: HasCommitments) extends AbstractChannelRestored
+case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, data: ChannelData) extends AbstractChannelRestored
 
 case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends ChannelEvent
 
@@ -58,7 +58,7 @@ case class ChannelSignatureSent(channel: ActorRef, commitments: Commitments) ext
 
 case class ChannelSignatureReceived(channel: ActorRef, commitments: Commitments) extends ChannelEvent
 
-case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, data: ChannelData, error: ChannelOpenError, isFatal: Boolean) extends ChannelEvent
+case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, error: ChannelOpenError, isFatal: Boolean) extends ChannelEvent
 
 // NB: the fee should be set to 0 when we're not paying it.
 case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction, miningFee: Satoshi, desc: String) extends ChannelEvent
@@ -68,7 +68,7 @@ case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey
 // NB: this event is only sent when the channel is available.
 case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, commitments: AbstractCommitments) extends ChannelEvent
 
-case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: HasCommitments) extends ChannelEvent
+case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: ChannelData) extends ChannelEvent
 
 case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, refundAtBlock: BlockHeight) extends ChannelEvent
 

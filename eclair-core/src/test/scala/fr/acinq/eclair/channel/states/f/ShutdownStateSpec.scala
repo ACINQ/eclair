@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.f
 
 import akka.testkit.TestProbe
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -64,7 +65,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: Nil)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].data.commitments.remoteChanges.proposed == htlc1 :: Nil)
       // alice sends another HTLC to bob
       val h2 = Crypto.sha256(r2)
       val amount2 = 200000000 msat
@@ -74,7 +75,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].data.commitments.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
       // alice signs
       alice ! CMD_SIGN()
       alice2bob.expectMsgType[CommitSig]
@@ -117,9 +118,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     bob ! CMD_FULFILL_HTLC(0, r1)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
+    val expectedState = initialState.modify(_.data.commitments.localChanges.proposed)(_ :+ fulfill)
+    awaitCond(bob.stateData == expectedState)
   }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
@@ -138,7 +138,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val c = CMD_FULFILL_HTLC(1, ByteVector32.Zeroes, replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, InvalidHtlcPreimage(channelId(bob), 1)))
-
     assert(initialState == bob.stateData)
   }
 
@@ -174,12 +173,13 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fulfill = UpdateFulfillHtlc(ByteVector32.Zeroes, 0, r1)
     alice ! fulfill
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill)))
+    val expectedState = initialState.modify(_.data.commitments.remoteChanges.proposed)(_ :+ fulfill)
+    awaitCond(alice.stateData == expectedState)
   }
 
   test("recv UpdateFulfillHtlc (unknown htlc id)") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     val fulfill = UpdateFulfillHtlc(ByteVector32.Zeroes, 42, ByteVector32.Zeroes)
     alice ! fulfill
     alice2bob.expectMsgType[Error]
@@ -193,7 +193,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv UpdateFulfillHtlc (invalid preimage)") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! UpdateFulfillHtlc(ByteVector32.Zeroes, 42, ByteVector32.Zeroes)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
@@ -209,9 +209,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     bob ! CMD_FAIL_HTLC(1, Right(PermanentChannelFailure))
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+    val expectedState = initialState.modify(_.data.commitments.localChanges.proposed)(_ :+ fail)
+    awaitCond(bob.stateData == expectedState)
   }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
@@ -239,9 +238,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     bob ! CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+    val expectedState = initialState.modify(_.data.commitments.localChanges.proposed)(_ :+ fail)
+    awaitCond(bob.stateData == expectedState)
   }
 
   test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { f =>
@@ -279,12 +277,13 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fail = UpdateFailHtlc(ByteVector32.Zeroes, 1, ByteVector.fill(152)(0))
     alice ! fail
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
+    val expectedState = initialState.modify(_.data.commitments.remoteChanges.proposed)(_ :+ fail)
+    awaitCond(alice.stateData == expectedState)
   }
 
   test("recv UpdateFailHtlc (unknown htlc id)") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! UpdateFailHtlc(ByteVector32.Zeroes, 42, ByteVector.fill(152)(0))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
@@ -300,12 +299,13 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, 1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION)
     alice ! fail
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
+    val expectedState = initialState.modify(_.data.commitments.remoteChanges.proposed)(_ :+ fail)
+    awaitCond(alice.stateData == expectedState)
   }
 
   test("recv UpdateFailMalformedHtlc (invalid failure_code)") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, 1, Crypto.sha256(ByteVector.empty), 42)
     alice ! fail
     val error = alice2bob.expectMsgType[Error]
@@ -332,7 +332,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     alice2bob.expectMsgType[CommitSig]
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteNextCommitInfo.isLeft)
   }
 
   test("recv CMD_SIGN (no changes)") { f =>
@@ -351,14 +351,14 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
     bob2alice.expectMsgType[CommitSig]
-    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
-    val waitForRevocation = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.left.toOption.get
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteNextCommitInfo.isLeft)
+    val waitForRevocation = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteNextCommitInfo.left.toOption.get
     assert(waitForRevocation.reSignAsap === false)
 
     // actual test starts here
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
     sender.expectNoMessage(300 millis)
-    assert(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo === Left(waitForRevocation))
+    assert(bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteNextCommitInfo === Left(waitForRevocation))
   }
 
   test("recv CommitSig") { f =>
@@ -374,7 +374,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv CommitSig (no changes)") { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     // signature is invalid but it doesn't matter
     bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
     bob2alice.expectMsgType[Error]
@@ -386,7 +386,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv CommitSig (invalid signature)") { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
@@ -402,8 +402,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     crossSign(bob, alice, bob2alice, alice2bob)
     // actual test starts here
     assert(alice.stateName == SHUTDOWN)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.size == 1)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.spec.htlcs.size == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteCommit.spec.htlcs.size == 1)
   }
 
   test("recv RevokeAndAck (with remaining htlcs on one side)") { f =>
@@ -417,10 +417,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // actual test starts here
     alice2bob.forward(bob)
     assert(bob.stateName == SHUTDOWN)
-    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.size == 2)
-    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.isEmpty)
-    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.isEmpty)
-    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 2)
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.spec.htlcs.size == 2)
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteCommit.spec.htlcs.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.spec.htlcs.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteCommit.spec.htlcs.size == 2)
   }
 
   test("recv RevokeAndAck (no more htlcs on either side)") { f =>
@@ -434,7 +434,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv RevokeAndAck (invalid preimage)") { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! CMD_FULFILL_HTLC(0, r1)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
@@ -442,7 +442,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
-    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteNextCommitInfo.isLeft)
     bob ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
@@ -454,8 +454,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv RevokeAndAck (unexpectedly)") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
+    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.remoteNextCommitInfo.isRight)
     alice ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
@@ -519,9 +519,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_FEE]]
     val fee = alice2bob.expectMsgType[UpdateFee]
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))))
+    val expectedState = initialState.modify(_.data.commitments.localChanges.proposed)(_ :+ fee)
+    awaitCond(alice.stateData == expectedState)
   }
 
   test("recv CMD_UPDATE_FEE (when fundee)") { f =>
@@ -535,15 +534,16 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv UpdateFee") { f =>
     import f._
-    val initialData = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+    val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee))))
+    val expectedState = initialState.modify(_.data.commitments.remoteChanges.proposed)(_ :+ fee)
+    awaitCond(bob.stateData == expectedState)
   }
 
   test("recv UpdateFee (when sender is not funder)") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
@@ -556,7 +556,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv UpdateFee (sender can't afford it)") { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100000000 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
@@ -571,7 +571,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(65000 sat))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === "local/remote feerates are too different: remoteFeeratePerKw=65000 localFeeratePerKw=10000")
@@ -583,7 +583,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv UpdateFee (remote feerate is too small)") { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(252 sat))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === "remote fee rate is too small: remoteFeeratePerKw=252")
@@ -613,7 +613,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CurrentBlockCount (an htlc timed out)") { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val aliceCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val aliceCommitTx = initialState.data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! CurrentBlockHeight(BlockHeight(400145))
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid) // commit tx
     alice2blockchain.expectMsgType[PublishTx] // main delayed
@@ -627,15 +627,15 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val event = CurrentFeerates(FeeratesPerKw(FeeratePerKw(50 sat), FeeratePerKw(100 sat), FeeratePerKw(200 sat), FeeratePerKw(600 sat), FeeratePerKw(1200 sat), FeeratePerKw(3600 sat), FeeratePerKw(7200 sat), FeeratePerKw(14400 sat), FeeratePerKw(100800 sat)))
     alice ! event
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(alice.feeTargets.commitmentBlockTarget)))
+    alice2bob.expectMsg(UpdateFee(initialState.data.commitments.channelId, event.feeratesPerKw.feePerBlock(alice.feeTargets.commitmentBlockTarget)))
   }
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    assert(initialState.commitments.localCommit.spec.commitTxFeerate === TestConstants.anchorOutputsFeeratePerKw)
+    assert(initialState.data.commitments.localCommit.spec.commitTxFeerate === TestConstants.anchorOutputsFeeratePerKw)
     alice ! CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw / 2).copy(mempoolMinFee = FeeratePerKw(250 sat)))
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw / 2))
+    alice2bob.expectMsg(UpdateFee(initialState.data.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw / 2))
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
@@ -648,7 +648,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    assert(initialState.commitments.localCommit.spec.commitTxFeerate === TestConstants.anchorOutputsFeeratePerKw)
+    assert(initialState.data.commitments.localCommit.spec.commitTxFeerate === TestConstants.anchorOutputsFeeratePerKw)
     alice ! CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(mempoolMinFee = FeeratePerKw(250 sat)))
     alice2bob.expectNoMessage(500 millis)
   }
@@ -674,7 +674,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv WatchFundingSpentTriggered (their commit)") { f =>
     import f._
     // bob publishes his current commit tx, which contains two pending htlcs alice->bob
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(bobCommitTx.txOut.size == 4) // two main outputs and 2 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
@@ -699,8 +699,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectNoMessage(1 second)
 
     awaitCond(alice.stateName == CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
-    val rcp = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.remoteCommitPublished.isDefined)
+    val rcp = alice.stateData.asInstanceOf[DATA_CLOSING].data.remoteCommitPublished.get
     assert(rcp.claimHtlcTxs.size === 2)
     assert(getClaimHtlcSuccessTxs(rcp).length === 0)
     assert(getClaimHtlcTimeoutTxs(rcp).length === 2)
@@ -723,7 +723,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // as far as alice knows, bob currently has two valid unrevoked commitment transactions
 
     // bob publishes his current commit tx, which contains one pending htlc alice->bob
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(bobCommitTx.txOut.size == 3) // two main outputs and 1 pending htlc
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
@@ -748,8 +748,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectNoMessage(1 second)
 
     awaitCond(alice.stateName == CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.isDefined)
-    val rcp = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.nextRemoteCommitPublished.isDefined)
+    val rcp = alice.stateData.asInstanceOf[DATA_CLOSING].data.nextRemoteCommitPublished.get
     assert(rcp.claimHtlcTxs.size === 1)
     assert(getClaimHtlcSuccessTxs(rcp).length === 0)
     assert(getClaimHtlcTimeoutTxs(rcp).length === 1)
@@ -757,7 +757,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv WatchFundingSpentTriggered (revoked tx)") { f =>
     import f._
-    val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     // two main outputs + 2 htlc
     assert(revokedTx.txOut.size == 4)
 
@@ -794,18 +794,18 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(htlc2PenaltyTx.txOut.head.amount === 294540.sat)
 
     awaitCond(alice.stateName == CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.revokedCommitPublished.size == 1)
   }
 
   test("recv WatchFundingSpentTriggered (revoked tx with updated commitment)") { f =>
     import f._
-    val initialCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val initialCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(initialCommitTx.txOut.size === 4) // two main outputs + 2 htlc
 
     // bob fulfills one of the pending htlc (commitment update while in shutdown state)
     fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(revokedTx.txOut.size === 3) // two main outputs + 1 htlc
 
     // bob fulfills the second pending htlc (and revokes the previous commitment)
@@ -836,7 +836,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(htlcPenaltyTx.txOut(0).amount === 194540.sat)
 
     awaitCond(alice.stateName == CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.revokedCommitPublished.size == 1)
   }
 
   test("recv CMD_CLOSE") { f =>
@@ -852,21 +852,21 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val closingFeerates1 = ClosingFeerates(FeeratePerKw(500 sat), FeeratePerKw(250 sat), FeeratePerKw(2500 sat))
     alice ! CMD_CLOSE(sender.ref, None, Some(closingFeerates1))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
-    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates === Some(closingFeerates1))
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.closingFeerates === Some(closingFeerates1))
 
-    val closingScript = alice.stateData.asInstanceOf[DATA_SHUTDOWN].localShutdown.scriptPubKey
+    val closingScript = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.localShutdown.scriptPubKey
     val closingFeerates2 = ClosingFeerates(FeeratePerKw(600 sat), FeeratePerKw(300 sat), FeeratePerKw(2500 sat))
     alice ! CMD_CLOSE(sender.ref, Some(closingScript.reverse), Some(closingFeerates2))
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
     alice ! CMD_CLOSE(sender.ref, Some(closingScript), Some(closingFeerates2))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
-    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates === Some(closingFeerates2))
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.closingFeerates === Some(closingFeerates2))
   }
 
   test("recv CMD_FORCECLOSE") { f =>
     import f._
 
-    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
 
     val sender = TestProbe()
@@ -874,8 +874,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
     awaitCond(alice.stateName == CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
-    val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.isDefined)
+    val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.get
     assert(lcp.htlcTxs.size === 2)
     assert(lcp.claimHtlcDelayedTxs.isEmpty) // 3rd-stage txs will be published once htlc txs confirm
 
@@ -898,18 +898,18 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       Transaction.correctlySpends(claimHtlcDelayedTx, htlcTimeoutTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimHtlcDelayedTx.txid)
     })
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 2)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.get.claimHtlcDelayedTxs.length == 2)
     alice2blockchain.expectNoMessage(1 second)
   }
 
   test("recv Error") { f =>
     import f._
-    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
     assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
     awaitCond(alice.stateName == CLOSING)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.isDefined)
 
     // alice can claim both htlc after a timeout, so we expect 3 transactions:
     // - 1 tx to claim the main delayed output

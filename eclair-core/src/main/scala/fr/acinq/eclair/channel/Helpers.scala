@@ -48,18 +48,18 @@ object Helpers {
   /**
    * We update local/global features at reconnection
    */
-  def updateFeatures(data: HasCommitments, localInit: Init, remoteInit: Init): HasCommitments = {
+  def updateFeatures(data: ChannelData, localInit: Init, remoteInit: Init): ChannelData = {
     val commitments1 = data.commitments.copy(
       localParams = data.commitments.localParams.copy(initFeatures = localInit.features),
       remoteParams = data.commitments.remoteParams.copy(initFeatures = remoteInit.features))
     data match {
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
-      case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = commitments1)
-      case d: DATA_NORMAL => d.copy(commitments = commitments1)
-      case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
-      case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
-      case d: DATA_CLOSING => d.copy(commitments = commitments1)
-      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
+      case d: ChannelData.WaitingForFundingConfirmed => d.copy(commitments = commitments1)
+      case d: ChannelData.WaitingForFundingLocked => d.copy(commitments = commitments1)
+      case d: ChannelData.Normal => d.copy(commitments = commitments1)
+      case d: ChannelData.ShuttingDown => d.copy(commitments = commitments1)
+      case d: ChannelData.Negotiating => d.copy(commitments = commitments1)
+      case d: ChannelData.Closing => d.copy(commitments = commitments1)
+      case d: ChannelData.WaitingForRemotePublishFutureCommitment => d.copy(commitments = commitments1)
     }
   }
 
@@ -333,7 +333,7 @@ object Helpers {
     /**
      * Check whether we are in sync with our peer.
      */
-    def checkSync(keyManager: ChannelKeyManager, d: HasCommitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
+    def checkSync(keyManager: ChannelKeyManager, d: ChannelData, remoteChannelReestablish: ChannelReestablish): SyncResult = {
 
       // This is done in two steps:
       // - step 1: we check our local commitment
@@ -341,7 +341,7 @@ object Helpers {
       // step 2 depends on step 1 because we need to preserve ordering between commit_sig and revocation
 
       // step 2: we check the remote commitment
-      def checkRemoteCommit(d: HasCommitments, remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
+      def checkRemoteCommit(d: ChannelData, remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
         d.commitments.remoteNextCommitInfo match {
           case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
             // we just sent a new commit_sig but they didn't receive it
@@ -439,7 +439,7 @@ object Helpers {
      *
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
-    def nothingAtStake(data: HasCommitments): Boolean =
+    def nothingAtStake(data: ChannelData): Boolean =
       data.commitments.localCommit.index == 0 &&
         data.commitments.localCommit.spec.toLocal == 0.msat &&
         data.commitments.remoteCommit.index == 0 &&
@@ -456,7 +456,7 @@ object Helpers {
      * @param closing channel state data
      * @return the channel closing type, if applicable
      */
-    def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = {
+    def isClosingTypeAlreadyKnown(closing: ChannelData.Closing): Option[ClosingType] = {
       closing match {
         case _ if closing.localCommitPublished.exists(_.isConfirmed) =>
           Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
@@ -481,20 +481,20 @@ object Helpers {
      *                                  because we don't store the closing tx in the channel state
      * @return the channel closing type, if applicable
      */
-    def isClosed(data: HasCommitments, additionalConfirmedTx_opt: Option[Transaction]): Option[ClosingType] = data match {
-      case closing: DATA_CLOSING if additionalConfirmedTx_opt.exists(closing.mutualClosePublished.map(_.tx).contains) =>
+    def isClosed(data: ChannelData, additionalConfirmedTx_opt: Option[Transaction]): Option[ClosingType] = data match {
+      case closing: ChannelData.Closing if additionalConfirmedTx_opt.exists(closing.mutualClosePublished.map(_.tx).contains) =>
         val closingTx = closing.mutualClosePublished.find(_.tx.txid == additionalConfirmedTx_opt.get.txid).get
         Some(MutualClose(closingTx))
-      case closing: DATA_CLOSING if closing.localCommitPublished.exists(_.isDone) =>
+      case closing: ChannelData.Closing if closing.localCommitPublished.exists(_.isDone) =>
         Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
-      case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
+      case closing: ChannelData.Closing if closing.remoteCommitPublished.exists(_.isDone) =>
         Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
-      case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
+      case closing: ChannelData.Closing if closing.nextRemoteCommitPublished.exists(_.isDone) =>
         val Left(waitingForRevocation) = closing.commitments.remoteNextCommitInfo
         Some(NextRemoteClose(waitingForRevocation.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
-      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
+      case closing: ChannelData.Closing if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
-      case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(_.isDone) =>
+      case closing: ChannelData.Closing if closing.revokedCommitPublished.exists(_.isDone) =>
         Some(RevokedClose(closing.revokedCommitPublished.find(_.isDone).get))
       case _ => None
     }
@@ -1197,7 +1197,7 @@ object Helpers {
      * If a commitment tx reaches min_depth, we need to fail the outgoing htlcs that will never reach the blockchain.
      * It could be because only us had signed them, or because a revoked commitment got confirmed.
      */
-    def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def overriddenOutgoingHtlcs(d: ChannelData.Closing, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val localCommit = d.commitments.localCommit
       val remoteCommit = d.commitments.remoteCommit
       val nextRemoteCommit_opt = d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)

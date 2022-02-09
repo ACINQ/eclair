@@ -57,7 +57,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     Helpers.nextChannelUpdateRefresh(TimestampSecond.now()).toSeconds should equal(10 * 24 * 3600L +- 100)
   }
 
-  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceCommitPublished: LocalCommitPublished, aliceHtlcs: Set[UpdateAddHtlc], bob: TestFSMRef[ChannelState, ChannelData, Channel], bobCommitPublished: RemoteCommitPublished, bobHtlcs: Set[UpdateAddHtlc], probe: TestProbe)
+  case class Fixture(alice: TestFSMRef[ChannelState, ChannelStateData, Channel], aliceCommitPublished: LocalCommitPublished, aliceHtlcs: Set[UpdateAddHtlc], bob: TestFSMRef[ChannelState, ChannelStateData, Channel], bobCommitPublished: RemoteCommitPublished, bobHtlcs: Set[UpdateAddHtlc], probe: TestProbe)
 
   def setupHtlcs(testTags: Set[String] = Set.empty): Fixture = {
     val probe = TestProbe()
@@ -93,17 +93,17 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(alice.stateName == CLOSING)
 
     // Bob detects it.
-    bob ! WatchFundingSpentTriggered(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.commitTx)
+    bob ! WatchFundingSpentTriggered(alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.get.commitTx)
     awaitCond(bob.stateName == CLOSING)
 
-    val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].data.localCommitPublished.get
     assert(lcp.htlcTxs.size === 6)
     val htlcTimeoutTxs = getHtlcTimeoutTxs(lcp)
     assert(htlcTimeoutTxs.length === 3)
     val htlcSuccessTxs = getHtlcSuccessTxs(lcp)
     assert(htlcSuccessTxs.length === 1)
 
-    val rcp = bob.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
+    val rcp = bob.stateData.asInstanceOf[DATA_CLOSING].data.remoteCommitPublished.get
     assert(rcp.claimHtlcTxs.size === 6)
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(rcp)
     assert(claimHtlcTimeoutTxs.length === 3)
@@ -177,9 +177,9 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     import f._
 
     val dustLimit = alice.underlyingActor.nodeParams.channelConf.dustLimit
-    val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat
-    val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.localCommit
-    val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.remoteCommit
+    val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].data.commitments.commitmentFormat
+    val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].data.commitments.localCommit
+    val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].data.commitments.remoteCommit
 
     // Channels without anchor outputs that were closing before eclair v0.6.0 will not have their htlcId set after the
     // update, but still need to be able to identify timed out htlcs.
@@ -280,7 +280,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // only mutual close
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -295,7 +295,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // mutual + local close, but local commit tx isn't confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -317,7 +317,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // mutual + local close, local commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -339,7 +339,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // local close + remote close, none is confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -367,7 +367,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // mutual + local + remote close, remote commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -395,7 +395,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // mutual + local + remote + next remote close, next remote commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments.copy(remoteNextCommitInfo = Left(WaitingForRevocation(commitments.remoteCommit, null, 7L))),
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -429,7 +429,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // future remote close, not confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -450,7 +450,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // future remote close, confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -471,7 +471,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // local close + revoked close, none confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
@@ -518,7 +518,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // local close + revoked close, one revoked confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
-      DATA_CLOSING(
+      ChannelData.Closing(
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),

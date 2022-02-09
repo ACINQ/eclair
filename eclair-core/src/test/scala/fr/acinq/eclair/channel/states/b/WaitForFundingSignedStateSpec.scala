@@ -39,7 +39,7 @@ import scala.concurrent.duration._
 
 class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelStateData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
@@ -118,9 +118,11 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv CMD_CLOSE") { f =>
     import f._
     val sender = TestProbe()
+    val channelId = alice.stateData.channelId
+    assert(channelId !== ByteVector32.Zeroes)
     val c = CMD_CLOSE(sender.ref, None, None)
     alice ! c
-    sender.expectMsg(RES_SUCCESS(c, alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].channelId))
+    sender.expectMsg(RES_SUCCESS(c, channelId))
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelClosed]
   }

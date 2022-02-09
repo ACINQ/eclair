@@ -470,19 +470,22 @@ object CustomTypeHints {
 
   val channelStates: ShortTypeHints = ShortTypeHints(
     List(
-      classOf[Nothing],
+      classOf[DATA_WAIT_FOR_INIT_INTERNAL],
       classOf[DATA_WAIT_FOR_OPEN_CHANNEL],
       classOf[DATA_WAIT_FOR_ACCEPT_CHANNEL],
       classOf[DATA_WAIT_FOR_FUNDING_INTERNAL],
       classOf[DATA_WAIT_FOR_FUNDING_CREATED],
       classOf[DATA_WAIT_FOR_FUNDING_SIGNED],
-      classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
       classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED],
+      classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
       classOf[DATA_NORMAL],
       classOf[DATA_SHUTDOWN],
       classOf[DATA_NEGOTIATING],
       classOf[DATA_CLOSING],
-      classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
+      classOf[DATA_OFFLINE],
+      classOf[DATA_SYNCING],
+      classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT],
+      classOf[DATA_ERR_INFORMATION_LEAK]
     ), typeHintFieldName = "type")
 }
 

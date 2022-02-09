@@ -197,15 +197,15 @@ object CheckBalance {
    *   - In the other cases, we simply take our local amount
    *   - TODO?: we disregard anchor outputs
    */
-  def computeOffChainBalance(channels: Iterable[HasCommitments], knownPreimages: Set[(ByteVector32, Long)]): OffChainBalance = {
+  def computeOffChainBalance(channels: Iterable[ChannelData], knownPreimages: Set[(ByteVector32, Long)]): OffChainBalance = {
     channels
       .foldLeft(OffChainBalance()) {
-        case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
-        case (r, d: DATA_WAIT_FOR_FUNDING_LOCKED) => r.modify(_.waitForFundingLocked).using(updateMainBalance(d.commitments.localCommit))
-        case (r, d: DATA_NORMAL) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
-        case (r, d: DATA_SHUTDOWN) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
-        case (r, d: DATA_NEGOTIATING) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.localCommit))
-        case (r, d: DATA_CLOSING) =>
+        case (r, d: ChannelData.WaitingForFundingConfirmed) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: ChannelData.WaitingForFundingLocked) => r.modify(_.waitForFundingLocked).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: ChannelData.Normal) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
+        case (r, d: ChannelData.ShuttingDown) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
+        case (r, d: ChannelData.Negotiating) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: ChannelData.Closing) =>
           Closing.isClosingTypeAlreadyKnown(d) match {
             case None if d.mutualClosePublished.nonEmpty && d.localCommitPublished.isEmpty && d.remoteCommitPublished.isEmpty && d.nextRemoteCommitPublished.isEmpty && d.revokedCommitPublished.isEmpty =>
               // There can be multiple mutual close transactions for the same channel, but most of the time there will
@@ -242,7 +242,7 @@ object CheckBalance {
               r.modify(_.closing.remoteCloseBalance).using(updatePossiblyPublishedBalance(computeRemoteCloseBalance(d.commitments, remoteClose, knownPreimages)))
             case _ => r.modify(_.closing.unknownCloseBalance).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
           }
-        case (r, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => r.modify(_.waitForPublishFutureCommitment).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: ChannelData.WaitingForRemotePublishFutureCommitment) => r.modify(_.waitForPublishFutureCommitment).using(updateMainBalance(d.commitments.localCommit))
       }
   }
 
@@ -293,7 +293,7 @@ object CheckBalance {
     val total: Btc = onChain.total + offChain.total
   }
 
-  def computeGlobalBalance(channels: Map[ByteVector32, HasCommitments], db: Databases, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[GlobalBalance] = for {
+  def computeGlobalBalance(channels: Map[ByteVector32, ChannelData], db: Databases, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[GlobalBalance] = for {
     onChain <- CheckBalance.computeOnChainBalance(bitcoinClient)
     knownPreimages = db.pendingCommands.listSettlementCommands().collect { case (channelId, cmd: CMD_FULFILL_HTLC) => (channelId, cmd.id) }.toSet
     offChainRaw = CheckBalance.computeOffChainBalance(channels.values, knownPreimages)

@@ -108,8 +108,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     )
 
     val channels = Seq(
-      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map(51L -> relayed, 1L -> trampolineRelayed)),
-      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map(4L -> trampolineRelayed))
+      ChannelCodecsSpec.makeChannelData(htlc_ab_1, Map(51L -> relayed, 1L -> trampolineRelayed)),
+      ChannelCodecsSpec.makeChannelData(htlc_ab_2, Map(4L -> trampolineRelayed))
     )
 
     // Prepare channels state before restart.
@@ -170,8 +170,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     )
 
     val channels = Seq(
-      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map.empty),
-      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map.empty)
+      ChannelCodecsSpec.makeChannelData(htlc_ab_1, Map.empty),
+      ChannelCodecsSpec.makeChannelData(htlc_ab_2, Map.empty)
     )
 
     // Prepare channels state before restart.
@@ -333,9 +333,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val upstream_1 = Upstream.Trampoline(htlc_upstream_1.head.add :: htlc_upstream_2.head.add :: Nil)
     val upstream_2 = Upstream.Trampoline(htlc_upstream_1(1).add :: htlc_upstream_2(1).add :: Nil)
     val upstream_3 = Upstream.Trampoline(htlc_upstream_3.head.add :: Nil)
-    val data_upstream_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_1, Map.empty)
-    val data_upstream_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_2, Map.empty)
-    val data_upstream_3 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_3, Map.empty)
+    val data_upstream_1 = ChannelCodecsSpec.makeChannelData(htlc_upstream_1, Map.empty)
+    val data_upstream_2 = ChannelCodecsSpec.makeChannelData(htlc_upstream_2, Map.empty)
+    val data_upstream_3 = ChannelCodecsSpec.makeChannelData(htlc_upstream_3, Map.empty)
 
     // Downstream HTLCs in closing channel.
     val (data_downstream, htlc_2_2) = {
@@ -388,7 +388,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       htlcTxs.reverse.drop(2).zipWithIndex.foreach {
         case (htlcTx, i) => alice ! WatchTxConfirmedTriggered(BlockHeight(201), i, htlcTx.tx)
       }
-      (alice.stateData.asInstanceOf[DATA_CLOSING], htlc_2_2)
+      (alice.stateData.asInstanceOf[DATA_CLOSING].data, htlc_2_2)
     }
 
     nodeParams.db.channels.addOrUpdateChannel(data_upstream_1)
@@ -431,7 +431,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       buildHtlcIn(1, channelId_ab_1, randomBytes32()),
       buildHtlcIn(4, channelId_ab_1, randomBytes32()),
     )
-    val channelData = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab, Map.empty)
+    val channelData = ChannelCodecsSpec.makeChannelData(htlc_ab, Map.empty)
     nodeParams.db.channels.addOrUpdateChannel(channelData)
     nodeParams.db.pendingCommands.addSettlementCommand(channelId_ab_1, CMD_FULFILL_HTLC(1, randomBytes32()))
     nodeParams.db.pendingCommands.addSettlementCommand(channelId_ab_1, CMD_FAIL_HTLC(4, Right(PermanentChannelFailure)))
@@ -452,7 +452,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       buildHtlcIn(2, channelId_ab_1, paymentHash1),
       buildHtlcIn(4, channelId_ab_1, paymentHash2),
     )
-    val upstreamChannel = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab, Map.empty)
+    val upstreamChannel = ChannelCodecsSpec.makeChannelData(htlc_ab, Map.empty)
     val htlc_bc = Seq(
       buildHtlcOut(2, channelId_bc_1, paymentHash1),
       buildHtlcOut(3, channelId_bc_1, paymentHash1),
@@ -466,14 +466,14 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       5L -> Origin.ChannelRelayedCold(channelId_ab_1, 4, 550 msat, 500 msat),
     )
     val downstreamChannel = {
-      val normal = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, origins)
+      val normal = ChannelCodecsSpec.makeChannelData(htlc_bc, origins)
       // NB: this isn't actually a revoked commit tx, but we don't check that here, if the channel says it's a revoked
       // commit we accept it as such, so it simplifies the test.
       val revokedCommitTx = normal.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.copy(txOut = Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))))
       val dummyClaimMainTx = Transaction(2, Seq(TxIn(OutPoint(revokedCommitTx, 0), Nil, 0)), Seq(revokedCommitTx.txOut.head.copy(amount = 4000 sat)), 0)
       val dummyClaimMain = ClaimRemoteDelayedOutputTx(InputInfo(OutPoint(revokedCommitTx, 0), revokedCommitTx.txOut.head, Nil), dummyClaimMainTx)
       val rcp = RevokedCommitPublished(revokedCommitTx, Some(dummyClaimMain), None, Nil, Nil, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
-      DATA_CLOSING(normal.commitments, None, BlockHeight(0), Nil, revokedCommitPublished = List(rcp))
+      ChannelData.Closing(normal.commitments, None, BlockHeight(0), Nil, revokedCommitPublished = List(rcp))
     }
 
     nodeParams.db.channels.addOrUpdateChannel(upstreamChannel)
@@ -617,7 +617,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // @formatter:on
 
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedHtlc1Out), Map(50L -> trampolineRelayed))
+    val c = ChannelCodecsSpec.makeChannelData(List(relayedHtlc1Out), Map(50L -> trampolineRelayed))
     nodeParams1.db.channels.addOrUpdateChannel(c)
 
     val channel = TestProbe()
@@ -667,7 +667,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // @formatter:on
 
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedHtlcIn, nonRelayedHtlcIn), Map.empty)
+    val c = ChannelCodecsSpec.makeChannelData(List(relayedHtlcIn, nonRelayedHtlcIn), Map.empty)
     nodeParams1.db.channels.addOrUpdateChannel(c)
 
     val channel = TestProbe()
@@ -764,7 +764,7 @@ object PostRestartHtlcCleanerSpec {
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, id1, None, paymentHash1, PaymentType.Standard, add1.amountMsat, add1.amountMsat, c, 0 unixms, None, OutgoingPaymentStatus.Pending))
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash2, PaymentType.Standard, add2.amountMsat, 2500 msat, c, 0 unixms, None, OutgoingPaymentStatus.Pending))
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, parentId, None, paymentHash2, PaymentType.Standard, add3.amountMsat, 2500 msat, c, 0 unixms, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.makeChannelDataNormal(
+    nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.makeChannelData(
       Seq(add1, add2, add3).map(add => OutgoingHtlc(add)),
       Map(add1.id -> origin1, add2.id -> origin2, add3.id -> origin3))
     )
@@ -788,8 +788,8 @@ object PostRestartHtlcCleanerSpec {
       buildHtlcOut(6, channelId_bc_1, paymentHash1)
     )
 
-    val data_ab_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map.empty)
-    val data_bc_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc_1, Map(6L -> origin_1))
+    val data_ab_1 = ChannelCodecsSpec.makeChannelData(htlc_ab_1, Map.empty)
+    val data_bc_1 = ChannelCodecsSpec.makeChannelData(htlc_bc_1, Map(6L -> origin_1))
 
     // Prepare channels state before restart.
     nodeParams.db.channels.addOrUpdateChannel(data_ab_1)
@@ -872,13 +872,13 @@ object PostRestartHtlcCleanerSpec {
     val downstream_2_2 = UpdateAddHtlc(channelId_bc_2, 1L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket)
     val downstream_2_3 = UpdateAddHtlc(channelId_bc_3, 4L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket)
 
-    val data_ab_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map.empty)
-    val data_ab_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map.empty)
-    val data_bc_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc_1, Map(6L -> origin_1, 8L -> origin_2))
-    val data_bc_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc_2, Map(1L -> origin_2))
-    val data_bc_3 = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc_3, Map(4L -> origin_2))
-    val data_bc_4 = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc_4, Map(5L -> origin_3))
-    val data_bc_5 = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc_5, Map(2L -> origin_3, 4L -> origin_4))
+    val data_ab_1 = ChannelCodecsSpec.makeChannelData(htlc_ab_1, Map.empty)
+    val data_ab_2 = ChannelCodecsSpec.makeChannelData(htlc_ab_2, Map.empty)
+    val data_bc_1 = ChannelCodecsSpec.makeChannelData(htlc_bc_1, Map(6L -> origin_1, 8L -> origin_2))
+    val data_bc_2 = ChannelCodecsSpec.makeChannelData(htlc_bc_2, Map(1L -> origin_2))
+    val data_bc_3 = ChannelCodecsSpec.makeChannelData(htlc_bc_3, Map(4L -> origin_2))
+    val data_bc_4 = ChannelCodecsSpec.makeChannelData(htlc_bc_4, Map(5L -> origin_3))
+    val data_bc_5 = ChannelCodecsSpec.makeChannelData(htlc_bc_5, Map(2L -> origin_3, 4L -> origin_4))
 
     // Prepare channels state before restart.
     nodeParams.db.channels.addOrUpdateChannel(data_ab_1)
