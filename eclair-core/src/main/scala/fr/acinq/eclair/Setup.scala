@@ -35,7 +35,7 @@ import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
-import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
+import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler, PaymentsDb, PurgeInvoicesHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Peer, Server, Switchboard}
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.receive.PaymentHandler
@@ -304,6 +304,19 @@ class Setup(val datadir: File,
       balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
       postman = system.spawn(Behaviors.supervise(Postman(switchboard.toTyped)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+
+      _ = if (config.getBoolean("purge-expired-invoices.enabled")) {
+        nodeParams.db.payments match {
+          case purgeInvoicesDb: PaymentsDb if config.getBoolean("purge-expired-invoices.enabled") =>
+            val interval = FiniteDuration(config.getDuration("purge-expired-invoices.interval").toMinutes, TimeUnit.MINUTES)
+            system.spawn(Behaviors.supervise(PurgeInvoicesHandler(purgeInvoicesDb, interval)).onFailure(typed.SupervisorStrategy.restart), name = "purge-expired-invoices")
+          case _ =>
+            system.deadLetters
+        }
+      } else {
+        logger.warn("purge-expired-invoices is disabled")
+        system.deadLetters
+      }
 
       kit = Kit(
         nodeParams = nodeParams,
