@@ -447,7 +447,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     bob ! CMD_FAIL_HTLC(bobPendingHtlc.htlc.id, Right(UnknownNextPeer), replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FAIL_HTLC]]
     val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
-    val rcp4 = bobClosing1.remoteCommitPublished.get
+    val rcp4 = bobClosing1.remoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
     assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) === RemoteCommitPublished.HtlcOutputStatus.Unspendable)
     assert(rcp4.claimHtlcTxs.size === 4)
     assert(getClaimHtlcSuccessTxs(rcp4).size == 1)
