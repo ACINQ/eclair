@@ -8,7 +8,9 @@
 
 ### API changes
 
-<insert changes>
+This release updates the following APIs:
+
+- the values of the `type` field in the `channel` and `channels` APIs have been updated
 
 ### Miscellaneous improvements and bug fixes
 

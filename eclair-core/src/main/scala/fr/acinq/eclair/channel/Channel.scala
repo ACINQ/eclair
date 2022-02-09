@@ -1911,19 +1911,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
 
     case Event(INPUT_DISCONNECTED, d) if d.channelData().nonEmpty => goto(OFFLINE) using DATA_OFFLINE(d.channelData().get)
 
-    case Event(c: CMD_GETSTATE, _) =>
+    case Event(c: CMD_GET_CHANNEL_STATE, _) =>
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-      replyTo ! RES_GETSTATE(stateName)
+      replyTo ! RES_GET_CHANNEL_STATE(stateName)
       stay()
 
-    case Event(c: CMD_GETSTATEDATA, _) =>
+    case Event(c: CMD_GET_CHANNEL_DATA, d) =>
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-      replyTo ! RES_GETSTATEDATA(stateData)
+      replyTo ! RES_GET_CHANNEL_DATA(stateName, d.channelData())
       stay()
 
-    case Event(c: CMD_GETINFO, _) =>
+    case Event(c: CMD_GET_CHANNEL_INFO, d) =>
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-      replyTo ! RES_GETINFO(remoteNodeId, stateData.channelId, stateName, stateData)
+      replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, d.channelId, stateName, d.channelData())
       stay()
 
     case Event(c: CMD_ADD_HTLC, d) =>
