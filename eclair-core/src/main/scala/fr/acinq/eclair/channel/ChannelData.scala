@@ -307,7 +307,7 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
     // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
     val allHtlcsSpent = htlcTxs.forall {
       case (outPoint, _: LocalCommitPublished.HtlcOutputStatus.Spendable) => irrevocablySpent.contains(outPoint)
-      case (outPoint, LocalCommitPublished.HtlcOutputStatus.Unknown) => irrevocablySpent.contains(outPoint)
+      case (outPoint, LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement) => irrevocablySpent.contains(outPoint)
       case (_, LocalCommitPublished.HtlcOutputStatus.Unspendable) => true // we will never be able to spend this output so we ignore it (our counterparty may forget to spend it and cause us to wait forever)
     }
     // are all outputs from htlc txs spent?
@@ -329,8 +329,8 @@ object LocalCommitPublished {
   object HtlcOutputStatus {
     /** We know how to spend this output */
     case class Spendable(htlcTx: HtlcTx) extends HtlcOutputStatus
-    /** We may be able to spend incoming htlcs outputs if we get the preimage for the next node */
-    case object Unknown extends HtlcOutputStatus
+    /** We may be able to spend incoming htlcs outputs if we get the preimage from the next node */
+    case object PendingDownstreamSettlement extends HtlcOutputStatus
     /** We know for sure that we will never be able to spend this incoming htlc output, because we got a failure from the next node in the route*/
     case object Unspendable extends HtlcOutputStatus
   }

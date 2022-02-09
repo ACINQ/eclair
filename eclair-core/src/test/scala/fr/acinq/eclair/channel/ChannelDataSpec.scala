@@ -88,7 +88,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(htlcTimeoutTxs.length === 2)
     val htlcSuccessTxs: Seq[HtlcSuccessTx] = getHtlcSuccessTxs(lcp)
     assert(htlcSuccessTxs.length === 1) // we only have the preimage for 1 of the 2 non-dust htlcs
-    val remainingHtlcOutpoint: OutPoint = lcp.htlcTxs.collectFirst { case (outpoint, LocalCommitPublished.HtlcOutputStatus.Unknown) => outpoint }.head
+    val remainingHtlcOutpoint: OutPoint = lcp.htlcTxs.collectFirst { case (outpoint, LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement) => outpoint }.head
     assert(lcp.claimHtlcDelayedTxs.length === 0) // we will publish 3rd-stage txs once htlc txs confirm
     assert(!lcp.isConfirmed)
     assert(!lcp.isDone)
@@ -245,7 +245,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
 
     // at this point the pending incoming htlc is waiting for a preimage
-    assert(lcp4.htlcTxs(remainingHtlcOutpoint) === LocalCommitPublished.HtlcOutputStatus.Unknown)
+    assert(lcp4.htlcTxs(remainingHtlcOutpoint) === LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement)
 
     alice ! CMD_FAIL_HTLC(1, Right(UnknownNextPeer), replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FAIL_HTLC]]

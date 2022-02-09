@@ -242,9 +242,11 @@ private[channel] object ChannelCodecs2 {
         ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
 
     // backward compatible with optional(bool8, htlcTxCodec)
-    val htlcLocalOutputStatusCodec: Codec[LocalCommitPublished.HtlcOutputStatus] = discriminated[LocalCommitPublished.HtlcOutputStatus].by(bits(8))
-      .typecase(bin"00000000", provide(LocalCommitPublished.HtlcOutputStatus.Unknown)) // was previously 'false' encoded as bool8
-      .typecase(bin"11111111", htlcTxCodec.asDecoder.map(LocalCommitPublished.HtlcOutputStatus.Spendable).decodeOnly) // was previously 'true' encoded as bool8
+    val htlcLocalOutputStatusCodec: Codec[LocalCommitPublished.HtlcOutputStatus] =
+      optional(bool8, htlcTxCodec).asDecoder.map {
+        case Some(htlcTx) => LocalCommitPublished.HtlcOutputStatus.Spendable(htlcTx)
+        case None => LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
+      }.decodeOnly
 
     val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
       ("commitTx" | txCodec) ::
@@ -255,9 +257,11 @@ private[channel] object ChannelCodecs2 {
         ("spent" | spentMapCodec)).as[LocalCommitPublished]
 
     // backward compatible with optional(bool8, claimHtlcTxCodec)
-    val htlcRemoteOutputStatusCodec: Codec[RemoteCommitPublished.HtlcOutputStatus] = discriminated[RemoteCommitPublished.HtlcOutputStatus].by(bits(8))
-      .typecase(bin"00000000", provide(RemoteCommitPublished.HtlcOutputStatus.Unknown)) // was previously 'false' encoded as bool8
-      .typecase(bin"11111111", claimHtlcTxCodec.asDecoder.map(RemoteCommitPublished.HtlcOutputStatus.Spendable).decodeOnly) // was previously 'true' encoded as bool8
+    val htlcRemoteOutputStatusCodec: Codec[RemoteCommitPublished.HtlcOutputStatus] =
+      optional(bool8, claimHtlcTxCodec).asDecoder.map {
+        case Some(claimHtlcTx) => RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTx)
+        case None => RemoteCommitPublished.HtlcOutputStatus.Unknown
+      }.decodeOnly
 
     val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ::

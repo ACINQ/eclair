@@ -290,7 +290,7 @@ private[channel] object ChannelCodecs3 {
 
     // backward compatible with optional(bool8, htlcTxCodec)
     val htlcLocalOutputStatusCodec: Codec[LocalCommitPublished.HtlcOutputStatus] = discriminated[LocalCommitPublished.HtlcOutputStatus].by(bits(8))
-      .typecase(bin"00000000", provide(LocalCommitPublished.HtlcOutputStatus.Unknown)) // was previously 'false' encoded as bool8
+      .typecase(bin"00000000", provide(LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement)) // was previously 'false' encoded as bool8
       .typecase(bin"00000001", provide(LocalCommitPublished.HtlcOutputStatus.Unspendable))
       .typecase(bin"11111111", htlcTxCodec.xmapc(LocalCommitPublished.HtlcOutputStatus.Spendable)(_.htlcTx)) // was previously 'true' encoded as bool8
 

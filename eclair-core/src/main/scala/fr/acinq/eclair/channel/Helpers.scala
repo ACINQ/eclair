@@ -665,21 +665,21 @@ object Helpers {
             txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
               val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
               Right(Transactions.addSigs(txInfo, localSig, remoteSig, preimages(paymentHash), commitmentFormat))
-            }.map(LocalCommitPublished.HtlcOutputStatus.Spendable).getOrElse(LocalCommitPublished.HtlcOutputStatus.Unknown)
+            }.map(LocalCommitPublished.HtlcOutputStatus.Spendable).getOrElse(LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement)
           } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
             // incoming htlc that we know for sure will never be fulfilled downstream: we can safely discard it
             txInfo.input.outPoint -> LocalCommitPublished.HtlcOutputStatus.Unspendable
           } else {
             // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
             // preimage later, otherwise it will eventually timeout and they will get their funds back
-            txInfo.input.outPoint -> LocalCommitPublished.HtlcOutputStatus.Unknown
+            txInfo.input.outPoint -> LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
           }
         case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
           txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
             val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
             Right(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
-          }.map(LocalCommitPublished.HtlcOutputStatus.Spendable).getOrElse(LocalCommitPublished.HtlcOutputStatus.Unknown)
+          }.map(LocalCommitPublished.HtlcOutputStatus.Spendable).getOrElse(LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement)
       }.toMap
 
       // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.

@@ -212,9 +212,9 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     val htlcTimeoutTx = HtlcTimeoutTx(inputInfo, tx, 74846, BlockHeight(800000))
     val htlcSuccessTx = HtlcSuccessTx(inputInfo, tx, randomBytes32(), 4861, BlockHeight(800000))
 
-    val htlc_opts = Map(
-      Option.empty[HtlcTimeoutTx] -> channel.LocalCommitPublished.HtlcOutputStatus.Unknown,
-      Option.empty[HtlcSuccessTx] -> channel.LocalCommitPublished.HtlcOutputStatus.Unknown,
+    val htlc_opts = Seq(
+      Option.empty[HtlcTimeoutTx] -> channel.LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement,
+      Option.empty[HtlcSuccessTx] -> channel.LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement,
       Some(htlcTimeoutTx) -> channel.LocalCommitPublished.HtlcOutputStatus.Spendable(htlcTimeoutTx),
       Some(htlcSuccessTx) -> channel.LocalCommitPublished.HtlcOutputStatus.Spendable(htlcSuccessTx)
     )
@@ -234,7 +234,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     val claimHtlcTimeoutTx = ClaimHtlcTimeoutTx(inputInfo, tx, 74846, BlockHeight(800000))
     val claimHtlcSuccessTx = ClaimHtlcSuccessTx(inputInfo, tx, randomBytes32(), 4861, BlockHeight(800000))
 
-    val htlc_opts = Map(
+    val htlc_opts = Seq(
       Option.empty[ClaimHtlcTimeoutTx] -> channel.RemoteCommitPublished.HtlcOutputStatus.Unknown,
       Option.empty[ClaimHtlcSuccessTx] -> channel.RemoteCommitPublished.HtlcOutputStatus.Unknown,
       Some(claimHtlcTimeoutTx) -> channel.RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTimeoutTx),
