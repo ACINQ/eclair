@@ -154,11 +154,11 @@ object CheckBalance {
       remoteCommitPublished.claimMainOutputTx.toSeq.map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
     }
     // incoming htlcs for which we have a preimage: we have published a claim tx that pays directly to our wallet
-    val htlcsInOnChain = remoteCommitPublished.claimHtlcTxs.values.flatten.collect { case htlcTx: ClaimHtlcSuccessTx => htlcTx }
+    val htlcsInOnChain = remoteCommitPublished.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTx: ClaimHtlcSuccessTx) => claimHtlcTx }
       .map(_.htlcId)
       .toSet
     // outgoing htlcs that have timed out: we have published a claim tx that pays directly to our wallet
-    val htlcsOutOnChain = remoteCommitPublished.claimHtlcTxs.values.flatten.collect { case htlcTx: ClaimHtlcTimeoutTx => htlcTx }
+    val htlcsOutOnChain = remoteCommitPublished.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTx: ClaimHtlcTimeoutTx) => claimHtlcTx }
       .map(_.htlcId)
       .toSet
     // incoming htlcs for which we have a preimage
@@ -172,7 +172,8 @@ object CheckBalance {
       .filterNot(htlc => remoteHasPreimage(c, htlc.id))
       .sumAmount
     // all claim txs have possibly been published
-    val htlcs = remoteCommitPublished.claimHtlcTxs.values.flatten
+    val htlcs = remoteCommitPublished.claimHtlcTxs.values
+      .collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTx) => claimHtlcTx }
       .map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
     PossiblyPublishedMainAndHtlcBalance(
       toLocal = toLocal,

@@ -2564,7 +2564,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   private def doPublish(remoteCommitPublished: RemoteCommitPublished, commitments: Commitments): Unit = {
     import remoteCommitPublished._
 
-    val redeemableHtlcTxs = claimHtlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitments))
+    val redeemableHtlcTxs = claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(tx) => PublishReplaceableTx(tx, commitments) }
     val publishQueue = claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ redeemableHtlcTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 

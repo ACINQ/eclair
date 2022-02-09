@@ -242,22 +242,27 @@ private[channel] object ChannelCodecs2 {
         ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
 
     // backward compatible with optional(bool8, htlcTxCodec)
-    val htlcOutputStatusCodec: Codec[LocalCommitPublished.HtlcOutputStatus] = discriminated[LocalCommitPublished.HtlcOutputStatus].by(bits(8))
+    val htlcLocalOutputStatusCodec: Codec[LocalCommitPublished.HtlcOutputStatus] = discriminated[LocalCommitPublished.HtlcOutputStatus].by(bits(8))
       .typecase(bin"00000000", provide(LocalCommitPublished.HtlcOutputStatus.Unknown)) // was previously 'false' encoded as bool8
       .typecase(bin"11111111", htlcTxCodec.asDecoder.map(LocalCommitPublished.HtlcOutputStatus.Spendable).decodeOnly) // was previously 'true' encoded as bool8
 
     val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainDelayedOutputTx" | optional(bool8, claimLocalDelayedOutputTxCodec)) ::
-        ("htlcTxs" | mapCodec(outPointCodec, htlcOutputStatusCodec)) ::
+        ("htlcTxs" | mapCodec(outPointCodec, htlcLocalOutputStatusCodec)) ::
         ("claimHtlcDelayedTx" | listOfN(uint16, htlcDelayedTxCodec)) ::
         ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
         ("spent" | spentMapCodec)).as[LocalCommitPublished]
 
+    // backward compatible with optional(bool8, claimHtlcTxCodec)
+    val htlcRemoteOutputStatusCodec: Codec[RemoteCommitPublished.HtlcOutputStatus] = discriminated[RemoteCommitPublished.HtlcOutputStatus].by(bits(8))
+      .typecase(bin"00000000", provide(RemoteCommitPublished.HtlcOutputStatus.Unknown)) // was previously 'false' encoded as bool8
+      .typecase(bin"11111111", claimHtlcTxCodec.asDecoder.map(RemoteCommitPublished.HtlcOutputStatus.Spendable).decodeOnly) // was previously 'true' encoded as bool8
+
     val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
-        ("claimHtlcTxs" | mapCodec(outPointCodec, optional(bool8, claimHtlcTxCodec))) ::
+        ("claimHtlcTxs" | mapCodec(outPointCodec, htlcRemoteOutputStatusCodec)) ::
         ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
         ("spent" | spentMapCodec)).as[RemoteCommitPublished]
 

@@ -79,7 +79,7 @@ private[channel] object ChannelTypes0 {
       val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx))
       val claimHtlcSuccessTxsNew = claimHtlcSuccessTxs.map(tx => LegacyClaimHtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
       val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
-      val claimHtlcTxsNew = (claimHtlcSuccessTxsNew ++ claimHtlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
+      val claimHtlcTxsNew = (claimHtlcSuccessTxsNew ++ claimHtlcTimeoutTxsNew).map(tx => tx.input.outPoint -> channel.RemoteCommitPublished.HtlcOutputStatus.Spendable(tx)).toMap
       channel.RemoteCommitPublished(commitTx, claimMainOutputTxNew, claimHtlcTxsNew, Nil, irrevocablySpentNew)
     }
   }

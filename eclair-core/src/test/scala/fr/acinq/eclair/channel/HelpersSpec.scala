@@ -172,8 +172,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     case claimHtlcTx: ClaimHtlcTimeoutTx => claimHtlcTx.copy(htlcId = 0)
   }
 
-  private def removeClaimHtlcIds(claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]]): Map[OutPoint, Option[ClaimHtlcTx]] = {
-    claimHtlcTxs.map { case (outpoint, claimHtlcTx_opt) => (outpoint, claimHtlcTx_opt.map(removeHtlcId)) }
+  private def removeClaimHtlcIds(claimHtlcTxs: Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus]): Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus] = {
+    claimHtlcTxs.map {
+      case (outpoint, spendable: RemoteCommitPublished.HtlcOutputStatus.Spendable) => (outpoint, spendable.modify(_.claimHtlcTx).using(removeHtlcId))
+      case (outpoint, otherStatus) => (outpoint, otherStatus)
+    }
   }
 
   def findTimedOutHtlcs(f: Fixture, withoutHtlcId: Boolean): Unit = {
