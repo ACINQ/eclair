@@ -1828,6 +1828,25 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val route :: Nil = routes
     assert(route2Ids(route) === 0 :: 2 :: 3 :: 4 :: Nil)
   }
+
+  test("edge too small to relay payment is ignored") {
+    // A ===> B ===> C <--- D
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 100 msat, 100),
+      makeEdge(2L, b, c, 100 msat, 100),
+      makeEdge(3L, d, c, 100 msat, 100, capacity = 1000 sat),
+    ))
+
+    val hc = HeuristicsConstants(
+      lockedFundsRisk = 1e-7,
+      failureCost = RelayFees(0 msat, 0),
+      hopCost = RelayFees(0 msat, 0),
+    )
+    val Success(routes) = findRoute(g, a, c, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
+    assert(routes.distinct.length == 1)
+    val route :: Nil = routes
+    assert(route2Ids(route) === 1 :: 2 :: Nil)
+  }
 }
 
 object RouteCalculationSpec {
