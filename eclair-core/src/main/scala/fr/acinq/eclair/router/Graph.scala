@@ -246,14 +246,14 @@ object Graph {
         }
         neighborEdges.foreach { edge =>
           val neighbor = edge.desc.a
-          // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
-          // will be relayed through that edge is the one in `currentWeight`.
           if (current.weight.amount <= edge.capacity &&
             edge.balance_opt.forall(current.weight.amount <= _) &&
             edge.update.htlcMaximumMsat.forall(current.weight.amount <= _) &&
             current.weight.amount >= edge.update.htlcMinimumMsat &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor)) {
+            // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
+            // will be relayed through that edge is the one in `currentWeight`.
             val neighborWeight = addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, includeLocalChannelCost)
             if (boundaries(neighborWeight)) {
               val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), 0.0, MilliSatoshi(Long.MaxValue), MilliSatoshi(Long.MaxValue), Double.MaxValue))
