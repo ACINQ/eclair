@@ -305,17 +305,11 @@ class Setup(val datadir: File,
 
       postman = system.spawn(Behaviors.supervise(Postman(switchboard.toTyped)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
 
-      _ = if (config.getBoolean("purge-expired-invoices.enabled")) {
-        nodeParams.db.payments match {
-          case purgeInvoicesDb: PaymentsDb if config.getBoolean("purge-expired-invoices.enabled") =>
-            val interval = FiniteDuration(config.getDuration("purge-expired-invoices.interval").toMinutes, TimeUnit.MINUTES)
-            system.spawn(Behaviors.supervise(PurgeInvoicesHandler(purgeInvoicesDb, interval)).onFailure(typed.SupervisorStrategy.restart), name = "purge-expired-invoices")
-          case _ =>
-            system.deadLetters
-        }
-      } else {
-        logger.warn("purge-expired-invoices is disabled")
-        system.deadLetters
+      interval = nodeParams.purgeInvoicesInterval match {
+        case Some(interval) =>
+          system.spawn(Behaviors.supervise(PurgeInvoicesHandler(nodeParams.db.payments, interval)).onFailure(typed.SupervisorStrategy.restart), name = "purge-expired-invoices")
+        case _ =>
+          logger.warn("purge-expired-invoices is disabled")
       }
 
       kit = Kit(

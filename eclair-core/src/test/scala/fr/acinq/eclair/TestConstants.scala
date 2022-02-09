@@ -194,7 +194,8 @@ object TestConstants {
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
         timeout = 1 minute
-      )
+      ),
+      purgeInvoicesInterval = Option(24 hours)
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -329,7 +330,8 @@ object TestConstants {
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
         timeout = 1 minute
-      )
+      ),
+      purgeInvoicesInterval = Option(24 hours)
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
