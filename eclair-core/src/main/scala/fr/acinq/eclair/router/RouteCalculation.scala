@@ -135,7 +135,7 @@ object RouteCalculation {
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "InfiniteLoop")).increment()
             ctx.sender() ! Status.Failure(failure)
           case Failure(failure: NegativeProbability) =>
-            log.error(s"computed negative probability $failure")
+            log.error(s"computed negative probability: edge=${failure.edge}, weight=${failure.weight}, heuristicsConstants=${failure.heuristicsConstants}")
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
             ctx.sender() ! Status.Failure(failure)
           case Failure(t) =>
