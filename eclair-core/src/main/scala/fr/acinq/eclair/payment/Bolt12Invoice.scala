@@ -168,6 +168,7 @@ object Bolt12Invoice {
       Some(Amount(request.amount.orElse(offer.amount.map(_ * request.quantity)).get)),
       Some(Description(offer.description)),
       request.quantity_opt.map(Quantity),
+      Some(Chain(request.chain)),
       Some(PayerKey(request.payerKey)),
       request.payerInfo.map(PayerInfo),
       request.payerNote.map(PayerNote),

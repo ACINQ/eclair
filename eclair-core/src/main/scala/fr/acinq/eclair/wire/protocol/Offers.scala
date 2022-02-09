@@ -159,7 +159,7 @@ object Offers {
       }
     }
 
-    def encode: String = Bech32WithoutChecksum.encode("lno", offerCodec, this)
+    def encode(): String = Bech32WithoutChecksum.encode("lno", offerCodec, this)
   }
 
   object Offer {
@@ -202,11 +202,12 @@ object Offers {
       verifySchnorr("lightning" + "invoice_request" + "payer_signature", rootHash(withoutSig, invoiceRequestTlvCodec).get, payerSignature, payerKey)
     }
 
-    def encode: String = Bech32WithoutChecksum.encode("lnr", invoiceRequestCodec, this)
+    def encode(): String = Bech32WithoutChecksum.encode("lnr", invoiceRequestCodec, this)
   }
 
   object InvoiceRequest {
     def apply(offer: Offer, amount: MilliSatoshi, quantity: Long, features: Features[InvoiceFeature], payerKey: PrivateKey, chain: ByteVector32 = Block.LivenetGenesisBlock.hash): InvoiceRequest = {
+      require(quantity == 1 || offer.quantityMin.nonEmpty || offer.quantityMax.nonEmpty)
       val requestTlvs: Seq[InvoiceRequestTlv] = Seq(
         Some(Chain(chain)),
         Some(OfferId(offer.offerId)),
@@ -225,13 +226,9 @@ object Offers {
 
   def rootHash[T <: Tlv](tlvs: TlvStream[T], codec: Codec[TlvStream[T]]): Option[ByteVector32] = {
     codec.encode(tlvs) match {
-      case Failure(_) =>
-        println("Can't encode")
-        None
+      case Failure(_) => None
       case Successful(encoded) => vector(genericTlv).decode(encoded) match {
-        case Failure(f) =>
-          println(s"Can't decode ${encoded.toHex}: $f")
-          None
+        case Failure(f) => None
         case Successful(DecodeResult(tlvVector, _)) =>
 
           def hash(tag: ByteVector, msg: ByteVector): ByteVector32 = {
