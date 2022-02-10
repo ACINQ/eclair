@@ -20,14 +20,10 @@ import akka.Done
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import fr.acinq.eclair.db.Monitoring.Metrics
 import fr.acinq.eclair.db.PaymentsDb
-import fr.acinq.eclair.payment.receive.InvoicePurger.{Command, PurgeCompleted, PurgeResult, TickPurge, ec}
-import fr.acinq.eclair.{KamonExt, TimestampMilli, TimestampMilliLong}
-
-import java.util.concurrent.Executors
+import fr.acinq.eclair.payment.receive.InvoicePurger.{Command, PurgeCompleted, PurgeResult, TickPurge}
+import fr.acinq.eclair.{TimestampMilli, TimestampMilliLong}
 import scala.concurrent.duration.FiniteDuration
-import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -43,15 +39,12 @@ object InvoicePurger {
   // this notification is sent when we have completed our invoice purge process
   case object PurgeCompleted extends PurgeEvent
 
-  // the purge task will run in this thread pool
-  private val ec = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
-
   def apply(paymentsDb: PaymentsDb, interval: FiniteDuration): Behavior[Command] =
     Behaviors.setup { context =>
       // wait for purge events sent at `interval`
       Behaviors.withTimers { timers =>
         timers.startTimerAtFixedRate(TickPurge, interval)
-        new InvoicePurger(paymentsDb, context).waiting(willPurgeAtNextTick = true)
+        new InvoicePurger(paymentsDb, context).waiting()
       }
     }
 }
@@ -59,40 +52,32 @@ object InvoicePurger {
 class InvoicePurger private(paymentsDb: PaymentsDb,
                             context: ActorContext[Command]) {
 
-  // purge at each tick unless already currently purging
-  def waiting(willPurgeAtNextTick: Boolean): Behavior[Command] =
+  // purge at each tick unless currently purging
+  def waiting(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case TickPurge => if (willPurgeAtNextTick) {
-        context.log.debug("purging expired invoices")
-        context.pipeToSelf(doPurge())(PurgeResult)
-        purging(willPurgeAtNextTick = false)
-      } else {
-        Behaviors.same
-      }
+      case TickPurge =>
+        doPurge()
+        purging()
     }
 
-  def purging(willPurgeAtNextTick: Boolean): Behavior[Command] =
+  // ignore ticks and wait for for purge to complete
+  def purging(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case PurgeResult(res) =>
         res match {
           case Success(Done) => context.log.debug("invoice purge succeeded")
           case Failure(cause) => context.log.warn(s"invoice purge failed: $cause")
         }
-        waiting(willPurgeAtNextTick)
+        waiting()
     }
 
-  private def doPurge(): Future[Done] = Future {
+  private def doPurge(): Unit = {
     val now = TimestampMilli.now()
-    KamonExt.time(Metrics.InvoicePurgeDuration.withoutTags()) {
-      val expiredPayments = paymentsDb.listExpiredIncomingPayments(0 unixms, now)
-      expiredPayments.foreach(p => paymentsDb.removeIncomingPayment(p.invoice.paymentHash))
+    val expiredPayments = paymentsDb.listExpiredIncomingPayments(0 unixms, now)
+    // purge expired payments
+    expiredPayments.foreach(p => paymentsDb.removeIncomingPayment(p.invoice.paymentHash))
 
-      // publish a notification that we have purged expired invoices
-      context.system.eventStream ! EventStream.Publish(PurgeCompleted)
-      Metrics.InvoicePurgeCompleted.withoutTags().increment()
-    }
-
-    Done
-  }(ec)
-
+    // publish a notification that we have purged expired invoices
+    context.system.eventStream ! EventStream.Publish(PurgeCompleted)
+  }
 }
