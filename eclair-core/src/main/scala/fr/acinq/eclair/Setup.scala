@@ -35,10 +35,10 @@ import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
-import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler, PaymentsDb, PurgeInvoicesHandler}
+import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Peer, Server, Switchboard}
 import fr.acinq.eclair.message.Postman
-import fr.acinq.eclair.payment.receive.PaymentHandler
+import fr.acinq.eclair.payment.receive.{InvoicePurger, PaymentHandler}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
@@ -307,7 +307,7 @@ class Setup(val datadir: File,
 
       interval = nodeParams.purgeInvoicesInterval match {
         case Some(interval) =>
-          system.spawn(Behaviors.supervise(PurgeInvoicesHandler(nodeParams.db.payments, interval)).onFailure(typed.SupervisorStrategy.restart), name = "purge-expired-invoices")
+          system.spawn(Behaviors.supervise(InvoicePurger(nodeParams.db.payments, interval)).onFailure(typed.SupervisorStrategy.restart), name = "purge-expired-invoices")
         case _ =>
           logger.warn("purge-expired-invoices is disabled")
       }

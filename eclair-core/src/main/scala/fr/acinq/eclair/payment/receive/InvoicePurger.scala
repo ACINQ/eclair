@@ -14,25 +14,26 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db
+package fr.acinq.eclair.payment.receive
 
 import akka.Done
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import fr.acinq.eclair.{KamonExt, TimestampMilli, TimestampMilliLong}
-import fr.acinq.eclair.db.PurgeInvoicesHandler._
 import fr.acinq.eclair.db.Monitoring.Metrics
-import java.util.concurrent.Executors
-import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration.FiniteDuration
-import scala.util.{Failure, Success, Try}
+import fr.acinq.eclair.db.PaymentsDb
+import fr.acinq.eclair.payment.receive.InvoicePurger.{Command, PurgeCompleted, PurgeResult, TickPurge, ec}
+import fr.acinq.eclair.{KamonExt, TimestampMilli, TimestampMilliLong}
 
+import java.util.concurrent.Executors
+import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 
 /**
  * This actor will purge expired invoices from the database it was initialized with at a scheduled interval.
  */
-object PurgeInvoicesHandler {
+object InvoicePurger {
 
   sealed trait Command
   private case object TickPurge extends Command
@@ -50,13 +51,13 @@ object PurgeInvoicesHandler {
       // wait for purge events sent at `interval`
       Behaviors.withTimers { timers =>
         timers.startTimerAtFixedRate(TickPurge, interval)
-        new PurgeInvoicesHandler(paymentsDb, context).waiting(willPurgeAtNextTick = true)
+        new InvoicePurger(paymentsDb, context).waiting(willPurgeAtNextTick = true)
       }
     }
 }
 
-class PurgeInvoicesHandler private(paymentsDb: PaymentsDb,
-                                   context: ActorContext[Command]) {
+class InvoicePurger private(paymentsDb: PaymentsDb,
+                            context: ActorContext[Command]) {
 
   // purge at each tick unless already currently purging
   def waiting(willPurgeAtNextTick: Boolean): Behavior[Command] =

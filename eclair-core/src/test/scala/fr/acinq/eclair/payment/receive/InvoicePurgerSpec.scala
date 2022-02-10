@@ -14,19 +14,21 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db
+package fr.acinq.eclair.payment.receive
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
-import fr.acinq.eclair.db.PurgeInvoicesHandler.{PurgeCompleted, PurgeEvent}
+import fr.acinq.eclair.TestDatabases.TestPgDatabases
+import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, PaymentType, PaymentsDbSpec}
 import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.receive.InvoicePurger.{PurgeCompleted, PurgeEvent}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestKitBaseClass, TimestampMilli, TimestampMilliLong, TimestampSecondLong, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuiteLike
+
 import scala.concurrent.duration.DurationInt
 
-class PurgeInvoicesHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
+class InvoicePurgerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   import PaymentsDbSpec._
 
@@ -86,7 +88,7 @@ class PurgeInvoicesHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
     assert(db.listExpiredIncomingPayments(0 unixms, now) === Seq(expiredPayment1, expiredPayment2))
 
     val interval = 10 seconds
-    val handler = system.spawn(PurgeInvoicesHandler(db, interval), name = "purge-expired-invoices")
+    val _ = system.spawn(InvoicePurger(db, interval), name = "purge-expired-invoices")
 
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[PurgeEvent])
