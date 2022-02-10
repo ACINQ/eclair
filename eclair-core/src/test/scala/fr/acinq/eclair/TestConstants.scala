@@ -331,7 +331,7 @@ object TestConstants {
         relayPolicy = RelayAll,
         timeout = 1 minute
       ),
-      purgeInvoicesInterval = Option(24 hours)
+      purgeInvoicesInterval = Some(24 hours)
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
