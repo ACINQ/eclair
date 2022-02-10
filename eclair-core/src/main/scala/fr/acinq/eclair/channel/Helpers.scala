@@ -665,22 +665,22 @@ object Helpers {
             txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
               val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
               Right(Transactions.addSigs(txInfo, localSig, remoteSig, preimages(paymentHash), commitmentFormat))
-            }.map(LocalCommitPublished.HtlcOutputStatus.Spendable).getOrElse(LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement)
+            }.map(LocalCommitPublished.HtlcOutputStatus.Spendable)
           } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
             // incoming htlc that we know for sure will never be fulfilled downstream: we can safely discard it
-            txInfo.input.outPoint -> LocalCommitPublished.HtlcOutputStatus.Unspendable
+            txInfo.input.outPoint -> Some(LocalCommitPublished.HtlcOutputStatus.Unspendable)
           } else {
             // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
             // preimage later, otherwise it will eventually timeout and they will get their funds back
-            txInfo.input.outPoint -> LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
+            txInfo.input.outPoint -> Some(LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement)
           }
         case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
           txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
             val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
             Right(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
-          }.map(LocalCommitPublished.HtlcOutputStatus.Spendable).getOrElse(LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement)
-      }.toMap
+          }.map(LocalCommitPublished.HtlcOutputStatus.Spendable)
+      }.collect { case (o, Some(status)) => o -> status }.toMap
 
       // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
       val confirmCommitBefore = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(htlcTx) => htlcTx.confirmBefore }.minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
@@ -762,7 +762,7 @@ object Helpers {
       }.toSet
 
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
-      val htlcTxs: Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus] = remoteCommit.spec.htlcs.collect {
+      val htlcTxs: Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus] = remoteCommit.spec.htlcs.toList.collect {
         case OutgoingHtlc(add: UpdateAddHtlc) =>
           // NB: we first generate the tx skeleton and finalize it below if we have the preimage, so we set logSuccess to false to avoid logging twice
           withTxGenerationLog("claim-htlc-success", logSuccess = false) {
@@ -773,14 +773,14 @@ object Helpers {
               claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-success") {
                 val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
                 Right(Transactions.addSigs(claimHtlcTx, sig, preimages(add.paymentHash)))
-              }.map(RemoteCommitPublished.HtlcOutputStatus.Spendable).getOrElse(RemoteCommitPublished.HtlcOutputStatus.Unknown)
+              }.map(RemoteCommitPublished.HtlcOutputStatus.Spendable)
             } else if (failedIncomingHtlcs.contains(claimHtlcTx.htlcId)) {
               // incoming htlc that we know for sure will never be fulfilled downstream: we can safely discard it
-              claimHtlcTx.input.outPoint -> RemoteCommitPublished.HtlcOutputStatus.Unspendable
+              claimHtlcTx.input.outPoint -> Some(RemoteCommitPublished.HtlcOutputStatus.Unspendable)
             } else {
               // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
               // preimage later, otherwise it will eventually timeout and they will get their funds back
-              claimHtlcTx.input.outPoint -> RemoteCommitPublished.HtlcOutputStatus.Unknown
+              claimHtlcTx.input.outPoint -> Some(RemoteCommitPublished.HtlcOutputStatus.Unknown)
             }
           })
         case IncomingHtlc(add: UpdateAddHtlc) =>
@@ -792,9 +792,9 @@ object Helpers {
             claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-timeout") {
               val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
               Right(Transactions.addSigs(claimHtlcTx, sig))
-            }.map(RemoteCommitPublished.HtlcOutputStatus.Spendable).getOrElse(RemoteCommitPublished.HtlcOutputStatus.Unknown)
+            }.map(RemoteCommitPublished.HtlcOutputStatus.Spendable)
           })
-      }.toSeq.flatten.toMap
+      }.flatten.collect { case (o, Some(status)) => o -> status }.toMap
 
       // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
       val confirmCommitBefore = htlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(htlcTx) => htlcTx.confirmBefore }.minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
