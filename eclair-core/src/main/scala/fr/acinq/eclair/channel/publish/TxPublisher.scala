@@ -85,13 +85,13 @@ object TxPublisher {
    */
   case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[ByteVector32]) extends PublishTx
   object PublishFinalTx {
-    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
+    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.getClass.getSimpleName, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
   case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments) extends PublishTx {
     override def input: OutPoint = txInfo.input.outPoint
-    override def desc: String = txInfo.desc
-  }
+    override def desc: String = txInfo.getClass.getSimpleName
+}
 
   sealed trait PublishTxResult extends Command { def cmd: PublishTx }
   /**

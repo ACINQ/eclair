@@ -16,6 +16,7 @@
 
 package fr.acinq
 
+import com.sun.tools.javac.code.TypeTag
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.crypto.StrongRandom

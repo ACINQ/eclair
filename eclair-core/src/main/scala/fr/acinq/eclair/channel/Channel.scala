@@ -2491,11 +2491,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     val publishQueue = commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         val redeemableHtlcTxs = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }
-        List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ (claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None)))
+        List(PublishFinalTx(commitTx, commitInput, "CommitTx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ (claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None)))
       case _: Transactions.AnchorOutputsCommitmentFormat =>
         val redeemableHtlcTxs = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishReplaceableTx(tx, commitments) }
         val claimLocalAnchor = claimAnchorTxs.collect { case TxGenerationResult.Success(tx: Transactions.ClaimLocalAnchorOutputTx) => PublishReplaceableTx(tx, commitments) }
-        List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None))
+        List(PublishFinalTx(commitTx, commitInput, "CommitTx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
