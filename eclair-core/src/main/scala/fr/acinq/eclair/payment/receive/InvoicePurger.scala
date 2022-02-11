@@ -77,7 +77,12 @@ class InvoicePurger private(paymentsDb: PaymentsDb,
     // purge expired payments
     expiredPayments.foreach(p => paymentsDb.removeIncomingPayment(p.invoice.paymentHash))
 
-    // publish a notification that we have purged expired invoices
-    context.system.eventStream ! EventStream.Publish(PurgeCompleted)
+    // publish a notification when we have purged expired invoices
+    if (expiredPayments.nonEmpty) {
+      context.system.eventStream ! EventStream.Publish(PurgeCompleted)
+    }
+
+    // purge complete
+    context.self ! PurgeResult(Success(Done))
   }
 }
