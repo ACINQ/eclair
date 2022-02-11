@@ -161,7 +161,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
   private def removeHtlcIds(htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus]): Map[OutPoint, LocalCommitPublished.HtlcOutputStatus] = {
     htlcTxs.map {
-      case (outpoint, spendable: LocalCommitPublished.HtlcOutputStatus.Spendable) => (outpoint, spendable.modify(_.htlcTx).using(removeHtlcId))
+      case (outpoint, LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx))) => (outpoint, LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(removeHtlcId(htlcTx))))
       case (outpoint, otherStatus) => (outpoint, otherStatus)
     }
   }
@@ -309,7 +309,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
+          claimMainDelayedOutputTx = TxGenerationResult.Success(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -331,7 +331,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
+          claimMainDelayedOutputTx = TxGenerationResult.Success(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -353,7 +353,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
+          claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -381,7 +381,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
+          claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -409,7 +409,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
+          claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -485,7 +485,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
-          claimMainDelayedOutputTx = None,
+          claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -532,7 +532,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
-          claimMainDelayedOutputTx = None,
+          claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,

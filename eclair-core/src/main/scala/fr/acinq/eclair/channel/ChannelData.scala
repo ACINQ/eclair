@@ -292,7 +292,12 @@ sealed trait CommitPublished {
  *                                 We currently only claim our local anchor, but it would be nice to claim both when it
  *                                 is economical to do so to avoid polluting the utxo set.
  */
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+case class LocalCommitPublished(commitTx: Transaction,
+                                claimMainDelayedOutputTx: TxGenerationResult[ClaimLocalDelayedOutputTx],
+                                htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus],
+                                claimHtlcDelayedTxs: List[TxGenerationResult[HtlcDelayedTx]],
+                                claimAnchorTxs: List[TxGenerationResult[ClaimAnchorOutputTx]],
+                                irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
   /**
    * A local commit is considered done when:
    * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
@@ -303,20 +308,19 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
     // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
     val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
     // is our main output confirmed (if we have one)?
-    val isMainOutputConfirmed = claimMainDelayedOutputTx.forall(tx => irrevocablySpent.contains(tx.input.outPoint))
+    val isMainOutputConfirmed = claimMainDelayedOutputTx.isDone(irrevocablySpent)
     // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
     val allHtlcsSpent = htlcTxs.forall {
-      case (outPoint, _: LocalCommitPublished.HtlcOutputStatus.Spendable) => irrevocablySpent.contains(outPoint)
-      case (outPoint, LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement) => irrevocablySpent.contains(outPoint)
+      case (_, LocalCommitPublished.HtlcOutputStatus.Spendable(txGen)) => txGen.isDone(irrevocablySpent)
+      case (outPoint, LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement) => irrevocablySpent.contains(outPoint) // our counterparty may have spent it
       case (_, LocalCommitPublished.HtlcOutputStatus.Unspendable) => true // we will never be able to spend this output so we ignore it (our counterparty may forget to spend it and cause us to wait forever)
     }
     // are all outputs from htlc txs spent?
-    val unconfirmedHtlcDelayedTxs = claimHtlcDelayedTxs.map(_.input.outPoint)
+    val allHtlcDelayedTxsSpent = claimHtlcDelayedTxs
       // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
-      .filter(input => confirmedTxs.contains(input.txid))
-      // has the tx already been confirmed?
-      .filterNot(input => irrevocablySpent.contains(input))
-    isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent && unconfirmedHtlcDelayedTxs.isEmpty
+      .collect { case txGen@TxGenerationResult.Success(tx) if confirmedTxs.contains(tx.input.outPoint.txid) => txGen }
+      .forall(txGen => txGen.isDone(irrevocablySpent))
+    isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent && allHtlcDelayedTxsSpent
   }
 }
 
@@ -328,7 +332,7 @@ object LocalCommitPublished {
   sealed trait HtlcOutputStatus
   object HtlcOutputStatus {
     /** We know how to spend this output */
-    case class Spendable(htlcTx: HtlcTx) extends HtlcOutputStatus
+    case class Spendable(generationResult: TxGenerationResult[HtlcTx]) extends HtlcOutputStatus
     /** We may be able to spend incoming htlcs outputs if we get the preimage from the next node */
     case object PendingDownstreamSettlement extends HtlcOutputStatus
     /** We know for sure that we will never be able to spend this incoming htlc output, because we got a failure from the next node in the route*/

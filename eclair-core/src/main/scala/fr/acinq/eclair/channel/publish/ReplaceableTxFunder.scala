@@ -132,7 +132,7 @@ object ReplaceableTxFunder {
    * Adjust the main output of a claim-htlc tx to match our target feerate.
    * If the resulting output is too small, we skip the transaction.
    */
-  def adjustClaimHtlcTxOutput(claimHtlcTx: ClaimHtlcWithWitnessData, targetFeerate: FeeratePerKw, dustLimit: Satoshi): Either[TxGenerationSkipped, ClaimHtlcWithWitnessData] = {
+  def adjustClaimHtlcTxOutput(claimHtlcTx: ClaimHtlcWithWitnessData, targetFeerate: FeeratePerKw, dustLimit: Satoshi): Either[TxGenerationResult.Skipped, ClaimHtlcWithWitnessData] = {
     require(claimHtlcTx.txInfo.tx.txIn.size == 1, "claim-htlc transaction should have a single input")
     require(claimHtlcTx.txInfo.tx.txOut.size == 1, "claim-htlc transaction should have a single output")
     val dummySignedTx = claimHtlcTx.txInfo match {
@@ -143,7 +143,7 @@ object ReplaceableTxFunder {
     val targetFee = weight2fee(targetFeerate, dummySignedTx.tx.weight())
     val outputAmount = claimHtlcTx.txInfo.amountIn - targetFee
     if (outputAmount < dustLimit) {
-      Left(AmountBelowDustLimit)
+      Left(TxGenerationResult.AmountBelowDustLimit)
     } else {
       val updatedClaimHtlcTx = claimHtlcTx match {
         // NB: we don't modify legacy claim-htlc-success, it's already signed.

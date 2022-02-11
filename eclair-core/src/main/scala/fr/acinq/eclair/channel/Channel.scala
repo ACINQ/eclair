@@ -46,7 +46,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentSettlingOnChain
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{ClosingTx, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, TxGenerationResult, TxOwner}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
@@ -1525,7 +1525,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         localCommitPublished = d.localCommitPublished.map(localCommitPublished => {
           // If the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
           val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommitHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-          claimHtlcTx_opt.foreach(claimHtlcTx => {
+          claimHtlcTx_opt.flatMap(_.toOption).foreach(claimHtlcTx => {
             txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
             blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepthBlocks)
           })
@@ -2490,25 +2490,25 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     val isFunder = commitments.localParams.isFunder
     val publishQueue = commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
-        val redeemableHtlcTxs = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(tx) => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }
-        List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
+        val redeemableHtlcTxs = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }
+        List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ (claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None)))
       case _: Transactions.AnchorOutputsCommitmentFormat =>
-        val redeemableHtlcTxs = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(tx) => PublishReplaceableTx(tx, commitments) }
-        val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => PublishReplaceableTx(tx, commitments) }
-        List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+        val redeemableHtlcTxs = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishReplaceableTx(tx, commitments) }
+        val claimLocalAnchor = claimAnchorTxs.collect { case TxGenerationResult.Success(tx: Transactions.ClaimLocalAnchorOutputTx) => PublishReplaceableTx(tx, commitments) }
+        List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txs' that send funds to our wallet and that spend outputs that only us control
-    val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx.map(_.tx) ++ claimHtlcDelayedTxs.map(_.tx)
+    val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx.toOption.map(_.tx) ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(_.tx)
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
     // we also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
     // in the audit DB, even if we restart before confirmation
-    val watchSpentQueue = htlcTxs.keys ++ claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => tx.input.outPoint }
+    val watchSpentQueue = htlcTxs.keys ++ claimAnchorTxs.collect { case TxGenerationResult.Success(tx: Transactions.ClaimLocalAnchorOutputTx) => tx.input.outPoint }
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 

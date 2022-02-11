@@ -19,17 +19,14 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Transacti
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.stateDataCodec
-import fr.acinq.eclair.wire.protocol.CommonCodecs.bool8
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, UInt64, channel, randomBytes, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.{Codec, DecodeResult}
+import scodec.DecodeResult
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
-import scodec.codecs.optional
 
 class ChannelCodecs3Spec extends AnyFunSuite {
 
@@ -203,48 +200,14 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     }
   }
 
-  test("backward compatibility for htlc status (local)") {
-    val legacyCodec: Codec[Option[Transactions.HtlcTx]] = optional(bool8, htlcTxCodec)
-
+  test("txGenerationResultCodec codec") {
     val inputInfo = InputInfo(OutPoint(randomBytes32(), 42), TxOut(123456L sat, randomBytes(90)), randomBytes(128))
     val tx = Transaction.read("020000000001018154ecccf11a5fb56c39654c4deb4d2296f83c69268280b94d021370c94e219701000000000000000001d0070000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0500483045022100d5275b3619953cb0c3b5aa577f04bc512380e60fa551762ce3d7a1bb7401cff9022037237ab0dac3fe100cde094e82e2bed9ba0ed1bb40154b48e56aa70f259e608b01483045022100c89172099507ff50f4c925e6c5150e871fb6e83dd73ff9fbb72f6ce829a9633f02203a63821d9162e99f9be712a68f9e589483994feae2661e4546cd5b6cec007be501008576a91414011f7254d96b819c76986c277d115efce6f7b58763ac67210394854aa6eab5b2a8122cc726e9dded053a2184d88256816826d6231c068d4a5b7c820120876475527c21030d417a46946384f88d5f3337267c5e579765875dc4daca813e21734b140639e752ae67a914b43e1b38138a41b37f7cd9a1d274bc63e3a9b5d188ac6868f6010000")
-
-    val htlcTimeoutTx = HtlcTimeoutTx(inputInfo, tx, 74846, BlockHeight(800000))
-    val htlcSuccessTx = HtlcSuccessTx(inputInfo, tx, randomBytes32(), 4861, BlockHeight(800000))
-
-    val htlc_opts = Seq(
-      Option.empty[HtlcTimeoutTx] -> channel.LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement,
-      Option.empty[HtlcSuccessTx] -> channel.LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement,
-      Some(htlcTimeoutTx) -> channel.LocalCommitPublished.HtlcOutputStatus.Spendable(htlcTimeoutTx),
-      Some(htlcSuccessTx) -> channel.LocalCommitPublished.HtlcOutputStatus.Spendable(htlcSuccessTx)
-    )
-
-    htlc_opts.foreach { case (htlc_opt, ref) =>
-      val bin = legacyCodec.encode(htlc_opt).require
-      assert(htlcLocalOutputStatusCodec.decode(bin).require === DecodeResult(ref, BitVector.empty))
-    }
-  }
-
-  test("backward compatibility for htlc status (remote)") {
-    val legacyCodec: Codec[Option[Transactions.ClaimHtlcTx]] = optional(bool8, claimHtlcTxCodec)
-
-    val inputInfo = InputInfo(OutPoint(randomBytes32(), 42), TxOut(123456L sat, randomBytes(90)), randomBytes(128))
-    val tx = Transaction.read("020000000001018154ecccf11a5fb56c39654c4deb4d2296f83c69268280b94d021370c94e219701000000000000000001d0070000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0500483045022100d5275b3619953cb0c3b5aa577f04bc512380e60fa551762ce3d7a1bb7401cff9022037237ab0dac3fe100cde094e82e2bed9ba0ed1bb40154b48e56aa70f259e608b01483045022100c89172099507ff50f4c925e6c5150e871fb6e83dd73ff9fbb72f6ce829a9633f02203a63821d9162e99f9be712a68f9e589483994feae2661e4546cd5b6cec007be501008576a91414011f7254d96b819c76986c277d115efce6f7b58763ac67210394854aa6eab5b2a8122cc726e9dded053a2184d88256816826d6231c068d4a5b7c820120876475527c21030d417a46946384f88d5f3337267c5e579765875dc4daca813e21734b140639e752ae67a914b43e1b38138a41b37f7cd9a1d274bc63e3a9b5d188ac6868f6010000")
-
     val claimHtlcTimeoutTx = ClaimHtlcTimeoutTx(inputInfo, tx, 74846, BlockHeight(800000))
-    val claimHtlcSuccessTx = ClaimHtlcSuccessTx(inputInfo, tx, randomBytes32(), 4861, BlockHeight(800000))
+    val txResult = TxGenerationResult.Success(claimHtlcTimeoutTx)
 
-    val htlc_opts = Seq(
-      Option.empty[ClaimHtlcTimeoutTx] -> channel.RemoteCommitPublished.HtlcOutputStatus.Unknown,
-      Option.empty[ClaimHtlcSuccessTx] -> channel.RemoteCommitPublished.HtlcOutputStatus.Unknown,
-      Some(claimHtlcTimeoutTx) -> channel.RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTimeoutTx),
-      Some(claimHtlcSuccessTx) -> channel.RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcSuccessTx)
-    )
-
-    htlc_opts.foreach { case (htlc_opt, ref) =>
-      val bin = legacyCodec.encode(htlc_opt).require
-      assert(htlcRemoteOutputStatusCodec.decode(bin).require === DecodeResult(ref, BitVector.empty))
-    }
+    val codec = txGenerationResultCodec(claimHtlcTimeoutTxCodec)
+    assert(codec.decode(codec.encode(txResult).require).require == DecodeResult(txResult, BitVector.empty))
   }
 
 }

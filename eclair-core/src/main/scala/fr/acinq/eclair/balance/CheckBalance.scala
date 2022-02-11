@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, HtlcSuccessTx, HtlcTimeoutTx}
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, HtlcSuccessTx, HtlcTimeoutTx, TxGenerationResult}
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFulfillHtlc}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -110,15 +110,15 @@ object CheckBalance {
 
   def computeLocalCloseBalance(c: Commitments, l: LocalClose, knownPreimages: Set[(ByteVector32, Long)]): PossiblyPublishedMainAndHtlcBalance = {
     import l._
-    val toLocal = localCommitPublished.claimMainDelayedOutputTx.toSeq.map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
+    val toLocal = localCommitPublished.claimMainDelayedOutputTx.toOption.map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
     // incoming htlcs for which we have a preimage and the to-local delay has expired: we have published a claim tx that pays directly to our wallet
-    val htlcsInOnChain = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(htlcTx: HtlcSuccessTx) => htlcTx }
-      .filter(htlcTx => localCommitPublished.claimHtlcDelayedTxs.exists(_.input.outPoint.txid == htlcTx.tx.txid))
+    val htlcsInOnChain = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx: HtlcSuccessTx)) => htlcTx }
+      .filter(htlcTx => localCommitPublished.claimHtlcDelayedTxs.flatMap(_.toOption).exists(_.input.outPoint.txid == htlcTx.tx.txid))
       .map(_.htlcId)
       .toSet
     // outgoing htlcs that have timed out and the to-local delay has expired: we have published a claim tx that pays directly to our wallet
-    val htlcsOutOnChain = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(htlcTx: HtlcTimeoutTx) => htlcTx }
-      .filter(htlcTx => localCommitPublished.claimHtlcDelayedTxs.exists(_.input.outPoint.txid == htlcTx.tx.txid))
+    val htlcsOutOnChain = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx: HtlcTimeoutTx)) => htlcTx }
+      .filter(htlcTx => localCommitPublished.claimHtlcDelayedTxs.flatMap(_.toOption).exists(_.input.outPoint.txid == htlcTx.tx.txid))
       .map(_.htlcId)
       .toSet
     // incoming htlcs for which we have a preimage but we are still waiting for the to-local delay
@@ -133,6 +133,7 @@ object CheckBalance {
       .sumAmount
     // all claim txs have possibly been published
     val htlcs = localCommitPublished.claimHtlcDelayedTxs
+      .flatMap(_.toOption)
       .map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
     PossiblyPublishedMainAndHtlcBalance(
       toLocal = toLocal,
