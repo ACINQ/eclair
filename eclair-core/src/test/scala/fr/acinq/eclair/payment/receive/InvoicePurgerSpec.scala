@@ -35,68 +35,54 @@ class InvoicePurgerSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("purge invoices") {
     val dbs = TestPgDatabases()
     val db = dbs.db.payments
+    val count = 100
 
-    // can't receive a payment without an invoice associated with it
-    val unknownPaymentHash = randomBytes32()
-    assert(!db.receiveIncomingPayment(unknownPaymentHash, 12345678 msat))
-    assert(db.getIncomingPayment(unknownPaymentHash).isEmpty)
+    // create expired invoices
+    val expiredInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice"), CltvExpiryDelta(18), timestamp = 1 unixsec))
+    val expiredPayments = expiredInvoices.map( invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired))
+    expiredInvoices.lazyZip(expiredPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
 
-    val expiredInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #1"), CltvExpiryDelta(18), timestamp = 1 unixsec)
-    val expiredInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #2"), CltvExpiryDelta(18), timestamp = 2 unixsec, expirySeconds = Some(30))
-    val expiredPayment1 = IncomingPayment(expiredInvoice1, randomBytes32(), PaymentType.Standard, expiredInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
-    val expiredPayment2 = IncomingPayment(expiredInvoice2, randomBytes32(), PaymentType.Standard, expiredInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
+    // create pending invoices
+    val pendingInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("pending invoice"), CltvExpiryDelta(18)))
+    val pendingPayments = pendingInvoices.map( invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
+    pendingInvoices.lazyZip(pendingPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
 
-    val pendingInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #3"), CltvExpiryDelta(18))
-    val pendingInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #4"), CltvExpiryDelta(18), expirySeconds = Some(30))
-    val pendingPayment1 = IncomingPayment(pendingInvoice1, randomBytes32(), PaymentType.Standard, pendingInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
-    val pendingPayment2 = IncomingPayment(pendingInvoice2, randomBytes32(), PaymentType.SwapIn, pendingInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
-
-    val paidInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #5"), CltvExpiryDelta(18))
-    val paidInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #6"), CltvExpiryDelta(18), expirySeconds = Some(60))
-    val receivedAt1 = TimestampMilli.now() + 1.milli
-    val receivedAt2 = TimestampMilli.now() + 2.milli
-    val payment1 = IncomingPayment(paidInvoice1, randomBytes32(), PaymentType.Standard, paidInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(561 msat, receivedAt2))
-    val payment2 = IncomingPayment(paidInvoice2, randomBytes32(), PaymentType.Standard, paidInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(1111 msat, receivedAt2))
-
-    db.addIncomingPayment(pendingInvoice1, pendingPayment1.paymentPreimage)
-    db.addIncomingPayment(pendingInvoice2, pendingPayment2.paymentPreimage, PaymentType.SwapIn)
-    db.addIncomingPayment(expiredInvoice1, expiredPayment1.paymentPreimage)
-    db.addIncomingPayment(expiredInvoice2, expiredPayment2.paymentPreimage)
-    db.addIncomingPayment(paidInvoice1, payment1.paymentPreimage)
-    db.addIncomingPayment(paidInvoice2, payment2.paymentPreimage)
-
-    assert(db.getIncomingPayment(pendingInvoice1.paymentHash) === Some(pendingPayment1))
-    assert(db.getIncomingPayment(expiredInvoice2.paymentHash) === Some(expiredPayment2))
-    assert(db.getIncomingPayment(paidInvoice1.paymentHash) === Some(payment1.copy(status = IncomingPaymentStatus.Pending)))
+    // create paid invoices
+    val receivedAt = TimestampMilli.now() + 1.milli
+    val paidInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("paid invoice"), CltvExpiryDelta(18)))
+    val paidPayments = paidInvoices.map( invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(100 msat, receivedAt)))
+    paidInvoices.lazyZip(paidPayments).foreach((invoice, payment) => { db.addIncomingPayment(invoice, payment.paymentPreimage)
+      // receive payment
+      db.receiveIncomingPayment(invoice.paymentHash, 100 msat, receivedAt)
+    })
 
     val now = TimestampMilli.now()
-    assert(db.listIncomingPayments(0 unixms, now) === Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
-    assert(db.listExpiredIncomingPayments(0 unixms, now) === Seq(expiredPayment1, expiredPayment2))
-    assert(db.listReceivedIncomingPayments(0 unixms, now) === Nil)
-    assert(db.listPendingIncomingPayments(0 unixms, now) === Seq(pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
+    assert(db.listIncomingPayments(0 unixms, now) === expiredPayments ++ pendingPayments ++ paidPayments)
+    assert(db.listIncomingPayments(now - 60.seconds, now) === pendingPayments ++ paidPayments)
+    assert(db.listPendingIncomingPayments(0 unixms, now) === pendingPayments)
+    assert(db.listReceivedIncomingPayments(0 unixms, now) === paidPayments)
+    assert(db.listExpiredIncomingPayments(0 unixms, now) === expiredPayments)
 
-    db.receiveIncomingPayment(paidInvoice1.paymentHash, 461 msat, receivedAt1)
-    db.receiveIncomingPayment(paidInvoice1.paymentHash, 100 msat, receivedAt2) // adding another payment to this invoice should sum
-    db.receiveIncomingPayment(paidInvoice2.paymentHash, 1111 msat, receivedAt2)
+    val interval = 1 seconds
 
-    assert(db.getIncomingPayment(paidInvoice1.paymentHash) === Some(payment1))
-
-    assert(db.listIncomingPayments(0 unixms, now) === Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1, payment2))
-    assert(db.listIncomingPayments(now - 60.seconds, now) === Seq(pendingPayment1, pendingPayment2, payment1, payment2))
-    assert(db.listPendingIncomingPayments(0 unixms, now) === Seq(pendingPayment1, pendingPayment2))
-    assert(db.listReceivedIncomingPayments(0 unixms, now) === Seq(payment1, payment2))
-    assert(db.listExpiredIncomingPayments(0 unixms, now) === Seq(expiredPayment1, expiredPayment2))
-
-    val interval = 10 seconds
     val _ = system.spawn(InvoicePurger(db, interval), name = "purge-expired-invoices")
 
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[PurgeEvent])
 
-    probe.expectMsg(20 seconds, PurgeCompleted)
+    // check that purge completed
+    probe.expectMsg(10 seconds, PurgeCompleted)
     probe.expectNoMessage()
+    assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now()).isEmpty)
+    assert(db.listIncomingPayments(0 unixms, TimestampMilli.now()) === pendingPayments ++ paidPayments)
 
-    assert(db.listExpiredIncomingPayments(now - interval, now).isEmpty)
-    assert(db.listIncomingPayments(0 unixms, now) === Seq(pendingPayment1, pendingPayment2, payment1, payment2))
+    // add more expired invoices
+    expiredInvoices.lazyZip(expiredPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
+
+    // check that purge still running
+    probe.expectMsg(10 seconds, PurgeCompleted)
+    probe.expectNoMessage()
+    assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now()).isEmpty)
+    assert(db.listIncomingPayments(0 unixms, TimestampMilli.now()) === pendingPayments ++ paidPayments)
   }
 }
