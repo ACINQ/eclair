@@ -423,19 +423,19 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     val remoteCommitPublished = remoteCommitPublished_opt.get
 
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
+    remoteCommitPublished.claimMainOutputTx_opt.flatMap(_.toOption).map(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       s2blockchain.expectMsg(TxPublisher.PublishFinalTx(claimMain, claimMain.fee, None))
     })
     // all htlcs success/timeout should be claimed
-    val claimHtlcTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(tx: ClaimHtlcTx) => tx }.toSeq
+    val claimHtlcTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: ClaimHtlcTx)) => tx }.toSeq
     claimHtlcTxs.foreach(claimHtlc => Transaction.correctlySpends(claimHtlc.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     val publishedClaimHtlcTxs = claimHtlcTxs.map(_ => s2blockchain.expectMsgType[PublishReplaceableTx])
     assert(publishedClaimHtlcTxs.map(_.input).toSet == claimHtlcTxs.map(_.input.outPoint).toSet)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === rCommitTx.txid)
-    remoteCommitPublished.claimMainOutputTx.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
+    remoteCommitPublished.claimMainOutputTx_opt.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.get.tx.txid))
 
     // we watch outputs of the commitment tx that both parties may spend
     val htlcOutputIndexes = remoteCommitPublished.claimHtlcTxs.keySet.map(_.index)
@@ -454,9 +454,9 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
 
   def getHtlcTimeoutTxs(lcp: LocalCommitPublished): Seq[HtlcTimeoutTx] = lcp.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: HtlcTimeoutTx)) => tx }.toSeq
 
-  def getClaimHtlcSuccessTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcSuccessTx] = rcp.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(tx: ClaimHtlcSuccessTx) => tx }.toSeq
+  def getClaimHtlcSuccessTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcSuccessTx] = rcp.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: ClaimHtlcSuccessTx)) => tx }.toSeq
 
-  def getClaimHtlcTimeoutTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcTimeoutTx] = rcp.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(tx: ClaimHtlcTimeoutTx) => tx }.toSeq
+  def getClaimHtlcTimeoutTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcTimeoutTx] = rcp.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: ClaimHtlcTimeoutTx)) => tx }.toSeq
 
 }
 

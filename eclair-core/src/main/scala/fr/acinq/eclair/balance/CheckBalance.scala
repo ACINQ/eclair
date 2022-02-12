@@ -152,14 +152,14 @@ object CheckBalance {
         case _ => Map.empty[ByteVector32, Btc] // either we don't have an output (below dust), or we have used a non-default pubkey script
       }
     } else {
-      remoteCommitPublished.claimMainOutputTx.toSeq.map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
+      remoteCommitPublished.claimMainOutputTx_opt.flatMap(_.toOption).map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
     }
     // incoming htlcs for which we have a preimage: we have published a claim tx that pays directly to our wallet
-    val htlcsInOnChain = remoteCommitPublished.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTx: ClaimHtlcSuccessTx) => claimHtlcTx }
+    val htlcsInOnChain = remoteCommitPublished.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(claimHtlcTx: ClaimHtlcSuccessTx)) => claimHtlcTx }
       .map(_.htlcId)
       .toSet
     // outgoing htlcs that have timed out: we have published a claim tx that pays directly to our wallet
-    val htlcsOutOnChain = remoteCommitPublished.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTx: ClaimHtlcTimeoutTx) => claimHtlcTx }
+    val htlcsOutOnChain = remoteCommitPublished.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(claimHtlcTx: ClaimHtlcTimeoutTx)) => claimHtlcTx }
       .map(_.htlcId)
       .toSet
     // incoming htlcs for which we have a preimage
@@ -175,6 +175,7 @@ object CheckBalance {
     // all claim txs have possibly been published
     val htlcs = remoteCommitPublished.claimHtlcTxs.values
       .collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTx) => claimHtlcTx }
+      .flatMap(_.toOption)
       .map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
     PossiblyPublishedMainAndHtlcBalance(
       toLocal = toLocal,

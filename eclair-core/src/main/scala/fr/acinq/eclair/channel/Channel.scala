@@ -2564,14 +2564,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   private def doPublish(remoteCommitPublished: RemoteCommitPublished, commitments: Commitments): Unit = {
     import remoteCommitPublished._
 
-    val redeemableHtlcTxs = claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(tx) => PublishReplaceableTx(tx, commitments) }
-    val publishQueue = claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ redeemableHtlcTxs
+    val redeemableHtlcTxs = claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishReplaceableTx(tx, commitments) }
+    val publishQueue = claimMainOutputTx_opt.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ redeemableHtlcTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txs' that send funds to our wallet and that spend outputs that only us control
-    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx.map(_.tx)
+    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx_opt.flatMap(_.toOption).map(_.tx)
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend

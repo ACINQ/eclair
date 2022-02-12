@@ -130,7 +130,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
     val RemoteCommitPublished.HtlcOutputStatus.Spendable(theirClaimHtlcTimeout) = rcp.claimHtlcTxs(remainingHtlcOutpoint)
     assert(theirClaimHtlcTimeout !== None)
-    val lcp5 = Closing.updateLocalCommitPublished(lcp4, theirClaimHtlcTimeout.tx)
+    val lcp5 = Closing.updateLocalCommitPublished(lcp4, theirClaimHtlcTimeout.get.tx)
     assert(lcp5.isDone)
   }
 
@@ -173,7 +173,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     val f = setupClosingChannelForLocalClose()
     import f._
 
-    val remoteHtlcSuccess = rcp.claimHtlcTxs.values.collectFirst { case RemoteCommitPublished.HtlcOutputStatus.Spendable(tx: ClaimHtlcSuccessTx) => tx }.get
+    val remoteHtlcSuccess = rcp.claimHtlcTxs.values.collectFirst { case RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: ClaimHtlcSuccessTx)) => tx }.get
     val lcp3 = (htlcSuccessTxs.map(_.tx) ++ Seq(remoteHtlcSuccess.tx)).foldLeft(lcp) {
       case (current, tx) =>
         val (current1, _) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
@@ -196,7 +196,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!lcp6.isDone)
 
     val RemoteCommitPublished.HtlcOutputStatus.Spendable(theirClaimHtlcTimeout) = rcp.claimHtlcTxs(remainingHtlcOutpoint)
-    val lcp7 = Closing.updateLocalCommitPublished(lcp6, theirClaimHtlcTimeout.tx)
+    val lcp7 = Closing.updateLocalCommitPublished(lcp6, theirClaimHtlcTimeout.get.tx)
     assert(lcp7.isDone)
   }
 
@@ -267,13 +267,13 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(bobClosing.remoteCommitPublished.nonEmpty)
     val rcp = bobClosing.remoteCommitPublished.get
     assert(rcp.commitTx.txOut.length === 6)
-    assert(rcp.claimMainOutputTx.nonEmpty)
+    assert(rcp.claimMainOutputTx_opt.nonEmpty)
     assert(rcp.claimHtlcTxs.size === 4) // we have one entry for each non-dust htlc
     val claimHtlcTimeoutTxs: Seq[ClaimHtlcTimeoutTx] = getClaimHtlcTimeoutTxs(rcp)
     assert(claimHtlcTimeoutTxs.length === 2)
     val claimHtlcSuccessTxs: Seq[ClaimHtlcSuccessTx] = getClaimHtlcSuccessTxs(rcp)
     assert(claimHtlcSuccessTxs.length === 1) // we only have the preimage for 1 of the 2 non-dust htlcs
-    val remainingHtlcOutpoint: OutPoint = rcp.claimHtlcTxs.collect { case (outpoint, RemoteCommitPublished.HtlcOutputStatus.Unknown) => outpoint }.head
+    val remainingHtlcOutpoint: OutPoint = rcp.claimHtlcTxs.collect { case (outpoint, RemoteCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement) => outpoint }.head
     assert(!rcp.isConfirmed)
     assert(!rcp.isDone)
 
@@ -284,7 +284,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!rcp1.isDone)
 
     // Main output has been confirmed.
-    val rcp2 = Closing.updateRemoteCommitPublished(rcp1, rcp.claimMainOutputTx.get.tx)
+    val rcp2 = Closing.updateRemoteCommitPublished(rcp1, rcp.claimMainOutputTx_opt.get.get.tx)
     assert(rcp2.isConfirmed)
     assert(!rcp2.isDone)
 
@@ -337,13 +337,13 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(bobClosing.nextRemoteCommitPublished.nonEmpty)
     val rcp = bobClosing.nextRemoteCommitPublished.get
     assert(rcp.commitTx.txOut.length === 6)
-    assert(rcp.claimMainOutputTx.nonEmpty)
+    assert(rcp.claimMainOutputTx_opt.nonEmpty)
     assert(rcp.claimHtlcTxs.size === 4) // we have one entry for each non-dust htlc
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(rcp)
     assert(claimHtlcTimeoutTxs.length === 2)
     val claimHtlcSuccessTxs = getClaimHtlcSuccessTxs(rcp)
     assert(claimHtlcSuccessTxs.length === 1) // we only have the preimage for 1 of the 2 non-dust htlcs
-    val remainingHtlcOutpoint = rcp.claimHtlcTxs.collect { case (outpoint, RemoteCommitPublished.HtlcOutputStatus.Unknown) => outpoint }.head
+    val remainingHtlcOutpoint = rcp.claimHtlcTxs.collect { case (outpoint, RemoteCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement) => outpoint }.head
     assert(!rcp.isConfirmed)
     assert(!rcp.isDone)
 
@@ -354,7 +354,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!rcp1.isDone)
 
     // Main output has been confirmed.
-    val rcp2 = Closing.updateRemoteCommitPublished(rcp1, rcp.claimMainOutputTx.get.tx)
+    val rcp2 = Closing.updateRemoteCommitPublished(rcp1, rcp.claimMainOutputTx_opt.get.get.tx)
     assert(rcp2.isConfirmed)
     assert(!rcp2.isDone)
 
@@ -393,7 +393,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) !== None)
     val RemoteCommitPublished.HtlcOutputStatus.Spendable(newClaimHtlcSuccessTx) = rcp4.claimHtlcTxs(remainingHtlcOutpoint)
 
-    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, newClaimHtlcSuccessTx.tx)
+    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, newClaimHtlcSuccessTx.get.tx)
     assert(rcp5.isDone)
   }
 
@@ -487,7 +487,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) !== None)
     val RemoteCommitPublished.HtlcOutputStatus.Spendable(newClaimHtlcSuccessTx) = rcp4.claimHtlcTxs(remainingHtlcOutpoint)
 
-    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, newClaimHtlcSuccessTx.tx)
+    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, newClaimHtlcSuccessTx.get.tx)
     assert(rcp5.isDone)
   }
 

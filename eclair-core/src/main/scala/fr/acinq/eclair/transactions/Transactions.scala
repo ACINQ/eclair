@@ -549,6 +549,9 @@ object Transactions {
     htlcTimeoutTxs ++ htlcSuccessTxs
   }
 
+  def resolveOutput(outputs: CommitmentOutputs, outgoingHtlc: OutgoingHtlc): Option[Int] =
+    outputs.zipWithIndex.collectFirst { case (CommitmentOutputLink(_, _, OutHtlc(og: OutgoingHtlc)), outIndex) if og.add.id == outgoingHtlc.add.id => outIndex }
+
   def makeClaimHtlcSuccessTx(commitTx: Transaction,
                              outputs: CommitmentOutputs,
                              localDustLimit: Satoshi,
@@ -560,9 +563,7 @@ object Transactions {
                              feeratePerKw: FeeratePerKw,
                              commitmentFormat: CommitmentFormat): TxGenerationResult[ClaimHtlcSuccessTx] = {
     val redeemScript = htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlc.paymentHash.bytes), commitmentFormat)
-    outputs.zipWithIndex.collectFirst {
-      case (CommitmentOutputLink(_, _, OutHtlc(OutgoingHtlc(outgoingHtlc))), outIndex) if outgoingHtlc.id == htlc.id => outIndex
-    } match {
+    resolveOutput(outputs, OutgoingHtlc(htlc)) match {
       case Some(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
         // unsigned tx
@@ -584,6 +585,9 @@ object Transactions {
     }
   }
 
+  def resolveOutput(outputs: CommitmentOutputs, incomingHtlc: IncomingHtlc): Option[Int] =
+    outputs.zipWithIndex.collectFirst { case (CommitmentOutputLink(_, _, InHtlc(ih)), outIndex) if ih.add.id == incomingHtlc.add.id => outIndex }
+
   def makeClaimHtlcTimeoutTx(commitTx: Transaction,
                              outputs: CommitmentOutputs,
                              localDustLimit: Satoshi,
@@ -595,9 +599,7 @@ object Transactions {
                              feeratePerKw: FeeratePerKw,
                              commitmentFormat: CommitmentFormat): TxGenerationResult[ClaimHtlcTimeoutTx] = {
     val redeemScript = htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlc.paymentHash.bytes), htlc.cltvExpiry, commitmentFormat)
-    outputs.zipWithIndex.collectFirst {
-      case (CommitmentOutputLink(_, _, InHtlc(IncomingHtlc(incomingHtlc))), outIndex) if incomingHtlc.id == htlc.id => outIndex
-    } match {
+    resolveOutput(outputs, IncomingHtlc(htlc)) match {
       case Some(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
         // unsigned tx

@@ -329,24 +329,36 @@ private[channel] object ChannelCodecs3 {
           irrevocablySpent = irrevocablySpent)
     }.decodeOnly.as[LocalCommitPublished]
 
-    // this codec handles backward compatibility with the former optional(bool8, localCommitPublishedCodec) (order matters!!)
-    val localCommitPublishedCompatCodec: Codec[Option[LocalCommitPublished]] = discriminated[Option[LocalCommitPublished]].by(bits(8))
-      .typecase(bin"00000001", localCommitPublishedCodec.xmapc(Some(_))(_.value))
-      .typecase(bin"00000000", provide(None))
-      .typecase(bin"11111111", localCommitPublishedLegacyPreTxGenCodec.asDecoder.map(Some(_)).decodeOnly)
-
-    // backward compatible with optional(bool8, claimHtlcTxCodec)
-    val htlcRemoteOutputStatusCodec: Codec[RemoteCommitPublished.HtlcOutputStatus] = discriminated[RemoteCommitPublished.HtlcOutputStatus].by(bits(8))
-      .typecase(bin"00000000", provide(RemoteCommitPublished.HtlcOutputStatus.Unknown)) // was previously 'false' encoded as bool8
-      .typecase(bin"00000001", provide(RemoteCommitPublished.HtlcOutputStatus.Unspendable))
-      .typecase(bin"11111111", claimHtlcTxCodec.xmapc(RemoteCommitPublished.HtlcOutputStatus.Spendable)(_.claimHtlcTx)) // was previously 'true' encoded as bool8
+    val htlcRemoteOutputStatusCodec: Codec[RemoteCommitPublished.HtlcOutputStatus] = discriminated[RemoteCommitPublished.HtlcOutputStatus].by(uint8)
+      .typecase(0x00, txGenerationResultCodec(claimHtlcTxCodec).as[RemoteCommitPublished.HtlcOutputStatus.Spendable]) // was previously 'true' encoded as bool8
+      .typecase(0x01, provide(RemoteCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement)) // was previously 'false' encoded as bool8
+      .typecase(0x02, provide(RemoteCommitPublished.HtlcOutputStatus.Unspendable))
 
     val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ::
-        ("claimMainOutputTx" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
+        ("claimMainOutputTx_opt" | optional(bool8, txGenerationResultCodec(claimRemoteCommitMainOutputTxCodec))) ::
         ("claimHtlcTxs" | mapCodec(outPointCodec, htlcRemoteOutputStatusCodec)) ::
-        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
-        ("spent" | spentMapCodec)).as[RemoteCommitPublished]
+        ("claimAnchorTxs" | listOfN(uint16, txGenerationResultCodec(claimAnchorOutputTxCodec))) ::
+        ("irrevocablySpent" | spentMapCodec)).as[RemoteCommitPublished]
+
+    val remoteCommitPublishedLegacyPreTxGenCodec: Codec[RemoteCommitPublished] = (
+      ("commitTx" | txCodec) ~~
+        ("claimMainOutputTx_opt" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ~~
+        ("claimHtlcTxs" | mapCodec(outPointCodec, optional(bool8, claimHtlcTxCodec))) ~~
+        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ~~
+        ("irrevocablySpent" | spentMapCodec)).asDecoder.map {
+      case (commitTx, claimMainOutputTx, claimHtlcTxs, claimAnchorTxs, irrevocablySpent) =>
+        RemoteCommitPublished(
+          commitTx = commitTx,
+          claimMainOutputTx_opt = claimMainOutputTx.map(TxGenerationResult.Success(_)),
+          claimHtlcTxs = claimHtlcTxs.view.mapValues {
+            case Some(txInfo) => RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(txInfo))
+            case None => RemoteCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
+          }.toMap,
+          claimAnchorTxs = claimAnchorTxs.map(TxGenerationResult.Success(_)),
+          irrevocablySpent = irrevocablySpent
+        )
+    }.decodeOnly.as[RemoteCommitPublished]
 
     val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
       ("commitTx" | txCodec) ::
@@ -415,9 +427,9 @@ private[channel] object ChannelCodecs3 {
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
         ("localCommitPublished" | optional(bool8, localCommitPublishedLegacyPreTxGenCodec)) ::
-        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedLegacyPreTxGenCodec)) ::
+        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedLegacyPreTxGenCodec)) ::
+        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedLegacyPreTxGenCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
     val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (

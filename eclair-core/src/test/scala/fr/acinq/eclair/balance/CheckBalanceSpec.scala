@@ -99,7 +99,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages) ===
       PossiblyPublishedMainAndHtlcBalance(
-        toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
+        toLocal = Map(remoteCommitPublished.claimMainOutputTx_opt.get.get.tx.txid -> remoteCommitPublished.claimMainOutputTx_opt.get.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi
       ))
@@ -107,7 +107,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val knownPreimages1 = Set((commitments.channelId, htlcb1.id), (commitments.channelId, htlcb2.id))
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages1) ===
       PossiblyPublishedMainAndHtlcBalance(
-        toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
+        toLocal = Map(remoteCommitPublished.claimMainOutputTx_opt.get.get.tx.txid -> remoteCommitPublished.claimMainOutputTx_opt.get.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi + htlcb2.amountMsat.truncateToSatoshi
       ))
@@ -148,7 +148,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val Left(waitingForRevocation) = commitments.remoteNextCommitInfo
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages) ===
       PossiblyPublishedMainAndHtlcBalance(
-        toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
+        toLocal = Map(remoteCommitPublished.claimMainOutputTx_opt.get.get.tx.txid -> remoteCommitPublished.claimMainOutputTx_opt.get.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi
       ))
@@ -156,7 +156,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val knownPreimages1 = Set((commitments.channelId, htlcb1.id), (commitments.channelId, htlcb2.id))
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages1) ===
       PossiblyPublishedMainAndHtlcBalance(
-        toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
+        toLocal = Map(remoteCommitPublished.claimMainOutputTx_opt.get.get.tx.txid -> remoteCommitPublished.claimMainOutputTx_opt.get.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi + htlcb2.amountMsat.truncateToSatoshi
       ))

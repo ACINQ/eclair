@@ -174,7 +174,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
   private def removeClaimHtlcIds(claimHtlcTxs: Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus]): Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus] = {
     claimHtlcTxs.map {
-      case (outpoint, spendable: RemoteCommitPublished.HtlcOutputStatus.Spendable) => (outpoint, spendable.modify(_.claimHtlcTx).using(removeHtlcId))
+      case (outpoint, RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(claimHtlcTx))) => (outpoint, RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(removeHtlcId(claimHtlcTx))))
       case (outpoint, otherStatus) => (outpoint, otherStatus)
     }
   }
@@ -361,7 +361,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
+          claimMainOutputTx_opt = None,
           claimHtlcTxs = Map.empty,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
@@ -389,7 +389,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
+          claimMainOutputTx_opt = None,
           claimHtlcTxs = Map.empty,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map(tx3.input.outPoint -> tx3.tx)
@@ -417,14 +417,14 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
+          claimMainOutputTx_opt = None,
           claimHtlcTxs = Map.empty,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
+          claimMainOutputTx_opt = Some(TxGenerationResult.Success(ClaimP2WPKHOutputTx(tx5.input, tx5.tx))),
           claimHtlcTxs = Map.empty,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
@@ -446,7 +446,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimRemoteDelayedOutputTx(tx5.input, tx5.tx)),
+          claimMainOutputTx_opt = Some(TxGenerationResult.Success(ClaimRemoteDelayedOutputTx(tx5.input, tx5.tx))),
           claimHtlcTxs = Map.empty,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
@@ -467,7 +467,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
+          claimMainOutputTx_opt = Some(TxGenerationResult.Success(ClaimP2WPKHOutputTx(tx5.input, tx5.tx))),
           claimHtlcTxs = Map.empty,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)

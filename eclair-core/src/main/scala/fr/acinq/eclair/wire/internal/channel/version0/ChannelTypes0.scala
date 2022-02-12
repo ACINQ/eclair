@@ -76,10 +76,10 @@ private[channel] object ChannelTypes0 {
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
-      val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx))
+      val claimMainOutputTxNew = claimMainOutputTx.map(tx => TxGenerationResult.Success(ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx)))
       val claimHtlcSuccessTxsNew = claimHtlcSuccessTxs.map(tx => LegacyClaimHtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
       val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
-      val claimHtlcTxsNew = (claimHtlcSuccessTxsNew ++ claimHtlcTimeoutTxsNew).map(tx => tx.input.outPoint -> channel.RemoteCommitPublished.HtlcOutputStatus.Spendable(tx)).toMap
+      val claimHtlcTxsNew = (claimHtlcSuccessTxsNew ++ claimHtlcTimeoutTxsNew).map(tx => tx.input.outPoint -> channel.RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx))).toMap
       channel.RemoteCommitPublished(commitTx, claimMainOutputTxNew, claimHtlcTxsNew, Nil, irrevocablySpentNew)
     }
   }
