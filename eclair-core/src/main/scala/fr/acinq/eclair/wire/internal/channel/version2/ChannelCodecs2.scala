@@ -281,12 +281,22 @@ private[channel] object ChannelCodecs2 {
     }.decodeOnly.as[RemoteCommitPublished]
 
     val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
-      ("commitTx" | txCodec) ::
-        ("claimMainOutputTx" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
-        ("mainPenaltyTx" | optional(bool8, mainPenaltyTxCodec)) ::
-        ("htlcPenaltyTxs" | listOfN(uint16, htlcPenaltyTxCodec)) ::
-        ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxCodec)) ::
-        ("spent" | spentMapCodec)).as[RevokedCommitPublished]
+      ("commitTx" | txCodec) ~~
+        ("claimMainOutputTx_opt" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ~~
+        ("mainPenaltyTx" | optional(bool8, mainPenaltyTxCodec)) ~~
+        ("htlcPenaltyTxs" | listOfN(uint16, htlcPenaltyTxCodec)) ~~
+        ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxCodec)) ~~
+        ("spent" | spentMapCodec)).asDecoder.map {
+      case (commitTx, claimMainOutputTx_opt, mainPenaltyTx, htlcPenaltyTxs, claimHtlcDelayedPenaltyTxs, irrevocablySpent) =>
+        RevokedCommitPublished(
+          commitTx = commitTx,
+          claimMainOutputTx_opt = claimMainOutputTx_opt.map(TxGenerationResult.Success(_)),
+          mainPenaltyTx = mainPenaltyTx.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackWardCompatFailure),
+          htlcPenaltyTxs = htlcPenaltyTxs.map(TxGenerationResult.Success(_)),
+          claimHtlcDelayedPenaltyTxs = claimHtlcDelayedPenaltyTxs.map(TxGenerationResult.Success(_)),
+          irrevocablySpent = irrevocablySpent
+        )
+    }.decodeOnly.as[RevokedCommitPublished]
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::

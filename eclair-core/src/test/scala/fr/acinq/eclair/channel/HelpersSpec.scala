@@ -497,24 +497,24 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2.tx,
-            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
-            mainPenaltyTx = None,
+            claimMainOutputTx_opt = Some(TxGenerationResult.Success(ClaimP2WPKHOutputTx(tx3.input, tx3.tx))),
+            mainPenaltyTx = TxGenerationResult.OutputNotFound,
             htlcPenaltyTxs = Nil,
             claimHtlcDelayedPenaltyTxs = Nil,
             irrevocablySpent = Map.empty
           ) ::
             RevokedCommitPublished(
               commitTx = tx4.tx,
-              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-              mainPenaltyTx = None,
+              claimMainOutputTx_opt = Some(TxGenerationResult.Success(ClaimP2WPKHOutputTx(tx5.input, tx5.tx))),
+              mainPenaltyTx = TxGenerationResult.OutputNotFound,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
               irrevocablySpent = Map.empty
             ) ::
             RevokedCommitPublished(
               commitTx = tx6.tx,
-              claimMainOutputTx = None,
-              mainPenaltyTx = None,
+              claimMainOutputTx_opt = None,
+              mainPenaltyTx = TxGenerationResult.AmountBelowDustLimit,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
               irrevocablySpent = Map.empty
@@ -544,24 +544,24 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2.tx,
-            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
-            mainPenaltyTx = None,
+            claimMainOutputTx_opt = Some(TxGenerationResult.Success(ClaimP2WPKHOutputTx(tx3.input, tx3.tx))),
+            mainPenaltyTx = TxGenerationResult.OutputNotFound,
             htlcPenaltyTxs = Nil,
             claimHtlcDelayedPenaltyTxs = Nil,
             irrevocablySpent = Map.empty
           ) ::
             RevokedCommitPublished(
               commitTx = tx4.tx,
-              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-              mainPenaltyTx = None,
+              claimMainOutputTx_opt = Some(TxGenerationResult.Success(ClaimP2WPKHOutputTx(tx5.input, tx5.tx))),
+              mainPenaltyTx = TxGenerationResult.OutputNotFound,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
               irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
             ) ::
             RevokedCommitPublished(
               commitTx = tx6.tx,
-              claimMainOutputTx = None,
-              mainPenaltyTx = None,
+              claimMainOutputTx_opt = None,
+              mainPenaltyTx = TxGenerationResult.OutputNotFound,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
               irrevocablySpent = Map.empty

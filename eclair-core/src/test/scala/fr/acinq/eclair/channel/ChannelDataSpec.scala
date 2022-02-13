@@ -552,8 +552,8 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     val aliceClosing = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(aliceClosing.revokedCommitPublished.length === 1)
     val rvk = aliceClosing.revokedCommitPublished.head
-    assert(rvk.claimMainOutputTx.nonEmpty)
-    assert(rvk.mainPenaltyTx.nonEmpty)
+    assert(rvk.claimMainOutputTx_opt.nonEmpty)
+    assert(rvk.mainPenaltyTx.toOption.nonEmpty)
     assert(rvk.htlcPenaltyTxs.length === 4)
     assert(rvk.claimHtlcDelayedPenaltyTxs.isEmpty)
     assert(!rvk.isDone)
@@ -564,18 +564,18 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!rvk1.isDone)
 
     // Main output has been confirmed.
-    val rvk2 = Closing.updateRevokedCommitPublished(rvk1, rvk.claimMainOutputTx.get.tx)
+    val rvk2 = Closing.updateRevokedCommitPublished(rvk1, rvk.claimMainOutputTx_opt.get.get.tx)
     assert(!rvk2.isDone)
 
     // Two of our htlc penalty txs have been confirmed.
-    val rvk3 = rvk.htlcPenaltyTxs.map(_.tx).take(2).foldLeft(rvk2) {
+    val rvk3 = rvk.htlcPenaltyTxs.flatMap(_.toOption).map(_.tx).take(2).foldLeft(rvk2) {
       case (current, tx) => Closing.updateRevokedCommitPublished(current, tx)
     }
     assert(!rvk3.isDone)
 
     // Scenario 1: the remaining penalty txs have been confirmed.
     {
-      val rvk4a = rvk.htlcPenaltyTxs.map(_.tx).drop(2).foldLeft(rvk3) {
+      val rvk4a = rvk.htlcPenaltyTxs.flatMap(_.toOption).map(_.tx).drop(2).foldLeft(rvk3) {
         case (current, tx) => Closing.updateRevokedCommitPublished(current, tx)
       }
       assert(!rvk4a.isDone)
@@ -590,24 +590,24 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
       val rvk4a = Closing.updateRevokedCommitPublished(rvk3, remoteMainOutput)
       assert(!rvk4a.isDone)
 
-      val htlcSuccess = rvk.htlcPenaltyTxs(2).tx.copy(txOut = Seq(TxOut(3_000 sat, ByteVector.empty), TxOut(2_500 sat, ByteVector.empty)))
-      val htlcTimeout = rvk.htlcPenaltyTxs(3).tx.copy(txOut = Seq(TxOut(3_500 sat, ByteVector.empty), TxOut(3_100 sat, ByteVector.empty)))
+      val htlcSuccess = rvk.htlcPenaltyTxs(2).get.tx.copy(txOut = Seq(TxOut(3_000 sat, ByteVector.empty), TxOut(2_500 sat, ByteVector.empty)))
+      val htlcTimeout = rvk.htlcPenaltyTxs(3).get.tx.copy(txOut = Seq(TxOut(3_500 sat, ByteVector.empty), TxOut(3_100 sat, ByteVector.empty)))
       // When Bob claims these outputs, the channel should call Helpers.claimRevokedHtlcTxOutputs to punish them by claiming the output of their htlc tx.
       // This is tested in ClosingStateSpec.
       val rvk4b = Seq(htlcSuccess, htlcTimeout).foldLeft(rvk4a) {
         case (current, tx) => Closing.updateRevokedCommitPublished(current, tx)
       }.copy(
         claimHtlcDelayedPenaltyTxs = List(
-          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcSuccess, 0), TxOut(2_500 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcSuccess, 0), ByteVector.empty, 0)), Seq(TxOut(5_000 sat, ByteVector.empty)), 0)),
-          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcTimeout, 0), TxOut(3_000 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcTimeout, 0), ByteVector.empty, 0)), Seq(TxOut(6_000 sat, ByteVector.empty)), 0))
+          TxGenerationResult.Success(ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcSuccess, 0), TxOut(2_500 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcSuccess, 0), ByteVector.empty, 0)), Seq(TxOut(5_000 sat, ByteVector.empty)), 0))),
+          TxGenerationResult.Success(ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcTimeout, 0), TxOut(3_000 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcTimeout, 0), ByteVector.empty, 0)), Seq(TxOut(6_000 sat, ByteVector.empty)), 0)))
         )
       )
       assert(!rvk4b.isDone)
 
       // We claim one of the remaining outputs, they claim the other.
-      val rvk5a = Closing.updateRevokedCommitPublished(rvk4b, rvk4b.claimHtlcDelayedPenaltyTxs.head.tx)
+      val rvk5a = Closing.updateRevokedCommitPublished(rvk4b, rvk4b.claimHtlcDelayedPenaltyTxs.head.get.tx)
       assert(!rvk5a.isDone)
-      val theirClaimHtlcTimeout = rvk4b.claimHtlcDelayedPenaltyTxs(1).tx.copy(txOut = Seq(TxOut(1_500.sat, ByteVector.empty), TxOut(2_500.sat, ByteVector.empty)))
+      val theirClaimHtlcTimeout = rvk4b.claimHtlcDelayedPenaltyTxs(1).get.tx.copy(txOut = Seq(TxOut(1_500.sat, ByteVector.empty), TxOut(2_500.sat, ByteVector.empty)))
       val rvk5b = Closing.updateRevokedCommitPublished(rvk5a, theirClaimHtlcTimeout)
       assert(rvk5b.isDone)
     }

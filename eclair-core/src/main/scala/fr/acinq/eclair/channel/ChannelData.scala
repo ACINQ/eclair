@@ -391,12 +391,17 @@ object RemoteCommitPublished {
 /**
  * Details about a force-close where they published one of their revoked commitments.
  *
- * @param claimMainOutputTx          tx claiming our main output (if we have one).
+ * @param claimMainOutputTx_opt      tx claiming our main output (if we have one).
  * @param mainPenaltyTx              penalty tx claiming their main output (if they have one).
  * @param htlcPenaltyTxs             penalty txs claiming every HTLC output.
  * @param claimHtlcDelayedPenaltyTxs penalty txs claiming the output of their HTLC txs (if they managed to get them confirmed before our htlcPenaltyTxs).
  */
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], mainPenaltyTx: Option[MainPenaltyTx], htlcPenaltyTxs: List[HtlcPenaltyTx], claimHtlcDelayedPenaltyTxs: List[ClaimHtlcDelayedOutputPenaltyTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+case class RevokedCommitPublished(commitTx: Transaction,
+                                  claimMainOutputTx_opt: Option[TxGenerationResult[ClaimRemoteCommitMainOutputTx]],
+                                  mainPenaltyTx: TxGenerationResult[MainPenaltyTx],
+                                  htlcPenaltyTxs: List[TxGenerationResult[HtlcPenaltyTx]],
+                                  claimHtlcDelayedPenaltyTxs: List[TxGenerationResult[ClaimHtlcDelayedOutputPenaltyTx]],
+                                  irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
   /**
    * A revoked commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
    * (even if the spending tx was not ours).
@@ -406,17 +411,18 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
     // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
     val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
     // are there remaining spendable outputs from the commitment tx?
-    val unspentCommitTxOutputs = {
-      val commitOutputsSpendableByUs = (claimMainOutputTx.toSeq ++ mainPenaltyTx.toSeq ++ htlcPenaltyTxs).map(_.input.outPoint)
-      commitOutputsSpendableByUs.toSet -- irrevocablySpent.keys
+    val isMainOutputsConfirmed = claimMainOutputTx_opt match {
+      case Some(claimMainOutputTx) => claimMainOutputTx.isDone(irrevocablySpent)
+      case None => true // this commit tx pays directly to our wallet, there is no claim tx
     }
+    val isMainPenaltyTxSpent = mainPenaltyTx.isDone(irrevocablySpent)
+    val allHtlcsSpent = htlcPenaltyTxs.forall(_.isDone(irrevocablySpent))
     // are all outputs from htlc txs spent?
-    val unconfirmedHtlcDelayedTxs = claimHtlcDelayedPenaltyTxs.map(_.input.outPoint)
+    val allHtlcsDelayedSpent = claimHtlcDelayedPenaltyTxs
       // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
-      .filter(input => confirmedTxs.contains(input.txid))
-      // if one of the tx inputs has been spent, the tx has already been confirmed or a competing tx has been confirmed
-      .filterNot(input => irrevocablySpent.contains(input))
-    isCommitTxConfirmed && unspentCommitTxOutputs.isEmpty && unconfirmedHtlcDelayedTxs.isEmpty
+      .collect { case txGen@TxGenerationResult.Success(tx) if confirmedTxs.contains(tx.input.outPoint.txid) => txGen }
+      .forall(txGen => txGen.isDone(irrevocablySpent))
+    isCommitTxConfirmed && isMainOutputsConfirmed && isMainPenaltyTxSpent && allHtlcsSpent && allHtlcsDelayedSpent
   }
 }
 

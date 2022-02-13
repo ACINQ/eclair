@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.{Upstream, buildCommand}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.router.Router.ChannelHop
-import fr.acinq.eclair.transactions.Transactions.{ClaimRemoteDelayedOutputTx, InputInfo}
+import fr.acinq.eclair.transactions.Transactions.{ClaimRemoteDelayedOutputTx, InputInfo, TxGenerationResult}
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
@@ -472,7 +472,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val revokedCommitTx = normal.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.copy(txOut = Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))))
       val dummyClaimMainTx = Transaction(2, Seq(TxIn(OutPoint(revokedCommitTx, 0), Nil, 0)), Seq(revokedCommitTx.txOut.head.copy(amount = 4000 sat)), 0)
       val dummyClaimMain = ClaimRemoteDelayedOutputTx(InputInfo(OutPoint(revokedCommitTx, 0), revokedCommitTx.txOut.head, Nil), dummyClaimMainTx)
-      val rcp = RevokedCommitPublished(revokedCommitTx, Some(dummyClaimMain), None, Nil, Nil, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
+      val rcp = RevokedCommitPublished(revokedCommitTx, Some(TxGenerationResult.Success(dummyClaimMain)), TxGenerationResult.OutputNotFound, Nil, Nil, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
       DATA_CLOSING(normal.commitments, None, BlockHeight(0), Nil, revokedCommitPublished = List(rcp))
     }
 

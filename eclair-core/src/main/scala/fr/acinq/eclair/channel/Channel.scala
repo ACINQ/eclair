@@ -1511,8 +1511,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
         val (rev1, penaltyTxs) = Closing.claimRevokedHtlcTxOutputs(keyManager, d.commitments, rev, tx, nodeParams.onChainFeeConf.feeEstimator)
-        penaltyTxs.foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
-        penaltyTxs.foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, hints = Set(claimTx.tx.txid)))
+        penaltyTxs.flatMap(_.toOption).foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
+        penaltyTxs.flatMap(_.toOption).foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, hints = Set(claimTx.tx.txid)))
         rev1
       }
       stay() using d.copy(revokedCommitPublished = revokedCommitPublished1) storing()
@@ -2606,17 +2606,17 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   private def doPublish(revokedCommitPublished: RevokedCommitPublished): Unit = {
     import revokedCommitPublished._
 
-    val publishQueue = (claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs).map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishQueue = (claimMainOutputTx_opt.flatMap(_.toOption) ++ mainPenaltyTx.toOption ++ htlcPenaltyTxs.flatMap(_.toOption) ++ claimHtlcDelayedPenaltyTxs.flatMap(_.toOption)).map(tx => PublishFinalTx(tx, tx.fee, None))
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txs' that send funds to our wallet and that spend outputs that only us control
-    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx.map(_.tx)
+    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx_opt.flatMap(_.toOption).map(_.tx)
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
-    val watchSpentQueue = (mainPenaltyTx ++ htlcPenaltyTxs).map(_.input.outPoint)
+    val watchSpentQueue = (mainPenaltyTx.toOption ++ htlcPenaltyTxs.flatMap(_.toOption)).map(_.input.outPoint)
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
