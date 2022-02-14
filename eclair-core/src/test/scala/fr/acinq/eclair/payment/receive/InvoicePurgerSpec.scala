@@ -43,7 +43,7 @@ class InvoicePurgerSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val expiredPayments = expiredInvoices.map( invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired))
     expiredInvoices.lazyZip(expiredPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
 
-    // create pending invoices (future timestamp so they don't expire during testing)
+    // create pending invoices
     val pendingInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("pending invoice"), CltvExpiryDelta(18),
       timestamp = TimestampSecond.now() - 600))
     val pendingPayments = pendingInvoices.map( invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
