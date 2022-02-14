@@ -25,8 +25,6 @@ object Monitoring {
   object Metrics {
     val FileBackupCompleted: Metric.Counter = Kamon.counter("db.file-backup.completed")
     val FileBackupDuration: Metric.Timer = Kamon.timer("db.file-backup.duration")
-    val InvoicePurgeCompleted: Metric.Counter = Kamon.counter("db.invoice-purge.completed")
-    val InvoicePurgeDuration: Metric.Timer = Kamon.timer("db.invoice-purge.duration")
 
     private val DbOperation: Metric.Counter = Kamon.counter("db.operation.execute")
     private val DbOperationDuration: Metric.Timer = Kamon.timer("db.operation.duration")
