@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble,
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
 import fr.acinq.eclair.payment.Bolt11Invoice._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureScope, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureScope, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -43,18 +43,18 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   // Copy of Bolt11Invoice.apply that doesn't strip unknown features
   def createInvoiceUnsafe(chainHash: ByteVector32,
-            amount: Option[MilliSatoshi],
-            paymentHash: ByteVector32,
-            privateKey: PrivateKey,
-            description: Either[String, ByteVector32],
-            minFinalCltvExpiryDelta: CltvExpiryDelta,
-            fallbackAddress: Option[String] = None,
-            expirySeconds: Option[Long] = None,
-            extraHops: List[List[ExtraHop]] = Nil,
-            timestamp: TimestampSecond = TimestampSecond.now(),
-            paymentSecret: ByteVector32 = randomBytes32(),
-            paymentMetadata: Option[ByteVector] = None,
-            features: Features[FeatureScope] = defaultFeatures.unscoped()): Bolt11Invoice = {
+                          amount: Option[MilliSatoshi],
+                          paymentHash: ByteVector32,
+                          privateKey: PrivateKey,
+                          description: Either[String, ByteVector32],
+                          minFinalCltvExpiryDelta: CltvExpiryDelta,
+                          fallbackAddress: Option[String] = None,
+                          expirySeconds: Option[Long] = None,
+                          extraHops: List[List[ExtraHop]] = Nil,
+                          timestamp: TimestampSecond = TimestampSecond.now(),
+                          paymentSecret: ByteVector32 = randomBytes32(),
+                          paymentMetadata: Option[ByteVector] = None,
+                          features: Features[FeatureScope] = defaultFeatures.unscoped()): Bolt11Invoice = {
     require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), "invoices must require a payment secret")
     val prefix = prefixes(chainHash)
     val tags = {
@@ -132,7 +132,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("Please make a donation of any amount using payment_hash 0001020304050607080900010203040506070809000102030405060708090102 to me @03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad") {
     val ref = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugp9lfyql"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt.isEmpty)
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -148,7 +148,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("Please send $3 for a cup of coffee to the same peer, within 1 minute") {
     val ref = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(250000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -163,7 +163,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("Please send 0.0025 BTC for a cup of nonsense (ナンセンス 1杯) to the same peer, within one minute") {
     val ref = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpquwpc4curk03c9wlrswe78q4eyqc7d8d0xqzpu9qrsgqhtjpauu9ur7fw2thcl4y9vfvh4m9wlfyz2gem29g5ghe2aak2pm3ps8fdhtceqsaagty2vph7utlgj48u0ged6a337aewvraedendscp573dxr"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(250000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -178,7 +178,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("Now send $24 for an entire list of things (hashed)") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfpr6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp7ynn44"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(2000000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -193,7 +193,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("The same, on testnet, with a fallback address mk2QpYatsKicvFVuTAQLBryyccRXMUaGHP") {
     val ref = "lntb20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfpp3x9et2e20v6pu37c5d9vax37wxq72un989qrsgqdj545axuxtnfemtpwkc45hx9d2ft7x04mt8q7y6t0k2dge9e7h8kpy9p34ytyslj3yu569aalz2xdk8xkd7ltxqld94u8h2esmsmacgpghe9k8"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lntb")
     assert(invoice.amount_opt === Some(2000000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -208,7 +208,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("On mainnet, with fallback address 1RustyRX2oai4EYYDpQGWvEL62BBGqN9T with extra routing info to go via nodes 029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255 then 039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfpp3qjmp7lwpagxun9pygexvgpjdc4jdj85fr9yq20q82gphp2nflc7jtzrcazrra7wwgzxqc8u7754cdlpfrmccae92qgzqvzq2ps8pqqqqqqpqqqqq9qqqvpeuqafqxu92d8lr6fvg0r5gv0heeeqgcrqlnm6jhphu9y00rrhy4grqszsvpcgpy9qqqqqqgqqqqq7qqzq9qrsgqdfjcdk6w3ak5pca9hwfwfh63zrrz06wwfya0ydlzpgzxkn5xagsqz7x9j4jwe7yj7vaf2k9lqsdk45kts2fd0fkr28am0u4w95tt2nsq76cqw0"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(2000000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -227,7 +227,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("On mainnet, with fallback (p2sh) address 3EktnHQD7RiAE6uzMj2ZifT9YgRrkSgzQX") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfppj3a24vwu6r8ejrss3axul8rxldph2q7z99qrsgqz6qsgww34xlatfj6e3sngrwfy3ytkt29d2qttr8qz2mnedfqysuqypgqex4haa2h8fx3wnypranf3pdwyluftwe680jjcfp438u82xqphf75ym"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(2000000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -242,7 +242,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("On mainnet, with fallback (p2wpkh) address bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfppqw508d6qejxtdg4y5r3zarvary0c5xw7k9qrsgqt29a0wturnys2hhxpner2e3plp6jyj8qx7548zr2z7ptgjjc7hljm98xhjym0dg52sdrvqamxdezkmqg4gdrvwwnf0kv2jdfnl4xatsqmrnsse"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(2000000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -257,7 +257,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("On mainnet, with fallback (p2wsh) address bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q9qrsgq9vlvyj8cqvq6ggvpwd53jncp9nwc47xlrsnenq2zp70fq83qlgesn4u3uyf4tesfkkwwfg3qs54qe426hp3tz7z6sweqdjg05axsrjqp9yrrwc"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(2000000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -273,7 +273,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("On mainnet, with fallback (p2wsh) address bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3 and a minimum htlc cltv expiry of 12") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygscqpvpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q9qrsgq999fraffdzl6c8j7qd325dfurcq7vl0mfkdpdvve9fy3hy4lw0x9j3zcj2qdh5e5pyrp6cncvmxrhchgey64culwmjtw9wym74xm6xqqevh9r0"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(2000000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -298,7 +298,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     )
 
     for (ref <- refs) {
-      val invoice = Bolt11Invoice.fromString(ref)
+      val Success(invoice) = Bolt11Invoice.fromString(ref)
       assert(invoice.prefix === "lnbc")
       assert(invoice.amount_opt === Some(2500000000L msat))
       assert(invoice.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -317,7 +317,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14, 99 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
     val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqqsgqtqyx5vggfcsll4wu246hz02kp85x4katwsk9639we5n5yngc3yhqkm35jnjw4len8vrnqnf5ejh0mzj9n3vz2px97evektfm2l6wqccp3y7372"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix === "lnbc")
     assert(invoice.amount_opt === Some(2500000000L msat))
     assert(invoice.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -336,7 +336,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("On mainnet, please send 0.00967878534 BTC for a list of items within one week, amount in pico-BTC") {
     val ref = "lnbc9678785340p1pwmna7lpp5gc3xfm08u9qy06djf8dfflhugl6p7lgza6dsjxq454gxhj9t7a0sd8dgfkx7cmtwd68yetpd5s9xar0wfjn5gpc8qhrsdfq24f5ggrxdaezqsnvda3kkum5wfjkzmfqf3jkgem9wgsyuctwdus9xgrcyqcjcgpzgfskx6eqf9hzqnteypzxz7fzypfhg6trddjhygrcyqezcgpzfysywmm5ypxxjemgw3hxjmn8yptk7untd9hxwg3q2d6xjcmtv4ezq7pqxgsxzmnyyqcjqmt0wfjjq6t5v4khxsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygsxqyjw5qcqp2rzjq0gxwkzc8w6323m55m4jyxcjwmy7stt9hwkwe2qxmy8zpsgg7jcuwz87fcqqeuqqqyqqqqlgqqqqn3qq9q9qrsgqrvgkpnmps664wgkp43l22qsgdw4ve24aca4nymnxddlnp8vh9v2sdxlu5ywdxefsfvm0fq3sesf08uf6q9a2ke0hc9j6z6wlxg5z5kqpu2v9wz"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix === "lnbc")
     assert(invoice.amount_opt === Some(967878534 msat))
     assert(invoice.paymentHash.bytes === hex"462264ede7e14047e9b249da94fefc47f41f7d02ee9b091815a5506bc8abf75f")
@@ -354,7 +354,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("On mainnet, please send 0.01 BTC with payment metadata 0x01fafaf0") {
     val ref = "lnbc10m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdp9wpshjmt9de6zqmt9w3skgct5vysxjmnnd9jx2mq8q8a04uqsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q2gqqqqqqsgq7hf8he7ecf7n4ffphs6awl9t6676rrclv9ckg3d3ncn7fct63p6s365duk5wrk202cfy3aj5xnnp5gs3vrdvruverwwq7yzhkf5a3xqpd05wjc"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.prefix == "lnbc")
     assert(invoice.amount_opt === Some(1000000000 msat))
     assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
@@ -386,7 +386,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq0lzc236j96a95uv0m3umg28gclm5lqxtqqwk32uuk4k6673k6n5kfvx3d2h8s295fad45fdhmusm8sjudfhlf6dcsxmfvkeywmjdkxcp99202x"
     )
     for (ref <- refs) {
-      assertThrows[Exception](Bolt11Invoice.fromString(ref))
+      assert(Bolt11Invoice.fromString(ref).isFailure)
     }
   }
 
@@ -403,7 +403,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     val invoice = Bolt11Invoice(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = Left("Some invoice"), minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345 unixsec)
     assert(invoice.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(18)))
     val serialized = invoice.toString
-    val pr1 = Bolt11Invoice.fromString(serialized)
+    val Success(pr1) = Bolt11Invoice.fromString(serialized)
     assert(invoice == pr1)
   }
 
@@ -421,7 +421,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       signature = ByteVector.empty).sign(priv)
 
     val serialized = invoice.toString
-    val pr1 = Bolt11Invoice.fromString(serialized)
+    val Success(pr1) = Bolt11Invoice.fromString(serialized)
     val Some(_) = pr1.tags.collectFirst { case u: UnknownTag21 => u }
   }
 
@@ -451,12 +451,12 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
 
   test("accept uppercase invoices") {
     val input = "lntb1500n1pwxx94fsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5q3xzmwuvxpkyhz6pvg3fcfxz0259kgh367qazj62af9rs0pw07dsdpa2fjkzep6yp58garswvaz7tmvd9nksarwd9hxw6n0w4kx2tnrdakj7grfwvs8wcqzysxqr23swwl9egjej7rvvt9zdxrtpy8xuu6cckdwajfccmtz7n90ea34k3j595w77pt69s5dx5a46f4k4w5avtvjkc4l4rm8n4xmk7fe3pms3pspdd032j"
-    assert(Bolt11Invoice.fromString(input.toUpperCase()).toString == input)
+    assert(Bolt11Invoice.fromString(input.toUpperCase()).get.toString == input)
   }
 
   test("Pay 1 BTC without multiplier") {
     val ref = "lnbc1000m1pdkmqhusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5n2ees808r98m0rh4472yyth0c5fptzcxmexcjznrzmq8xald0cgqdqsf4ujqarfwqsxymmccqp2pv37ezvhth477nu0yhhjlcry372eef57qmldhreqnr0kx82jkupp3n7nw42u3kdyyjskdr8jhjy2vugr3skdmy8ersft36969xplkxsp2v7c58"
-    val invoice = Bolt11Invoice.fromString(ref)
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
     assert(invoice.amount_opt === Some(100000000000L msat))
     assert(features2bits(invoice.features) === BitVector.empty)
   }
@@ -487,7 +487,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     for ((features, res) <- featureBits) {
       val invoice = createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features)
       assert(Result(invoice.features.hasFeature(BasicMultiPartPayment), invoice.features.hasFeature(PaymentSecret, Some(Mandatory)), nodeParams.features.invoiceFeatures().areSupported(invoice.features)) === res)
-      assert(Bolt11Invoice.fromString(invoice.toString) === invoice)
+      assert(Bolt11Invoice.fromString(invoice.toString).get === invoice)
     }
   }
 
@@ -514,17 +514,15 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.features === Features(PaymentSecret -> Mandatory, VariableLengthOnion -> Mandatory))
     assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
 
-    val pr1 = Bolt11Invoice.fromString(invoice.toString)
+    val Success(pr1) = Bolt11Invoice.fromString(invoice.toString)
     assert(pr1.paymentSecret === invoice.paymentSecret)
 
-    val pr2 = Bolt11Invoice.fromString("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    val Success(pr2) = Bolt11Invoice.fromString("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
     assert(!pr2.features.hasFeature(PaymentSecret, Some(Mandatory)))
     assert(pr2.paymentSecret === None)
 
     // An invoice that sets the payment secret feature bit must provide a payment secret.
-    assertThrows[IllegalArgumentException](
-      Bolt11Invoice.fromString("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7")
-    )
+    assert(Bolt11Invoice.fromString("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7").isFailure)
 
     // A multi-part invoice must use a payment secret.
     assertThrows[IllegalArgumentException](
@@ -544,7 +542,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(pr2.features.hasFeature(BasicMultiPartPayment))
     assert(pr2.features.hasFeature(TrampolinePayment))
 
-    val pr3 = Bolt11Invoice.fromString("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    val Success(pr3) = Bolt11Invoice.fromString("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
     assert(!pr3.features.hasFeature(TrampolinePayment))
   }
 
@@ -616,19 +614,20 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     )
 
     for ((req, nodeId) <- requests) {
-      assert(Bolt11Invoice.fromString(req).nodeId === nodeId)
-      assert(Bolt11Invoice.fromString(req).toString === req)
+      val Success(invoice) = Bolt11Invoice.fromString(req)
+      assert(invoice.nodeId === nodeId)
+      assert(invoice.toString === req)
     }
   }
 
-  test("no unknown feature in invoice"){
+  test("no unknown feature in invoice") {
     assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().unknown.nonEmpty)
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = TestConstants.Alice.nodeParams.features.invoiceFeatures())
     assert(invoice.features === Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory)))
-    assert(Bolt11Invoice.fromString(invoice.toString) === invoice)
+    assert(Bolt11Invoice.fromString(invoice.toString).get === invoice)
   }
 
-  test("Invoices can't have high features"){
+  test("Invoices can't have high features") {
     assertThrows[Exception](createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features[FeatureScope](Map[Feature with FeatureScope, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(424242)))))
   }
 }

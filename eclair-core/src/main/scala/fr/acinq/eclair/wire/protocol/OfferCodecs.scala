@@ -16,21 +16,19 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Bech32, ByteVector32}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, millisatoshi, millisatoshi32, publicKey, varint, varintoverflow}
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.Offers._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{CltvExpiryDelta, FeatureScope, Features, MilliSatoshi, TimestampSecond, UInt64}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
 import scala.util.Try
-import scala.util.matching.Regex
 
 object OfferCodecs {
   private val chains: Codec[Chains] = variableSizeBytesLong(varintoverflow, list(bytes32)).xmap[Seq[ByteVector32]](_.toSeq, _.toList).as[Chains]
@@ -57,9 +55,7 @@ object OfferCodecs {
 
   private val quantityMax: Codec[QuantityMax] = variableSizeBytesLong(varintoverflow, tu64overflow).as[QuantityMax]
 
-  // Only the x component of the key is serialized. We arbitrarily add hex"02" to get a valid key.
-  // When using this key, we need to try both the version starting with hex"02" and the one starting with hex"03".
-  private val nodeId: Codec[NodeId] = variableSizeBytesLong(varintoverflow, bytes32).xmap[PublicKey](b32 => PublicKey(hex"02" ++ b32), key => ByteVector32(key.value.drop(1))).as[NodeId]
+  private val nodeId: Codec[NodeId] = variableSizeBytesLong(varintoverflow, bytes32).as[NodeId]
 
   private val sendInvoice: Codec[SendInvoice] = variableSizeBytesLong(varintoverflow, provide(SendInvoice()))
 
@@ -223,34 +219,19 @@ object OfferCodecs {
     case InvoiceError(tlvs) => tlvs
   })
 
+  // TODO: this should directly use Bech32.encodeWithoutChecksum and Bech32.decodeWithoutChecksum
   object Bech32WithoutChecksum {
     def encode[A](hrp: String, codec: Codec[A], data: A): String = {
-      val bits = codec.encode(data).require
-      val int5s = Bech32.eight2five(bits.bytes.toArray)
-      hrp + "1" + new String(int5s.map(i => Bech32.alphabet(i)))
-    }
-
-    def stripPluses(s: String): String = {
-      val builder = new StringBuilder(s.length)
-      require('a' <= s(0) && s(0) <= 'z')
-      builder += s(0)
-      var i = 1
-      while(i < s.length){
-        if (s(i) == '+') {
-          i += 1
-          while(s(i).isWhitespace) {
-            i += 1
-          }
-        }
-        require(('a' <= s(i) && s(i) <= 'z') || ('0' <= s(i) && s(i) <= '9'))
-        builder += s(i)
-        i += 1
-      }
-      builder.result()
+      val bin = codec.encode(data).require.bytes
+      val int5s = Bech32.eight2five(bin.toArray)
+      Bech32.encode(hrp, int5s, Bech32.Bech32mEncoding).dropRight(6)
     }
 
     def decode[A](hrp: String, codec: Codec[A], s: String): Try[A] = Try {
-      val bech32withoutChecksum = stripPluses(s)
+      // Bolt 12 strings may be split using '+' and whitespaces, which allows sharing them over multiple tweets or QR codes.
+      // Readers should strip these '+' and whitespaces to recreate a valid bech32 string.
+      val bech32withoutChecksum = s.split('+').map(_.trim).mkString
+      bech32withoutChecksum.foreach(c => require(c >= 33 && c <= 126, "invalid character"))
       val pos = bech32withoutChecksum.lastIndexOf('1')
       require(bech32withoutChecksum.take(pos) == hrp, s"unexpected hrp: ${bech32withoutChecksum.take(pos)}")
       val data = new Array[Bech32.Int5](bech32withoutChecksum.length - pos - 1)

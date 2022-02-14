@@ -515,7 +515,7 @@ object Bolt11Invoice {
    * @param input bech32-encoded invoice
    * @return a Bolt11 invoice
    */
-  def fromString(input: String): Bolt11Invoice = {
+  def fromString(input: String): Try[Bolt11Invoice] = Try {
     // used only for data validation
     Bech32.decode(input)
     val lowercaseInput = input.toLowerCase

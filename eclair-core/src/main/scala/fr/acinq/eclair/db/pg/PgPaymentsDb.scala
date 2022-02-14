@@ -23,7 +23,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PaymentsDb.{decodeFailures, decodeRoute, encodeFailures, encodeRoute}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, Invoice, PaymentSent}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
@@ -32,7 +32,6 @@ import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
-import scala.concurrent.duration.DurationLong
 import scala.util.{Failure, Success, Try}
 
 object PgPaymentsDb {
@@ -157,7 +156,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       MilliSatoshi(rs.getLong("recipient_amount_msat")),
       PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
       TimestampMilli(rs.getTimestamp("created_at").getTime),
-      rs.getStringNullable("payment_request").map(Invoice.fromString),
+      rs.getStringNullable("payment_request").map(Invoice.fromString(_).get),
       status
     )
   }
@@ -249,7 +248,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val invoice = rs.getString("payment_request")
     IncomingPayment(
-      Bolt11Invoice.fromString(invoice),
+      Bolt11Invoice.fromString(invoice).get,
       rs.getByteVector32FromHex("payment_preimage"),
       rs.getString("payment_type"),
       TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),

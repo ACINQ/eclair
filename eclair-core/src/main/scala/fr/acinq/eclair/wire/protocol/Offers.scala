@@ -20,26 +20,31 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.message.OnionMessages
-import fr.acinq.eclair.wire.protocol.OfferCodecs.{Bech32WithoutChecksum, invoiceRequestCodec, invoiceRequestTlvCodec, offerCodec, offerTlvCodec}
+import fr.acinq.eclair.wire.protocol.OfferCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureScope, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureScope, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
 import fr.acinq.secp256k1.Secp256k1JvmKt
-import scodec.Attempt.{Failure, Successful}
+import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.vector
-import scodec.{Codec, DecodeResult}
 
 import scala.util.Try
 
+/**
+ * Lightning Bolt 12 offers
+ * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
+ */
 object Offers {
 
-  sealed trait OfferTlv extends Tlv
+  sealed trait Bolt12Tlv extends Tlv
 
-  sealed trait InvoiceRequestTlv extends Tlv
+  sealed trait OfferTlv extends Bolt12Tlv
 
-  sealed trait InvoiceTlv extends Tlv
+  sealed trait InvoiceRequestTlv extends Bolt12Tlv
 
-  sealed trait InvoiceErrorTlv extends Tlv
+  sealed trait InvoiceTlv extends Bolt12Tlv
+
+  sealed trait InvoiceErrorTlv extends Bolt12Tlv
 
   case class Chains(chains: Seq[ByteVector32]) extends OfferTlv
 
@@ -61,7 +66,14 @@ object Offers {
 
   case class QuantityMax(max: Long) extends OfferTlv
 
-  case class NodeId(nodeId: PublicKey) extends OfferTlv with InvoiceTlv
+  case class NodeId(publicKey: ByteVector32) extends OfferTlv with InvoiceTlv {
+    /** Offers use x-only public keys, which means there are two possible nodeIds depending on the sign of the y-coordinate. */
+    val nodeIds: Seq[PublicKey] = Seq(PublicKey(2.toByte +: publicKey.bytes), PublicKey(3.toByte +: publicKey.bytes))
+  }
+
+  object NodeId {
+    def apply(nodeId: PublicKey): NodeId = NodeId(xOnlyPublicKey(nodeId))
+  }
 
   case class SendInvoice() extends OfferTlv with InvoiceTlv
 
@@ -75,7 +87,11 @@ object Offers {
 
   case class Quantity(quantity: Long) extends InvoiceRequestTlv with InvoiceTlv
 
-  case class PayerKey(key: ByteVector32) extends InvoiceRequestTlv with InvoiceTlv
+  case class PayerKey(publicKey: ByteVector32) extends InvoiceRequestTlv with InvoiceTlv
+
+  object PayerKey {
+    def apply(publicKey: PublicKey): PayerKey = PayerKey(xOnlyPublicKey(publicKey))
+  }
 
   case class PayerNote(note: String) extends InvoiceRequestTlv with InvoiceTlv
 
@@ -110,10 +126,11 @@ object Offers {
   case class Error(message: String) extends InvoiceErrorTlv
 
   case class Offer(records: TlvStream[OfferTlv]) {
-    val offerId: ByteVector32 = {
-      val withoutSig = TlvStream(records.records.filter { case _: Signature => false case _ => true }, records.unknown)
-      rootHash(withoutSig, offerTlvCodec).get
-    }
+
+    require(records.get[NodeId].nonEmpty, "bolt 12 offers must provide a node id")
+    require(records.get[Description].nonEmpty, "bolt 12 offers must provide a description")
+
+    val offerId: ByteVector32 = rootHash(removeSignature(records), offerTlvCodec)
 
     val chains: Seq[ByteVector32] = records.get[Chains].map(_.chains).getOrElse(Seq(Block.LivenetGenesisBlock.hash))
 
@@ -135,7 +152,7 @@ object Offers {
     val quantityMin: Option[Long] = records.get[QuantityMin].map(_.min)
     val quantityMax: Option[Long] = records.get[QuantityMax].map(_.max)
 
-    val nodeId: PublicKey = records.get[NodeId].get.nodeId
+    val nodeId: PublicKey = records.get[NodeId].get.nodeIds.head
 
     val sendInvoice: Boolean = records.get[SendInvoice].nonEmpty
 
@@ -143,38 +160,56 @@ object Offers {
 
     val signature: Option[ByteVector64] = records.get[Signature].map(_.signature)
 
-    val contact: OnionMessages.Destination = records.get[Paths].flatMap(_.paths.headOption).map(OnionMessages.BlindedPath).getOrElse(OnionMessages.Recipient(nodeId, None, None))
+    val contact: OnionMessages.Destination = records.get[Paths].flatMap(_.paths.headOption).map(OnionMessages.BlindedPath).getOrElse(OnionMessages.Recipient(nodeId, Some(offerId), None))
 
     def sign(key: PrivateKey): Offer = {
-      val sig = signSchnorr("lightning" + "offer" + "signature", rootHash(records, offerTlvCodec).get, key)
+      val sig = signSchnorr(Offer.signatureTag, rootHash(records, offerTlvCodec), key)
       Offer(TlvStream[OfferTlv](records.records ++ Seq(Signature(sig)), records.unknown))
     }
 
-    def checkSignature: Boolean = {
+    def checkSignature(): Boolean = {
       signature match {
-        case Some(sig) =>
-          val withoutSig = TlvStream(records.records.filter { case _: Signature => false case _ => true }, records.unknown)
-          verifySchnorr("lightning" + "offer" + "signature", rootHash(withoutSig, offerTlvCodec).get, sig, ByteVector32(nodeId.value.drop(1)))
+        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), offerTlvCodec), sig, xOnlyPublicKey(nodeId))
         case None => false
       }
     }
 
-    def encode(): String = Bech32WithoutChecksum.encode("lno", offerCodec, this)
+    def encode(): String = Bech32WithoutChecksum.encode(Offer.hrp, offerCodec, this)
+
+    override def toString: String = encode()
   }
 
   object Offer {
-    def apply(amount_opt: Option[MilliSatoshi], description: String, nodeId: PublicKey):Offer = {
+    val hrp = "lno"
+    val signatureTag: String = "lightning" + "offer" + "signature"
+
+    /**
+     * @param amount_opt  amount if it can be determined at offer creation time.
+     * @param description description of the offer.
+     * @param nodeId      the nodeId to use for this offer, which should be different from our public nodeId if we're hiding behind a blinded route.
+     * @param features    invoice features.
+     * @param chains_opt  (optional) should only be provided when the offer is not solely for bitcoin mainnet.
+     */
+    def apply(amount_opt: Option[MilliSatoshi], description: String, nodeId: PublicKey, features: Features[InvoiceFeature], chains_opt: Option[Seq[ByteVector32]] = None): Offer = {
       val tlvs: Seq[OfferTlv] = Seq(
+        chains_opt.map(Chains),
         amount_opt.map(Amount),
         Some(Description(description)),
-        Some(NodeId(nodeId))).flatten
+        Some(NodeId(nodeId)),
+        if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
+      ).flatten
       Offer(TlvStream(tlvs))
     }
 
-    def decode(s: String): Try[Offer] = Bech32WithoutChecksum.decode("lno", offerCodec, s)
+    def decode(s: String): Try[Offer] = Bech32WithoutChecksum.decode(hrp, offerCodec, s)
   }
 
   case class InvoiceRequest(records: TlvStream[InvoiceRequestTlv]) {
+
+    require(records.get[OfferId].nonEmpty, "bolt 12 invoice requests must provide an offer id")
+    require(records.get[PayerKey].nonEmpty, "bolt 12 invoice requests must provide a payer key")
+    require(records.get[Signature].nonEmpty, "bolt 12 invoice requests must provide a payer signature")
+
     val chain: ByteVector32 = records.get[Chain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
 
     val offerId: ByteVector32 = records.get[OfferId].map(_.offerId).get
@@ -187,7 +222,7 @@ object Offers {
 
     val quantity: Long = quantity_opt.getOrElse(1)
 
-    val payerKey: ByteVector32 = records.get[PayerKey].get.key
+    val payerKey: ByteVector32 = records.get[PayerKey].get.publicKey
 
     val payerNote: Option[String] = records.get[PayerNote].map(_.note)
 
@@ -197,89 +232,129 @@ object Offers {
 
     val payerSignature: ByteVector64 = records.get[Signature].get.signature
 
-    def checkSignature: Boolean = {
-      val withoutSig = TlvStream(records.records.filter { case _: Signature => false case _ => true }, records.unknown)
-      verifySchnorr("lightning" + "invoice_request" + "payer_signature", rootHash(withoutSig, invoiceRequestTlvCodec).get, payerSignature, payerKey)
+    def isValidFor(offer: Offer): Boolean = {
+      val amountOk = offer.amount match {
+        case Some(offerAmount) =>
+          val baseInvoiceAmount = offerAmount * quantity
+          amount.forall(baseInvoiceAmount <= _)
+        case None => amount.nonEmpty
+      }
+      amountOk &&
+        offer.offerId == offerId &&
+        offer.chains.contains(chain) &&
+        offer.quantityMin.forall(min => quantity_opt.nonEmpty && min <= quantity) &&
+        offer.quantityMax.forall(max => quantity_opt.nonEmpty && quantity <= max) &&
+        quantity_opt.forall(_ => offer.quantityMin.nonEmpty || offer.quantityMax.nonEmpty) &&
+        offer.features.areSupported(features) &&
+        checkSignature()
     }
 
-    def encode(): String = Bech32WithoutChecksum.encode("lnr", invoiceRequestCodec, this)
+    def checkSignature(): Boolean = {
+      verifySchnorr(InvoiceRequest.signatureTag, rootHash(removeSignature(records), invoiceRequestTlvCodec), payerSignature, payerKey)
+    }
+
+    def encode(): String = Bech32WithoutChecksum.encode(InvoiceRequest.hrp, invoiceRequestCodec, this)
+
+    override def toString: String = encode()
   }
 
   object InvoiceRequest {
-    def apply(offer: Offer, amount: MilliSatoshi, quantity: Long, features: Features[InvoiceFeature], payerKey: PrivateKey, chain: ByteVector32 = Block.LivenetGenesisBlock.hash): InvoiceRequest = {
+    val hrp = "lnr"
+    val signatureTag: String = "lightning" + "invoice_request" + "payer_signature"
+
+    /**
+     * Create a request to fetch an invoice for a given offer.
+     *
+     * @param offer     Bolt 12 offer.
+     * @param amount    amount that we want to pay.
+     * @param quantity  quantity of items we're buying.
+     * @param features  invoice features.
+     * @param payerKey  private key identifying the payer: this lets us prove we're the ones who paid the invoice.
+     * @param chain_opt (optional) should only be provided when the request is not for bitcoin mainnet.
+     */
+    def apply(offer: Offer, amount: MilliSatoshi, quantity: Long, features: Features[InvoiceFeature], payerKey: PrivateKey, chain_opt: Option[ByteVector32] = None): InvoiceRequest = {
       require(quantity == 1 || offer.quantityMin.nonEmpty || offer.quantityMax.nonEmpty)
-      val requestTlvs: Seq[InvoiceRequestTlv] = Seq(
-        Some(Chain(chain)),
+      val tlvs: Seq[InvoiceRequestTlv] = Seq(
+        chain_opt.map(Chain),
         Some(OfferId(offer.offerId)),
         Some(Amount(amount)),
         if (offer.quantityMin.nonEmpty || offer.quantityMax.nonEmpty) Some(Quantity(quantity)) else None,
-        Some(PayerKey(ByteVector32(payerKey.publicKey.value.drop(1))))).flatten
-      val signature = signSchnorr("lightning" + "invoice_request" + "payer_signature", rootHash(TlvStream(requestTlvs), invoiceRequestTlvCodec).get, payerKey)
-      InvoiceRequest(TlvStream(requestTlvs :+ Signature(signature)))
+        Some(PayerKey(payerKey.publicKey)),
+        Some(FeaturesTlv(features.unscoped()))
+      ).flatten
+      val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
+      InvoiceRequest(TlvStream(tlvs :+ Signature(signature)))
     }
 
-    def decode(s: String): Try[InvoiceRequest] = Bech32WithoutChecksum.decode("lnr", invoiceRequestCodec, s)
+    def decode(s: String): Try[InvoiceRequest] = Bech32WithoutChecksum.decode(hrp, invoiceRequestCodec, s)
   }
 
-  case class InvoiceError(error: TlvStream[InvoiceErrorTlv]) {
+  case class InvoiceError(records: TlvStream[InvoiceErrorTlv]) {
+    require(records.get[Error].nonEmpty, "bolt 12 invoice errors must provide an explanatory string")
   }
 
-  def rootHash[T <: Tlv](tlvs: TlvStream[T], codec: Codec[TlvStream[T]]): Option[ByteVector32] = {
-    codec.encode(tlvs) match {
-      case Failure(_) => None
-      case Successful(encoded) => vector(genericTlv).decode(encoded) match {
-        case Failure(f) => None
-        case Successful(DecodeResult(tlvVector, _)) =>
+  def rootHash[T <: Tlv](tlvs: TlvStream[T], codec: Codec[TlvStream[T]]): ByteVector32 = {
+    // Encoding tlvs is always safe, unless we have a bug in our codecs, so we can call `.require` here.
+    val encoded = codec.encode(tlvs).require
+    // Decoding tlvs that we just encoded is safe as well.
+    // This encoding/decoding step ensures that the resulting tlvs are ordered.
+    val genericTlvs = vector(genericTlv).decode(encoded).require.value
+    val nonceKey = ByteVector("LnAll".getBytes) ++ encoded.bytes
 
-          def hash(tag: ByteVector, msg: ByteVector): ByteVector32 = {
-            val tagHash = Crypto.sha256(tag)
-            Crypto.sha256(tagHash ++ tagHash ++ msg)
-          }
+    def previousPowerOfTwo(n: Int): Int = {
+      var p = 1
+      while (p < n) {
+        p = p << 1
+      }
+      p >> 1
+    }
 
-          def previousPowerOfTwo(n : Int) : Int = {
-            var p = 1
-            while (p < n) {
-              p = p << 1
-            }
-            p >> 1
-          }
-
-          def merkleTree(i: Int, j: Int): ByteVector32 = {
-            val (a, b) = if (j - i == 1) {
-              val tlv = genericTlv.encode(tlvVector(i)).require.bytes
-              (hash(ByteVector("LnLeaf".getBytes), tlv), hash(ByteVector("LnAll".getBytes) ++ encoded.bytes, tlv))
-            } else {
-              val k = i + previousPowerOfTwo(j - i)
-              (merkleTree(i, k), merkleTree(k, j))
-            }
-            if (LexicographicalOrdering.isLessThan(a, b)) {
-              hash(ByteVector("LnBranch".getBytes), a ++ b)
-            } else {
-              hash(ByteVector("LnBranch".getBytes), b ++ a)
-            }
-          }
-
-          Some(merkleTree(0, tlvVector.length))
+    def merkleTree(i: Int, j: Int): ByteVector32 = {
+      val (a, b) = if (j - i == 1) {
+        val tlv = genericTlv.encode(genericTlvs(i)).require.bytes
+        (hash(ByteVector("LnLeaf".getBytes), tlv), hash(nonceKey, tlv))
+      } else {
+        val k = i + previousPowerOfTwo(j - i)
+        (merkleTree(i, k), merkleTree(k, j))
+      }
+      if (LexicographicalOrdering.isLessThan(a, b)) {
+        hash(ByteVector("LnBranch".getBytes), a ++ b)
+      } else {
+        hash(ByteVector("LnBranch".getBytes), b ++ a)
       }
     }
+
+    merkleTree(0, genericTlvs.length)
   }
 
-  private def hashtag(tag: String): ByteVector = {
+  private def hash(tag: String, msg: ByteVector): ByteVector32 = {
     ByteVector.encodeAscii(tag) match {
-      case Right(bytes) => Crypto.sha256(bytes)
-      case Left(e) => throw e
+      case Right(bytes) => hash(bytes, msg)
+      case Left(e) => throw e // NB: the tags we use are hard-coded, so we know they're always ASCII
     }
+  }
+
+  private def hash(tag: ByteVector, msg: ByteVector): ByteVector32 = {
+    val tagHash = Crypto.sha256(tag)
+    Crypto.sha256(tagHash ++ tagHash ++ msg)
   }
 
   def signSchnorr(tag: String, msg: ByteVector32, key: PrivateKey): ByteVector64 = {
-    val h = hashtag(tag)
-    val auxrand32 = randomBytes32()
-    ByteVector64(ByteVector(Secp256k1JvmKt.getSecpk256k1.signSchnorr(Crypto.sha256(h ++ h ++ msg).toArray, key.value.toArray, auxrand32.toArray)))
+    val h = hash(tag, msg)
+    // NB: we don't add auxiliary random data to keep signatures deterministic.
+    ByteVector64(ByteVector(Secp256k1JvmKt.getSecpk256k1.signSchnorr(h.toArray, key.value.toArray, null)))
   }
 
-  def verifySchnorr(tag: String, msg: ByteVector32, signature: ByteVector64, key: ByteVector32): Boolean = {
-    val h = hashtag(tag)
-    Secp256k1JvmKt.getSecpk256k1.verifySchnorr(signature.toArray, Crypto.sha256(h ++ h ++ msg).toArray, key.toArray)
+  def verifySchnorr(tag: String, msg: ByteVector32, signature: ByteVector64, publicKey: ByteVector32): Boolean = {
+    val h = hash(tag, msg)
+    Secp256k1JvmKt.getSecpk256k1.verifySchnorr(signature.toArray, h.toArray, publicKey.toArray)
+  }
+
+  def xOnlyPublicKey(publicKey: PublicKey): ByteVector32 = ByteVector32(publicKey.value.drop(1))
+
+  /** We often need to remove the signature field to compute the merkle root. */
+  def removeSignature[T <: Bolt12Tlv](records: TlvStream[T]): TlvStream[T] = {
+    TlvStream(records.records.filter { case _: Signature => false case _ => true }, records.unknown)
   }
 
 }

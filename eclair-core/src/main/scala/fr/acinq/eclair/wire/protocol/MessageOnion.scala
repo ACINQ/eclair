@@ -21,7 +21,6 @@ import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceErrorCodec, invoiceRequestCodec}
-import fr.acinq.eclair.wire.protocol.Offers.{InvoiceErrorTlv, InvoiceRequestTlv, InvoiceTlv}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
 import scodec.bits.ByteVector
 
@@ -44,17 +43,20 @@ object OnionMessagePayloadTlv {
   case class EncryptedData(data: ByteVector) extends OnionMessagePayloadTlv
 
   /**
-   * If an onion message has this TLV, it is an invoice request.
+   * In order to pay a Bolt 12 offer, we must send an onion message to request an invoice corresponding to that offer.
+   * The creator of the offer will send us an invoice back through our blinded reply path.
    */
   case class InvoiceRequest(request: Offers.InvoiceRequest) extends OnionMessagePayloadTlv
 
   /**
-   * If an onion message has this TLV, it is an invoice sent as a response to an invoice request.
+   * When receiving an invoice request, we must send an onion message back containing an invoice corresponding to the
+   * requested offer (if it was an offer we published).
    */
   case class Invoice(invoice: Bolt12Invoice) extends OnionMessagePayloadTlv
 
   /**
-   * If an onion message has this TLV, it is a response to an invoice request that couldn't be processed properly.
+   * This message may be used when we receive an invalid invoice or invoice request.
+   * It contains information helping senders figure out why their message was invalid.
    */
   case class InvoiceError(error: Offers.InvoiceError) extends OnionMessagePayloadTlv
 
