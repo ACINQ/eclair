@@ -368,6 +368,27 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(rcp5.isDone)
   }
 
+  test("remote commit published (our claim-HTLC txs are confirmed and the remaining one is failed)") {
+    val f = setupClosingChannelForRemoteClose()
+    import f._
+
+    val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
+    }
+    assert(!rcp3.isDone)
+
+    bob ! CMD_FAIL_HTLC(bobPendingHtlc.htlc.id, Right(UnknownNextPeer), replyTo_opt = Some(probe.ref))
+    probe.expectMsgType[CommandSuccess[CMD_FAIL_HTLC]]
+    val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
+    val rcp4 = bobClosing1.remoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
+    assert(!rcp4.claimHtlcTxs.contains(remainingHtlcOutpoint))
+    assert(rcp4.claimHtlcTxs.size === 3)
+    assert(getClaimHtlcSuccessTxs(rcp4).size == 1)
+    assert(getClaimHtlcTimeoutTxs(rcp4).size == 2)
+
+    assert(rcp4.isDone)
+  }
+
   private def setupClosingChannelForNextRemoteClose(): RemoteFixture = {
     val probe = TestProbe()
     val setup = init()
