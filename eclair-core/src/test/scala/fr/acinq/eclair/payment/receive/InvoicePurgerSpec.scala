@@ -70,10 +70,10 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
 
     val interval = 1 seconds
 
-    val _ = testKit.spawn(InvoicePurger(db, interval), name = "purge-expired-invoices")
-
     val probe = testKit.createTestProbe[PurgeEvent]()
     system.eventStream ! EventStream.Subscribe(probe.ref)
+
+    val _ = testKit.spawn(InvoicePurger(db, interval), name = "purge-expired-invoices")
 
     // check that purge completed
     probe.expectMessage(3 seconds, PurgeCompleted)
