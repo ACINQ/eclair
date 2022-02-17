@@ -23,10 +23,11 @@ import fr.acinq.eclair.db.IncomingPaymentsDb
 import fr.acinq.eclair.payment.receive.InvoicePurger.{Command, PurgeCompleted, TickPurge}
 import fr.acinq.eclair.{TimestampMilli, TimestampMilliLong}
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 /**
  * This actor will purge expired invoices from the database it was initialized with at a scheduled interval.
+ * At startup scan the entire database for expired invoices, subsequent runs only look back 15 days.
  */
 object InvoicePurger {
 
@@ -34,8 +35,8 @@ object InvoicePurger {
     Behaviors.setup { context =>
       // wait for purge events sent at `interval`
       Behaviors.withTimers { timers =>
-        timers.startTimerAtFixedRate(TickPurge, interval)
-        new InvoicePurger(paymentsDb, context).waiting()
+        timers.startTimerAtFixedRate(TickPurge, initialDelay = 0.seconds, interval = interval)
+        new InvoicePurger(paymentsDb, context).waiting(true)
       }
     }
 
@@ -52,11 +53,12 @@ object InvoicePurger {
 class InvoicePurger private(paymentsDb: IncomingPaymentsDb, context: ActorContext[Command]) {
 
   // purge at each tick unless currently purging
-  def waiting(): Behavior[Command] =
+  def waiting(fullScan: Boolean): Behavior[Command] =
     Behaviors.receiveMessage {
       case TickPurge =>
         val now = TimestampMilli.now()
-        val expiredPayments = paymentsDb.listExpiredIncomingPayments(0 unixms, now)
+        val start = if (fullScan) 0 unixms else now - 15.days
+        val expiredPayments = paymentsDb.listExpiredIncomingPayments(start, now)
         // purge expired payments
         expiredPayments.foreach(p => paymentsDb.removeIncomingPayment(p.invoice.paymentHash))
 
@@ -64,6 +66,6 @@ class InvoicePurger private(paymentsDb: IncomingPaymentsDb, context: ActorContex
         if (expiredPayments.nonEmpty) {
           context.system.eventStream ! EventStream.Publish(PurgeCompleted)
         }
-        waiting()
+        waiting(fullScan = false)
     }
 }
