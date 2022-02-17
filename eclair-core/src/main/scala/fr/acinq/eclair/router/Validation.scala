@@ -300,8 +300,10 @@ object Validation {
         // update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (u.channelFlags.isEnabled) {
+          update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
           d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
+          update.left.foreach(_ => log.info("removed local shortChannelId={} public={} from the network graph", u.shortChannelId, publicChannel))
           d.graph.removeEdge(desc)
         }
         d.copy(channels = d.channels + (u.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
@@ -313,6 +315,7 @@ object Validation {
         // we also need to update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+        update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
         d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
@@ -349,8 +352,10 @@ object Validation {
         // we also need to update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (u.channelFlags.isEnabled) {
+          update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
           d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
+          update.left.foreach(_ => log.info("removed local shortChannelId={} public={} from the network graph", u.shortChannelId, publicChannel))
           d.graph.removeEdge(desc)
         }
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
@@ -361,6 +366,7 @@ object Validation {
         // we also need to update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+        update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
       }
     } else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
@@ -441,7 +447,7 @@ object Validation {
       d
     } else if (d.privateChannels.contains(shortChannelId)) {
       // the channel was private or public-but-not-yet-announced, let's do the clean up
-      log.debug("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
+      log.info("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
       val desc1 = ChannelDesc(shortChannelId, localNodeId, remoteNodeId)
       val desc2 = ChannelDesc(shortChannelId, remoteNodeId, localNodeId)
       // we remove the corresponding updates from the graph
