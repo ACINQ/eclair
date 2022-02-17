@@ -20,7 +20,7 @@ import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.TestDatabases.TestPgDatabases
+import fr.acinq.eclair.TestDatabases.TestSqliteDatabases
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, PaymentType, PaymentsDbSpec}
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.receive.InvoicePurger.{PurgeCompleted, PurgeEvent}
@@ -34,7 +34,7 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
   import PaymentsDbSpec._
 
   test("purge invoices") {
-    val dbs = TestPgDatabases()
+    val dbs = TestSqliteDatabases()
     val db = dbs.db.payments
     val count = 10
 
