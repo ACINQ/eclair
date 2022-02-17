@@ -20,7 +20,7 @@ import akka.Done
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import fr.acinq.eclair.db.PaymentsDb
+import fr.acinq.eclair.db.IncomingPaymentsDb
 import fr.acinq.eclair.payment.receive.InvoicePurger.{Command, PurgeCompleted, PurgeResult, TickPurge}
 import fr.acinq.eclair.{TimestampMilli, TimestampMilliLong}
 
@@ -32,7 +32,7 @@ import scala.util.{Failure, Success, Try}
  */
 object InvoicePurger {
 
-  def apply(paymentsDb: PaymentsDb, interval: FiniteDuration): Behavior[Command] =
+  def apply(paymentsDb: IncomingPaymentsDb, interval: FiniteDuration): Behavior[Command] =
     Behaviors.setup { context =>
       // wait for purge events sent at `interval`
       Behaviors.withTimers { timers =>
@@ -53,7 +53,7 @@ object InvoicePurger {
   private case object TickPurge extends Command
 }
 
-class InvoicePurger private(paymentsDb: PaymentsDb, context: ActorContext[Command]) {
+class InvoicePurger private(paymentsDb: IncomingPaymentsDb, context: ActorContext[Command]) {
 
   // purge at each tick unless currently purging
   def waiting(): Behavior[Command] =
