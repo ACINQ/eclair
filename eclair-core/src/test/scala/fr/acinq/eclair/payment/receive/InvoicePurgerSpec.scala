@@ -42,23 +42,23 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     val expiredInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice"), CltvExpiryDelta(18),
       timestamp = 1 unixsec))
     val expiredPayments = expiredInvoices.map(invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired))
-    expiredInvoices.lazyZip(expiredPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
+    expiredPayments.foreach(payment => db.addIncomingPayment(payment.invoice, payment.paymentPreimage))
 
     // create pending invoices
     val pendingInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("pending invoice"), CltvExpiryDelta(18),
       timestamp = TimestampSecond.now() - 600))
     val pendingPayments = pendingInvoices.map(invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
-    pendingInvoices.lazyZip(pendingPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
+    pendingPayments.foreach(payment => db.addIncomingPayment(payment.invoice, payment.paymentPreimage))
 
     // create paid invoices
     val receivedAt = TimestampMilli.now() + 1.milli
     val paidInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("paid invoice"), CltvExpiryDelta(18),
       timestamp = TimestampSecond.now()))
     val paidPayments = paidInvoices.map(invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(100 msat, receivedAt)))
-    paidInvoices.lazyZip(paidPayments).foreach((invoice, payment) => {
-      db.addIncomingPayment(invoice, payment.paymentPreimage)
+    paidPayments.foreach(payment => {
+      db.addIncomingPayment(payment.invoice, payment.paymentPreimage)
       // receive payment
-      db.receiveIncomingPayment(invoice.paymentHash, 100 msat, receivedAt)
+      db.receiveIncomingPayment(payment.invoice.paymentHash, 100 msat, receivedAt)
     })
 
     val now = TimestampMilli.now()
@@ -82,7 +82,10 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     assert(db.listIncomingPayments(0 unixms, now) === pendingPayments ++ paidPayments)
 
     // add more expired invoices
-    expiredInvoices.lazyZip(expiredPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
+    val expiredInvoices2 = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice2"), CltvExpiryDelta(18),
+      timestamp = 2 unixsec))
+    val expiredPayments2 = expiredInvoices2.map(invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired))
+    expiredPayments2.foreach(payment => db.addIncomingPayment(payment.invoice, payment.paymentPreimage))
 
     // check that purge still running
     probe.expectMessage(3 seconds, PurgeCompleted)
