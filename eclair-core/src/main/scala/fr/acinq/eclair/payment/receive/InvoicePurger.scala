@@ -53,8 +53,7 @@ object InvoicePurger {
   private case object TickPurge extends Command
 }
 
-class InvoicePurger private(paymentsDb: PaymentsDb,
-                            context: ActorContext[Command]) {
+class InvoicePurger private(paymentsDb: PaymentsDb, context: ActorContext[Command]) {
 
   // purge at each tick unless currently purging
   def waiting(): Behavior[Command] =
