@@ -32,14 +32,6 @@ import scala.util.{Failure, Success, Try}
  */
 object InvoicePurger {
 
-  sealed trait Command
-  private case object TickPurge extends Command
-  private case class PurgeResult(result: Try[Done]) extends Command
-
-  sealed trait PurgeEvent
-  // this notification is sent when we have completed our invoice purge process
-  case object PurgeCompleted extends PurgeEvent
-
   def apply(paymentsDb: PaymentsDb, interval: FiniteDuration): Behavior[Command] =
     Behaviors.setup { context =>
       // wait for purge events sent at `interval`
@@ -48,6 +40,17 @@ object InvoicePurger {
         new InvoicePurger(paymentsDb, context).waiting()
       }
     }
+
+  sealed trait Command
+
+  sealed trait PurgeEvent
+
+  private case class PurgeResult(result: Try[Done]) extends Command
+
+  // this notification is sent when we have completed our invoice purge process
+  case object PurgeCompleted extends PurgeEvent
+
+  private case object TickPurge extends Command
 }
 
 class InvoicePurger private(paymentsDb: PaymentsDb,
