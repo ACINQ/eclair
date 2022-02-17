@@ -391,8 +391,7 @@ object NodeParams extends Logging {
 
     val purgeInvoicesInterval = if (config.getBoolean("purge-expired-invoices.enabled")) {
       Some(FiniteDuration(config.getDuration("purge-expired-invoices.interval").toMinutes, TimeUnit.MINUTES))
-    }
-    else {
+    } else {
       None
     }
 
