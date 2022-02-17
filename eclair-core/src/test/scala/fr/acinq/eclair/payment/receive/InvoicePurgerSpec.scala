@@ -40,21 +40,22 @@ class InvoicePurgerSpec extends TestKitBaseClass with AnyFunSuiteLike {
     // create expired invoices
     val expiredInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice"), CltvExpiryDelta(18),
       timestamp = 1 unixsec))
-    val expiredPayments = expiredInvoices.map( invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired))
+    val expiredPayments = expiredInvoices.map(invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired))
     expiredInvoices.lazyZip(expiredPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
 
     // create pending invoices
     val pendingInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("pending invoice"), CltvExpiryDelta(18),
       timestamp = TimestampSecond.now() - 600))
-    val pendingPayments = pendingInvoices.map( invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
+    val pendingPayments = pendingInvoices.map(invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
     pendingInvoices.lazyZip(pendingPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
 
     // create paid invoices
     val receivedAt = TimestampMilli.now() + 1.milli
     val paidInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("paid invoice"), CltvExpiryDelta(18),
       timestamp = TimestampSecond.now()))
-    val paidPayments = paidInvoices.map( invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(100 msat, receivedAt)))
-    paidInvoices.lazyZip(paidPayments).foreach((invoice, payment) => { db.addIncomingPayment(invoice, payment.paymentPreimage)
+    val paidPayments = paidInvoices.map(invoice => IncomingPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(100 msat, receivedAt)))
+    paidInvoices.lazyZip(paidPayments).foreach((invoice, payment) => {
+      db.addIncomingPayment(invoice, payment.paymentPreimage)
       // receive payment
       db.receiveIncomingPayment(invoice.paymentHash, 100 msat, receivedAt)
     })
