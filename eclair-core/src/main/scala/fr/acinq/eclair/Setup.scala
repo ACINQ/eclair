@@ -187,12 +187,12 @@ class Setup(val datadir: File,
     val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
     assert(bitcoinVersion >= 180000, "Eclair requires Bitcoin Core 0.18.0 or higher")
     assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
+    assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
     if (chainHash != Block.RegtestGenesisBlock.hash) {
-      assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
+      assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
+      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
+      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
     }
-    assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
-    assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
-    assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
     logger.info(s"current blockchain height=$blocks")
     blockHeight.set(blocks)
     bitcoinClient
@@ -233,21 +233,19 @@ class Setup(val datadir: File,
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
-      _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(new Runnable {
-        override def run(): Unit = feeProvider.getFeerates.onComplete {
-          case Success(feerates) =>
-            feeratesPerKB.set(feerates)
-            feeratesPerKw.set(FeeratesPerKw(feerates))
-            channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong.toDouble)
-            blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.mempoolMinFee.toLong.toDouble)
-            system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-            logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
-            feeratesRetrieved.trySuccess(Done)
-          case Failure(exception) =>
-            logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
-            blockchain.Monitoring.Metrics.CannotRetrieveFeeratesCount.withoutTags().increment()
-            feeratesRetrieved.tryFailure(CannotRetrieveFeerates)
-        }
+      _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(() => feeProvider.getFeerates.onComplete {
+        case Success(feerates) =>
+          feeratesPerKB.set(feerates)
+          feeratesPerKw.set(FeeratesPerKw(feerates))
+          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong.toDouble)
+          blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.mempoolMinFee.toLong.toDouble)
+          system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
+          logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
+          feeratesRetrieved.trySuccess(Done)
+        case Failure(exception) =>
+          logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
+          blockchain.Monitoring.Metrics.CannotRetrieveFeeratesCount.withoutTags().increment()
+          feeratesRetrieved.tryFailure(CannotRetrieveFeerates)
       })
       _ <- feeratesRetrieved.future
 
