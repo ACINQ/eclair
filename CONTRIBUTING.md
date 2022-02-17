@@ -32,6 +32,7 @@ You can also use Github issues for [feature requests](https://github.com/acinq/e
 - [Understanding the Lightning Network](https://bitcoinmagazine.com/articles/understanding-the-lightning-network-part-building-a-bidirectional-payment-channel-1464710791)
 - [Lightning Network Specification](https://github.com/lightning/bolts)
 - [High Level Lightning Network Specification](https://medium.com/@rusty_lightning/the-bitcoin-lightning-spec-part-1-8-a7720fb1b4da)
+- [t-bast's in-depth articles about the Lightning Network](https://github.com/t-bast/lightning-docs/)
 
 ## Recommended Skillset
 
