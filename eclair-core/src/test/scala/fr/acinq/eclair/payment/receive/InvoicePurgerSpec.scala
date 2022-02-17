@@ -16,19 +16,20 @@
 
 package fr.acinq.eclair.payment.receive
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
-import akka.testkit.TestProbe
+import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import akka.actor.typed.eventstream.EventStream
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.TestDatabases.TestPgDatabases
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, PaymentType, PaymentsDbSpec}
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.receive.InvoicePurger.{PurgeCompleted, PurgeEvent}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestKitBaseClass, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import scala.concurrent.duration.DurationInt
 
-class InvoicePurgerSpec extends TestKitBaseClass with AnyFunSuiteLike {
+class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
   import PaymentsDbSpec._
 
@@ -69,13 +70,13 @@ class InvoicePurgerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val interval = 1 seconds
 
-    val _ = system.spawn(InvoicePurger(db, interval), name = "purge-expired-invoices")
+    val _ = testKit.spawn(InvoicePurger(db, interval), name = "purge-expired-invoices")
 
-    val probe = TestProbe()
-    system.eventStream.subscribe(probe.ref, classOf[PurgeEvent])
+    val probe = testKit.createTestProbe[PurgeEvent]()
+    system.eventStream ! EventStream.Subscribe(probe.ref)
 
     // check that purge completed
-    probe.expectMsg(3 seconds, PurgeCompleted)
+    probe.expectMessage(3 seconds, PurgeCompleted)
     probe.expectNoMessage()
     assert(db.listExpiredIncomingPayments(0 unixms, now).isEmpty)
     assert(db.listIncomingPayments(0 unixms, now) === pendingPayments ++ paidPayments)
@@ -84,7 +85,7 @@ class InvoicePurgerSpec extends TestKitBaseClass with AnyFunSuiteLike {
     expiredInvoices.lazyZip(expiredPayments).foreach((invoice, payment) => db.addIncomingPayment(invoice, payment.paymentPreimage))
 
     // check that purge still running
-    probe.expectMsg(3 seconds, PurgeCompleted)
+    probe.expectMessage(3 seconds, PurgeCompleted)
     probe.expectNoMessage()
     assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now()).isEmpty)
     assert(db.listIncomingPayments(0 unixms, TimestampMilli.now()) === pendingPayments ++ paidPayments)
