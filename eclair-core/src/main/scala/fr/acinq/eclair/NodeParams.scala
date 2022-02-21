@@ -79,7 +79,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       enableTrampolinePayment: Boolean,
                       balanceCheckInterval: FiniteDuration,
                       blockchainWatchdogSources: Seq[String],
-                      onionMessageConfig: OnionMessageConfig) {
+                      onionMessageConfig: OnionMessageConfig,
+                      purgeInvoicesInterval: Option[FiniteDuration]) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -388,6 +389,12 @@ object NodeParams extends Logging {
       case "relay-all" => RelayAll
     }
 
+    val purgeInvoicesInterval = if (config.getBoolean("purge-expired-invoices.enabled")) {
+      Some(FiniteDuration(config.getDuration("purge-expired-invoices.interval").toMinutes, TimeUnit.MINUTES))
+    } else {
+      None
+    }
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -491,7 +498,8 @@ object NodeParams extends Logging {
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
-      )
+      ),
+      purgeInvoicesInterval = purgeInvoicesInterval
     )
   }
 }

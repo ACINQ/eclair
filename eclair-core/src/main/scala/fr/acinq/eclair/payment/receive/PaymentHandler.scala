@@ -17,6 +17,9 @@
 package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
+import akka.actor.typed.SupervisorStrategy
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, ActorContext, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
@@ -33,6 +36,14 @@ class PaymentHandler(nodeParams: NodeParams, register: ActorRef) extends Actor w
 
   // we do this instead of sending it to ourselves, otherwise there is no guarantee that this would be the first processed message
   private val defaultHandler = new MultiPartHandler(nodeParams, register, nodeParams.db.payments)
+
+  // Spawn an actor to purge expired invoices at a configured interval
+  private val purger = nodeParams.purgeInvoicesInterval match {
+    case Some(interval) =>
+      context.spawn(Behaviors.supervise(InvoicePurger(nodeParams.db.payments, interval)).onFailure(SupervisorStrategy.restart), name = "purge-expired-invoices")
+    case _ =>
+      log.warning("purge-expired-invoices is disabled")
+  }
 
   override def receive: Receive = normal(defaultHandler.handle(context, log))
 
