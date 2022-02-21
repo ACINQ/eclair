@@ -32,6 +32,7 @@ You can also use Github issues for [feature requests](https://github.com/acinq/e
 - [Understanding the Lightning Network](https://bitcoinmagazine.com/articles/understanding-the-lightning-network-part-building-a-bidirectional-payment-channel-1464710791)
 - [Lightning Network Specification](https://github.com/lightning/bolts)
 - [High Level Lightning Network Specification](https://medium.com/@rusty_lightning/the-bitcoin-lightning-spec-part-1-8-a7720fb1b4da)
+- [t-bast's in-depth articles about the Lightning Network](https://github.com/t-bast/lightning-docs/)
 
 ## Recommended Skillset
 
@@ -81,6 +82,12 @@ When addressing pull request comments, we recommend using [fixup commits](https:
 The reason for this is two fold: it makes it easier for the reviewer to see what changes have been
 made between versions (since Github doesn't easily show prior versions) and it makes it easier on
 the PR author as they can set it to auto-squash the fixup commits on rebase.
+
+When you have addressed a pull request comment, you should respond to it and point the reviewer
+to the commit where you fixed it. A simple "This is fixed in <link_to_commit>" is enough. Do not
+mark the comment as resolved: let the reviewer verify your commit, they will mark the comment
+resolved if they agree with the fix. This makes it easier for reviewers to check that all their
+comments have been addressed.
 
 It's recommended to take great care in writing tests and ensuring the entire test suite has a
 stable successful outcome; eclair uses continuous integration techniques and having a stable build
