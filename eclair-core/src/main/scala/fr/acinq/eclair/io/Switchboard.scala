@@ -128,7 +128,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
   def createPeer(remoteNodeId: PublicKey): ActorRef = peerFactory.spawn(context, remoteNodeId)
 
-  def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[ChannelData]): ActorRef = {
+  def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[PersistentChannelData]): ActorRef = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>

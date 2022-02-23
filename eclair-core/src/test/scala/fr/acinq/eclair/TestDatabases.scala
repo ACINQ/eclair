@@ -56,7 +56,7 @@ object TestDatabases {
    * @param innerDb actual database instance 
    */
   class SqliteChannelsDbWithValidation(innerDb: SqliteChannelsDb) extends SqliteChannelsDb(innerDb.sqlite) {
-    override def addOrUpdateChannel(state: ChannelData): Unit = {
+    override def addOrUpdateChannel(state: PersistentChannelData): Unit = {
 
       def freeze1(input: Origin): Origin = input match {
         case h: Origin.LocalHot => Origin.LocalCold(h.id)
@@ -68,7 +68,7 @@ object TestDatabases {
 
       // payment origins are always "cold" when deserialized, so to compare a "live" channel state against a state that has been
       // serialized and deserialized we need to turn "hot" payments into cold ones
-      def freeze3(input: ChannelData): ChannelData = input match {
+      def freeze3(input: PersistentChannelData): PersistentChannelData = input match {
         case d: ChannelData.WaitingForFundingConfirmed => d.copy(commitments = freeze2(d.commitments))
         case d: ChannelData.WaitingForFundingLocked => d.copy(commitments = freeze2(d.commitments))
         case d: ChannelData.WaitingForRemotePublishFutureCommitment => d.copy(commitments = freeze2(d.commitments))

@@ -223,12 +223,12 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-channels").build()))
 
-  override def addOrUpdateChannel(data: ChannelData): Unit = {
+  override def addOrUpdateChannel(data: PersistentChannelData): Unit = {
     runAsync(secondary.addOrUpdateChannel(data))
     primary.addOrUpdateChannel(data)
   }
 
-  override def getChannel(channelId: ByteVector32): Option[ChannelData] = {
+  override def getChannel(channelId: ByteVector32): Option[PersistentChannelData] = {
     runAsync(secondary.getChannel(channelId))
     primary.getChannel(channelId)
   }
@@ -243,7 +243,7 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.removeChannel(channelId)
   }
 
-  override def listLocalChannels(): Seq[ChannelData] = {
+  override def listLocalChannels(): Seq[PersistentChannelData] = {
     runAsync(secondary.listLocalChannels())
     primary.listLocalChannels()
   }

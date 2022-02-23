@@ -469,6 +469,11 @@ object CustomTypeHints {
   ))
 
   val channelData: CustomTypeHints = CustomTypeHints(Map(
+    classOf[ChannelData.WaitingForOpenChannel] -> "waiting-for-open-channel",
+    classOf[ChannelData.WaitingForAcceptChannel] -> "waiting-for-accept-channel",
+    classOf[ChannelData.WaitingForFundingInternal] -> "waiting-for-funding",
+    classOf[ChannelData.WaitingForFundingCreated] -> "waiting-for-funding-created",
+    classOf[ChannelData.WaitingForFundingSigned] -> "waiting-for-funding-signed",
     classOf[ChannelData.WaitingForFundingConfirmed] -> "waiting-for-funding-confirmed",
     classOf[ChannelData.WaitingForFundingLocked] -> "waiting-for-funding-locked",
     classOf[ChannelData.Normal] -> "normal",

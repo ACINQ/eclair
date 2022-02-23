@@ -18,17 +18,21 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.blockchain.NoOpOnChainWallet
+import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
-import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
 /**
  * Created by PM on 05/07/2016.
@@ -38,8 +42,17 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelStateData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
+  class FailingOnChainWallet() extends NoOpOnChainWallet {
+    private val fundingTask = Promise[MakeFundingTxResponse]()
+
+    override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = fundingTask.future
+
+    def complete(walletError: Throwable): Unit = fundingTask.failure(walletError)
+  }
+
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init(wallet = new NoOpOnChainWallet())
+    val wallet = if (test.tags.contains("wallet_error")) new FailingOnChainWallet() else new NoOpOnChainWallet
+    val setup = init(wallet = wallet)
     import setup._
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
@@ -52,14 +65,14 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+      awaitCond(getChannelData(alice).isInstanceOf[ChannelData.WaitingForFundingInternal])
       withFixture(test.toNoArgTest(FixtureParam(alice, aliceOrigin, alice2bob, bob2alice, alice2blockchain)))
     }
   }
 
-  test("recv Status.Failure (wallet error)") { f =>
+  test("recv wallet funding error", Tag("wallet_error")) { f =>
     import f._
-    alice ! Status.Failure(new RuntimeException("insufficient funds"))
+    alice.underlyingActor.wallet.asInstanceOf[FailingOnChainWallet].complete(new RuntimeException("insufficient funds"))
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }

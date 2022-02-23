@@ -40,7 +40,7 @@ trait AbstractChannelRestored extends ChannelEvent {
   val remoteNodeId: PublicKey
 }
 
-case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, data: ChannelData) extends AbstractChannelRestored
+case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, data: PersistentChannelData) extends AbstractChannelRestored
 
 case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends ChannelEvent
 
@@ -68,7 +68,7 @@ case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey
 // NB: this event is only sent when the channel is available.
 case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, commitments: AbstractCommitments) extends ChannelEvent
 
-case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: ChannelData) extends ChannelEvent
+case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: PersistentChannelData) extends ChannelEvent
 
 case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, refundAtBlock: BlockHeight) extends ChannelEvent
 

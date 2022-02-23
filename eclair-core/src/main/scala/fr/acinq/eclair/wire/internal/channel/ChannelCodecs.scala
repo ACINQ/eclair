@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.internal.channel
 
-import fr.acinq.eclair.channel.ChannelData
+import fr.acinq.eclair.channel.{ChannelData, PersistentChannelData}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2
@@ -65,7 +65,7 @@ object ChannelCodecs extends Logging {
    *
    * More info here: https://github.com/scodec/scodec/issues/122
    */
-  val channelDataCodec: Codec[ChannelData] = discriminated[ChannelData].by(byte)
+  val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(byte)
     .typecase(3, ChannelCodecs3.channelDataCodec)
     .typecase(2, ChannelCodecs2.channelDataCodec.decodeOnly)
     .typecase(1, ChannelCodecs1.channelDataCodec.decodeOnly)

@@ -324,7 +324,7 @@ object PostRestartHtlcCleaner {
   }
 
   /** @return incoming HTLCs that have been *cross-signed* (that potentially have been relayed). */
-  private def getIncomingHtlcs(channels: Seq[ChannelData], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey)(implicit log: LoggingAdapter): Seq[IncomingHtlc] = {
+  private def getIncomingHtlcs(channels: Seq[PersistentChannelData], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey)(implicit log: LoggingAdapter): Seq[IncomingHtlc] = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
@@ -356,7 +356,7 @@ object PostRestartHtlcCleaner {
       .toMap
 
   /** @return pending outgoing HTLCs, grouped by their upstream origin. */
-  private def getHtlcsRelayedOut(channels: Seq[ChannelData], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = {
+  private def getHtlcsRelayedOut(channels: Seq[PersistentChannelData], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = {
     val htlcsOut = channels
       .flatMap { c =>
         // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
@@ -398,7 +398,7 @@ object PostRestartHtlcCleaner {
    * and before it has effectively been removed. Such closed channels will automatically be removed once the channel is
    * restored.
    */
-  private def listLocalChannels(channelsDb: ChannelsDb): Seq[ChannelData] =
+  private def listLocalChannels(channelsDb: ChannelsDb): Seq[PersistentChannelData] =
     channelsDb.listLocalChannels().filterNot(c => Closing.isClosed(c, None).isDefined)
 
   /**

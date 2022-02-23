@@ -86,8 +86,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         bob2blockchain.expectMsgType[SetChannelId]
         bob2blockchain.expectMsgType[WatchFundingSpent]
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
-        awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+        awaitCond(getChannelData(alice).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
+        awaitCond(getChannelData(bob).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
         system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
         system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
         withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, Nil)))
@@ -150,7 +150,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv GetTxResponse (funder, tx found)", Tag("funding_unconfirmed")) { f =>
     import f._
     val sender = TestProbe()
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].data.fundingTx.get
+    val fundingTx = channelDataAs[ChannelData.WaitingForFundingConfirmed](alice).fundingTx.get
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
     alice2bob.expectMsgType[Error]
@@ -169,7 +169,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv GetTxResponse (funder, tx not found)", Tag("funding_unconfirmed")) { f =>
     import f._
     val sender = TestProbe()
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].data.fundingTx.get
+    val fundingTx = channelDataAs[ChannelData.WaitingForFundingConfirmed](alice).fundingTx.get
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
     alice2bob.expectMsgType[Error]
@@ -188,7 +188,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv GetTxResponse (fundee, tx found)", Tag("funding_unconfirmed")) { f =>
     import f._
     val sender = TestProbe()
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].data.fundingTx.get
+    val fundingTx = channelDataAs[ChannelData.WaitingForFundingConfirmed](alice).fundingTx.get
     bob ! CMD_FORCECLOSE(sender.ref)
     awaitCond(bob.stateName == CLOSING)
     bob2alice.expectMsgType[Error]
@@ -207,7 +207,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv GetTxResponse (fundee, tx not found)", Tag("funding_unconfirmed")) { f =>
     import f._
     val sender = TestProbe()
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].data.fundingTx.get
+    val fundingTx = channelDataAs[ChannelData.WaitingForFundingConfirmed](alice).fundingTx.get
     bob ! CMD_FORCECLOSE(sender.ref)
     awaitCond(bob.stateName == CLOSING)
     bob2alice.expectMsgType[Error]
@@ -226,7 +226,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv GetTxResponse (fundee, tx not found, timeout)", Tag("funding_unconfirmed")) { f =>
     import f._
     val sender = TestProbe()
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].data.fundingTx.get
+    val fundingTx = channelDataAs[ChannelData.WaitingForFundingConfirmed](alice).fundingTx.get
     bob ! CMD_FORCECLOSE(sender.ref)
     awaitCond(bob.stateName == CLOSING)
     bob2alice.expectMsgType[Error]

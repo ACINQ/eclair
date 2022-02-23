@@ -73,7 +73,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
       alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
+      awaitCond(getChannelData(alice).isInstanceOf[ChannelData.WaitingForFundingSigned])
       withFixture(test.toNoArgTest(FixtureParam(alice, aliceOrigin, alice2bob, bob2alice, alice2blockchain)))
     }
   }
@@ -84,7 +84,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    awaitCond(getChannelData(alice).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
     val fundingTxId = alice2blockchain.expectMsgType[WatchFundingSpent].txId
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx.txid === fundingTxId)
@@ -98,7 +98,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    awaitCond(getChannelData(alice).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
     alice2blockchain.expectMsgType[WatchFundingSpent]
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     // when we are funder, we keep our regular min depth even for wumbo channels
@@ -137,7 +137,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
 
   test("recv INPUT_DISCONNECTED") { f =>
     import f._
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].fundingTx
+    val fundingTx = channelDataAs[ChannelData.WaitingForFundingSigned](alice).fundingTx
     assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].rolledback.isEmpty)
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == CLOSED)

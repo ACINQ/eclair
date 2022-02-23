@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher
+import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.Init
@@ -44,7 +45,7 @@ import scala.io.Source
  * Created by PM on 30/05/2016.
  */
 
-class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSuiteLike with BeforeAndAfterAll {
+class RustyTestsSpec extends TestKitBaseClass with ChannelStateTestsHelperMethods with Matchers with FixtureAnyFunSuiteLike with BeforeAndAfterAll {
 
   case class FixtureParam(ref: List[String], res: List[String])
 
@@ -86,8 +87,8 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob2blockchain.expectMsgType[WatchFundingSpent]
       bob2blockchain.expectMsgType[WatchFundingConfirmed]
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].data.fundingTx.get
+      awaitCond(getChannelData(alice).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
+      val fundingTx = channelDataAs[ChannelData.WaitingForFundingConfirmed](alice).fundingTx.get
       alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       alice2blockchain.expectMsgType[WatchFundingLost]

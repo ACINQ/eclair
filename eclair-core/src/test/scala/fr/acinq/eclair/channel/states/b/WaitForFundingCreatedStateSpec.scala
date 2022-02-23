@@ -71,7 +71,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
+      awaitCond(getChannelData(bob).isInstanceOf[ChannelData.WaitingForFundingCreated])
       withFixture(test.toNoArgTest(FixtureParam(bob, alice2bob, bob2alice, bob2blockchain)))
     }
   }
@@ -80,7 +80,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     import f._
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
-    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    awaitCond(getChannelData(bob).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     bob2blockchain.expectMsgType[WatchFundingSpent]
@@ -92,7 +92,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     import f._
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
-    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    awaitCond(getChannelData(bob).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     bob2blockchain.expectMsgType[WatchFundingSpent]
@@ -104,7 +104,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
   test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>
     import f._
     val fees = Transactions.weight2fee(TestConstants.feeratePerKw, Transactions.DefaultCommitmentFormat.commitWeight)
-    val bobParams = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].localParams
+    val bobParams = channelDataAs[ChannelData.WaitingForFundingCreated](bob).localParams
     val reserve = bobParams.channelReserve
     val missing = 100.sat - fees - reserve
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
@@ -137,6 +137,12 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val c = CMD_CLOSE(ActorRef.noSender, None, None)
     sender.send(bob, c)
     sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv INPUT_DISCONNECTED") { f =>
+    import f._
+    bob ! INPUT_DISCONNECTED
     awaitCond(bob.stateName == CLOSED)
   }
 

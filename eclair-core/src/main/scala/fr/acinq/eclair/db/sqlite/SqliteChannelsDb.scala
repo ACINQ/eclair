@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.ChannelData
+import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
@@ -100,7 +100,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addOrUpdateChannel(data: ChannelData): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
+  override def addOrUpdateChannel(data: PersistentChannelData): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
     val bin = channelDataCodec.encode(data).require.toByteArray
     using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
       update.setBytes(1, bin)
@@ -115,7 +115,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  override def getChannel(channelId: ByteVector32): Option[ChannelData] = withMetrics("channels/get-channel", DbBackends.Sqlite) {
+  override def getChannel(channelId: ByteVector32): Option[PersistentChannelData] = withMetrics("channels/get-channel", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM local_channels WHERE channel_id=? AND is_closed=0")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.executeQuery.mapCodec(channelDataCodec).lastOption
@@ -162,7 +162,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  override def listLocalChannels(): Seq[ChannelData] = withMetrics("channels/list-local-channels", DbBackends.Sqlite) {
+  override def listLocalChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-local-channels", DbBackends.Sqlite) {
     using(sqlite.createStatement) { statement =>
       statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
         .mapCodec(channelDataCodec).toSeq

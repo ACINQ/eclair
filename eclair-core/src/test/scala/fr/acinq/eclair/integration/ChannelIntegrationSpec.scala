@@ -495,18 +495,18 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     val channelId = sender.expectMsgType[RES_GET_CHANNEL_DATA[ChannelData]].data.get.channelId
     awaitCond({
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
-      sender.expectMsgType[RES_GET_CHANNEL_DATA[_]].state == WAIT_FOR_FUNDING_LOCKED
+      sender.expectMsgType[RES_GET_CHANNEL_DATA[_]].data.get.isInstanceOf[ChannelData.WaitingForFundingLocked]
     })
 
     generateBlocks(6)
 
     // after 8 blocks the fundee is still waiting for more confirmations
     fundee.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
-    assert(sender.expectMsgType[RES_GET_CHANNEL_DATA[_]].state == WAIT_FOR_FUNDING_CONFIRMED)
+    assert(sender.expectMsgType[RES_GET_CHANNEL_DATA[_]].data.get.isInstanceOf[ChannelData.WaitingForFundingConfirmed])
 
     // after 8 blocks the funder is still waiting for funding_locked from the fundee
     funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
-    assert(sender.expectMsgType[RES_GET_CHANNEL_DATA[_]].state == WAIT_FOR_FUNDING_LOCKED)
+    assert(sender.expectMsgType[RES_GET_CHANNEL_DATA[_]].data.get.isInstanceOf[ChannelData.WaitingForFundingLocked])
 
     // simulate a disconnection
     sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
@@ -531,11 +531,11 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       ))
       sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](30 seconds)
 
-      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
-      val fundeeState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
-      val funderState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
-      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
+      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
+      val fundeeData = sender.expectMsgType[RES_GET_CHANNEL_DATA[_]].data.get
+      funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
+      val funderData = sender.expectMsgType[RES_GET_CHANNEL_DATA[_]].data.get
+      fundeeData.isInstanceOf[ChannelData.WaitingForFundingConfirmed] && funderData.isInstanceOf[ChannelData.WaitingForFundingLocked]
     }, max = 30 seconds, interval = 10 seconds)
 
     // 5 extra blocks make it 13, just the amount of confirmations needed

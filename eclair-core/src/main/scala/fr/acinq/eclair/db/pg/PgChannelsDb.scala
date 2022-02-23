@@ -19,7 +19,7 @@ package fr.acinq.eclair.db.pg
 import com.zaxxer.hikari.util.IsolationLevel
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
-import fr.acinq.eclair.channel.ChannelData
+import fr.acinq.eclair.channel.{ChannelData, PersistentChannelData}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
@@ -148,7 +148,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     )(logger)
   }
 
-  override def addOrUpdateChannel(data: ChannelData): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Postgres) {
+  override def addOrUpdateChannel(data: PersistentChannelData): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Postgres) {
     withLock { pg =>
       val bin = channelDataCodec.encode(data).require.toByteArray
       using(pg.prepareStatement(
@@ -166,7 +166,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
-  override def getChannel(channelId: ByteVector32): Option[ChannelData] = withMetrics("channels/get-channel", DbBackends.Postgres) {
+  override def getChannel(channelId: ByteVector32): Option[PersistentChannelData] = withMetrics("channels/get-channel", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT data FROM local.channels WHERE channel_id=? AND is_closed=FALSE")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -219,7 +219,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
-  override def listLocalChannels(): Seq[ChannelData] = withMetrics("channels/list-local-channels", DbBackends.Postgres) {
+  override def listLocalChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-local-channels", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.createStatement) { statement =>
         statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=FALSE")

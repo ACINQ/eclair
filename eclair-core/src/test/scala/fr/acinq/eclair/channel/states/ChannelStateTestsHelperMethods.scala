@@ -211,8 +211,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     bob2blockchain.expectMsgType[WatchFundingSpent]
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].data.fundingTx.get
+    awaitCond(getChannelData(alice).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
+    val fundingTx = channelDataAs[ChannelData.WaitingForFundingConfirmed](alice).fundingTx.get
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
     alice2blockchain.expectMsgType[WatchFundingLost]
@@ -457,6 +457,18 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
   def getClaimHtlcSuccessTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcSuccessTx] = rcp.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcSuccessTx) => tx }.toSeq
 
   def getClaimHtlcTimeoutTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcTimeoutTx] = rcp.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTimeoutTx) => tx }.toSeq
+
+  def getChannelData(channel: TestFSMRef[ChannelState, ChannelStateData, Channel]): ChannelData = {
+    val probe = TestProbe()
+    channel ! CMD_GET_CHANNEL_DATA(probe.ref)
+    probe.expectMsgType[RES_GET_CHANNEL_DATA[ChannelData]].data.get
+  }
+
+  def channelDataAs[D <: ChannelData](channel: TestFSMRef[ChannelState, ChannelStateData, Channel]): D = {
+    val probe = TestProbe()
+    channel ! CMD_GET_CHANNEL_DATA(probe.ref)
+    probe.expectMsgType[RES_GET_CHANNEL_DATA[D]].data.get
+  }
 
 }
 

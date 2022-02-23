@@ -316,7 +316,7 @@ private[channel] object ChannelCodecs2 {
         ("remoteChannelReestablish" | channelReestablishCodec)).as[ChannelData.WaitingForRemotePublishFutureCommitment]
   }
 
-  val channelDataCodec: Codec[ChannelData] = discriminated[ChannelData].by(uint16)
+  val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
     .typecase(0x00, Codecs.waitingForFundingConfirmedCodec)
     .typecase(0x01, Codecs.waitingForFundingLockedCodec)
     .typecase(0x02, Codecs.normalCodec)

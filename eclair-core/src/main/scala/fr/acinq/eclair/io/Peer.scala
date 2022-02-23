@@ -456,7 +456,7 @@ object Peer {
   case object DISCONNECTED extends State
   case object CONNECTED extends State
 
-  case class Init(storedChannels: Set[ChannelData])
+  case class Init(storedChannels: Set[PersistentChannelData])
   case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: ActorRef, isPersistent: Boolean) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }

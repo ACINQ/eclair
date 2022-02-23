@@ -90,8 +90,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob2blockchain.expectMsgType[WatchFundingSpent]
       bob2blockchain.expectMsgType[WatchFundingConfirmed]
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].data.fundingTx.get
+      awaitCond(getChannelData(alice).isInstanceOf[ChannelData.WaitingForFundingConfirmed])
+      val fundingTx = channelDataAs[ChannelData.WaitingForFundingConfirmed](alice).fundingTx.get
       alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       alice2blockchain.expectMsgType[WatchFundingLost]
