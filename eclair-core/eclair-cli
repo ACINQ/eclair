@@ -44,6 +44,7 @@ and COMMAND is one of the available commands:
     - allchannels
     - allupdates
     - channelstats
+    - channelbalances
 
   === Fees ===
     - networkfees

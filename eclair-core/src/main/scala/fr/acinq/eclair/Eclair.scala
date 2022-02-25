@@ -19,9 +19,6 @@ package fr.acinq.eclair
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
-import akka.actor.{ActorRef, typed}
-import akka.actor.typed.scaladsl.AskPattern.{Askable, schedulerFromActorSystem}
-import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, ClassicSchedulerOps}
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -148,6 +145,8 @@ trait Eclair {
   def getInfo()(implicit timeout: Timeout): Future[GetInfoResponse]
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
+
+  def channelBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
 
   def onChainBalance(): Future[OnChainBalance]
 
@@ -487,6 +486,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =
     (appKit.relayer ? GetOutgoingChannels()).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance))
+
+  override def channelBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =
+    (appKit.relayer ? GetOutgoingChannels(enabledOnly = false)).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance))
 
   override def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance] = {
     for {
