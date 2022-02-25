@@ -124,7 +124,6 @@ object IncomingPaymentPacket {
             }
           case _ if add.blinding_opt.isDefined => Left(InvalidOnionPayload(UInt64(12), 0))
           // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
-          case payload: PaymentOnion.RelayLegacyPayload => Right(ChannelRelayPacket(add, payload, next, None))
           case payload: PaymentOnion.ChannelRelayTlvPayload => Right(ChannelRelayPacket(add, payload, next, None))
         }
       case Right(DecodedOnionPacket(payload: PaymentOnion.FinalPayload, _)) =>

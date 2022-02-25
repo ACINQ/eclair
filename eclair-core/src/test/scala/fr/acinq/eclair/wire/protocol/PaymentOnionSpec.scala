@@ -46,19 +46,15 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(encoded.toByteVector == bin)
   }
 
-  test("encode/decode fixed-size (legacy) relay per-hop payload") {
-    val testCases = Map(
-      RelayLegacyPayload(ShortChannelId(0), 0 msat, CltvExpiry(0)) -> hex"00 0000000000000000 0000000000000000 00000000 000000000000000000000000",
-      RelayLegacyPayload(ShortChannelId(42), 142000 msat, CltvExpiry(500000)) -> hex"00 000000000000002a 0000000000022ab0 0007a120 000000000000000000000000",
-      RelayLegacyPayload(ShortChannelId(561), 1105 msat, CltvExpiry(1729)) -> hex"00 0000000000000231 0000000000000451 000006c1 000000000000000000000000"
+  test("decode fixed-size (legacy) channel relay per-hop payload") {
+    // The following payloads were valid when encoded with the deprecated legacy fixed-size format.
+    val testCases = Seq(
+      hex"00 0000000000000000 0000000000000000 00000000 000000000000000000000000",
+      hex"00 000000000000002a 0000000000022ab0 0007a120 000000000000000000000000",
+      hex"00 0000000000000231 0000000000000451 000006c1 000000000000000000000000"
     )
-
-    for ((expected, bin) <- testCases) {
-      val decoded = channelRelayPerHopPayloadCodec.decode(bin.bits).require.value
-      assert(decoded == expected)
-
-      val encoded = channelRelayPerHopPayloadCodec.encode(expected).require.bytes
-      assert(encoded == bin)
+    for (bin <- testCases) {
+      assert(channelRelayPerHopPayloadCodec.decode(bin.bits).isFailure)
     }
   }
 
@@ -79,7 +75,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
-  test("encode/decode variable-length (tlv) relay per-hop payload") {
+  test("encode/decode channel relay per-hop payload") {
     val testCases = Map(
       TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), OutgoingChannelId(ShortChannelId(1105))) -> hex"11 02020231 04012a 06080000000000000451",
       TlvStream[OnionPaymentPayloadTlv](Seq(AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), OutgoingChannelId(ShortChannelId(1105))), Seq(GenericTlv(65535, hex"06c1"))) -> hex"17 02020231 04012a 06080000000000000451 fdffff0206c1",
@@ -99,21 +95,21 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
-  test("encode/decode variable-length (tlv) relay per-hop blinded payload") {
+  test("encode/decode channel relay per-hop blinded payload") {
     val expected = TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
     val bin = hex"2d 0a080123456789abcdef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"
     channelRelayPerHopPayloadCodec.decode(bin.bits).require.value match {
       case decoded: BlindedChannelRelayPayload =>
         assert(decoded == BlindedChannelRelayPayload(expected))
         assert(decoded.encryptedRecipientData == hex"0123456789abcdef")
-        assert(decoded.blinding_opt == Some(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
+        assert(decoded.blinding_opt.contains(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
       case _ => fail()
     }
     val encoded = channelRelayPerHopPayloadCodec.encode(BlindedChannelRelayPayload(expected)).require.bytes
     assert(encoded == bin)
   }
 
-  test("encode/decode variable-length (tlv) node relay per-hop payload") {
+  test("encode/decode node relay per-hop payload") {
     val nodeId = PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")
     val expected = TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), OutgoingNodeId(nodeId))
     val bin = hex"2e 02020231 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"
@@ -124,15 +120,15 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(decoded.totalAmount == 561.msat)
     assert(decoded.outgoingCltv == CltvExpiry(42))
     assert(decoded.outgoingNodeId == nodeId)
-    assert(decoded.paymentSecret == None)
-    assert(decoded.invoiceFeatures == None)
-    assert(decoded.invoiceRoutingInfo == None)
+    assert(decoded.paymentSecret.isEmpty)
+    assert(decoded.invoiceFeatures.isEmpty)
+    assert(decoded.invoiceRoutingInfo.isEmpty)
 
     val encoded = nodeRelayPerHopPayloadCodec.encode(NodeRelayPayload(expected)).require.bytes
     assert(encoded == bin)
   }
 
-  test("encode/decode variable-length (tlv) node relay to legacy per-hop payload") {
+  test("encode/decode node relay to legacy per-hop payload") {
     val nodeId = PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")
     val features = hex"0a"
     val (node1, node2, node3) = (PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"), PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"), PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
@@ -147,17 +143,17 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(decoded == NodeRelayPayload(expected))
     assert(decoded.amountToForward == 561.msat)
     assert(decoded.totalAmount == 1105.msat)
-    assert(decoded.paymentSecret == Some(ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")))
+    assert(decoded.paymentSecret.contains(ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")))
     assert(decoded.outgoingCltv == CltvExpiry(42))
     assert(decoded.outgoingNodeId == nodeId)
-    assert(decoded.invoiceFeatures == Some(features))
-    assert(decoded.invoiceRoutingInfo == Some(routingHints))
+    assert(decoded.invoiceFeatures.contains(features))
+    assert(decoded.invoiceRoutingInfo.contains(routingHints))
 
     val encoded = nodeRelayPerHopPayloadCodec.encode(NodeRelayPayload(expected)).require.bytes
     assert(encoded == bin)
   }
 
-  test("encode/decode variable-length (tlv) final per-hop payload") {
+  test("encode/decode final per-hop payload") {
     val testCases = Map(
       TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), PaymentData(ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 0 msat)) -> hex"29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619",
       TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), PaymentData(ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 1105 msat)) -> hex"2b 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451",
@@ -183,7 +179,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
-  test("encode/decode variable-length (tlv) final per-hop payload with custom user records") {
+  test("encode/decode final per-hop payload with custom user records") {
     val tlvs = TlvStream[OnionPaymentPayloadTlv](Seq(AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), PaymentData(ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 0 msat)), Seq(GenericTlv(5432123456L, hex"16c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")))
     val bin = hex"53 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619 ff0000000143c7a0402016c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828"
 
@@ -212,7 +208,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
-  test("decode variable-length (tlv) relay per-hop payload missing information") {
+  test("decode channel relay per-hop payload missing information") {
     val testCases = Seq(
       (InvalidOnionPayload(UInt64(2), 0), hex"0d 04012a 06080000000000000451"), // missing amount
       (InvalidOnionPayload(UInt64(4), 0), hex"0e 02020231 06080000000000000451"), // missing cltv
@@ -227,7 +223,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
-  test("decode variable-length (tlv) node relay per-hop payload missing information") {
+  test("decode node relay per-hop payload missing information") {
     val testCases = Seq(
       (InvalidOnionPayload(UInt64(2), 0), hex"2a 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing amount
       (InvalidOnionPayload(UInt64(4), 0), hex"2b 02020231 fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing cltv
@@ -242,7 +238,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
-  test("decode variable-length (tlv) final per-hop payload missing information") {
+  test("decode final per-hop payload missing information") {
     val testCases = Seq(
       (InvalidOnionPayload(UInt64(2), 0), hex"25 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing amount
       (InvalidOnionPayload(UInt64(4), 0), hex"26 02020231 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing cltv

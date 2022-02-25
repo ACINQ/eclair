@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
+import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
@@ -223,7 +223,9 @@ object PaymentOnion {
   sealed trait TrampolinePacket extends PacketType
 
   /** Per-hop payload from an HTLC's payment onion (after decryption and decoding). */
-  sealed trait PerHopPayload
+  sealed trait PerHopPayload {
+    def records: TlvStream[OnionPaymentPayloadTlv]
+  }
 
   /** Per-hop payload for an intermediate node. */
   sealed trait RelayPayload extends PerHopPayload
@@ -244,8 +246,6 @@ object PaymentOnion {
     val amount: MilliSatoshi
     val expiry: CltvExpiry
   }
-
-  case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends ChannelRelayPayload with ChannelRelayData
 
   case class ChannelRelayTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends ChannelRelayPayload with ChannelRelayData {
     override val amountToForward = records.get[AmountToForward].get.amount
@@ -410,28 +410,20 @@ object PaymentOnionCodecs {
 
   val tlvPerHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete
 
-  private val legacyRelayPerHopPayloadCodec: Codec[RelayLegacyPayload] = (
-    ("realm" | constant(ByteVector.fromByte(0))) ::
-      ("short_channel_id" | shortchannelid) ::
-      ("amt_to_forward" | millisatoshi) ::
-      ("outgoing_cltv_value" | cltvExpiry) ::
-      ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[RelayLegacyPayload]
-
-  val channelRelayPerHopPayloadCodec: Codec[ChannelRelayPayload] = fallback(tlvPerHopPayloadCodec, legacyRelayPerHopPayloadCodec).narrow({
-    case Left(tlvs) => tlvs.get[EncryptedRecipientData] match {
-      case Some(_) if tlvs.get[AmountToForward].isDefined => Attempt.failure(ForbiddenTlv(UInt64(2)))
-      case Some(_) if tlvs.get[OutgoingCltv].isDefined => Attempt.failure(ForbiddenTlv(UInt64(4)))
-      case Some(_) => Attempt.successful(BlindedChannelRelayPayload(tlvs))
-      case None if tlvs.get[AmountToForward].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(2)))
-      case None if tlvs.get[OutgoingCltv].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-      case None if tlvs.get[OutgoingChannelId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(6)))
-      case None => Attempt.successful(ChannelRelayTlvPayload(tlvs))
-    }
-    case Right(legacy) => Attempt.successful(legacy)
+  val channelRelayPerHopPayloadCodec: Codec[ChannelRelayPayload] = tlvPerHopPayloadCodec.narrow({
+    tlvs =>
+      tlvs.get[EncryptedRecipientData] match {
+        case Some(_) if tlvs.get[AmountToForward].isDefined => Attempt.failure(ForbiddenTlv(UInt64(2)))
+        case Some(_) if tlvs.get[OutgoingCltv].isDefined => Attempt.failure(ForbiddenTlv(UInt64(4)))
+        case Some(_) => Attempt.successful(BlindedChannelRelayPayload(tlvs))
+        case None if tlvs.get[AmountToForward].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(2)))
+        case None if tlvs.get[OutgoingCltv].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
+        case None if tlvs.get[OutgoingChannelId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(6)))
+        case None => Attempt.successful(ChannelRelayTlvPayload(tlvs))
+      }
   }, {
-    case legacy: RelayLegacyPayload => Right(legacy)
-    case ChannelRelayTlvPayload(tlvs) => Left(tlvs)
-    case BlindedChannelRelayPayload(tlvs) => Left(tlvs)
+    case ChannelRelayTlvPayload(tlvs) => tlvs
+    case BlindedChannelRelayPayload(tlvs) => tlvs
   })
 
   val nodeRelayPerHopPayloadCodec: Codec[NodeRelayPayload] = tlvPerHopPayloadCodec.narrow({

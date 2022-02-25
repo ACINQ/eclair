@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import akka.actor.ActorRef
 import akka.actor.Status.Failure
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
@@ -483,7 +482,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val paymentSecret = randomBytes32()
     val payload = FinalTlvPayload(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, 0 msat), OnionPaymentPayloadTlv.KeySend(paymentPreimage))))
 
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithKeySend, IncomingPaymentPacket.FinalPacket(add, payload))
@@ -505,13 +504,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val paymentSecret = randomBytes32()
     val payload = FinalTlvPayload(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, 0 msat), OnionPaymentPayloadTlv.KeySend(paymentPreimage))))
 
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, payload))
 
     f.register.expectMsg(Register.Forward(null, add.channelId, CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(42000 msat, nodeParams.currentBlockHeight)), commit = true)))
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
   }
 
   test("PaymentHandler should reject incoming payments if the invoice doesn't exist") { f =>
@@ -519,7 +518,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val paymentHash = randomBytes32()
     val paymentSecret = randomBytes32()
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithoutMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, paymentSecret, None)))
@@ -533,7 +532,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val paymentHash = randomBytes32()
     val paymentSecret = randomBytes32()
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, paymentSecret, Some(hex"012345"))))
@@ -547,7 +546,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val paymentPreimage = randomBytes32()
     val paymentHash = Crypto.sha256(paymentPreimage)
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     val fulfill = DoFulfill(paymentPreimage, MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, Queue(HtlcPart(1000 msat, add))))
