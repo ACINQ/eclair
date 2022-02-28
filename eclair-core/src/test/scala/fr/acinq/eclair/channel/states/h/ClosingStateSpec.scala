@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishRepla
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, HtlcSuccessTx, HtlcTimeoutTx, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
@@ -62,59 +62,55 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val eventListener = TestProbe()
 
     if (unconfirmedFundingTx) {
-      within(30 seconds) {
-        val channelConfig = ChannelConfig.standard
-        val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
-        val aliceInit = Init(aliceParams.initFeatures)
-        val bobInit = Init(bobParams.initFeatures)
-        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
-        alice2blockchain.expectMsgType[SetChannelId]
-        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
-        bob2blockchain.expectMsgType[SetChannelId]
-        alice2bob.expectMsgType[OpenChannel]
-        alice2bob.forward(bob)
-        bob2alice.expectMsgType[AcceptChannel]
-        bob2alice.forward(alice)
-        alice2bob.expectMsgType[FundingCreated]
-        alice2bob.forward(bob)
-        bob2alice.expectMsgType[FundingSigned]
-        bob2alice.forward(alice)
-        alice2blockchain.expectMsgType[SetChannelId]
-        alice2blockchain.expectMsgType[WatchFundingSpent]
-        alice2blockchain.expectMsgType[WatchFundingConfirmed]
-        bob2blockchain.expectMsgType[SetChannelId]
-        bob2blockchain.expectMsgType[WatchFundingSpent]
-        bob2blockchain.expectMsgType[WatchFundingConfirmed]
-        awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-        system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, Nil)))
-      }
+      val channelConfig = ChannelConfig.standard
+      val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
+      val aliceInit = Init(aliceParams.initFeatures)
+      val bobInit = Init(bobParams.initFeatures)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
+      alice2blockchain.expectMsgType[SetChannelId]
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob2blockchain.expectMsgType[SetChannelId]
+      alice2bob.expectMsgType[OpenChannel]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[AcceptChannel]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[FundingCreated]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingSigned]
+      bob2alice.forward(alice)
+      alice2blockchain.expectMsgType[SetChannelId]
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
+      bob2blockchain.expectMsgType[SetChannelId]
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+      awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+      system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+      system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, Nil)))
     } else {
-      within(30 seconds) {
-        reachNormal(setup, test.tags)
-        system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-        system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
-        val bobCommitTxs: List[CommitTxAndRemoteSig] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
-          val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
-          crossSign(alice, bob, alice2bob, bob2alice)
-          relayerB.expectMsgType[RelayForward]
-          val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig
-          fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
-          // alice forwards the fulfill upstream
-          relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Fulfill]]
-          crossSign(bob, alice, bob2alice, alice2bob)
-          // bob confirms that it has forwarded the fulfill to alice
-          awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(htlc.channelId).isEmpty)
-          val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig
-          bobCommitTx1 :: bobCommitTx2 :: Nil
-        }).flatten
+      reachNormal(setup, test.tags)
+      system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+      system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+      val bobCommitTxs: List[CommitTxAndRemoteSig] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
+        val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
+        crossSign(alice, bob, alice2bob, bob2alice)
+        relayerB.expectMsgType[RelayForward]
+        val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig
+        fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
+        // alice forwards the fulfill upstream
+        relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Fulfill]]
+        crossSign(bob, alice, bob2alice, alice2bob)
+        // bob confirms that it has forwarded the fulfill to alice
+        awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(htlc.channelId).isEmpty)
+        val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig
+        bobCommitTx1 :: bobCommitTx2 :: Nil
+      }).flatten
 
-        awaitCond(alice.stateName == NORMAL)
-        awaitCond(bob.stateName == NORMAL)
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, bobCommitTxs)))
-      }
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(bob.stateName == NORMAL)
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, bobCommitTxs)))
     }
   }
 

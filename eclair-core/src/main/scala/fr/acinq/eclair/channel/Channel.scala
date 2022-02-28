@@ -21,6 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, TypedActorRefO
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
+import com.softwaremill.quicklens.{ModifyPimp, QuicklensEach}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Logs.LogCategory
@@ -1517,21 +1518,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
       context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, tx))
       // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
-      val d1 = d.copy(
-        localCommitPublished = d.localCommitPublished.map(localCommitPublished => {
-          // If the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
-          val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommitHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-          claimHtlcTx_opt.foreach(claimHtlcTx => {
-            txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
-            blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepthBlocks)
-          })
-          Closing.updateLocalCommitPublished(localCommitPublished1, tx)
-        }),
-        remoteCommitPublished = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-        nextRemoteCommitPublished = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-        futureRemoteCommitPublished = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-        revokedCommitPublished = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
-      )
+      val d1 = d
+        .modify(_.localCommitPublished.each).using { localCommitPublished =>
+        // If the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
+        val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommitHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+        claimHtlcTx_opt.foreach { claimHtlcTx =>
+          txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
+          blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepthBlocks)
+        }
+        Closing.updateLocalCommitPublished(localCommitPublished1, tx)
+      }
+        .modifyAll(_.remoteCommitPublished.each, _.nextRemoteCommitPublished.each, _.futureRemoteCommitPublished.each).using(Closing.updateRemoteCommitPublished(_, tx))
+        .modify(_.revokedCommitPublished.each).using(Closing.updateRevokedCommitPublished(_, tx))
+
       // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
       if (d1.localCommitPublished.exists(_.commitTx.txid == tx.txid)) {
         context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay.toInt))
