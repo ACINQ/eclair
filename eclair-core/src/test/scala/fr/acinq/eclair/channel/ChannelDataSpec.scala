@@ -108,7 +108,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     {
       val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp2) {
         case (current, tx) =>
-          val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+          val (current1, Some(_)) = Closing.claimLocalCommit2ndStageHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
           Closing.updateLocalCommitPublished(current1, tx)
       }
       assert(!lcp3.isDone)
@@ -129,7 +129,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     {
       val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp2) {
         case (current, tx) =>
-          val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+          val (current1, Some(_)) = Closing.claimLocalCommit2ndStageHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
           Closing.updateLocalCommitPublished(current1, tx)
       }
       assert(!lcp3.isDone)
@@ -148,7 +148,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
       assert(lcp5.claimHtlcDelayedTxs.length === 3)
 
       val newHtlcSuccessTx = lcp5.htlcTxs(remainingHtlcOutpoint).get.tx
-      val (lcp6, Some(newClaimHtlcDelayedTx)) = Closing.claimLocalCommitHtlcTxOutput(lcp5, nodeParams.channelKeyManager, aliceClosing.commitments, newHtlcSuccessTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+      val (lcp6, Some(newClaimHtlcDelayedTx)) = Closing.claimLocalCommit2ndStageHtlcTxOutput(lcp5, nodeParams.channelKeyManager, aliceClosing.commitments, newHtlcSuccessTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
       assert(lcp6.claimHtlcDelayedTxs.length === 4)
 
       val lcp7 = Closing.updateLocalCommitPublished(lcp6, newHtlcSuccessTx)
@@ -163,7 +163,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
       val remoteHtlcSuccess = rcp.claimHtlcTxs.values.collectFirst { case Some(tx: ClaimHtlcSuccessTx) => tx }.get
       val lcp3 = (htlcSuccessTxs.map(_.tx) ++ Seq(remoteHtlcSuccess.tx)).foldLeft(lcp2) {
         case (current, tx) =>
-          val (current1, _) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+          val (current1, _) = Closing.claimLocalCommit2ndStageHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
           Closing.updateLocalCommitPublished(current1, tx)
       }
       assert(lcp3.claimHtlcDelayedTxs.length === 1)
@@ -174,7 +174,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
       val remainingHtlcTimeoutTxs = htlcTimeoutTxs.filter(_.input.outPoint != remoteHtlcSuccess.input.outPoint)
       assert(remainingHtlcTimeoutTxs.length === 1)
-      val (lcp5, Some(remainingClaimHtlcTx)) = Closing.claimLocalCommitHtlcTxOutput(lcp4, nodeParams.channelKeyManager, aliceClosing.commitments, remainingHtlcTimeoutTxs.head.tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+      val (lcp5, Some(remainingClaimHtlcTx)) = Closing.claimLocalCommit2ndStageHtlcTxOutput(lcp4, nodeParams.channelKeyManager, aliceClosing.commitments, remainingHtlcTimeoutTxs.head.tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
       assert(lcp5.claimHtlcDelayedTxs.length === 2)
 
       val lcp6 = (remainingHtlcTimeoutTxs.map(_.tx) ++ Seq(remainingClaimHtlcTx.tx)).foldLeft(lcp5) {
@@ -191,7 +191,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     {
       val lcp3 = htlcTimeoutTxs.map(_.tx).foldLeft(lcp2) {
         case (current, tx) =>
-          val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+          val (current1, Some(_)) = Closing.claimLocalCommit2ndStageHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
           Closing.updateLocalCommitPublished(current1, tx)
       }
       assert(!lcp3.isDone)

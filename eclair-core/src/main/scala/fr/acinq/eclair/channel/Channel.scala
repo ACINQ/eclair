@@ -1525,7 +1525,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay.toInt))
         }
         // if the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
-        val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommitHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+        val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommit2ndStageHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
         claimHtlcTx_opt.foreach { claimHtlcTx =>
           txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
           blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepthBlocks)
