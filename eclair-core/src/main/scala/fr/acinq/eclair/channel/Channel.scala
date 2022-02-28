@@ -1520,7 +1520,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
       val d1 = d
         .modify(_.localCommitPublished.each).using { localCommitPublished =>
-        // If the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
+        // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
+        if (localCommitPublished.commitTx.txid == tx.txid) {
+          context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay.toInt))
+        }
+        // if the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
         val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommitHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
         claimHtlcTx_opt.foreach { claimHtlcTx =>
           txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
@@ -1531,10 +1535,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         .modifyAll(_.remoteCommitPublished.each, _.nextRemoteCommitPublished.each, _.futureRemoteCommitPublished.each).using(Closing.updateRemoteCommitPublished(_, tx))
         .modify(_.revokedCommitPublished.each).using(Closing.updateRevokedCommitPublished(_, tx))
 
-      // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
-      if (d1.localCommitPublished.exists(_.commitTx.txid == tx.txid)) {
-        context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay.toInt))
-      }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedOutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
         case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
