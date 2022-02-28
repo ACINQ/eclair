@@ -1427,21 +1427,23 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       Commitments.sendFulfill(d.commitments, c) match {
         case Right((commitments1, _)) =>
           log.info("got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain")
-          val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
-          val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
-          val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => {
+          val d1 = d
+            .modify(_.commitments).setTo(commitments1)
+            .modify(_.localCommitPublished.each).using(localCommitPublished => Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
+            .modify(_.remoteCommitPublished.each).using(remoteCommitPublished => Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
+            .modify(_.nextRemoteCommitPublished.each).using { remoteCommitPublished =>
             require(commitments1.remoteNextCommitInfo.isLeft, "next remote commit must be defined")
             val remoteCommit = commitments1.remoteNextCommitInfo.swap.toOption.get.nextRemoteCommit
             Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, remoteCommit, remoteCommitPublished.commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-          })
-
-          def republish(): Unit = {
-            localCommitPublished1.foreach(lcp => doPublish(lcp, commitments1))
-            remoteCommitPublished1.foreach(rcp => doPublish(rcp, commitments1))
-            nextRemoteCommitPublished1.foreach(rcp => doPublish(rcp, commitments1))
           }
 
-          handleCommandSuccess(c, d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1)) storing() calling republish()
+          def republish(): Unit = {
+            d1.localCommitPublished.foreach(lcp => doPublish(lcp, commitments1))
+            d1.remoteCommitPublished.foreach(rcp => doPublish(rcp, commitments1))
+            d1.nextRemoteCommitPublished.foreach(rcp => doPublish(rcp, commitments1))
+          }
+
+          handleCommandSuccess(c, d1) storing() calling republish()
         case Left(cause) => handleCommandError(cause, c)
       }
 
