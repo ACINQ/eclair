@@ -85,6 +85,8 @@ case class Commitments(channelId: ByteVector32,
 
   require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
 
+  def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
+
   /**
    *
    * @param scriptPubKey optional local script pubkey provided in CMD_CLOSE
