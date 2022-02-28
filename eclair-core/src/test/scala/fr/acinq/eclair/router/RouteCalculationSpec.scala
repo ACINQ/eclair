@@ -1847,6 +1847,29 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val route :: Nil = routes
     assert(route2Ids(route) === 1 :: 2 :: Nil)
   }
+
+  test("use direct channel when available") {
+    // A ===> B ===> C
+    //  \___________/
+    val recentChannelId = ShortChannelId("399990x1x2").toLong
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 1 msat, 1, capacity = 100_000_000 sat),
+      makeEdge(2L, b, c, 1 msat, 1, capacity = 100_000_000 sat),
+      makeEdge(recentChannelId, a, c, 1000 msat, 100),
+    ))
+
+    val wr = WeightRatios(
+      baseFactor = 0,
+      cltvDeltaFactor = 0,
+      ageFactor = 0.5,
+      capacityFactor = 0.5,
+      hopCost = RelayFees(500 msat, 200),
+    )
+    val Success(routes) = findRoute(g, a, c, DEFAULT_AMOUNT_MSAT, 100_000_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Left(wr)), currentBlockHeight = BlockHeight(400000))
+    assert(routes.distinct.length == 1)
+    val route :: Nil = routes
+    assert(route2Ids(route) === recentChannelId :: Nil)
+  }
 }
 
 object RouteCalculationSpec {
