@@ -651,29 +651,7 @@ object Helpers {
         })
       }
 
-      // those are the preimages to existing received htlcs
-      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
-
-      val htlcTxs: Map[OutPoint, Option[HtlcTx]] = localCommit.htlcTxsAndRemoteSigs.collect {
-        case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
-          if (preimages.contains(paymentHash)) {
-            // incoming htlc for which we have the preimage: we can spend it immediately
-            txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
-              val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
-              Right(Transactions.addSigs(txInfo, localSig, remoteSig, preimages(paymentHash), commitmentFormat))
-            }
-          } else {
-            // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
-            // preimage later, otherwise it will eventually timeout and they will get their funds back
-            txInfo.input.outPoint -> None
-          }
-        case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
-          // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-          txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
-            val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
-            Right(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
-          }
-      }.toMap
+      val htlcTxs: Map[OutPoint, Option[HtlcTx]] = claimLocalCommit1stStageHtlcTxOutput(keyManager, commitments)
 
       // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
       val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
@@ -693,6 +671,39 @@ object Helpers {
         claimHtlcDelayedTxs = Nil, // we will claim these once the htlc txs are confirmed
         claimAnchorTxs = claimAnchorTxs,
         irrevocablySpent = Map.empty)
+    }
+
+    /**
+     * Claim the output of a local commit tx corresponding to HTLCs.
+     */
+    def claimLocalCommit1stStageHtlcTxOutput(keyManager: ChannelKeyManager, commitments: Commitments)(implicit log: LoggingAdapter): Map[OutPoint, Option[HtlcTx]] = {
+      import commitments._
+      val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index.toInt)
+
+      // those are the preimages to existing received htlcs
+      val hash2Preimage = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
+
+      localCommit.htlcTxsAndRemoteSigs.collect {
+        case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
+          if (hash2Preimage.contains(paymentHash)) {
+            // incoming htlc for which we have the preimage: we can spend it immediately
+            txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
+              val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
+              Right(Transactions.addSigs(txInfo, localSig, remoteSig, hash2Preimage(paymentHash), commitmentFormat))
+            }
+          } else {
+            // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
+            // preimage later, otherwise it will eventually timeout and they will get their funds back
+            txInfo.input.outPoint -> None
+          }
+        case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
+          // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
+          txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
+            val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
+            Right(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
+          }
+      }.toMap
     }
 
     /**
@@ -733,57 +744,12 @@ object Helpers {
      */
     def claimRemoteCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, currentBlockHeight: BlockHeight, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
-      val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, commitments.channelConfig, commitments.channelFeatures, remoteCommit.index, commitments.localParams, commitments.remoteParams, commitments.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
-      require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
-      val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
-      val localFundingPubkey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
-      val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
-      val remoteHtlcPubkey = Generators.derivePubKey(commitments.remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-      val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
-      val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
-      val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
-      val outputs = makeCommitTxOutputs(!commitments.localParams.isFunder, commitments.remoteParams.dustLimit, remoteRevocationPubkey, commitments.localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, commitments.remoteParams.fundingPubKey, localFundingPubkey, remoteCommit.spec, commitments.commitmentFormat)
 
-      // we need to use a rather high fee for htlc-claim because we compete with the counterparty
-      val feeratePerKwHtlc = feeEstimator.getFeeratePerKw(target = 2)
-
-      // those are the preimages to existing received htlcs
-      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
-
-      // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
-      val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = remoteCommit.spec.htlcs.collect {
-        case OutgoingHtlc(add: UpdateAddHtlc) =>
-          // NB: we first generate the tx skeleton and finalize it below if we have the preimage, so we set logSuccess to false to avoid logging twice
-          withTxGenerationLog("claim-htlc-success", logSuccess = false) {
-            Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
-          }.map(claimHtlcTx => {
-            if (preimages.contains(add.paymentHash)) {
-              // incoming htlc for which we have the preimage: we can spend it immediately
-              claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-success") {
-                val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
-                Right(Transactions.addSigs(claimHtlcTx, sig, preimages(add.paymentHash)))
-              }
-            } else {
-              // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
-              // preimage later, otherwise it will eventually timeout and they will get their funds back
-              claimHtlcTx.input.outPoint -> None
-            }
-          })
-        case IncomingHtlc(add: UpdateAddHtlc) =>
-          // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-          // NB: we first generate the tx skeleton and finalize it below, so we set logSuccess to false to avoid logging twice
-          withTxGenerationLog("claim-htlc-timeout", logSuccess = false) {
-            Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
-          }.map(claimHtlcTx => {
-            claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-timeout") {
-              val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
-              Right(Transactions.addSigs(claimHtlcTx, sig))
-            }
-          })
-      }.toSeq.flatten.toMap
+      val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimRemoteCommitHtlcOutputs(keyManager, commitments, remoteCommit, feeEstimator)
 
       // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
       val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
+      val localFundingPubkey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
         withTxGenerationLog("local-anchor") {
           Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, confirmCommitBefore)
@@ -837,6 +803,59 @@ object Helpers {
           }
         }
       }
+    }
+
+    /**
+     * Claim our htlc outputs only
+     */
+    def claimRemoteCommitHtlcOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, feeEstimator: FeeEstimator)(implicit log: LoggingAdapter): Map[OutPoint, Option[ClaimHtlcTx]] = {
+      val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, commitments.channelConfig, commitments.channelFeatures, remoteCommit.index, commitments.localParams, commitments.remoteParams, commitments.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+      require(remoteCommitTx.tx.txid == remoteCommit.txid, "txid mismatch, cannot recompute the current remote commit tx")
+      val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
+      val localFundingPubkey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
+      val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+      val remoteHtlcPubkey = Generators.derivePubKey(commitments.remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
+      val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+      val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
+      val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+      val outputs = makeCommitTxOutputs(!commitments.localParams.isFunder, commitments.remoteParams.dustLimit, remoteRevocationPubkey, commitments.localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, commitments.remoteParams.fundingPubKey, localFundingPubkey, remoteCommit.spec, commitments.commitmentFormat)
+      // we need to use a rather high fee for htlc-claim because we compete with the counterparty
+      val feeratePerKwHtlc = feeEstimator.getFeeratePerKw(target = 2)
+
+      // those are the preimages to existing received htlcs
+      val hash2Preimage = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
+
+      // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
+      remoteCommit.spec.htlcs.collect {
+        case OutgoingHtlc(add: UpdateAddHtlc) =>
+          // NB: we first generate the tx skeleton and finalize it below if we have the preimage, so we set logSuccess to false to avoid logging twice
+          withTxGenerationLog("claim-htlc-success", logSuccess = false) {
+            Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
+          }.map(claimHtlcTx => {
+            if (hash2Preimage.contains(add.paymentHash)) {
+              // incoming htlc for which we have the preimage: we can spend it immediately
+              claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-success") {
+                val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
+                Right(Transactions.addSigs(claimHtlcTx, sig, hash2Preimage(add.paymentHash)))
+              }
+            } else {
+              // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
+              // preimage later, otherwise it will eventually timeout and they will get their funds back
+              claimHtlcTx.input.outPoint -> None
+            }
+          })
+        case IncomingHtlc(add: UpdateAddHtlc) =>
+          // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
+          // NB: we first generate the tx skeleton and finalize it below, so we set logSuccess to false to avoid logging twice
+          withTxGenerationLog("claim-htlc-timeout", logSuccess = false) {
+            Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
+          }.map(claimHtlcTx => {
+            claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-timeout") {
+              val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
+              Right(Transactions.addSigs(claimHtlcTx, sig))
+            }
+          })
+      }.toSeq.flatten.toMap
     }
 
     /**

@@ -822,7 +822,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           Commitments.sendCommit(d.commitments, keyManager) match {
             case Right((commitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", Commitments.specs2String(commitments1))
-              val nextRemoteCommit = commitments1.remoteNextCommitInfo.swap.toOption.get.nextRemoteCommit
+              val nextRemoteCommit = commitments1.nextRemoteCommit_opt.get
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter
@@ -1429,13 +1429,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           log.info("got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain")
           val d1 = d
             .modify(_.commitments).setTo(commitments1)
-            .modify(_.localCommitPublished.each).using(localCommitPublished => Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
-            .modify(_.remoteCommitPublished.each).using(remoteCommitPublished => Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
-            .modify(_.nextRemoteCommitPublished.each).using { remoteCommitPublished =>
-            require(commitments1.remoteNextCommitInfo.isLeft, "next remote commit must be defined")
-            val remoteCommit = commitments1.remoteNextCommitInfo.swap.toOption.get.nextRemoteCommit
-            Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, remoteCommit, remoteCommitPublished.commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-          }
+            .modify(_.localCommitPublished.each.htlcTxs).using(_ => Closing.claimLocalCommit1stStageHtlcTxOutput(keyManager, commitments1))
+            .modify(_.remoteCommitPublished.each.claimHtlcTxs).using(_ => Closing.claimRemoteCommitHtlcOutputs(keyManager, commitments1, commitments1.remoteCommit, nodeParams.onChainFeeConf.feeEstimator))
+            .modify(_.nextRemoteCommitPublished.each.claimHtlcTxs).using(_ => Closing.claimRemoteCommitHtlcOutputs(keyManager, commitments1, commitments1.nextRemoteCommit_opt.get, nodeParams.onChainFeeConf.feeEstimator))
 
           def republish(): Unit = {
             d1.localCommitPublished.foreach(lcp => doPublish(lcp, commitments1))
@@ -2436,7 +2432,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       stay()
     } else {
       val commitTx = d.commitments.fullySignedLocalCommitTx(keyManager).tx
-      val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+      val localCommitPublished = Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
       val nextData = d match {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
         case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))
@@ -2514,7 +2510,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isFunder), "remote-commit"))
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+    val remoteCommitPublished = Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, negotiating.closingTxProposed.flatten.map(_.unsignedTx), remoteCommitPublished = Some(remoteCommitPublished))
@@ -2530,7 +2526,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
     val remoteCommitPublished = RemoteCommitPublished(
       commitTx = commitTx,
-      claimMainOutputTx = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets),
+      claimMainOutputTx = Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets),
       claimHtlcTxs = Map.empty,
       claimAnchorTxs = List.empty,
       irrevocablySpent = Map.empty)
@@ -2546,7 +2542,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isFunder), "next-remote-commit"))
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+    val remoteCommitPublished = Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, negotiating.closingTxProposed.flatten.map(_.unsignedTx), nextRemoteCommitPublished = Some(remoteCommitPublished))
@@ -2576,7 +2572,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
 
   private def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
-    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
+    Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.commitInput, tx, d.commitments.localParams.isFunder), "revoked-commit"))
@@ -2624,7 +2620,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
 
     // let's try to spend our current local tx
     val commitTx = d.commitments.fullySignedLocalCommitTx(keyManager).tx
-    val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+    val localCommitPublished = Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
 
     goto(ERR_INFORMATION_LEAK) calling doPublish(localCommitPublished, d.commitments) sending error
   }
