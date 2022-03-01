@@ -398,7 +398,7 @@ object PaymentPacketSpec {
 
   val finalAmount = 42000000 msat
   val currentBlockCount = 400000
-  val finalExpiry = CltvExpiry(currentBlockCount) + Channel.MIN_CLTV_EXPIRY_DELTA
+  val finalExpiry = CltvExpiry(currentBlockCount) + Bolt11Invoice.MIN_CLTV_EXPIRY_DELTA
   val paymentPreimage = randomBytes32()
   val paymentHash = Crypto.sha256(paymentPreimage)
   val paymentSecret = randomBytes32()

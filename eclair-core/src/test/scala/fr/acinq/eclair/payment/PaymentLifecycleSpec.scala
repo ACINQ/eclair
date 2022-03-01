@@ -56,12 +56,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   val defaultAmountMsat = 142000000 msat
   val defaultMaxFee = 4260000 msat // 3% of defaultAmountMsat
-  val defaultExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(BlockHeight(40000))
+  val defaultExpiry = Bolt11Invoice.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(BlockHeight(40000))
   val defaultPaymentPreimage = randomBytes32()
   val defaultPaymentHash = Crypto.sha256(defaultPaymentPreimage)
   val defaultOrigin = Origin.LocalCold(UUID.randomUUID())
   val defaultExternalId = UUID.randomUUID().toString
-  val defaultInvoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
+  val defaultInvoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, Left("test"), Bolt11Invoice.MIN_CLTV_EXPIRY_DELTA)
   val defaultRouteParams = TestConstants.Alice.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
 
   def defaultRouteRequest(source: PublicKey, target: PublicKey, cfg: SendPaymentConfig): RouteRequest = RouteRequest(source, target, defaultAmountMsat, defaultMaxFee, paymentContext = Some(cfg.paymentContext), routeParams = defaultRouteParams)

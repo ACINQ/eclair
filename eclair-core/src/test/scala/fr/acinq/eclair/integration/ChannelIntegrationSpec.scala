@@ -368,7 +368,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     def send(amountMsat: MilliSatoshi, paymentHandler: ActorRef, paymentInitiator: ActorRef): UUID = {
       sender.send(paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Invoice]
-      val sendReq = SendPaymentToNode(amountMsat, invoice, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams)
+      val sendReq = SendPaymentToNode(amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams)
       sender.send(paymentInitiator, sendReq)
       sender.expectMsgType[UUID]
     }
@@ -684,7 +684,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val invoice = sender.expectMsgType[Invoice]
 
     // then we make the actual payment
-    sender.send(nodes("C").paymentInitiator, SendPaymentToNode(amountMsat, invoice, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams))
+    sender.send(nodes("C").paymentInitiator, SendPaymentToNode(amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent](60 seconds)
     assert(ps.id == paymentId)
