@@ -89,11 +89,9 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
 
   lazy val relativeExpiry: FiniteDuration = FiniteDuration(relativeExpiry_opt.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
 
-  lazy val minFinalCltvExpiryDelta_opt: Option[CltvExpiryDelta] = tags.collectFirst {
+  lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = tags.collectFirst {
     case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
-  }
-
-  lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = minFinalCltvExpiryDelta_opt.getOrElse(MIN_CLTV_EXPIRY_DELTA)
+  }.getOrElse(MIN_CLTV_EXPIRY_DELTA)
 
   lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeatures() }.getOrElse(Features.empty[InvoiceFeature])
 
