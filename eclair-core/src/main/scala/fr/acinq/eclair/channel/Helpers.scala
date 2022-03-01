@@ -793,60 +793,50 @@ object Helpers {
         }
       ).flatten
 
-      if (commitments.channelFeatures.paysDirectlyToWallet) {
-        RemoteCommitPublished(
-          commitTx = tx,
-          claimMainOutputTx = None,
-          claimHtlcTxs = htlcTxs,
-          claimAnchorTxs = claimAnchorTxs,
-          irrevocablySpent = Map.empty
-        )
-      } else {
-        claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets).copy(
-          claimHtlcTxs = htlcTxs,
-          claimAnchorTxs = claimAnchorTxs,
-        )
-      }
+      RemoteCommitPublished(
+        commitTx = tx,
+        claimMainOutputTx = claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets),
+        claimHtlcTxs = htlcTxs,
+        claimAnchorTxs = claimAnchorTxs,
+        irrevocablySpent = Map.empty
+      )
     }
 
     /**
-     * Claim our main output only (not necessary if option_static_remotekey was negotiated).
+     * Claim our main output only
      *
      * @param commitments              either our current commitment data in case of usual remote uncooperative closing
      *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
      *                                 to get some constant parameters, not commitment data
      * @param remotePerCommitmentPoint the remote perCommitmentPoint corresponding to this commitment
      * @param tx                       the remote commitment transaction that has just been published
-     * @return a transaction claiming our main output
+     * @return an optional [[ClaimRemoteCommitMainOutputTx]] transaction claiming our main output
      */
-    def claimRemoteCommitMainOutput(keyManager: ChannelKeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
-      val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
-      val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-      val localPaymentPoint = keyManager.paymentPoint(channelKeyPath).publicKey
-      val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
+    def claimRemoteCommitMainOutput(keyManager: ChannelKeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[ClaimRemoteCommitMainOutputTx] = {
+      if (commitments.channelFeatures.paysDirectlyToWallet) {
+        // the commitment tx sends funds directly to our wallet, no claim tx needed
+        None
+      } else {
+        val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
+        val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+        val localPaymentPoint = keyManager.paymentPoint(channelKeyPath).publicKey
+        val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
-      val mainTx = commitments.commitmentFormat match {
-        case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
-          Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit, localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
-            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
-            Transactions.addSigs(claimMain, localPubkey, sig)
-          })
-        }
-        case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-          Transactions.makeClaimRemoteDelayedOutputTx(tx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
-            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitments.commitmentFormat)
-            Transactions.addSigs(claimMain, sig)
-          })
+        commitments.commitmentFormat match {
+          case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
+            Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit, localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
+              val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
+              Transactions.addSigs(claimMain, localPubkey, sig)
+            })
+          }
+          case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+            Transactions.makeClaimRemoteDelayedOutputTx(tx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
+              val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitments.commitmentFormat)
+              Transactions.addSigs(claimMain, sig)
+            })
+          }
         }
       }
-
-      RemoteCommitPublished(
-        commitTx = tx,
-        claimMainOutputTx = mainTx,
-        claimHtlcTxs = Map.empty,
-        claimAnchorTxs = Nil,
-        irrevocablySpent = Map.empty
-      )
     }
 
     /**

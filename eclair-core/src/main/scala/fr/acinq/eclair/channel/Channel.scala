@@ -2526,17 +2526,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   private def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
     log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isFunder), "future-remote-commit"))
-    d.commitments.channelFeatures match {
-      case ct if ct.paysDirectlyToWallet =>
-        val remoteCommitPublished = RemoteCommitPublished(commitTx, None, Map.empty, List.empty, Map.empty)
-        val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
-        goto(CLOSING) using nextData storing() // we don't need to claim our main output in the remote commit because it already spends to our wallet address
-      case _ =>
-        val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
-        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-        val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
-        goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
-    }
+    val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
+    val remoteCommitPublished = RemoteCommitPublished(
+      commitTx = commitTx,
+      claimMainOutputTx = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets),
+      claimHtlcTxs = Map.empty,
+      claimAnchorTxs = List.empty,
+      irrevocablySpent = Map.empty)
+    val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
+    goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
   }
 
   private def handleRemoteSpentNext(commitTx: Transaction, d: HasCommitments) = {
