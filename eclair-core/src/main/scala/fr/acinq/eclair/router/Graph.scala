@@ -306,7 +306,7 @@ object Graph {
     val totalCltv = prev.cltv + cltv
     weightRatios match {
       case Left(weightRatios) =>
-        val hopCost = nodeFee(weightRatios.hopCost, prev.amount)
+        val hopCost = if (edge.desc.a == sender) 0 msat else nodeFee(weightRatios.hopCost, prev.amount)
         import RoutingHeuristics._
 
         // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
