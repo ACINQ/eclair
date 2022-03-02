@@ -306,7 +306,7 @@ object MultiPartHandler {
   }
 
   private def validatePaymentCltv(nodeParams: NodeParams, payment: IncomingPaymentPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
-    val minExpiry = record.invoice.minFinalCltvExpiryDelta.getOrElse(nodeParams.channelConf.minFinalExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight)
+    val minExpiry = record.invoice.minFinalCltvExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
     if (payment.add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false

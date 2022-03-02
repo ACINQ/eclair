@@ -272,9 +272,8 @@ object PaymentInitiator {
     def invoice: Invoice
     def recipientNodeId: PublicKey = invoice.nodeId
     def paymentHash: ByteVector32 = invoice.paymentHash
-    def fallbackFinalExpiryDelta: CltvExpiryDelta
     // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: BlockHeight): CltvExpiry = invoice.minFinalCltvExpiryDelta.getOrElse(fallbackFinalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
+    def finalExpiry(currentBlockHeight: BlockHeight): CltvExpiry = invoice.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
     // @formatter:on
   }
 
@@ -290,21 +289,18 @@ object PaymentInitiator {
    *                                 the payment will automatically be retried in case of TrampolineFeeInsufficient errors.
    *                                 For example, [(10 msat, 144), (15 msat, 288)] will first send a payment with a fee of 10
    *                                 msat and cltv of 144, and retry with 15 msat and 288 in case an error occurs.
-   * @param fallbackFinalExpiryDelta expiry delta for the final recipient when the [[invoice]] doesn't specify it.
    * @param routeParams              (optional) parameters to fine-tune the routing algorithm.
    */
   case class SendTrampolinePayment(recipientAmount: MilliSatoshi,
                                    invoice: Invoice,
                                    trampolineNodeId: PublicKey,
                                    trampolineAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)],
-                                   fallbackFinalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
                                    routeParams: RouteParams) extends SendRequestedPayment
 
   /**
    * @param recipientAmount          amount that should be received by the final recipient (usually from a Bolt 11 invoice).
    * @param invoice                  Bolt 11 invoice.
    * @param maxAttempts              maximum number of retries.
-   * @param fallbackFinalExpiryDelta expiry delta for the final recipient when the [[invoice]] doesn't specify it.
    * @param externalId               (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param assistedRoutes           (optional) routing hints (usually from a Bolt 11 invoice).
    * @param routeParams              (optional) parameters to fine-tune the routing algorithm.
@@ -314,7 +310,6 @@ object PaymentInitiator {
   case class SendPaymentToNode(recipientAmount: MilliSatoshi,
                                invoice: Invoice,
                                maxAttempts: Int,
-                               fallbackFinalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
                                externalId: Option[String] = None,
                                assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                routeParams: RouteParams,
@@ -360,7 +355,6 @@ object PaymentInitiator {
    * @param recipientAmount          amount that should be received by the final recipient (usually from a Bolt 11 invoice).
    *                                 This amount may be split between multiple requests if using MPP.
    * @param invoice                  Bolt 11 invoice.
-   * @param fallbackFinalExpiryDelta expiry delta for the final recipient when the [[invoice]] doesn't specify it.
    * @param route                    route to use to reach either the final recipient or the first trampoline node.
    * @param externalId               (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param parentId                 id of the whole payment. When manually sending a multi-part payment, you need to make
@@ -379,7 +373,6 @@ object PaymentInitiator {
   case class SendPaymentToRoute(amount: MilliSatoshi,
                                 recipientAmount: MilliSatoshi,
                                 invoice: Invoice,
-                                fallbackFinalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
                                 route: PredefinedRoute,
                                 externalId: Option[String],
                                 parentId: Option[UUID],

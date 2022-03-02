@@ -42,7 +42,7 @@ trait Invoice {
 
   val relativeExpiry: FiniteDuration
 
-  val minFinalCltvExpiryDelta: Option[CltvExpiryDelta]
+  val minFinalCltvExpiryDelta: CltvExpiryDelta
 
   val features: Features[InvoiceFeature]
 

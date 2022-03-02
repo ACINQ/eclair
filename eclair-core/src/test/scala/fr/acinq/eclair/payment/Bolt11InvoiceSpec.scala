@@ -283,7 +283,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(invoice.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(invoice.fallbackAddress() === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
-    assert(invoice.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(12)))
+    assert(invoice.minFinalCltvExpiryDelta === CltvExpiryDelta(12))
     assert(invoice.tags.size == 6)
     assert(invoice.sign(priv).toString == ref)
   }
@@ -347,7 +347,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.description === Left("Blockstream Store: 88.85 USD for Blockstream Ledger Nano S x 1, \"Back In My Day\" Sticker x 2, \"I Got Lightning Working\" Sticker x 2 and 1 more items"))
     assert(invoice.fallbackAddress().isEmpty)
     assert(invoice.relativeExpiry === 604800.seconds)
-    assert(invoice.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(10)))
+    assert(invoice.minFinalCltvExpiryDelta === CltvExpiryDelta(10))
     assert(invoice.routingInfo === Seq(Seq(ExtraHop(PublicKey(hex"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"), ShortChannelId("589390x3312x1"), 1000 msat, 2500, CltvExpiryDelta(40)))))
     assert(invoice.sign(priv).toString === ref)
   }
@@ -401,7 +401,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(field1 == field)
 
     val invoice = Bolt11Invoice(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = Left("Some invoice"), minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345 unixsec)
-    assert(invoice.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(18)))
+    assert(invoice.minFinalCltvExpiryDelta === CltvExpiryDelta(18))
     val serialized = invoice.toString
     val pr1 = Bolt11Invoice.fromString(serialized)
     assert(invoice == pr1)

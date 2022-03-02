@@ -173,12 +173,12 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee")))
     val pr1 = sender.expectMsgType[Invoice]
-    assert(pr1.minFinalCltvExpiryDelta === Some(nodeParams.channelConf.minFinalExpiryDelta))
+    assert(pr1.minFinalCltvExpiryDelta === nodeParams.channelConf.minFinalExpiryDelta)
     assert(pr1.relativeExpiry === Alice.nodeParams.invoiceExpiry)
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee with custom expiry"), expirySeconds_opt = Some(60)))
     val pr2 = sender.expectMsgType[Invoice]
-    assert(pr2.minFinalCltvExpiryDelta === Some(nodeParams.channelConf.minFinalExpiryDelta))
+    assert(pr2.minFinalCltvExpiryDelta === nodeParams.channelConf.minFinalExpiryDelta)
     assert(pr2.relativeExpiry === 60.seconds)
   }
 
