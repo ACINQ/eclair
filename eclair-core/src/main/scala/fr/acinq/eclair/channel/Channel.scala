@@ -1428,7 +1428,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         case c: CMD_FAIL_MALFORMED_HTLC => Commitments.sendFailMalformed(d.commitments, c)
       }) match {
         case Right((commitments1, _)) =>
-          log.info("got valid fulfill/fail for htlc={}, recalculating htlc transactions", c.id)
+          log.info("got valid settlement for htlc={}, recalculating htlc transactions", c.id)
 
           val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => localCommitPublished.copy(htlcTxs = Closing.LocalClose.claimHtlcOutputs(keyManager, commitments1)))
           val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(keyManager, commitments1, commitments1.remoteCommit, nodeParams.onChainFeeConf.feeEstimator)))
