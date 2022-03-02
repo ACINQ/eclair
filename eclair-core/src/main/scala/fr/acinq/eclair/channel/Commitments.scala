@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
-import fr.acinq.eclair.payment.{Bolt11Invoice, OutgoingPaymentPacket}
+import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -324,7 +324,7 @@ object Commitments {
       return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockHeight = currentHeight))
     }
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
-    val maxExpiry = Bolt11Invoice.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentHeight)
+    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentHeight)
     if (cmd.cltvExpiry >= maxExpiry) {
       return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockHeight = currentHeight))
     }

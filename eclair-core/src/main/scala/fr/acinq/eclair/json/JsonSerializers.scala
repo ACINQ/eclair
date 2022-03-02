@@ -341,8 +341,12 @@ object DirectedHtlcSerializer extends ConvertClassSerializer[DirectedHtlc](h => 
 
 object InvoiceSerializer extends MinimalSerializer({
   case p: Bolt11Invoice =>
-    val expiry = p.relativeExpiry_opt.map(ex => JField("expiry", JLong(ex))).toSeq
-    val minFinalCltvExpiry = Seq(JField("minFinalCltvExpiry", JInt(p.minFinalCltvExpiryDelta.toInt)))
+    val expiry = p.tags
+      .collectFirst { case expiry: Bolt11Invoice.Expiry => expiry.toLong } // NB: we look at fields directly because the value has a spec-defined default
+      .map(ex => JField("expiry", JLong(ex))).toSeq
+    val minFinalCltvExpiry = p.tags
+      .collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta } // NB: we look at fields directly because the value has a spec-defined default
+      .map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount_opt.map(msat => JField("amount", JLong(msat.toLong))).toSeq
     val features = JField("features", Extraction.decompose(p.features)(
       DefaultFormats +

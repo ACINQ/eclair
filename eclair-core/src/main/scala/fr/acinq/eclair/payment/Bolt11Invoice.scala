@@ -77,21 +77,13 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   /**
    * @return the fallback address if any. It could be a script address, pubkey address, ..
    */
-  def fallbackAddress(): Option[String] = tags.collectFirst {
-    case f: Bolt11Invoice.FallbackAddress => Bolt11Invoice.FallbackAddress.toAddress(f, prefix)
-  }
+  def fallbackAddress(): Option[String] = tags.collectFirst { case f: Bolt11Invoice.FallbackAddress => Bolt11Invoice.FallbackAddress.toAddress(f, prefix) }
 
   lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfo => t.path }
 
-  lazy val relativeExpiry_opt: Option[Long] = tags.collectFirst {
-    case expiry: Bolt11Invoice.Expiry => expiry.toLong
-  }
+  lazy val relativeExpiry: FiniteDuration = FiniteDuration(tags.collectFirst { case expiry: Bolt11Invoice.Expiry => expiry.toLong }.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
 
-  lazy val relativeExpiry: FiniteDuration = FiniteDuration(relativeExpiry_opt.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-
-  lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = tags.collectFirst {
-    case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
-  }.getOrElse(MIN_CLTV_EXPIRY_DELTA)
+  lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = tags.collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta }.getOrElse(DEFAULT_MIN_CLTV_EXPIRY_DELTA)
 
   lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeatures() }.getOrElse(Features.empty[InvoiceFeature])
 
@@ -134,8 +126,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
 
 object Bolt11Invoice {
   val DEFAULT_EXPIRY_SECONDS: Long = 3600
-  val MIN_CLTV_EXPIRY_DELTA: CltvExpiryDelta = CltvExpiryDelta(18)
-  val MAX_CLTV_EXPIRY_DELTA: CltvExpiryDelta = CltvExpiryDelta(7 * 144) // one week
+  val DEFAULT_MIN_CLTV_EXPIRY_DELTA: CltvExpiryDelta = CltvExpiryDelta(18)
 
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",

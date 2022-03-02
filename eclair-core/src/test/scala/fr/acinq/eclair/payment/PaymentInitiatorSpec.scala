@@ -97,7 +97,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("forward payment with user custom tlv records") { f =>
     import f._
     val customRecords = Seq(GenericTlv(500L, hex"01020304"), GenericTlv(501L, hex"d34db33f"))
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, None, paymentHash, priv_c.privateKey, Left("test"), Bolt11Invoice.MIN_CLTV_EXPIRY_DELTA)
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, None, paymentHash, priv_c.privateKey, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
     val req = SendPaymentToNode(finalAmount, invoice, 1, userCustomTlvs = customRecords, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
@@ -116,7 +116,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     payFsm.expectMsgType[SendPaymentConfig]
     val FinalTlvPayload(tlvs) = payFsm.expectMsgType[PaymentLifecycle.SendPayment].finalPayload
     assert(tlvs.get[AmountToForward].get.amount == finalAmount)
-    assert(tlvs.get[OutgoingCltv].get.cltv == Bolt11Invoice.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1))
+    assert(tlvs.get[OutgoingCltv].get.cltv == Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1))
     assert(tlvs.get[KeySend].get.paymentPreimage == paymentPreimage)
     assert(tlvs.unknown.isEmpty)
   }
