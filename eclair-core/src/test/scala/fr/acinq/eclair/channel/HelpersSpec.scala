@@ -259,12 +259,12 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       ClosingTx(InputInfo(OutPoint(ByteVector32.Zeroes, 0), TxOut(1000 sat, Nil), Nil), Transaction(2, Nil, txOut, 0), None)
     }
 
-    assert(Closing.checkClosingDustAmounts(toClosingTx(allOutputsAboveDust)))
-    assert(!Closing.checkClosingDustAmounts(toClosingTx(p2pkhBelowDust)))
-    assert(!Closing.checkClosingDustAmounts(toClosingTx(p2shBelowDust)))
-    assert(!Closing.checkClosingDustAmounts(toClosingTx(p2wpkhBelowDust)))
-    assert(!Closing.checkClosingDustAmounts(toClosingTx(p2wshBelowDust)))
-    assert(!Closing.checkClosingDustAmounts(toClosingTx(futureSegwitBelowDust)))
+    assert(Closing.MutualClose.checkClosingDustAmounts(toClosingTx(allOutputsAboveDust)))
+    assert(!Closing.MutualClose.checkClosingDustAmounts(toClosingTx(p2pkhBelowDust)))
+    assert(!Closing.MutualClose.checkClosingDustAmounts(toClosingTx(p2shBelowDust)))
+    assert(!Closing.MutualClose.checkClosingDustAmounts(toClosingTx(p2wpkhBelowDust)))
+    assert(!Closing.MutualClose.checkClosingDustAmounts(toClosingTx(p2wshBelowDust)))
+    assert(!Closing.MutualClose.checkClosingDustAmounts(toClosingTx(futureSegwitBelowDust)))
   }
 
   test("tell closing type") {

@@ -85,6 +85,8 @@ case class Commitments(channelId: ByteVector32,
 
   require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
 
+  def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
+
   /**
    *
    * @param scriptPubKey optional local script pubkey provided in CMD_CLOSE
@@ -95,7 +97,7 @@ case class Commitments(channelId: ByteVector32,
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
     (channelFeatures.hasFeature(Features.UpfrontShutdownScript), scriptPubKey) match {
       case (true, Some(script)) if script != localParams.defaultFinalScriptPubKey => Left(InvalidFinalScript(channelId))
-      case (false, Some(script)) if !Closing.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (false, Some(script)) if !Closing.MutualClose.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
       case (false, Some(script)) => Right(script)
       case _ => Right(localParams.defaultFinalScriptPubKey)
     }
@@ -110,9 +112,9 @@ case class Commitments(channelId: ByteVector32,
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
     (channelFeatures.hasFeature(Features.UpfrontShutdownScript), remoteParams.shutdownScript) match {
-      case (false, _) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (false, _) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => Left(InvalidFinalScript(channelId))
       case (false, _) => Right(remoteScriptPubKey)
-      case (true, None) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) =>
+      case (true, None) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) =>
         // this is a special case: they set option_upfront_shutdown_script but did not provide a script in their open/accept message
         Left(InvalidFinalScript(channelId))
       case (true, None) => Right(remoteScriptPubKey)

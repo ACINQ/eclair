@@ -308,8 +308,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val bobState = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
     val bobKeyManager = bob.underlyingActor.nodeParams.channelKeyManager
     val bobScript = bobState.localShutdown.scriptPubKey
-    val (_, aliceClosingSigned) = Closing.makeClosingTx(aliceKeyManager, aliceState.commitments, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
-    val (_, bobClosingSigned) = Closing.makeClosingTx(bobKeyManager, bobState.commitments, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
+    val (_, aliceClosingSigned) = Closing.MutualClose.makeClosingTx(aliceKeyManager, aliceState.commitments, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
+    val (_, bobClosingSigned) = Closing.MutualClose.makeClosingTx(bobKeyManager, bobState.commitments, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
     (aliceClosingSigned.copy(tlvStream = TlvStream.empty), bobClosingSigned.copy(tlvStream = TlvStream.empty))
   }
 
