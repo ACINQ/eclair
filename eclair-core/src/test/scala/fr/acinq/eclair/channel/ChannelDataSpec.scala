@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateAddHtlc}
-import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
+import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -69,7 +69,11 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     Fixture(alice, HtlcWithPreimage(rb2, htlcb2), bob, HtlcWithPreimage(ra2, htlca2), TestProbe())
   }
 
-  test("local commit published") {
+  case class LocalFixture(nodeParams: NodeParams, alice: TestFSMRef[ChannelState, ChannelData, Channel], alicePendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, htlcTimeoutTxs: Seq[HtlcTimeoutTx], htlcSuccessTxs: Seq[HtlcSuccessTx], probe: TestProbe) {
+    val aliceClosing = alice.stateData.asInstanceOf[DATA_CLOSING]
+  }
+
+  private def setupClosingChannelForLocalClose(): LocalFixture = {
     val f = setupClosingChannel()
     import f._
 
@@ -104,115 +108,127 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(bobClosing.remoteCommitPublished.nonEmpty)
     val rcp = bobClosing.remoteCommitPublished.get
 
-    // Scenario 1: our HTLC txs are confirmed, they claim the remaining HTLC
-    {
-      val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp2) {
-        case (current, tx) =>
-          val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-          Closing.updateLocalCommitPublished(current1, tx)
-      }
-      assert(!lcp3.isDone)
-      assert(lcp3.claimHtlcDelayedTxs.length === 3)
-
-      val lcp4 = lcp3.claimHtlcDelayedTxs.map(_.tx).foldLeft(lcp3) {
-        case (current, tx) => Closing.updateLocalCommitPublished(current, tx)
-      }
-      assert(!lcp4.isDone)
-
-      val theirClaimHtlcTimeout = rcp.claimHtlcTxs(remainingHtlcOutpoint)
-      assert(theirClaimHtlcTimeout !== None)
-      val lcp5 = Closing.updateLocalCommitPublished(lcp4, theirClaimHtlcTimeout.get.tx)
-      assert(lcp5.isDone)
-    }
-
-    // Scenario 2: our HTLC txs are confirmed and we claim the remaining HTLC
-    {
-      val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp2) {
-        case (current, tx) =>
-          val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-          Closing.updateLocalCommitPublished(current1, tx)
-      }
-      assert(!lcp3.isDone)
-      assert(lcp3.claimHtlcDelayedTxs.length === 3)
-
-      val lcp4 = lcp3.claimHtlcDelayedTxs.map(_.tx).foldLeft(lcp3) {
-        case (current, tx) => Closing.updateLocalCommitPublished(current, tx)
-      }
-      assert(!lcp4.isDone)
-
-      alice ! CMD_FULFILL_HTLC(alicePendingHtlc.htlc.id, alicePendingHtlc.preimage, replyTo_opt = Some(probe.ref))
-      probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
-      val aliceClosing1 = alice.stateData.asInstanceOf[DATA_CLOSING]
-      val lcp5 = aliceClosing1.localCommitPublished.get.copy(irrevocablySpent = lcp4.irrevocablySpent, claimHtlcDelayedTxs = lcp4.claimHtlcDelayedTxs)
-      assert(lcp5.htlcTxs(remainingHtlcOutpoint) !== None)
-      assert(lcp5.claimHtlcDelayedTxs.length === 3)
-
-      val newHtlcSuccessTx = lcp5.htlcTxs(remainingHtlcOutpoint).get.tx
-      val (lcp6, Some(newClaimHtlcDelayedTx)) = Closing.claimLocalCommitHtlcTxOutput(lcp5, nodeParams.channelKeyManager, aliceClosing.commitments, newHtlcSuccessTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-      assert(lcp6.claimHtlcDelayedTxs.length === 4)
-
-      val lcp7 = Closing.updateLocalCommitPublished(lcp6, newHtlcSuccessTx)
-      assert(!lcp7.isDone)
-
-      val lcp8 = Closing.updateLocalCommitPublished(lcp7, newClaimHtlcDelayedTx.tx)
-      assert(lcp8.isDone)
-    }
-
-    // Scenario 3: they fulfill one of the HTLCs we sent them
-    {
-      val remoteHtlcSuccess = rcp.claimHtlcTxs.values.collectFirst { case Some(tx: ClaimHtlcSuccessTx) => tx }.get
-      val lcp3 = (htlcSuccessTxs.map(_.tx) ++ Seq(remoteHtlcSuccess.tx)).foldLeft(lcp2) {
-        case (current, tx) =>
-          val (current1, _) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-          Closing.updateLocalCommitPublished(current1, tx)
-      }
-      assert(lcp3.claimHtlcDelayedTxs.length === 1)
-      assert(!lcp3.isDone)
-
-      val lcp4 = Closing.updateLocalCommitPublished(lcp3, lcp3.claimHtlcDelayedTxs.head.tx)
-      assert(!lcp4.isDone)
-
-      val remainingHtlcTimeoutTxs = htlcTimeoutTxs.filter(_.input.outPoint != remoteHtlcSuccess.input.outPoint)
-      assert(remainingHtlcTimeoutTxs.length === 1)
-      val (lcp5, Some(remainingClaimHtlcTx)) = Closing.claimLocalCommitHtlcTxOutput(lcp4, nodeParams.channelKeyManager, aliceClosing.commitments, remainingHtlcTimeoutTxs.head.tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-      assert(lcp5.claimHtlcDelayedTxs.length === 2)
-
-      val lcp6 = (remainingHtlcTimeoutTxs.map(_.tx) ++ Seq(remainingClaimHtlcTx.tx)).foldLeft(lcp5) {
-        case (current, tx) => Closing.updateLocalCommitPublished(current, tx)
-      }
-      assert(!lcp6.isDone)
-
-      val theirClaimHtlcTimeout = rcp.claimHtlcTxs(remainingHtlcOutpoint)
-      val lcp7 = Closing.updateLocalCommitPublished(lcp6, theirClaimHtlcTimeout.get.tx)
-      assert(lcp7.isDone)
-    }
-
-    // Scenario 4: they get back the HTLCs they sent us
-    {
-      val lcp3 = htlcTimeoutTxs.map(_.tx).foldLeft(lcp2) {
-        case (current, tx) =>
-          val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-          Closing.updateLocalCommitPublished(current1, tx)
-      }
-      assert(!lcp3.isDone)
-      assert(lcp3.claimHtlcDelayedTxs.length === 2)
-
-      val lcp4 = lcp3.claimHtlcDelayedTxs.map(_.tx).foldLeft(lcp3) {
-        case (current, tx) => Closing.updateLocalCommitPublished(current, tx)
-      }
-      assert(!lcp4.isDone)
-
-      val remoteHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(rcp).map(_.tx)
-      assert(remoteHtlcTimeoutTxs.length === 2)
-      val lcp5 = Closing.updateLocalCommitPublished(lcp4, remoteHtlcTimeoutTxs.head)
-      assert(!lcp5.isDone)
-
-      val lcp6 = Closing.updateLocalCommitPublished(lcp5, remoteHtlcTimeoutTxs.last)
-      assert(lcp6.isDone)
-    }
+    LocalFixture(nodeParams, f.alice, alicePendingHtlc, remainingHtlcOutpoint, lcp2, rcp, htlcTimeoutTxs, htlcSuccessTxs, probe)
   }
 
-  test("remote commit published") {
+  test("local commit published (our HTLC txs are confirmed, they claim the remaining HTLC)") {
+    val f = setupClosingChannelForLocalClose()
+    import f._
+
+    val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp) {
+      case (current, tx) =>
+        val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+        Closing.updateLocalCommitPublished(current1, tx)
+    }
+    assert(!lcp3.isDone)
+    assert(lcp3.claimHtlcDelayedTxs.length === 3)
+
+    val lcp4 = lcp3.claimHtlcDelayedTxs.map(_.tx).foldLeft(lcp3) {
+      case (current, tx) => Closing.updateLocalCommitPublished(current, tx)
+    }
+    assert(!lcp4.isDone)
+
+    val theirClaimHtlcTimeout = rcp.claimHtlcTxs(remainingHtlcOutpoint)
+    assert(theirClaimHtlcTimeout !== None)
+    val lcp5 = Closing.updateLocalCommitPublished(lcp4, theirClaimHtlcTimeout.get.tx)
+    assert(lcp5.isDone)
+  }
+
+  test("local commit published (our HTLC txs are confirmed and we claim the remaining HTLC)") {
+    val f = setupClosingChannelForLocalClose()
+    import f._
+
+    val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp) {
+      case (current, tx) =>
+        val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+        Closing.updateLocalCommitPublished(current1, tx)
+    }
+    assert(!lcp3.isDone)
+    assert(lcp3.claimHtlcDelayedTxs.length === 3)
+
+    val lcp4 = lcp3.claimHtlcDelayedTxs.map(_.tx).foldLeft(lcp3) {
+      case (current, tx) => Closing.updateLocalCommitPublished(current, tx)
+    }
+    assert(!lcp4.isDone)
+
+    alice ! CMD_FULFILL_HTLC(alicePendingHtlc.htlc.id, alicePendingHtlc.preimage, replyTo_opt = Some(probe.ref))
+    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    val aliceClosing1 = alice.stateData.asInstanceOf[DATA_CLOSING]
+    val lcp5 = aliceClosing1.localCommitPublished.get.copy(irrevocablySpent = lcp4.irrevocablySpent, claimHtlcDelayedTxs = lcp4.claimHtlcDelayedTxs)
+    assert(lcp5.htlcTxs(remainingHtlcOutpoint) !== None)
+    assert(lcp5.claimHtlcDelayedTxs.length === 3)
+
+    val newHtlcSuccessTx = lcp5.htlcTxs(remainingHtlcOutpoint).get.tx
+    val (lcp6, Some(newClaimHtlcDelayedTx)) = Closing.claimLocalCommitHtlcTxOutput(lcp5, nodeParams.channelKeyManager, aliceClosing.commitments, newHtlcSuccessTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+    assert(lcp6.claimHtlcDelayedTxs.length === 4)
+
+    val lcp7 = Closing.updateLocalCommitPublished(lcp6, newHtlcSuccessTx)
+    assert(!lcp7.isDone)
+
+    val lcp8 = Closing.updateLocalCommitPublished(lcp7, newClaimHtlcDelayedTx.tx)
+    assert(lcp8.isDone)
+  }
+
+  test("local commit published (they fulfill one of the HTLCs we sent them)") {
+    val f = setupClosingChannelForLocalClose()
+    import f._
+
+    val remoteHtlcSuccess = rcp.claimHtlcTxs.values.collectFirst { case Some(tx: ClaimHtlcSuccessTx) => tx }.get
+    val lcp3 = (htlcSuccessTxs.map(_.tx) ++ Seq(remoteHtlcSuccess.tx)).foldLeft(lcp) {
+      case (current, tx) =>
+        val (current1, _) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+        Closing.updateLocalCommitPublished(current1, tx)
+    }
+    assert(lcp3.claimHtlcDelayedTxs.length === 1)
+    assert(!lcp3.isDone)
+
+    val lcp4 = Closing.updateLocalCommitPublished(lcp3, lcp3.claimHtlcDelayedTxs.head.tx)
+    assert(!lcp4.isDone)
+
+    val remainingHtlcTimeoutTxs = htlcTimeoutTxs.filter(_.input.outPoint != remoteHtlcSuccess.input.outPoint)
+    assert(remainingHtlcTimeoutTxs.length === 1)
+    val (lcp5, Some(remainingClaimHtlcTx)) = Closing.claimLocalCommitHtlcTxOutput(lcp4, nodeParams.channelKeyManager, aliceClosing.commitments, remainingHtlcTimeoutTxs.head.tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+    assert(lcp5.claimHtlcDelayedTxs.length === 2)
+
+    val lcp6 = (remainingHtlcTimeoutTxs.map(_.tx) ++ Seq(remainingClaimHtlcTx.tx)).foldLeft(lcp5) {
+      case (current, tx) => Closing.updateLocalCommitPublished(current, tx)
+    }
+    assert(!lcp6.isDone)
+
+    val theirClaimHtlcTimeout = rcp.claimHtlcTxs(remainingHtlcOutpoint)
+    val lcp7 = Closing.updateLocalCommitPublished(lcp6, theirClaimHtlcTimeout.get.tx)
+    assert(lcp7.isDone)
+  }
+
+  test("local commit published (they get back the HTLCs they sent us)") {
+    val f = setupClosingChannelForLocalClose()
+    import f._
+
+    val lcp3 = htlcTimeoutTxs.map(_.tx).foldLeft(lcp) {
+      case (current, tx) =>
+        val (current1, Some(_)) = Closing.claimLocalCommitHtlcTxOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+        Closing.updateLocalCommitPublished(current1, tx)
+    }
+    assert(!lcp3.isDone)
+    assert(lcp3.claimHtlcDelayedTxs.length === 2)
+
+    val lcp4 = lcp3.claimHtlcDelayedTxs.map(_.tx).foldLeft(lcp3) {
+      case (current, tx) => Closing.updateLocalCommitPublished(current, tx)
+    }
+    assert(!lcp4.isDone)
+
+    val remoteHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(rcp).map(_.tx)
+    assert(remoteHtlcTimeoutTxs.length === 2)
+    val lcp5 = Closing.updateLocalCommitPublished(lcp4, remoteHtlcTimeoutTxs.head)
+    assert(!lcp5.isDone)
+
+    val lcp6 = Closing.updateLocalCommitPublished(lcp5, remoteHtlcTimeoutTxs.last)
+    assert(lcp6.isDone)
+  }
+
+  case class RemoteFixture(bob: TestFSMRef[ChannelState, ChannelData, Channel], bobPendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, claimHtlcTimeoutTxs: Seq[ClaimHtlcTimeoutTx], claimHtlcSuccessTxs: Seq[ClaimHtlcSuccessTx], probe: TestProbe)
+
+  private def setupClosingChannelForRemoteClose(): RemoteFixture = {
     val f = setupClosingChannel()
     import f._
 
@@ -245,73 +261,83 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(aliceClosing.localCommitPublished.nonEmpty)
     val lcp = aliceClosing.localCommitPublished.get
 
-    // Scenario 1: our claim-HTLC txs are confirmed, they claim the remaining HTLC
-    {
-      val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp2) {
-        case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
-      }
-      assert(!rcp3.isDone)
-
-      val theirHtlcTimeout = lcp.htlcTxs(remainingHtlcOutpoint)
-      assert(theirHtlcTimeout !== None)
-      val rcp4 = Closing.updateRemoteCommitPublished(rcp3, theirHtlcTimeout.get.tx)
-      assert(rcp4.isDone)
-    }
-
-    // Scenario 2: our claim-HTLC txs are confirmed and we claim the remaining HTLC
-    {
-      val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp2) {
-        case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
-      }
-      assert(!rcp3.isDone)
-
-      bob ! CMD_FULFILL_HTLC(bobPendingHtlc.htlc.id, bobPendingHtlc.preimage, replyTo_opt = Some(probe.ref))
-      probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
-      val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
-      val rcp4 = bobClosing1.remoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
-      assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) !== None)
-      val newClaimHtlcSuccessTx = rcp4.claimHtlcTxs(remainingHtlcOutpoint).get
-
-      val rcp5 = Closing.updateRemoteCommitPublished(rcp4, newClaimHtlcSuccessTx.tx)
-      assert(rcp5.isDone)
-    }
-
-    // Scenario 3: they fulfill one of the HTLCs we sent them
-    {
-      val remoteHtlcSuccess = lcp.htlcTxs.values.collectFirst { case Some(tx: HtlcSuccessTx) => tx }.get
-      val rcp3 = (remoteHtlcSuccess.tx +: claimHtlcSuccessTxs.map(_.tx)).foldLeft(rcp2) {
-        case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
-      }
-      assert(!rcp3.isDone)
-
-      val remainingClaimHtlcTimeoutTx = claimHtlcTimeoutTxs.filter(_.input.outPoint != remoteHtlcSuccess.input.outPoint)
-      assert(remainingClaimHtlcTimeoutTx.length === 1)
-      val rcp4 = Closing.updateRemoteCommitPublished(rcp3, remainingClaimHtlcTimeoutTx.head.tx)
-      assert(!rcp4.isDone)
-
-      val theirHtlcTimeout = lcp.htlcTxs(remainingHtlcOutpoint)
-      assert(theirHtlcTimeout !== None)
-      val rcp5 = Closing.updateRemoteCommitPublished(rcp4, theirHtlcTimeout.get.tx)
-      assert(rcp5.isDone)
-    }
-
-    // Scenario 4: they get back the HTLCs they sent us
-    {
-      val rcp3 = claimHtlcTimeoutTxs.map(_.tx).foldLeft(rcp2) {
-        case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
-      }
-      assert(!rcp3.isDone)
-
-      val htlcTimeoutTxs = getHtlcTimeoutTxs(lcp).map(_.tx)
-      val rcp4 = Closing.updateRemoteCommitPublished(rcp3, htlcTimeoutTxs.head)
-      assert(!rcp4.isDone)
-
-      val rcp5 = Closing.updateRemoteCommitPublished(rcp4, htlcTimeoutTxs.last)
-      assert(rcp5.isDone)
-    }
+    RemoteFixture(f.bob, f.bobPendingHtlc, remainingHtlcOutpoint, lcp, rcp2, claimHtlcTimeoutTxs, claimHtlcSuccessTxs, probe)
   }
 
-  test("next remote commit published") {
+  test("remote commit published (our claim-HTLC txs are confirmed, they claim the remaining HTLC)") {
+    val f = setupClosingChannelForRemoteClose()
+    import f._
+
+    val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
+    }
+    assert(!rcp3.isDone)
+
+    val theirHtlcTimeout = lcp.htlcTxs(remainingHtlcOutpoint)
+    assert(theirHtlcTimeout !== None)
+    val rcp4 = Closing.updateRemoteCommitPublished(rcp3, theirHtlcTimeout.get.tx)
+    assert(rcp4.isDone)
+  }
+
+  test("remote commit published (our claim-HTLC txs are confirmed and we claim the remaining HTLC)") {
+    val f = setupClosingChannelForRemoteClose()
+    import f._
+
+    val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
+    }
+    assert(!rcp3.isDone)
+
+    bob ! CMD_FULFILL_HTLC(bobPendingHtlc.htlc.id, bobPendingHtlc.preimage, replyTo_opt = Some(probe.ref))
+    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
+    val rcp4 = bobClosing1.remoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
+    assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) !== None)
+    val newClaimHtlcSuccessTx = rcp4.claimHtlcTxs(remainingHtlcOutpoint).get
+
+    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, newClaimHtlcSuccessTx.tx)
+    assert(rcp5.isDone)
+  }
+
+  test("remote commit published (they fulfill one of the HTLCs we sent them)") {
+    val f = setupClosingChannelForRemoteClose()
+    import f._
+
+    val remoteHtlcSuccess = lcp.htlcTxs.values.collectFirst { case Some(tx: HtlcSuccessTx) => tx }.get
+    val rcp3 = (remoteHtlcSuccess.tx +: claimHtlcSuccessTxs.map(_.tx)).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
+    }
+    assert(!rcp3.isDone)
+
+    val remainingClaimHtlcTimeoutTx = claimHtlcTimeoutTxs.filter(_.input.outPoint != remoteHtlcSuccess.input.outPoint)
+    assert(remainingClaimHtlcTimeoutTx.length === 1)
+    val rcp4 = Closing.updateRemoteCommitPublished(rcp3, remainingClaimHtlcTimeoutTx.head.tx)
+    assert(!rcp4.isDone)
+
+    val theirHtlcTimeout = lcp.htlcTxs(remainingHtlcOutpoint)
+    assert(theirHtlcTimeout !== None)
+    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, theirHtlcTimeout.get.tx)
+    assert(rcp5.isDone)
+  }
+
+  test("remote commit published (they get back the HTLCs they sent us)") {
+    val f = setupClosingChannelForRemoteClose()
+    import f._
+
+    val rcp3 = claimHtlcTimeoutTxs.map(_.tx).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
+    }
+    assert(!rcp3.isDone)
+
+    val htlcTimeoutTxs = getHtlcTimeoutTxs(lcp).map(_.tx)
+    val rcp4 = Closing.updateRemoteCommitPublished(rcp3, htlcTimeoutTxs.head)
+    assert(!rcp4.isDone)
+
+    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, htlcTimeoutTxs.last)
+    assert(rcp5.isDone)
+  }
+
+  private def setupClosingChannelForNextRemoteClose(): RemoteFixture = {
     val probe = TestProbe()
     val setup = init()
     reachNormal(setup)
@@ -374,70 +400,82 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(rcp2.isConfirmed)
     assert(!rcp2.isDone)
 
-    // Scenario 1: our claim-HTLC txs are confirmed, they claim the remaining HTLC
-    {
-      val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp2) {
-        case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
-      }
-      assert(!rcp3.isDone)
+    val bobPendingHtlc = HtlcWithPreimage(ra2, htlca2)
 
-      val theirHtlcTimeout = lcp.htlcTxs(remainingHtlcOutpoint)
-      assert(theirHtlcTimeout !== None)
-      val rcp4 = Closing.updateRemoteCommitPublished(rcp3, theirHtlcTimeout.get.tx)
-      assert(rcp4.isDone)
+    RemoteFixture(bob, bobPendingHtlc, remainingHtlcOutpoint, lcp, rcp2, claimHtlcTimeoutTxs, claimHtlcSuccessTxs, probe)
+  }
+
+  test("next remote commit published (our claim-HTLC txs are confirmed, they claim the remaining HTLC)") {
+    val f = setupClosingChannelForNextRemoteClose()
+    import f._
+
+    val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
     }
+    assert(!rcp3.isDone)
 
-    // Scenario 2: our claim-HTLC txs are confirmed and we claim the remaining HTLC
-    {
-      val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp2) {
-        case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
-      }
-      assert(!rcp3.isDone)
+    val theirHtlcTimeout = lcp.htlcTxs(remainingHtlcOutpoint)
+    assert(theirHtlcTimeout !== None)
+    val rcp4 = Closing.updateRemoteCommitPublished(rcp3, theirHtlcTimeout.get.tx)
+    assert(rcp4.isDone)
+  }
 
-      bob ! CMD_FULFILL_HTLC(htlca2.id, ra2, replyTo_opt = Some(probe.ref))
-      probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
-      val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
-      val rcp4 = bobClosing1.nextRemoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
-      assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) !== None)
-      val newClaimHtlcSuccessTx = rcp4.claimHtlcTxs(remainingHtlcOutpoint).get
+  test("next remote commit published (our claim-HTLC txs are confirmed and we claim the remaining HTLC)") {
+    val f = setupClosingChannelForNextRemoteClose()
+    import f._
 
-      val rcp5 = Closing.updateRemoteCommitPublished(rcp4, newClaimHtlcSuccessTx.tx)
-      assert(rcp5.isDone)
+    val rcp3 = (claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs).map(_.tx).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
     }
+    assert(!rcp3.isDone)
 
-    // Scenario 3: they fulfill one of the HTLCs we sent them
-    {
-      val remoteHtlcSuccess = lcp.htlcTxs.values.collectFirst { case Some(tx: HtlcSuccessTx) => tx }.get
-      val rcp3 = (remoteHtlcSuccess.tx +: claimHtlcSuccessTxs.map(_.tx)).foldLeft(rcp2) {
-        case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
-      }
-      assert(!rcp3.isDone)
+    bob ! CMD_FULFILL_HTLC(bobPendingHtlc.htlc.id, bobPendingHtlc.preimage, replyTo_opt = Some(probe.ref))
+    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
+    val rcp4 = bobClosing1.nextRemoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
+    assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) !== None)
+    val newClaimHtlcSuccessTx = rcp4.claimHtlcTxs(remainingHtlcOutpoint).get
 
-      val remainingClaimHtlcTimeoutTx = claimHtlcTimeoutTxs.filter(_.input.outPoint != remoteHtlcSuccess.input.outPoint)
-      assert(remainingClaimHtlcTimeoutTx.length === 1)
-      val rcp4 = Closing.updateRemoteCommitPublished(rcp3, remainingClaimHtlcTimeoutTx.head.tx)
-      assert(!rcp4.isDone)
+    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, newClaimHtlcSuccessTx.tx)
+    assert(rcp5.isDone)
+  }
 
-      val theirHtlcTimeout = lcp.htlcTxs(remainingHtlcOutpoint)
-      assert(theirHtlcTimeout !== None)
-      val rcp5 = Closing.updateRemoteCommitPublished(rcp4, theirHtlcTimeout.get.tx)
-      assert(rcp5.isDone)
+  test("next remote commit published (they fulfill one of the HTLCs we sent them)") {
+    val f = setupClosingChannelForNextRemoteClose()
+    import f._
+
+    val remoteHtlcSuccess = lcp.htlcTxs.values.collectFirst { case Some(tx: HtlcSuccessTx) => tx }.get
+    val rcp3 = (remoteHtlcSuccess.tx +: claimHtlcSuccessTxs.map(_.tx)).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
     }
+    assert(!rcp3.isDone)
 
-    // Scenario 4: they get back the HTLCs they sent us
-    {
-      val rcp3 = claimHtlcTimeoutTxs.map(_.tx).foldLeft(rcp2) {
-        case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
-      }
-      assert(!rcp3.isDone)
+    val remainingClaimHtlcTimeoutTx = claimHtlcTimeoutTxs.filter(_.input.outPoint != remoteHtlcSuccess.input.outPoint)
+    assert(remainingClaimHtlcTimeoutTx.length === 1)
+    val rcp4 = Closing.updateRemoteCommitPublished(rcp3, remainingClaimHtlcTimeoutTx.head.tx)
+    assert(!rcp4.isDone)
 
-      val htlcTimeoutTxs = getHtlcTimeoutTxs(lcp).map(_.tx)
-      val rcp4 = Closing.updateRemoteCommitPublished(rcp3, htlcTimeoutTxs.head)
-      assert(!rcp4.isDone)
+    val theirHtlcTimeout = lcp.htlcTxs(remainingHtlcOutpoint)
+    assert(theirHtlcTimeout !== None)
+    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, theirHtlcTimeout.get.tx)
+    assert(rcp5.isDone)
+  }
 
-      val rcp5 = Closing.updateRemoteCommitPublished(rcp4, htlcTimeoutTxs.last)
-      assert(rcp5.isDone)
+  test("next remote commit published (they get back the HTLCs they sent us)") {
+    val f = setupClosingChannelForNextRemoteClose()
+    import f._
+
+    val rcp3 = claimHtlcTimeoutTxs.map(_.tx).foldLeft(rcp) {
+      case (current, tx) => Closing.updateRemoteCommitPublished(current, tx)
     }
+    assert(!rcp3.isDone)
+
+    val htlcTimeoutTxs = getHtlcTimeoutTxs(lcp).map(_.tx)
+    val rcp4 = Closing.updateRemoteCommitPublished(rcp3, htlcTimeoutTxs.head)
+    assert(!rcp4.isDone)
+
+    val rcp5 = Closing.updateRemoteCommitPublished(rcp4, htlcTimeoutTxs.last)
+    assert(rcp5.isDone)
   }
 
   test("revoked commit published") {
