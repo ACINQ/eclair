@@ -151,7 +151,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   private def connect(address: InetSocketAddress, origin: ActorRef, isPersistent: Boolean): Unit = {
     log.info(s"connecting to $address")
     val req = ClientSpawner.ConnectionRequest(address, remoteNodeId, origin, isPersistent)
-    if (context.system.hasExtension(Cluster) && !address.getHostName.endsWith("onion")) {
+    if (context.system.hasExtension(Cluster)) {
       mediator ! Send(path = "/user/client-spawner", msg = req, localAffinity = false)
     } else {
       context.system.eventStream.publish(req)
@@ -218,7 +218,7 @@ object ReconnectionTask {
     selectNodeAddress(nodeParams, nodeAddresses).map(_.socketAddress)
   }
 
-  def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
+  def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = NodeAddress.fromParts(hostAndPort.getHost, hostAndPort.getPort).get.socketAddress
 
   /**
    * This helps prevent peers reconnection loops due to synchronization of reconnection attempts.

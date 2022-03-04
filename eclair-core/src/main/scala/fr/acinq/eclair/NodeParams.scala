@@ -166,6 +166,22 @@ object NodeParams extends Logging {
 
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
+  def parseSocks5ProxyParams(config: Config): Option[Socks5ProxyParams] = {
+    if (config.getBoolean("socks5.enabled")) {
+      Some(Socks5ProxyParams(
+        address = new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
+        credentials_opt = None,
+        randomizeCredentials = config.getBoolean("socks5.randomize-credentials"),
+        useForIPv4 = config.getBoolean("socks5.use-for-ipv4"),
+        useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
+        useForTor = config.getBoolean("socks5.use-for-tor"),
+        useForWatchdogs = config.getBoolean("socks5.use-for-watchdogs"),
+      ))
+    } else {
+      None
+    }
+  }
+
   def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
                      torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator,
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
@@ -302,19 +318,7 @@ object NodeParams extends Logging {
 
     val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
 
-    val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
-      Some(Socks5ProxyParams(
-        address = new InetSocketAddress(config.getString("socks5.host"), config.getInt("socks5.port")),
-        credentials_opt = None,
-        randomizeCredentials = config.getBoolean("socks5.randomize-credentials"),
-        useForIPv4 = config.getBoolean("socks5.use-for-ipv4"),
-        useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
-        useForTor = config.getBoolean("socks5.use-for-tor"),
-        useForWatchdogs = config.getBoolean("socks5.use-for-watchdogs"),
-      ))
-    } else {
-      None
-    }
+    val socksProxy_opt = parseSocks5ProxyParams(config)
 
     val publicTorAddress_opt = if (config.getBoolean("tor.publish-onion-address")) torAddress_opt else None
 
