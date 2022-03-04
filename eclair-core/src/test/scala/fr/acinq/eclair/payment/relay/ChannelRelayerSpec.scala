@@ -237,6 +237,37 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, u.channelUpdate)), commit = true))
   }
 
+  test("relay an htlc-add that would fail (fee insufficient) with a recent channel update but succeed with the previous update") { f =>
+    import f._
+
+    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val r = createValidIncomingPacket(outgoingAmount + 1.msat, CltvExpiry(400100), payload)
+    val u1 = createLocalUpdate(shortId1, timestamp = TimestampSecond.now(), feeBaseMsat = 1 msat, feeProportionalMillionths = 0)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u1)
+    channelRelayer ! Relay(r)
+
+    // relay succeeds with current channel update (u1) with lower fees
+    expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+
+    val u2 = createLocalUpdate(shortId1, timestamp = TimestampSecond.now() - 530)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u2)
+    channelRelayer ! Relay(r)
+
+    // relay succeeds because the current update (u2) with higher fees occurred less than 10 minutes ago
+    expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+
+    val u3 = createLocalUpdate(shortId1, timestamp = TimestampSecond.now() - 601)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u1)
+    channelRelayer ! WrappedLocalChannelUpdate(u3)
+    channelRelayer ! Relay(r)
+
+    // relay fails because the current update (u3) with higher fees occurred more than 10 minutes ago
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, u3.channelUpdate)), commit = true))
+  }
+
   test("fail to relay an htlc-add (local error)") { f =>
     import f._
 
@@ -470,15 +501,15 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 }
 
 object ChannelRelayerSpec {
-  val paymentPreimage = randomBytes32()
-  val paymentHash = Crypto.sha256(paymentPreimage)
+  val paymentPreimage: ByteVector32 = randomBytes32()
+  val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
 
-  val outgoingAmount = 1000000 msat
-  val outgoingExpiry = CltvExpiry(400000)
-  val outgoingNodeId = randomKey().publicKey
+  val outgoingAmount: MilliSatoshi = 1000000 msat
+  val outgoingExpiry: CltvExpiry = CltvExpiry(400000)
+  val outgoingNodeId: PublicKey = randomKey().publicKey
 
-  val shortId1 = ShortChannelId(111111)
-  val shortId2 = ShortChannelId(222222)
+  val shortId1: ShortChannelId = ShortChannelId(111111)
+  val shortId2: ShortChannelId = ShortChannelId(222222)
 
   val channelIds = Map(
     shortId1 -> randomBytes32(),
@@ -490,9 +521,9 @@ object ChannelRelayerSpec {
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
   }
 
-  def createLocalUpdate(shortChannelId: ShortChannelId, balance: MilliSatoshi = 10000000 msat, capacity: Satoshi = 500000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat): LocalChannelUpdate = {
+  def createLocalUpdate(shortChannelId: ShortChannelId, balance: MilliSatoshi = 10000000 msat, capacity: Satoshi = 500000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat, timestamp: TimestampSecond = 0 unixsec, feeBaseMsat: MilliSatoshi = 1000 msat, feeProportionalMillionths: Long = 100): LocalChannelUpdate = {
     val channelId = channelIds(shortChannelId)
-    val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, shortChannelId, 0 unixsec, ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, 1000 msat, 100, Some(capacity.toMilliSatoshi))
+    val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, shortChannelId, timestamp, ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, feeBaseMsat, feeProportionalMillionths, Some(capacity.toMilliSatoshi))
     val commitments = PaymentPacketSpec.makeCommitments(channelId, testAvailableBalanceForSend = balance, testCapacity = capacity)
     LocalChannelUpdate(null, channelId, shortChannelId, outgoingNodeId, None, update, commitments)
   }

@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
@@ -25,9 +23,9 @@ import akka.actor.typed.scaladsl.Behaviors
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPaymentPacket
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId}
 
+import java.util.UUID
 import scala.collection.mutable
 
 /**
@@ -95,7 +93,8 @@ object ChannelRelayer {
 
           case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
             context.log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
-            val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> Relayer.OutgoingChannel(remoteNodeId, channelUpdate, commitments))
+            val prevChannelUpdate = channelUpdates.get(shortChannelId).map(_.channelUpdate)
+            val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> Relayer.OutgoingChannel(remoteNodeId, channelUpdate, prevChannelUpdate, commitments))
             val node2channels1 = node2channels.addOne(remoteNodeId, channelUpdate.shortChannelId)
             apply(nodeParams, register, channelUpdates1, node2channels1)
 

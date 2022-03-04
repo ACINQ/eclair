@@ -130,6 +130,7 @@ object Relayer extends Logging {
   }
 
   case class RelayForward(add: UpdateAddHtlc)
+
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 
   /**
@@ -138,7 +139,7 @@ object Relayer extends Logging {
    * @param enabledOnly if true, filter out disabled channels.
    */
   case class GetOutgoingChannels(enabledOnly: Boolean = true)
-  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, commitments: AbstractCommitments) {
+  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: AbstractCommitments) {
     def toUsableBalance: UsableBalance = UsableBalance(
       remoteNodeId = nextNodeId,
       shortChannelId = channelUpdate.shortChannelId,
