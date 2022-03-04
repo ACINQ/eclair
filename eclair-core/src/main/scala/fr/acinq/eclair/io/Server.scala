@@ -17,7 +17,6 @@
 package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
-
 import akka.Done
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
@@ -26,6 +25,7 @@ import akka.io.{IO, Tcp}
 import fr.acinq.eclair.Logs
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
+import fr.acinq.eclair.wire.protocol.{IPAddress, NodeAddress}
 
 import scala.concurrent.Promise
 
@@ -62,7 +62,7 @@ class Server(keyPair: KeyPair, peerConnectionConf: PeerConnection.Conf, switchbo
         switchboard = switchboard,
         router = router
       ))
-      peerConnection ! PeerConnection.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None, isPersistent = true)
+      peerConnection ! PeerConnection.PendingAuth(connection, remoteNodeId_opt = None, address = IPAddress(remote.getAddress, remote.getPort), origin_opt = None, isPersistent = true)
       listener ! ResumeAccepting(batchSize = 1)
   }
 

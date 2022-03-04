@@ -18,7 +18,6 @@ package fr.acinq.eclair.integration
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
-import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.Features._
@@ -29,6 +28,7 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
+import fr.acinq.eclair.wire.protocol.NodeAddress
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
@@ -156,10 +156,9 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
 
   def connect(node1: Kit, node2: Kit): Unit = {
     val sender = TestProbe()
-    val address = node2.nodeParams.publicAddresses.head
     sender.send(node1.switchboard, Peer.Connect(
       nodeId = node2.nodeParams.nodeId,
-      address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort)),
+      address_opt = node2.nodeParams.publicAddresses.headOption,
       sender.ref,
       isPersistent = true
     ))

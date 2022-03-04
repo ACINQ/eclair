@@ -21,14 +21,12 @@ import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator.Send
 import akka.event.Logging.MDC
-import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol.{NodeAddress, OnionAddress}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams, TimestampMilli}
 
-import java.net.InetSocketAddress
 import scala.concurrent.duration.{FiniteDuration, _}
 import scala.util.Random
 
@@ -130,12 +128,11 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
     case Event(TickReconnect, _) => stay()
 
-    case Event(Peer.Connect(_, hostAndPort_opt, replyTo, isPersistent), _) =>
+    case Event(Peer.Connect(_, address_opt, replyTo, isPersistent), _) =>
       // manual connection requests happen completely independently of the automated reconnection process;
       // we initiate a connection but don't modify our state.
       // if we are already connecting/connected, the peer will kill any duplicate connections
-      hostAndPort_opt
-        .map(hostAndPort2InetSocketAddress)
+      address_opt
         .orElse(getPeerAddressFromDb(nodeParams, remoteNodeId)) match {
         case Some(address) => connect(address, origin = replyTo, isPersistent)
         case None => replyTo ! PeerConnection.ConnectionResult.NoAddressFound
@@ -148,9 +145,9 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   // activate the extension only on demand, so that tests pass
   lazy val mediator = DistributedPubSub(context.system).mediator
 
-  private def connect(address: InetSocketAddress, origin: ActorRef, isPersistent: Boolean): Unit = {
+  private def connect(address: NodeAddress, origin: ActorRef, isPersistent: Boolean): Unit = {
     log.info(s"connecting to $address")
-    val req = ClientSpawner.ConnectionRequest(address, remoteNodeId, origin, isPersistent)
+    val req = ClientSpawner.ConnectionRequest(remoteNodeId, address, origin, isPersistent)
     if (context.system.hasExtension(Cluster)) {
       mediator ! Send(path = "/user/client-spawner", msg = req, localAffinity = false)
     } else {
@@ -185,7 +182,7 @@ object ReconnectionTask {
   sealed trait Data
   case object Nothing extends Data
   case class IdleData(previousData: Data, since: TimestampMilli = TimestampMilli.now()) extends Data
-  case class ConnectingData(to: InetSocketAddress, nextReconnectionDelay: FiniteDuration) extends Data
+  case class ConnectingData(to: NodeAddress, nextReconnectionDelay: FiniteDuration) extends Data
   case class WaitingData(nextReconnectionDelay: FiniteDuration) extends Data
   // @formatter:on
 
@@ -213,12 +210,10 @@ object ReconnectionTask {
     }
   }
 
-  def getPeerAddressFromDb(nodeParams: NodeParams, remoteNodeId: PublicKey): Option[InetSocketAddress] = {
+  def getPeerAddressFromDb(nodeParams: NodeParams, remoteNodeId: PublicKey): Option[NodeAddress] = {
     val nodeAddresses = nodeParams.db.peers.getPeer(remoteNodeId).toSeq ++ nodeParams.db.network.getNode(remoteNodeId).toSeq.flatMap(_.addresses)
-    selectNodeAddress(nodeParams, nodeAddresses).map(_.socketAddress)
+    selectNodeAddress(nodeParams, nodeAddresses)
   }
-
-  def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = NodeAddress.fromParts(hostAndPort.getHost, hostAndPort.getPort).get.socketAddress
 
   /**
    * This helps prevent peers reconnection loops due to synchronization of reconnection attempts.

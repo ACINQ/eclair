@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
-
 import akka.actor.{Props, _}
 import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
@@ -28,14 +26,16 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected, Socks5Error}
 import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams}
+import fr.acinq.eclair.wire.protocol._
 
+import java.net.InetSocketAddress
 import scala.concurrent.duration._
 
 /**
  * Created by PM on 27/10/2015.
  *
  */
-class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef, remoteAddress: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], isPersistent: Boolean) extends Actor with DiagnosticActorLogging {
+class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef, remoteNodeAddress: NodeAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], isPersistent: Boolean) extends Actor with DiagnosticActorLogging {
 
   import context.system
 
@@ -44,7 +44,14 @@ class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams],
 
   def receive: Receive = {
     case Symbol("connect") =>
-      val (peerOrProxyAddress, proxyParams_opt) = socks5ProxyParams_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteAddress, proxyParams))) match {
+      // note that there is no resolution here, it's easier plain ip addresses, or unresolved tor hostnames
+      val remoteAddress = remoteNodeAddress match {
+        case addr: IPv4 => new InetSocketAddress(addr.ipv4, addr.port)
+        case addr: IPv6 => new InetSocketAddress(addr.ipv6, addr.port)
+        case addr: Tor2 => InetSocketAddress.createUnresolved(addr.host, addr.port)
+        case addr: Tor3 => InetSocketAddress.createUnresolved(addr.host, addr.port)
+      }
+      val (peerOrProxyAddress, proxyParams_opt) = socks5ProxyParams_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteNodeAddress, proxyParams))) match {
         case Some((proxyParams, Some(proxyAddress))) =>
           log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")
           (proxyAddress, Some(proxyParams))
@@ -53,14 +60,14 @@ class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams],
           (remoteAddress, None)
       }
       IO(Tcp) ! Tcp.Connect(peerOrProxyAddress, timeout = Some(20 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
-      context become connecting(proxyParams_opt)
+      context become connecting(proxyParams_opt, remoteAddress)
   }
 
-  def connecting(proxyParams: Option[Socks5ProxyParams]): Receive = {
+  def connecting(proxyParams: Option[Socks5ProxyParams], remoteAddress: InetSocketAddress): Receive = {
     case Tcp.CommandFailed(c: Tcp.Connect) =>
       val peerOrProxyAddress = c.remoteAddress
       log.info(s"connection failed to ${str(peerOrProxyAddress)}")
-      origin_opt.foreach(_ ! PeerConnection.ConnectionResult.ConnectionFailed(remoteAddress))
+      origin_opt.foreach(_ ! PeerConnection.ConnectionResult.ConnectionFailed(remoteNodeAddress))
       context stop self
 
     case Tcp.Connected(peerOrProxyAddress, _) =>
@@ -75,7 +82,7 @@ class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams],
           context become {
             case Tcp.CommandFailed(_: Socks5Connect) =>
               log.info(s"connection failed to ${str(remoteAddress)} via SOCKS5 ${str(proxyAddress)}")
-              origin_opt.foreach(_ ! PeerConnection.ConnectionResult.ConnectionFailed(remoteAddress))
+              origin_opt.foreach(_ ! PeerConnection.ConnectionResult.ConnectionFailed(remoteNodeAddress))
               context stop self
             case Socks5Connected(_) =>
               log.info(s"connected to ${str(remoteAddress)} via SOCKS5 proxy ${str(proxyAddress)}")
@@ -127,13 +134,13 @@ class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams],
       switchboard = switchboard,
       router = router
     ))
-    peerConnection ! PeerConnection.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = remoteAddress, origin_opt = origin_opt, isPersistent = isPersistent)
+    peerConnection ! PeerConnection.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = remoteNodeAddress, origin_opt = origin_opt, isPersistent = isPersistent)
     peerConnection
   }
 }
 
 object Client {
 
-  def props(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], isPersistent: Boolean): Props = Props(new Client(keyPair, socks5ProxyParams_opt, peerConnectionConf, switchboard, router, address, remoteNodeId, origin_opt, isPersistent))
+  def props(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef, address: NodeAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef], isPersistent: Boolean): Props = Props(new Client(keyPair, socks5ProxyParams_opt, peerConnectionConf, switchboard, router, address, remoteNodeId, origin_opt, isPersistent))
 
 }
