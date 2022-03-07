@@ -21,8 +21,8 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.channel.Channel.{ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
@@ -80,7 +80,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       balanceCheckInterval: FiniteDuration,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration]) {
+                      purgeInvoicesInterval: Option[FiniteDuration],
+                      enforceDelay: FiniteDuration) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -499,7 +500,8 @@ object NodeParams extends Logging {
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval
+      purgeInvoicesInterval = purgeInvoicesInterval,
+      enforceDelay = FiniteDuration(config.getDuration("relay.fees.enforce-delay").toMinutes, TimeUnit.MINUTES)
     )
   }
 }
