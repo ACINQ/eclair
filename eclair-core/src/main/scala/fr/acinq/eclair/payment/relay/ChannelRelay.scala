@@ -253,7 +253,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   def relayOrFail(outgoingChannel_opt: Option[OutgoingChannel]): RelayResult = {
     import r._
     // relay if fees satisfy previous channel update for 10 minutes after current update
-    val usePrevFees = outgoingChannel_opt.filter(_.channelUpdate.timestamp > (TimestampSecond.now() - nodeParams.enforceDelay)).
+    val usePrevFees = outgoingChannel_opt.filter(_.channelUpdate.timestamp > (TimestampSecond.now() - nodeParams.relayParams.enforceDelay)).
       flatMap(_.prevChannelUpdate) match {
       case Some(prevChannelUpdate) => r.relayFeeMsat >= nodeFee(prevChannelUpdate, payload.amountToForward)
       case None => false

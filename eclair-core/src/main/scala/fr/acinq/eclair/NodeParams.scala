@@ -80,8 +80,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       balanceCheckInterval: FiniteDuration,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration],
-                      enforceDelay: FiniteDuration) {
+                      purgeInvoicesInterval: Option[FiniteDuration]) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -463,6 +462,7 @@ object NodeParams extends Logging {
         publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
+        enforceDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS)
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),
@@ -500,8 +500,7 @@ object NodeParams extends Logging {
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval,
-      enforceDelay = FiniteDuration(config.getDuration("relay.fees.enforce-delay").toMinutes, TimeUnit.MINUTES)
+      purgeInvoicesInterval = purgeInvoicesInterval
     )
   }
 }

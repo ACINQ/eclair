@@ -32,6 +32,7 @@ import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * Created by PM on 01/02/2017.
@@ -119,7 +120,8 @@ object Relayer extends Logging {
 
   case class RelayParams(publicChannelFees: RelayFees,
                          privateChannelFees: RelayFees,
-                         minTrampolineFees: RelayFees) {
+                         minTrampolineFees: RelayFees,
+                         enforceDelay: FiniteDuration) {
     def defaultFees(announceChannel: Boolean): RelayFees = {
       if (announceChannel) {
         publicChannelFees
