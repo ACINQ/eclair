@@ -252,12 +252,6 @@ class ChannelRelay private(nodeParams: NodeParams,
    */
   def relayOrFail(outgoingChannel_opt: Option[OutgoingChannel]): RelayResult = {
     import r._
-    // relay if fees satisfy previous channel update for 10 minutes after current update
-    val usePrevFees = outgoingChannel_opt.filter(_.channelUpdate.timestamp > (TimestampSecond.now() - nodeParams.relayParams.enforceDelay)).
-      flatMap(_.prevChannelUpdate) match {
-      case Some(prevChannelUpdate) => r.relayFeeMsat >= nodeFee(prevChannelUpdate, payload.amountToForward)
-      case None => false
-    }
     outgoingChannel_opt.map(_.channelUpdate) match {
       case None =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
@@ -267,7 +261,10 @@ class ChannelRelay private(nodeParams: NodeParams,
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, channelUpdate)), commit = true))
       case Some(channelUpdate) if r.expiryDelta < channelUpdate.cltvExpiryDelta =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, channelUpdate)), commit = true))
-      case Some(channelUpdate) if r.relayFeeMsat < nodeFee(channelUpdate, payload.amountToForward) && !usePrevFees =>
+      case Some(channelUpdate) if r.relayFeeMsat < nodeFee(channelUpdate, payload.amountToForward) &&
+        // fees also do not satisfy the previous channel update for `enforceDelay` seconds after current update
+        (TimestampSecond.now() - channelUpdate.timestamp > nodeParams.relayParams.enforceDelay ||
+          outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c, payload.amountToForward))) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
         val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, add, payload.amountToForward)
