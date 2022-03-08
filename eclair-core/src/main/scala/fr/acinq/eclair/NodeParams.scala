@@ -21,8 +21,8 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.channel.Channel.{ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
@@ -462,6 +462,7 @@ object NodeParams extends Logging {
         publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
+        enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS)
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),

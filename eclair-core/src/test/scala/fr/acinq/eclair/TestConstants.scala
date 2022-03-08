@@ -138,7 +138,8 @@ object TestConstants {
           feeProportionalMillionths = 20),
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
-          feeProportionalMillionths = 30)),
+          feeProportionalMillionths = 30),
+        enforcementDelay = 10 minutes),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -195,7 +196,7 @@ object TestConstants {
         relayPolicy = RelayAll,
         timeout = 1 minute
       ),
-      purgeInvoicesInterval = Some(24 hours)
+      purgeInvoicesInterval = Some(24 hours),
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -274,7 +275,8 @@ object TestConstants {
           feeProportionalMillionths = 20),
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
-          feeProportionalMillionths = 30)),
+          feeProportionalMillionths = 30),
+        enforcementDelay = 10 minutes),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,

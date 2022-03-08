@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, channel, nodeFee}
+import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, TimestampSecond, channel, nodeFee}
 
 import java.util.UUID
 
@@ -172,7 +172,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   def handleRelay(previousFailures: Seq[PreviouslyTried]): RelayResult = {
     val alreadyTried = previousFailures.map(_.shortChannelId)
     selectPreferredChannel(alreadyTried)
-      .flatMap(selectedShortChannelId => channels.get(selectedShortChannelId).map(_.channelUpdate)) match {
+      .flatMap(selectedShortChannelId => channels.get(selectedShortChannelId)) match {
       case None if previousFailures.nonEmpty =>
         // no more channels to try
         val error = previousFailures
@@ -182,8 +182,8 @@ class ChannelRelay private(nodeParams: NodeParams,
           .getOrElse(previousFailures.head)
           .failure
         RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(translateLocalError(error.t, error.channelUpdate)), commit = true))
-      case channelUpdate_opt =>
-        relayOrFail(channelUpdate_opt)
+      case outgoingChannel_opt =>
+        relayOrFail(outgoingChannel_opt)
     }
   }
 
@@ -206,7 +206,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         // and we filter again to keep the ones that are compatible with this payment (mainly fees, expiry delta)
         candidateChannels
           .map { case (shortChannelId, channelInfo) =>
-            val relayResult = relayOrFail(Some(channelInfo.channelUpdate))
+            val relayResult = relayOrFail(Some(channelInfo))
             context.log.debug(s"candidate channel: shortChannelId=$shortChannelId availableForSend={} capacity={} channelUpdate={} result={}",
               channelInfo.commitments.availableBalanceForSend,
               channelInfo.commitments.capacity,
@@ -250,9 +250,9 @@ class ChannelRelay private(nodeParams: NodeParams,
    * channel, because some parameters don't match with our settings for that channel. In that case we directly fail the
    * htlc.
    */
-  def relayOrFail(channelUpdate_opt: Option[ChannelUpdate]): RelayResult = {
+  def relayOrFail(outgoingChannel_opt: Option[OutgoingChannel]): RelayResult = {
     import r._
-    channelUpdate_opt match {
+    outgoingChannel_opt.map(_.channelUpdate) match {
       case None =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
       case Some(channelUpdate) if !channelUpdate.channelFlags.isEnabled =>
@@ -261,7 +261,10 @@ class ChannelRelay private(nodeParams: NodeParams,
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, channelUpdate)), commit = true))
       case Some(channelUpdate) if r.expiryDelta < channelUpdate.cltvExpiryDelta =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, channelUpdate)), commit = true))
-      case Some(channelUpdate) if r.relayFeeMsat < nodeFee(channelUpdate, payload.amountToForward) =>
+      case Some(channelUpdate) if r.relayFeeMsat < nodeFee(channelUpdate, payload.amountToForward) &&
+        // fees also do not satisfy the previous channel update for `enforcementDelay` seconds after current update
+        (TimestampSecond.now() - channelUpdate.timestamp > nodeParams.relayParams.enforcementDelay ||
+          outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c, payload.amountToForward))) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
         val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, add, payload.amountToForward)
