@@ -462,7 +462,7 @@ object NodeParams extends Logging {
         publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
-        enforceDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS)
+        enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS)
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),

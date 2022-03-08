@@ -139,7 +139,7 @@ object TestConstants {
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
-        enforceDelay = 10 minutes),
+        enforcementDelay = 10 minutes),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -276,7 +276,7 @@ object TestConstants {
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
-        enforceDelay = 10 minutes),
+        enforcementDelay = 10 minutes),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,

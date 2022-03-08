@@ -262,8 +262,8 @@ class ChannelRelay private(nodeParams: NodeParams,
       case Some(channelUpdate) if r.expiryDelta < channelUpdate.cltvExpiryDelta =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, channelUpdate)), commit = true))
       case Some(channelUpdate) if r.relayFeeMsat < nodeFee(channelUpdate, payload.amountToForward) &&
-        // fees also do not satisfy the previous channel update for `enforceDelay` seconds after current update
-        (TimestampSecond.now() - channelUpdate.timestamp > nodeParams.relayParams.enforceDelay ||
+        // fees also do not satisfy the previous channel update for `enforcementDelay` seconds after current update
+        (TimestampSecond.now() - channelUpdate.timestamp > nodeParams.relayParams.enforcementDelay ||
           outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c, payload.amountToForward))) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
