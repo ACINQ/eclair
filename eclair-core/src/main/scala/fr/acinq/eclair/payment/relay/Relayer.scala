@@ -132,7 +132,6 @@ object Relayer extends Logging {
   }
 
   case class RelayForward(add: UpdateAddHtlc)
-
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 
   /**
