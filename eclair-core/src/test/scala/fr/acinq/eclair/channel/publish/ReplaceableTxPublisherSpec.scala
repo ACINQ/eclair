@@ -36,7 +36,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, NodeParams, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -523,8 +523,16 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // A new block is found, and the feerate has increased for our block target, but we don't have enough funds to bump the fees.
       system.eventStream.subscribe(probe.ref, classOf[NotifyNodeOperator])
+      // just making sure that we have been subscribed to the event, otherwise there is a possible race condition
+      awaitCond({
+        system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Info, "ping"))
+        probe.msgAvailable
+      }, max = 30 seconds)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 15))
-      probe.expectMsgType[NotifyNodeOperator]
+      probe.fishForMessage() {
+        case nno: NotifyNodeOperator => nno.severity != NotificationsLogger.Info
+        case _ => false
+      }
       val mempoolTxs2 = getMempool()
       assert(mempoolTxs1.map(_.txid).toSet === mempoolTxs2.map(_.txid).toSet)
     }
