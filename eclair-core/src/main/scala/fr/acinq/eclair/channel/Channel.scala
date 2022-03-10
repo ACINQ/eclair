@@ -71,7 +71,8 @@ object Channel {
                          maxAcceptedHtlcs: Int,
                          reserveToFundingRatio: Double,
                          maxReserveToFundingRatio: Double,
-                         minFundingSatoshis: Satoshi,
+                         minFundingPublicSatoshis: Satoshi,
+                         minFundingPrivateSatoshis: Satoshi,
                          maxFundingSatoshis: Satoshi,
                          toRemoteDelay: CltvExpiryDelta,
                          maxToLocalDelay: CltvExpiryDelta,
@@ -82,7 +83,9 @@ object Channel {
                          maxBlockProcessingDelay: FiniteDuration,
                          maxTxPublishRetryDelay: FiniteDuration,
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
-                         revocationTimeout: FiniteDuration)
+                         revocationTimeout: FiniteDuration) {
+    def minFundingSatoshis(announceChannel: Boolean): Satoshi = if (announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
+  }
 
   trait TxPublisherFactory {
     def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): typed.ActorRef[TxPublisher.Command]

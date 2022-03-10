@@ -104,10 +104,10 @@ object Helpers {
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
 
-    if (open.fundingSatoshis < nodeParams.channelConf.minFundingSatoshis || open.fundingSatoshis > nodeParams.channelConf.maxFundingSatoshis) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.minFundingSatoshis, nodeParams.channelConf.maxFundingSatoshis))
+    if (open.fundingSatoshis < nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel) || open.fundingSatoshis > nodeParams.channelConf.maxFundingSatoshis) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), nodeParams.channelConf.maxFundingSatoshis))
 
     // BOLT #2: Channel funding limits
-    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !localFeatures.hasFeature(Features.Wumbo)) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.minFundingSatoshis, Channel.MAX_FUNDING))
+    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !localFeatures.hasFeature(Features.Wumbo)) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Channel.MAX_FUNDING))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > open.fundingSatoshis) return Left(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi))
@@ -502,7 +502,7 @@ object Helpers {
     object MutualClose {
 
       // used only to compute tx weights and estimate fees
-      lazy val dummyPublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
+      lazy val dummyPublicKey: PublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
 
       def isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean): Boolean = {
         Try(Script.parse(scriptPubKey)) match {

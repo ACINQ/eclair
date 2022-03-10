@@ -118,7 +118,8 @@ object TestConstants {
         unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
         revocationTimeout = 20 seconds,
         channelFlags = ChannelFlags.Public,
-        minFundingSatoshis = 1000 sat,
+        minFundingPublicSatoshis = 1000 sat,
+        minFundingPrivateSatoshis = 900 sat,
         maxFundingSatoshis = 16777215 sat,
       ),
       onChainFeeConf = OnChainFeeConf(
@@ -255,7 +256,8 @@ object TestConstants {
         unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
         revocationTimeout = 20 seconds,
         channelFlags = ChannelFlags.Public,
-        minFundingSatoshis = 1000 sat,
+        minFundingPublicSatoshis = 1000 sat,
+        minFundingPrivateSatoshis = 900 sat,
         maxFundingSatoshis = 16777215 sat,
       ),
       onChainFeeConf = OnChainFeeConf(

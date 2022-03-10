@@ -112,13 +112,25 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv OpenChannel (funding too low)") { f =>
+  test("recv OpenChannel (funding too low, public channel)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val lowFunding = 100.sat
-    bob ! open.copy(fundingSatoshis = lowFunding)
+    val announceChannel = true
+    bob ! open.copy(fundingSatoshis = lowFunding, channelFlags = ChannelFlags(announceChannel))
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis, Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenChannel (funding too low, private channel)") { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    val lowFunding = 100.sat
+    val announceChannel = false
+    bob ! open.copy(fundingSatoshis = lowFunding, channelFlags = ChannelFlags(announceChannel))
+    val error = bob2alice.expectMsgType[Error]
+    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -128,7 +140,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val highFundingMsat = 100000000.sat
     bob ! open.copy(fundingSatoshis = highFundingMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.channelConf.minFundingSatoshis, Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage).toAscii)
+    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -138,7 +150,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val highFundingSat = Bob.nodeParams.channelConf.maxFundingSatoshis + Btc(1)
     bob ! open.copy(fundingSatoshis = highFundingSat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingSat, Bob.nodeParams.channelConf.minFundingSatoshis, Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage).toAscii)
+    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingSat, Bob.nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
   }
 
   test("recv OpenChannel (invalid max accepted htlcs)") { f =>
