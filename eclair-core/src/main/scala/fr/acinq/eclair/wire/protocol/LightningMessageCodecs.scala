@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.{FeatureScope, Features, InitFeature, KamonExt, NodeFeature}
+import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt, NodeFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -29,7 +29,7 @@ import shapeless._
  */
 object LightningMessageCodecs {
 
-  val featuresCodec: Codec[Features[FeatureScope]] = varsizebinarydata.xmap[Features[FeatureScope]](
+  val featuresCodec: Codec[Features[Feature]] = varsizebinarydata.xmap[Features[Feature]](
     { bytes => Features(bytes) },
     { features => features.toByteVector }
   )

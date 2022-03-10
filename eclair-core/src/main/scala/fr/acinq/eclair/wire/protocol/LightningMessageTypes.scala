@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, FeatureScope, Features, InitFeature, MilliSatoshi, NodeFeature, ShortChannelId, TimestampSecond, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, NodeFeature, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
@@ -200,7 +200,7 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeSignature2: ByteVector64,
                                bitcoinSignature1: ByteVector64,
                                bitcoinSignature2: ByteVector64,
-                               features: Features[FeatureScope],
+                               features: Features[Feature],
                                chainHash: ByteVector32,
                                shortChannelId: ShortChannelId,
                                nodeId1: PublicKey,
@@ -263,7 +263,7 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def soc
 // @formatter:on
 
 case class NodeAnnouncement(signature: ByteVector64,
-                            features: Features[FeatureScope],
+                            features: Features[Feature],
                             timestamp: TimestampSecond,
                             nodeId: PublicKey,
                             rgbColor: Color,

@@ -84,8 +84,8 @@ object TestConstants {
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       torAddress_opt = None,
-      features = Features[FeatureScope](
-        Map[Feature with FeatureScope, FeatureSupport](
+      features = Features(
+        Map(
           DataLossProtect -> Optional,
           ChannelRangeQueries -> Optional,
           ChannelRangeQueriesExtended -> Optional,
@@ -94,7 +94,7 @@ object TestConstants {
           BasicMultiPartPayment -> Optional,
           PaymentMetadata -> Optional,
         ),
-        Set(UnknownFeature(TestFeature.optional))
+        unknown = Set(UnknownFeature(TestFeature.optional))
       ),
       pluginParams = List(pluginParams),
       overrideInitFeatures = Map.empty,
