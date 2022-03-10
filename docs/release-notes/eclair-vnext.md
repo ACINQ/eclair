@@ -15,7 +15,7 @@
 #### Delay enforcement of new channel fees
 
 When updating the relay fees for a channel, eclair can now continue accepting to relay payments using the old fee even if they would be rejected with the new fee.
-The amount of time during which eclair still accepts the old fee is configured with `eclair.relay.fees.enforcement-delay`.
+By default, eclair will still accept the old fee for 10 minutes, you can change it by setting `eclair.relay.fees.enforcement-delay` to a different value.
 
 If you want a specific fee update to ignore this delay, you can update the fee twice to make eclair forget about the previous fee.
 
