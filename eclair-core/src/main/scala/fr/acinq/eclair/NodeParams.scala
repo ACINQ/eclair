@@ -395,6 +395,13 @@ object NodeParams extends Logging {
       None
     }
 
+    // use default min-funding-satoshis for private channels unless the alternative private config is enabled
+    val minFundingPrivateSatoshis = if (config.getBoolean("channel.private.alt-config")) {
+      Satoshi(config.getLong("channel.private.min-funding-satoshis"))
+    } else {
+      Satoshi(config.getLong("channel.min-funding-satoshis"))
+    }
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -418,7 +425,7 @@ object NodeParams extends Logging {
         reserveToFundingRatio = config.getDouble("channel.reserve-to-funding-ratio"),
         maxReserveToFundingRatio = config.getDouble("channel.max-reserve-to-funding-ratio"),
         minFundingPublicSatoshis = Satoshi(config.getLong("channel.min-funding-satoshis")),
-        minFundingPrivateSatoshis = Satoshi(config.getLong("channel.min-funding-private-satoshis")),
+        minFundingPrivateSatoshis = minFundingPrivateSatoshis,
         maxFundingSatoshis = Satoshi(config.getLong("channel.max-funding-satoshis")),
         toRemoteDelay = offeredCLTV,
         maxToLocalDelay = maxToLocalCLTV,
