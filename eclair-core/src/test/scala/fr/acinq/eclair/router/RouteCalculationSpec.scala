@@ -1725,7 +1725,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val Success(routes) = findRoute(g, a, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 10, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(routes.distinct.length == 10)
-    val fees = routes.map(_.fee)
+    val fees = routes.map(_.fee(false))
     assert(fees.forall(_ == fees.head))
   }
 
@@ -1870,6 +1870,20 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val route :: Nil = routes
     assert(route2Ids(route) === recentChannelId :: Nil)
   }
+
+  test("trampoline relay with direct channel to target") {
+    val amount = 100_000_000 msat
+    val g = DirectedGraph(List(makeEdge(1L, a, b, 1000 msat, 1000, capacity = 100_000_000 sat)))
+
+    {
+      val routeParams = DEFAULT_ROUTE_PARAMS.copy(includeLocalChannelCost = true, boundaries = SearchBoundaries(100_999 msat, 0.0, 6, CltvExpiryDelta(576)))
+      assert(findMultiPartRoute(g, a, b, amount, 100_999 msat, Set.empty, Set.empty, Set.empty, Nil, routeParams = routeParams, currentBlockHeight = BlockHeight(400000)) === Failure(RouteNotFound))
+    }
+    {
+      val routeParams = DEFAULT_ROUTE_PARAMS.copy(includeLocalChannelCost = true, boundaries = SearchBoundaries(101_000 msat, 0.0, 6, CltvExpiryDelta(576)))
+      assert(findMultiPartRoute(g, a, b, amount, 101_000 msat, Set.empty, Set.empty, Set.empty, Nil, routeParams = routeParams, currentBlockHeight = BlockHeight(400000)).isSuccess)
+    }
+  }
 }
 
 object RouteCalculationSpec {
@@ -1942,7 +1956,7 @@ object RouteCalculationSpec {
 
   def checkRouteAmounts(routes: Seq[Route], totalAmount: MilliSatoshi, maxFee: MilliSatoshi): Unit = {
     assert(routes.map(_.amount).sum == totalAmount, routes)
-    assert(routes.map(_.fee).sum <= maxFee, routes)
+    assert(routes.map(_.fee(false)).sum <= maxFee, routes)
   }
 
 }

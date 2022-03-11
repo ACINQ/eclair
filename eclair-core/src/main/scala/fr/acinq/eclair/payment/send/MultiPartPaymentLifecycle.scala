@@ -72,7 +72,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(RouteResponse(routes), d: PaymentProgress) =>
       log.info("{} routes found (attempt={}/{})", routes.length, d.request.maxAttempts - d.remainingAttempts + 1, d.request.maxAttempts)
       // We may have already succeeded sending parts of the payment and only need to take care of the rest.
-      val (toSend, maxFee) = remainingToSend(d.request, d.pending.values)
+      val (toSend, maxFee) = remainingToSend(d.request, d.pending.values, d.request.routeParams.includeLocalChannelCost)
       if (routes.map(_.amount).sum == toSend) {
         val childPayments = routes.map(route => (UUID.randomUUID(), route)).toMap
         childPayments.foreach { case (childId, route) => spawnChildPaymentFsm(childId) ! createChildPayment(self, route, d.request) }
@@ -92,7 +92,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       // Channels are mostly ignored for temporary reasons, likely because they didn't have enough balance to forward
       // the payment. When we're retrying an MPP split, it may make sense to retry those ignored channels because with
       // a different split, they may have enough balance to forward the payment.
-      val (toSend, maxFee) = remainingToSend(d.request, d.pending.values)
+      val (toSend, maxFee) = remainingToSend(d.request, d.pending.values, d.request.routeParams.includeLocalChannelCost)
       if (d.ignore.channels.nonEmpty) {
         log.debug("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignore.channels.map(_.shortChannelId).mkString(","))
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
@@ -141,7 +141,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         val assistedRoutes1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.assistedRoutes)
         val stillPending = d.pending - pf.id
-        val (toSend, maxFee) = remainingToSend(d.request, stillPending.values)
+        val (toSend, maxFee) = remainingToSend(d.request, stillPending.values, d.request.routeParams.includeLocalChannelCost)
         log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
@@ -416,10 +416,10 @@ object MultiPartPaymentLifecycle {
     case _ => false
   }
 
-  private def remainingToSend(request: SendMultiPartPayment, pending: Iterable[Route]): (MilliSatoshi, MilliSatoshi) = {
+  private def remainingToSend(request: SendMultiPartPayment, pending: Iterable[Route], includeLocalChannelCost: Boolean): (MilliSatoshi, MilliSatoshi) = {
     val sentAmount = pending.map(_.amount).sum
-    val sentFees = pending.map(_.fee).sum
-    (request.totalAmount - sentAmount, request.routeParams.copy(randomize = false).getMaxFee(request.totalAmount) - sentFees)
+    val sentFees = pending.map(_.fee(includeLocalChannelCost)).sum
+    (request.totalAmount - sentAmount, request.routeParams.getMaxFee(request.totalAmount) - sentFees)
   }
 
 }
