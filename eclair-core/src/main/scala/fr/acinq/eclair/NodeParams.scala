@@ -226,6 +226,7 @@ object NodeParams extends Logging {
       // v0.7.1
       "payment-request-expiry" -> "invoice-expiry",
       "override-features" -> "override-init-features",
+      "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -395,13 +396,6 @@ object NodeParams extends Logging {
       None
     }
 
-    // use default min-funding-satoshis for private channels unless the alternative private config is enabled
-    val minFundingPrivateSatoshis = if (config.getBoolean("channel.private.alt-config")) {
-      Satoshi(config.getLong("channel.private.min-funding-satoshis"))
-    } else {
-      Satoshi(config.getLong("channel.min-funding-satoshis"))
-    }
-
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -424,8 +418,8 @@ object NodeParams extends Logging {
         maxAcceptedHtlcs = maxAcceptedHtlcs,
         reserveToFundingRatio = config.getDouble("channel.reserve-to-funding-ratio"),
         maxReserveToFundingRatio = config.getDouble("channel.max-reserve-to-funding-ratio"),
-        minFundingPublicSatoshis = Satoshi(config.getLong("channel.min-funding-satoshis")),
-        minFundingPrivateSatoshis = minFundingPrivateSatoshis,
+        minFundingPublicSatoshis = Satoshi(config.getLong("channel.min-public-funding-satoshis")),
+        minFundingPrivateSatoshis = Satoshi(config.getLong("channel.min-private-funding-satoshis")),
         maxFundingSatoshis = Satoshi(config.getLong("channel.max-funding-satoshis")),
         toRemoteDelay = offeredCLTV,
         maxToLocalDelay = maxToLocalCLTV,

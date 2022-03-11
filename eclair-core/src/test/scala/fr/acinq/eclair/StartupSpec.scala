@@ -33,7 +33,7 @@ import scala.util.Try
 
 class StartupSpec extends AnyFunSuite {
 
-  val defaultConf = ConfigFactory.load("reference.conf").getConfig("eclair")
+  val defaultConf: Config = ConfigFactory.load("reference.conf").getConfig("eclair")
 
   def makeNodeParamsWithDefaults(conf: Config): NodeParams = {
     val blockCount = new AtomicLong(0)
@@ -255,6 +255,22 @@ class StartupSpec extends AnyFunSuite {
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {
     val noHtlcMinimumConf = ConfigFactory.parseString("channel.htlc-minimum-msat = 0")
     assert(Try(makeNodeParamsWithDefaults(noHtlcMinimumConf.withFallback(defaultConf))).isFailure)
+  }
+
+  test("NodeParams should fail with deprecated channel.min-funding-satoshis set") {
+    val illegalGlobalFeaturesConf = ConfigFactory.parseString("channel.min-funding-satoshis = 200000")
+    val illegalConf = illegalGlobalFeaturesConf.withFallback(defaultConf)
+
+    val nodeParamsAttempt1 = Try(makeNodeParamsWithDefaults(illegalConf))
+    assert(nodeParamsAttempt1.isFailure && nodeParamsAttempt1.failed.get.getMessage.contains("channel.min-public-funding-satoshis, channel.min-private-funding-satoshis"))
+
+    val newGlobalFeaturesConf = ConfigFactory.parseMap(Map(
+      s"channel.min-public-funding-satoshis" -> "20000",
+      s"channel.min-private-funding-satoshis" -> "20000",
+    ).asJava)
+    val legalConf = newGlobalFeaturesConf.withFallback(defaultConf)
+    val nodeParamsAttempt2 = Try(makeNodeParamsWithDefaults(legalConf))
+    assert(nodeParamsAttempt2.isSuccess)
   }
 
 }
