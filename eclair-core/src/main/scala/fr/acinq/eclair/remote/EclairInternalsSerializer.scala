@@ -31,7 +31,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.queryFlagsCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureScope, Features, InitFeature}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InitFeature}
 import scodec._
 import scodec.codecs._
 
@@ -98,7 +98,7 @@ object EclairInternalsSerializer {
       ("channelQueryChunkSize" | int32) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec)).as[RouterConf]
 
-  val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[FeatureScope])]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
+  val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[Feature])]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
 
   val peerConnectionConfCodec: Codec[PeerConnection.Conf] = (
     ("authTimeout" | finiteDurationCodec) ::

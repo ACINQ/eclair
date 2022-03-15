@@ -353,7 +353,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     }
     // They want to use a channel type we don't support yet.
     {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features[InitFeature](Map[Feature with InitFeature, FeatureSupport](StaticRemoteKey -> Mandatory), Set(UnknownFeature(22)))))))
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map(StaticRemoteKey -> Mandatory), unknown = Set(UnknownFeature(22)))))))
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"))
     }

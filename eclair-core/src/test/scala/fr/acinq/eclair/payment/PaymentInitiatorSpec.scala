@@ -37,10 +37,10 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, KeySend, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalTlvPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.{BinStringSyntax, ByteVector, HexStringSyntax}
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -53,18 +53,18 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
-  val featuresWithoutMpp: Features[InvoiceFeature] = Features[InvoiceFeature](
+  val featuresWithoutMpp: Features[InvoiceFeature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory
   )
 
-  val featuresWithMpp: Features[InvoiceFeature] = Features[InvoiceFeature](
+  val featuresWithMpp: Features[InvoiceFeature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
   )
 
-  val featuresWithTrampoline: Features[InvoiceFeature] = Features[InvoiceFeature](
+  val featuresWithTrampoline: Features[InvoiceFeature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
@@ -128,7 +128,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       Bolt11Invoice.Description("Some invoice"),
       Bolt11Invoice.PaymentSecret(randomBytes32()),
       Bolt11Invoice.Expiry(3600),
-      Bolt11Invoice.InvoiceFeatures(Features[InvoiceFeature](Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(42))).unscoped())
+      Bolt11Invoice.InvoiceFeatures(Features(Map(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), unknown = Set(UnknownFeature(42))))
     )
     val invoice = Bolt11Invoice("lnbc", Some(finalAmount), TimestampSecond.now(), randomKey().publicKey, taggedFields, ByteVector.empty)
     val req = SendPaymentToNode(finalAmount + 100.msat, invoice, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)

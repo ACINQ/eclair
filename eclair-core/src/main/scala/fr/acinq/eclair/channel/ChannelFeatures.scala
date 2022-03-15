@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
-import fr.acinq.eclair.{Feature, FeatureScope, FeatureSupport, Features, InitFeature}
+import fr.acinq.eclair.{FeatureSupport, Features, InitFeature, Feature}
 
 /**
  * Created by t-bast on 24/06/2021.
@@ -28,7 +28,7 @@ import fr.acinq.eclair.{Feature, FeatureScope, FeatureSupport, Features, InitFea
  * Even if one of these features is later disabled at the connection level, it will still apply to the channel until the
  * channel is upgraded or closed.
  */
-case class ChannelFeatures(features: Set[Feature with FeatureScope]) {
+case class ChannelFeatures(features: Set[Feature]) {
 
   val channelType: SupportedChannelType = {
     if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
@@ -45,7 +45,7 @@ case class ChannelFeatures(features: Set[Feature with FeatureScope]) {
   val paysDirectlyToWallet: Boolean = channelType.paysDirectlyToWallet
   val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 
-  def hasFeature(feature: Feature with FeatureScope): Boolean = features.contains(feature)
+  def hasFeature(feature: Feature): Boolean = features.contains(feature)
 
   override def toString: String = features.mkString(",")
 
@@ -53,13 +53,13 @@ case class ChannelFeatures(features: Set[Feature with FeatureScope]) {
 
 object ChannelFeatures {
 
-  def apply(features: (Feature with FeatureScope)*): ChannelFeatures = ChannelFeatures(Set.from(features))
+  def apply(features: Feature*): ChannelFeatures = ChannelFeatures(Set.from(features))
 
   /** Enrich the channel type with other permanent features that will be applied to the channel. */
   def apply(channelType: ChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): ChannelFeatures = {
     // NB: we don't include features that can be safely activated/deactivated without impacting the channel's operation,
     // such as option_dataloss_protect or option_shutdown_anysegwit.
-    val availableFeatures: Seq[Feature with FeatureScope] = Seq(Features.Wumbo, Features.UpfrontShutdownScript).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
+    val availableFeatures = Seq(Features.Wumbo, Features.UpfrontShutdownScript).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
     val allFeatures = channelType.features.toSeq ++ availableFeatures
     ChannelFeatures(allFeatures: _*)
   }
@@ -69,7 +69,7 @@ object ChannelFeatures {
 /** A channel type is a specific set of even feature bits that represent persistent channel features as defined in Bolt 2. */
 sealed trait ChannelType {
   /** Features representing that channel type. */
-  def features: Set[Feature with InitFeature]
+  def features: Set[InitFeature]
 }
 
 sealed trait SupportedChannelType extends ChannelType {
@@ -84,31 +84,31 @@ object ChannelTypes {
 
   // @formatter:off
   case object Standard extends SupportedChannelType {
-    override def features: Set[Feature with InitFeature] = Set.empty
+    override def features: Set[InitFeature] = Set.empty
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
     override def toString: String = "standard"
   }
   case object StaticRemoteKey extends SupportedChannelType {
-    override def features: Set[Feature with InitFeature] = Set(Features.StaticRemoteKey)
+    override def features: Set[InitFeature] = Set(Features.StaticRemoteKey)
     override def paysDirectlyToWallet: Boolean = true
     override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
     override def toString: String = "static_remotekey"
   }
   case object AnchorOutputs extends SupportedChannelType {
-    override def features: Set[Feature with InitFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
+    override def features: Set[InitFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = UnsafeLegacyAnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs"
   }
   case object AnchorOutputsZeroFeeHtlcTx extends SupportedChannelType {
-    override def features: Set[Feature with InitFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
+    override def features: Set[InitFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs_zero_fee_htlc_tx"
   }
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
-    override def features: Set[Feature with InitFeature] = featureBits.activated.keySet
+    override def features: Set[InitFeature] = featureBits.activated.keySet
     override def toString: String = s"0x${featureBits.toByteVector.toHex}"
   }
   // @formatter:on

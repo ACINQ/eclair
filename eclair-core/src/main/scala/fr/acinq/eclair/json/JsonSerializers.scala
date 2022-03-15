@@ -35,7 +35,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Feature, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization

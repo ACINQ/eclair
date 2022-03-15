@@ -58,7 +58,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       torAddress_opt: Option[NodeAddress],
-                      features: Features[FeatureScope],
+                      features: Features[Feature],
                       private val overrideInitFeatures: Map[PublicKey, Features[InitFeature]],
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
@@ -271,7 +271,7 @@ object NodeParams extends Logging {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    def validateFeatures(features: Features[FeatureScope]): Unit = {
+    def validateFeatures(features: Features[Feature]): Unit = {
       val featuresErr = Features.validateFeatureGraph(features)
       require(featuresErr.isEmpty, featuresErr.map(_.message))
       require(features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)), s"${Features.VariableLengthOnion.rfcName} must be enabled and mandatory")
@@ -291,11 +291,11 @@ object NodeParams extends Logging {
     require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
     require(pluginFeatureSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
 
-    val coreAndPluginFeatures: Features[FeatureScope] = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
+    val coreAndPluginFeatures: Features[Feature] = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
 
     val overrideInitFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-init-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: Feature with InitFeature => f })
+      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f })
       validateFeatures(f.unscoped())
       p -> (f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
     }.toMap

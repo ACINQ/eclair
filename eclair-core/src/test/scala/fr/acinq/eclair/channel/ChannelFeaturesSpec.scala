@@ -20,7 +20,7 @@ import fr.acinq.eclair.FeatureSupport._
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.{Features, InitFeature, TestKitBaseClass}
+import fr.acinq.eclair.{Features, InitFeature, NodeFeature, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
@@ -80,29 +80,31 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
   }
 
   test("create channel type from features") {
+    case class TestCase(features: Features[InitFeature], expectedChannelType: ChannelType)
+
     val validChannelTypes = Seq(
-      Features.empty[InitFeature] -> ChannelTypes.Standard,
-      Features[InitFeature](StaticRemoteKey -> Mandatory) -> ChannelTypes.StaticRemoteKey,
-      Features[InitFeature](StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory) -> ChannelTypes.AnchorOutputs,
-      Features[InitFeature](StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Mandatory) -> ChannelTypes.AnchorOutputsZeroFeeHtlcTx,
+      TestCase(Features.empty[InitFeature], ChannelTypes.Standard),
+      TestCase(Features(StaticRemoteKey -> Mandatory), ChannelTypes.StaticRemoteKey),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory), ChannelTypes.AnchorOutputs),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Mandatory), ChannelTypes.AnchorOutputsZeroFeeHtlcTx),
     )
-    for ((features, expected) <- validChannelTypes) {
-      assert(ChannelTypes.fromFeatures(features) === expected)
+    for (testCase <- validChannelTypes) {
+      assert(ChannelTypes.fromFeatures(testCase.features) === testCase.expectedChannelType)
     }
 
-    val invalidChannelTypes = Seq(
-      Features[InitFeature](Wumbo -> Optional),
-      Features[InitFeature](StaticRemoteKey -> Optional),
-      Features[InitFeature](StaticRemoteKey -> Mandatory, Wumbo -> Optional),
-      Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputs -> Optional),
-      Features[InitFeature](StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional),
-      Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputs -> Mandatory),
-      Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional),
-      Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
-      Features[InitFeature](StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional),
-      Features[InitFeature](StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
-      Features[InitFeature](StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
-      Features[InitFeature](StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, Wumbo -> Optional),
+    val invalidChannelTypes: Seq[Features[InitFeature]] = Seq(
+      Features(Wumbo -> Optional),
+      Features(StaticRemoteKey -> Optional),
+      Features(StaticRemoteKey -> Mandatory, Wumbo -> Optional),
+      Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional),
+      Features(StaticRemoteKey -> Optional, AnchorOutputs -> Mandatory),
+      Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional),
+      Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, Wumbo -> Optional),
     )
     for (features <- invalidChannelTypes) {
       assert(ChannelTypes.fromFeatures(features) === ChannelTypes.UnsupportedChannelType(features))
