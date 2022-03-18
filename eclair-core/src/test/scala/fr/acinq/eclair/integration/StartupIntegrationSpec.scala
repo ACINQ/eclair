@@ -21,7 +21,6 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCError}
 import fr.acinq.eclair.{BitcoinDefaultWalletException, BitcoinWalletDisabledException, BitcoinWalletNotLoadedException, TestUtils}
-import org.json4s.JsonAST.JValue
 
 import scala.jdk.CollectionConverters._
 
@@ -33,18 +32,6 @@ class StartupIntegrationSpec extends IntegrationSpec {
 
   test("no bitcoind wallet configured and one wallet loaded") {
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.bitcoind.wallet" -> "", "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
-  }
-
-  test("no bitcoind wallets loaded") {
-    val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("unloadwallet", defaultWallet))
-    sender.expectMsgType[JValue]
-    val thrown = intercept[BitcoinWalletNotLoadedException] {
-      instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.bitcoind.wallet" -> "", "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
-    }
-    sender.send(bitcoincli, BitcoinReq("loadwallet", defaultWallet))
-    sender.expectMsgType[JValue]
-    assert(thrown === BitcoinWalletNotLoadedException("", List()))
   }
 
   test("no bitcoind wallet configured and two wallets loaded") {
