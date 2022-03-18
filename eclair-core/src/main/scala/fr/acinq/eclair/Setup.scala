@@ -165,18 +165,22 @@ class Setup(val datadir: File,
     val future = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
       // Make sure wallet support is enabled in bitcoind.
-      _ <- bitcoinClient.invoke("getbalance").recover { case e => throw BitcoinWalletDisabledException(e) }
+      wallets <- bitcoinClient.invoke("listwallets").recover { case e => throw BitcoinWalletDisabledException(e) }
+        .collect {
+          case JArray(values) => values.map(value => value.extract[String])
+        }
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
       headers = (json \ "headers").extract[Long]
       chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
       bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => json \ "version").map(_.extract[Int])
-      unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
-        values
-          .filter(value => (value \ "spendable").extract[Boolean])
-          .map(value => (value \ "address").extract[String])
-      }
+      unspentAddresses <- bitcoinClient.invoke("listunspent").recover { _ => if (wallet.isEmpty && wallets.length > 1) throw BitcoinDefaultWalletException(wallets) else throw BitcoinWalletNotLoadedException(wallet.getOrElse(""), wallets) }
+        .collect { case JArray(values) =>
+          values
+            .filter(value => (value \ "spendable").extract[Boolean])
+            .map(value => (value \ "address").extract[String])
+        }
       _ <- chain match {
         case "mainnet" => bitcoinClient.invoke("getrawtransaction", "2157b554dcfda405233906e461ee593875ae4b1b97615872db6a25130ecc1dd6") // coinbase of #500000
         case "testnet" => bitcoinClient.invoke("getrawtransaction", "8f38a0dd41dc0ae7509081e262d791f8d53ed6f884323796d5ec7b0966dd3825") // coinbase of #1500000
@@ -402,7 +406,11 @@ case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could
 
 case class BitcoinRPCConnectionException(e: Throwable) extends RuntimeException("could not connect to bitcoind using json-rpc", e)
 
-case class BitcoinWalletDisabledException(e: Throwable) extends RuntimeException("bitcoind wallet not available", e)
+case class BitcoinWalletDisabledException(e: Throwable) extends RuntimeException("bitcoind wallet support disabled", e)
+
+case class BitcoinDefaultWalletException(loaded: List[String]) extends RuntimeException(s"no bitcoind wallet configured, but multiple wallets loaded: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
+
+case class BitcoinWalletNotLoadedException(wallet: String, loaded: List[String]) extends RuntimeException(s"configured wallet \"$wallet\" not in the set of loaded bitcoind wallets: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
 
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
 

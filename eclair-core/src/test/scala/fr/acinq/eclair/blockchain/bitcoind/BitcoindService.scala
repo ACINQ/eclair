@@ -66,7 +66,7 @@ trait BitcoindService extends Logging {
   var bitcoinrpcauthmethod: BitcoinJsonRPCAuthMethod = _
   var bitcoincli: ActorRef = _
 
-  def startBitcoind(useCookie: Boolean = false): Unit = {
+  def startBitcoind(useCookie: Boolean = false, startupFlags: String = ""): Unit = {
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
     if (!Files.exists(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)) {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
@@ -87,7 +87,7 @@ trait BitcoindService extends Logging {
       Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
     }
 
-    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
+    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR $startupFlags".run()
     bitcoinrpcauthmethod = if (useCookie) {
       SafeCookie(s"$PATH_BITCOIND_DATADIR/regtest/.cookie")
     } else {
@@ -111,12 +111,14 @@ trait BitcoindService extends Logging {
     bitcoind.exitValue()
   }
 
-  def restartBitcoind(sender: TestProbe = TestProbe(), useCookie: Boolean = false): Unit = {
+  def restartBitcoind(sender: TestProbe = TestProbe(), useCookie: Boolean = false, startupFlags: String = "", loadWallet: Boolean = true): Unit = {
     stopBitcoind()
-    startBitcoind(useCookie = useCookie)
+    startBitcoind(useCookie = useCookie, startupFlags = startupFlags)
     waitForBitcoindUp(sender)
-    sender.send(bitcoincli, BitcoinReq("loadwallet", defaultWallet))
-    sender.expectMsgType[JValue]
+    if (loadWallet) {
+      sender.send(bitcoincli, BitcoinReq("loadwallet", defaultWallet))
+      sender.expectMsgType[JValue]
+    }
   }
 
   private def waitForBitcoindUp(sender: TestProbe): Unit = {
