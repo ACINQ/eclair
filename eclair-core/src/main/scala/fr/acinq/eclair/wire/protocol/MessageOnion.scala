@@ -94,7 +94,7 @@ object MessageOnionCodecs {
   val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 
   val relayPerHopPayloadCodec: Codec[RelayPayload] = perHopPayloadCodec.narrow({
-    case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(10)))
+    case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
     case tlvs if tlvs.get[ReplyPath].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(2)))
     case tlvs => Attempt.successful(RelayPayload(tlvs))
   }, {
@@ -102,7 +102,7 @@ object MessageOnionCodecs {
   })
 
   val finalPerHopPayloadCodec: Codec[FinalPayload] = perHopPayloadCodec.narrow({
-    case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(10)))
+    case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
     case tlvs => Attempt.successful(FinalPayload(tlvs))
   }, {
     case FinalPayload(tlvs) => tlvs
