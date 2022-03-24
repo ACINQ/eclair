@@ -2147,7 +2147,7 @@ skip      | Number of transactions to skip   | No       | Integer
 curl -s -u :<eclair_api_password> -X POST -F content=2b03ffffff -F recipientNode=<node_id> "http://localhost:8080/sendonionmessage"
 
 # with eclair-cli
-eclair-cli signmessage --content=2b03ffffff --recipientNode=<node_id>
+eclair-cli sendonionmessage --content=2b03ffffff --recipientNode=<node_id>
 ```
 
 > When sending without a reply path, this command will return:
