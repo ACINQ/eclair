@@ -40,6 +40,14 @@ object LocalKeyManager {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
   }
+
+  // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
+  // Note that the node path and the above channel path are on different branches so even if the
+  // node key is compromised there is no way to retrieve the wallet keys
+  def kmpNodeKeyBasePath(chainHash: ByteVector32) = (chainHash: @unchecked) match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(48) :: DeterministicWallet.hardened(0) :: Nil
+    case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(50) :: DeterministicWallet.hardened(0) :: Nil
+  }
 }
 
 /**
@@ -53,6 +61,7 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
 
   override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath(chainHash))
   override val nodeId = nodeKey.publicKey
+  override val kmpNodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.kmpNodeKeyBasePath(chainHash))
 
   private val privateKeys: LoadingCache[KeyPath, ExtendedPrivateKey] = CacheBuilder.newBuilder()
     .maximumSize(6 * 200) // 6 keys per channel * 200 channels

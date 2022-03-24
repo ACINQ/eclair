@@ -31,6 +31,8 @@ trait KeyManager {
 
   def nodeId: PublicKey
 
+  def kmpNodeKey: DeterministicWallet.ExtendedPrivateKey
+
   def fundingPublicKey(keyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
   def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey

@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scala.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scala.{Block, ByteVector32, DeterministicWallet}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, DeterministicWallet, MnemonicCode}
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.ChannelVersion
 import org.scalatest.funsuite.AnyFunSuite
@@ -32,6 +32,14 @@ class LocalKeyManagerSpec extends AnyFunSuite {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
     val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
     assert(keyManager.nodeId == PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
+  }
+
+  test("generate the same KMP node id from the same seed") {
+    // if this test breaks it means that we will generate a different KMP node id from
+    // the same seed, which could be a problem during migration from eclair-core to kmp
+    val seed = MnemonicCode.toSeed("sock able evoke work output half bamboo energy simple fiber unhappy afford", passphrase = "")
+    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    assert(keyManager.kmpNodeKey.publicKey == PublicKey(hex"022b49d4ab3342ada31d79d2a57ceaa2e8f573277552a44433bc8a4ee5b945085d"))
   }
 
   test("generate the same secrets from the same seed") {
