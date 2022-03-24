@@ -3062,7 +3062,7 @@ eclair-cli onchaintransactions --count<span class="o">=</span>2 --skip<span clas
 <h1 id='messages'>Messages</h1><h2 id='sendonionmessage'>SendOnionMessage</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">content</span><span class="o">=</span>2b03ffffff -F <span class="nv">recipientNode</span><span class="o">=</span>&lt;node_id&gt; <span class="s2">"http://localhost:8080/sendonionmessage"</span>
 
 <span class="c"># with eclair-cli</span>
-eclair-cli signmessage --content<span class="o">=</span>2b03ffffff --recipientNode<span class="o">=</span>&lt;node_id&gt;
+eclair-cli sendonionmessage --content<span class="o">=</span>2b03ffffff --recipientNode<span class="o">=</span>&lt;node_id&gt;
 </code></pre>
 <blockquote>
 <p>When sending without a reply path, this command will return:</p>
