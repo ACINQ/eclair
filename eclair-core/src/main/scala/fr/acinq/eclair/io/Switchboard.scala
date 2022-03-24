@@ -93,6 +93,12 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
         case None => log.error(s"could not discard fcm token to unknown peer=${f.nodeId}")
       }
 
+    case d: Peer.SendPhoenixAndroidLegacyMigrate =>
+      getPeer(d.nodeId) match {
+        case Some(peer) => peer forward d
+        case None => sender ! Status.Failure(new RuntimeException("peer not found"))
+      }
+
     case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)

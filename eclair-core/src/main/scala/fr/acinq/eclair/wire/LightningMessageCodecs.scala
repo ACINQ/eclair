@@ -354,6 +354,12 @@ object LightningMessageCodecs {
 
   val unsetFcmToken: Codec[UnsetFCMToken.type ] = provide(UnsetFCMToken)
 
+  val phoenixAndroidLegacyMigrateCodec: Codec[PhoenixAndroidLegacyMigrate] =
+    ("newNodeId" | publicKey).as[PhoenixAndroidLegacyMigrate]
+
+  val phoenixAndroidLegacyMigrateResponseCodec: Codec[PhoenixAndroidLegacyMigrateResponse] =
+    ("newNodeId" | publicKey).as[PhoenixAndroidLegacyMigrateResponse]
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -402,6 +408,8 @@ object LightningMessageCodecs {
 
     .typecase(35017, setFcmTokenCodec)
     .typecase(35019, unsetFcmToken)
+    .typecase(35025, phoenixAndroidLegacyMigrateCodec)
+    .typecase(35027, phoenixAndroidLegacyMigrateResponseCodec)
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),

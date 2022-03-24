@@ -375,3 +375,6 @@ case class SwapOutResponse(chainHash: ByteVector32,
 
 case class SetFCMToken(token: String) extends LightningMessage
 case object UnsetFCMToken extends LightningMessage
+//
+case class PhoenixAndroidLegacyMigrate(newNodeId: PublicKey) extends LightningMessage
+case class PhoenixAndroidLegacyMigrateResponse(newNodeId: PublicKey) extends LightningMessage

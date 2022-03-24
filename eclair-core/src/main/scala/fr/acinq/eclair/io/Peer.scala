@@ -154,6 +154,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
       d.peerConnection ! UnsetFCMToken
       stay
 
+    case Event(s: SendPhoenixAndroidLegacyMigrate, d: ConnectedData) =>
+      d.peerConnection ! PhoenixAndroidLegacyMigrate(s.newNodeId)
+      stay
+
+    case Event(s: PhoenixAndroidLegacyMigrateResponse, d: ConnectedData) =>
+      d.peerConnection ! TransportHandler.ReadAck(s)
+      context.system.eventStream.publish(s)
+      stay
+
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
       if (c.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Wumbo)) {
         sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
@@ -496,6 +505,7 @@ object Peer {
   case class SendSwapInRequest(nodeId: PublicKey)
   case class SendSetFCMToken(nodeId: PublicKey, token: String)
   case class SendUnsetFCMToken(nodeId: PublicKey)
+  case class SendPhoenixAndroidLegacyMigrate(nodeId: PublicKey, newNodeId: PublicKey)
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
