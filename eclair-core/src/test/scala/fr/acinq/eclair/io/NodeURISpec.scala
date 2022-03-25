@@ -36,83 +36,27 @@ class NodeURISpec extends AnyFunSuite {
     assert(NodeURI.DEFAULT_PORT == 9735)
   }
 
-  // ---------- IPV4
+  test("NodeURI parsing") {
+    case class TestCase(uri: String, formattedAddr: String, port: Int)
 
-  test("parse NodeURI with IPV4 and port") {
-    val uri = s"$PUBKEY@$IPV4_ENDURANCE:9737"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.nodeId.toString() == PUBKEY)
-    assert(nodeUri.address.port == 9737)
-  }
+    val testCases = List(
+      TestCase(s"$PUBKEY@$IPV4_ENDURANCE:9737", IPV4_ENDURANCE, 9737),
+      TestCase(s"$PUBKEY@$IPV4_ENDURANCE", IPV4_ENDURANCE, 9735),
+      TestCase(s"$PUBKEY@$NAME_ENDURANCE:9737", "13.248.222.197", 9737),
+      TestCase(s"$PUBKEY@$NAME_ENDURANCE", "13.248.222.197", 9735),
+      TestCase(s"$PUBKEY@$IPV6:9737", "[2405:204:66a9:536c:873f:dc4a:f055:a298]", 9737),
+      TestCase(s"$PUBKEY@$IPV6", "[2405:204:66a9:536c:873f:dc4a:f055:a298]", 9735),
+      TestCase(s"$PUBKEY@$IPV6_ZONE_IDENTIFIER:9737", "[2001:db8:a0b:12f0::1]", 9737),
+      TestCase(s"$PUBKEY@$IPV6_ZONE_IDENTIFIER", "[2001:db8:a0b:12f0::1]", 9735),
+    )
 
-  test("parse NodeURI with IPV4 and NO port") {
-    val uri = s"$PUBKEY@$IPV4_ENDURANCE"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == NodeURI.DEFAULT_PORT)
-  }
-
-  test("parse NodeURI with named host and port") {
-    val uri = s"$PUBKEY@$IPV4_ENDURANCE:9737"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.nodeId.toString() == PUBKEY)
-    assert(nodeUri.address.port == 9737)
-  }
-
-  // ---------- IPV6 / regular with brackets
-
-  test("parse NodeURI with IPV6 with brackets and port") {
-    val uri = s"$PUBKEY@$IPV6:9737"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == 9737)
-  }
-
-  test("parse NodeURI with IPV6 with brackets and NO port") {
-    val uri = s"$PUBKEY@$IPV6"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == NodeURI.DEFAULT_PORT)
-  }
-
-  // ---------- IPV6 / regular without brackets
-
-  test("fail to parse NodeURI with IPV6 without brackets and port, and use default port") {
-    // this can not be parsed because we can not tell what the port is (brackets are required) and the port is the default
-    val uri = s"$PUBKEY@$IPV6_NO_BRACKETS:9737"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == NodeURI.DEFAULT_PORT)
-  }
-
-  test("parse NodeURI with IPV6 without brackets and NO port") {
-    val uri = s"$PUBKEY@$IPV6_NO_BRACKETS"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == NodeURI.DEFAULT_PORT)
-  }
-
-  // ---------- IPV6 / prefix
-
-  ignore("parse NodeURI with IPV6 with prefix and port") {
-    val uri = s"$PUBKEY@$IPV6_PREFIX:9737"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == 9737)
-  }
-
-  ignore("parse NodeURI with IPV6 with prefix and NO port") {
-    val uri = s"$PUBKEY@$IPV6_PREFIX"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == NodeURI.DEFAULT_PORT)
-  }
-
-  // ---------- IPV6 / zone identifier
-
-  test("parse NodeURI with IPV6 with a zone identifier and port") {
-    val uri = s"$PUBKEY@$IPV6_ZONE_IDENTIFIER:9737"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == 9737)
-  }
-
-  test("parse NodeURI with IPV6 with a zone identifier and NO port") {
-    val uri = s"$PUBKEY@$IPV6_ZONE_IDENTIFIER"
-    val nodeUri = NodeURI.parse(uri)
-    assert(nodeUri.address.port == NodeURI.DEFAULT_PORT)
+    for (testCase <- testCases) {
+      val nodeUri = NodeURI.parse(testCase.uri)
+      assert(nodeUri.nodeId.toString() == PUBKEY)
+      assert(nodeUri.address.host == testCase.formattedAddr)
+      assert(nodeUri.address.port == testCase.port)
+      assert(nodeUri.toString === s"$PUBKEY@${testCase.formattedAddr}:${testCase.port}")
+    }
   }
 
   // ---------- fail if public key is not valid

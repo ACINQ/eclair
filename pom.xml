@@ -73,7 +73,7 @@
         <akka.http.version>10.2.7</akka.http.version>
         <sttp.version>3.4.1</sttp.version>
         <bitcoinlib.version>0.19</bitcoinlib.version>
-        <guava.version>24.0-android</guava.version>
+        <guava.version>31.1-jre</guava.version>
         <kamon.version>2.4.6</kamon.version>
     </properties>
 

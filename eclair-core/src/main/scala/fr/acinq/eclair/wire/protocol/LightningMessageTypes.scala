@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import com.google.common.base.Charsets
+import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -255,8 +256,8 @@ object IPAddress {
 }
 
 // @formatter:off
-case class IPv4(ipv4: Inet4Address, port: Int) extends IPAddress { override def host: String = ipv4.getHostAddress }
-case class IPv6(ipv6: Inet6Address, port: Int) extends IPAddress { override def host: String = "[" + ipv6.getHostAddress + "]"}
+case class IPv4(ipv4: Inet4Address, port: Int) extends IPAddress { override def host: String = InetAddresses.toUriString(ipv4) }
+case class IPv6(ipv6: Inet6Address, port: Int) extends IPAddress { override def host: String = InetAddresses.toUriString(ipv6) }
 case class Tor2(tor2: String, port: Int) extends OnionAddress { override def host: String = tor2 + ".onion" }
 case class Tor3(tor3: String, port: Int) extends OnionAddress { override def host: String = tor3 + ".onion" }
 // @formatter:on
