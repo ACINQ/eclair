@@ -17,14 +17,15 @@
 package fr.acinq.eclair.wire.protocol
 
 import com.google.common.base.Charsets
+import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, NodeFeature, ShortChannelId, TimestampSecond, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
-import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+import java.net.{Inet4Address, Inet6Address, InetAddress}
 import java.nio.charset.StandardCharsets
 import scala.util.Try
 
@@ -214,7 +215,7 @@ case class Color(r: Byte, g: Byte, b: Byte) {
 }
 
 // @formatter:off
-sealed trait NodeAddress { def socketAddress: InetSocketAddress }
+sealed trait NodeAddress { def host: String; def port: Int; override def toString: String = s"$host:$port" }
 sealed trait OnionAddress extends NodeAddress
 sealed trait IPAddress extends NodeAddress
 // @formatter:on
@@ -232,7 +233,7 @@ object NodeAddress {
     host match {
       case _ if host.endsWith(".onion") && host.length == 22 => Tor2(host.dropRight(6), port)
       case _ if host.endsWith(".onion") && host.length == 62 => Tor3(host.dropRight(6), port)
-      case _ => IPAddress(InetAddress.getByName(host), port).get
+      case _ => IPAddress(InetAddress.getByName(host), port)
     }
   }
 
@@ -248,18 +249,17 @@ object NodeAddress {
 }
 
 object IPAddress {
-  def apply(inetAddress: InetAddress, port: Int): Option[IPAddress] = inetAddress match {
-    case address: Inet4Address => Some(IPv4(address, port))
-    case address: Inet6Address => Some(IPv6(address, port))
-    case _ => None
+  def apply(inetAddress: InetAddress, port: Int): IPAddress = inetAddress match {
+    case address: Inet4Address => IPv4(address, port)
+    case address: Inet6Address => IPv6(address, port)
   }
 }
 
 // @formatter:off
-case class IPv4(ipv4: Inet4Address, port: Int) extends IPAddress { override def socketAddress = new InetSocketAddress(ipv4, port) }
-case class IPv6(ipv6: Inet6Address, port: Int) extends IPAddress { override def socketAddress = new InetSocketAddress(ipv6, port) }
-case class Tor2(tor2: String, port: Int) extends OnionAddress { override def socketAddress = InetSocketAddress.createUnresolved(tor2 + ".onion", port) }
-case class Tor3(tor3: String, port: Int) extends OnionAddress { override def socketAddress = InetSocketAddress.createUnresolved(tor3 + ".onion", port) }
+case class IPv4(ipv4: Inet4Address, port: Int) extends IPAddress { override def host: String = InetAddresses.toUriString(ipv4) }
+case class IPv6(ipv6: Inet6Address, port: Int) extends IPAddress { override def host: String = InetAddresses.toUriString(ipv6) }
+case class Tor2(tor2: String, port: Int) extends OnionAddress { override def host: String = tor2 + ".onion" }
+case class Tor3(tor3: String, port: Int) extends OnionAddress { override def host: String = tor3 + ".onion" }
 // @formatter:on
 
 case class NodeAnnouncement(signature: ByteVector64,

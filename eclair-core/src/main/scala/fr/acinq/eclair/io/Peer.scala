@@ -21,7 +21,6 @@ import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneF
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
-import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
@@ -42,7 +41,6 @@ import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
 
-import java.net.InetSocketAddress
 import scala.concurrent.ExecutionContext
 
 /**
@@ -331,12 +329,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef]): State = {
     require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeid: $remoteNodeId != ${connectionReady.remoteNodeId}")
-    log.debug("got authenticated connection to address {}:{}", connectionReady.address.getHostString, connectionReady.address.getPort)
+    log.debug("got authenticated connection to address {}", connectionReady.address)
 
     if (connectionReady.outgoing) {
       // we store the node address upon successful outgoing connection, so we can reconnect later
       // any previous address is overwritten
-      NodeAddress.fromParts(connectionReady.address.getHostString, connectionReady.address.getPort).map(nodeAddress => nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeAddress))
+      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, connectionReady.address)
     }
 
     // let's bring existing/requested channels online
@@ -445,7 +443,7 @@ object Peer {
   }
   case object Nothing extends Data { override def channels = Map.empty }
   case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
-  case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef]) extends Data {
+  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef]) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features[InitFeature] = localInit.features
     def remoteFeatures: Features[InitFeature] = remoteInit.features
@@ -457,7 +455,7 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(storedChannels: Set[HasCommitments])
-  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: ActorRef, isPersistent: Boolean) {
+  case class Connect(nodeId: PublicKey, address_opt: Option[NodeAddress], replyTo: ActorRef, isPersistent: Boolean) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }
   object Connect {
@@ -476,7 +474,7 @@ object Peer {
   sealed trait PeerInfoResponse {
     def nodeId: PublicKey
   }
-  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[InetSocketAddress], channels: Int) extends PeerInfoResponse
+  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[NodeAddress], channels: Int) extends PeerInfoResponse
   case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse { override def toString: String = s"peer $nodeId not found" }
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes

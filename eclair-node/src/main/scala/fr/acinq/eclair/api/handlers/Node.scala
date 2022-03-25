@@ -17,11 +17,11 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.Route
-import com.google.common.net.HostAndPort
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.io.NodeURI
+import fr.acinq.eclair.wire.protocol.NodeAddress
 
 trait Node {
   this: Service with EclairDirectives =>
@@ -38,7 +38,7 @@ trait Node {
     } ~ formFields(nodeIdFormParam, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
       complete {
         eclairApi.connect(
-          Left(NodeURI(nodeId, HostAndPort.fromParts(host, port_opt.getOrElse(NodeURI.DEFAULT_PORT))))
+          Left(NodeURI(nodeId, NodeAddress.fromParts(host, port_opt.getOrElse(NodeURI.DEFAULT_PORT)).get))
         )
       }
     } ~ formFields(nodeIdFormParam) { nodeId =>

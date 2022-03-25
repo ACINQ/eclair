@@ -42,7 +42,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   def ipv4FromInet4(address: InetSocketAddress): IPv4 = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
-  val address = new InetSocketAddress("localhost", 42000)
+  val address = NodeAddress.fromParts("localhost", 42000).get
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
   // this map will store private keys so that we can sign new announcements at will
   val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
@@ -96,7 +96,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("send incoming connection's remote address in init") { f =>
     import f._
     val probe = TestProbe()
-    val incomingConnection = PeerConnection.PendingAuth(connection.ref, None, fakeIPAddress.socketAddress, origin_opt = None, transport_opt = Some(transport.ref), isPersistent = true)
+    val incomingConnection = PeerConnection.PendingAuth(connection.ref, None, fakeIPAddress, origin_opt = None, transport_opt = Some(transport.ref), isPersistent = true)
     assert(!incomingConnection.outgoing)
     probe.send(peerConnection, incomingConnection)
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))

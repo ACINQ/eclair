@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
-
 import akka.actor.{Actor, ActorLogging, ActorRef, DeadLetter, Props}
 import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
@@ -26,6 +24,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.tor.Socks5ProxyParams
+import fr.acinq.eclair.wire.protocol.NodeAddress
 
 class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef) extends Actor with ActorLogging {
 
@@ -57,7 +56,7 @@ class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyP
       log.warning("handling outgoing connection request locally")
       self forward req
     case _: DeadLetter =>
-      // we don't care about other dead letters
+    // we don't care about other dead letters
   }
 }
 
@@ -65,8 +64,8 @@ object ClientSpawner {
 
   def props(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props = Props(new ClientSpawner(keyPair, socks5ProxyParams_opt, peerConnectionConf, switchboard, router))
 
-  case class ConnectionRequest(address: InetSocketAddress,
-                               remoteNodeId: PublicKey,
+  case class ConnectionRequest(remoteNodeId: PublicKey,
+                               address: NodeAddress,
                                origin: ActorRef,
                                isPersistent: Boolean) extends RemoteTypes
 }

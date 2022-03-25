@@ -85,6 +85,8 @@ class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
     config.getString("server.binding-ip"),
     config.getInt("server.port"))
 
+  val socks5ProxyParams_opt = NodeParams.parseSocks5ProxyParams(config)
+
   def bootstrap: Future[Unit] = {
 
     val frontJoinedCluster = Promise[Done]()
@@ -112,7 +114,7 @@ class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
       frontRouter = system.actorOf(SimpleSupervisor.props(FrontRouter.props(routerConf, remoteRouter, Some(frontRouterInitialized)), "front-router", SupervisorStrategy.Resume))
       _ <- frontRouterInitialized.future
 
-      clientSpawner = system.actorOf(Props(new ClientSpawner(keyPair, None, peerConnectionConf, remoteSwitchboard, frontRouter)), name = "client-spawner")
+      clientSpawner = system.actorOf(Props(new ClientSpawner(keyPair, socks5ProxyParams_opt, peerConnectionConf, remoteSwitchboard, frontRouter)), name = "client-spawner")
 
       server = system.actorOf(SimpleSupervisor.props(Server.props(keyPair, peerConnectionConf, remoteSwitchboard, frontRouter, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
     } yield ()

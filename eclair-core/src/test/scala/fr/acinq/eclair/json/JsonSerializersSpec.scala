@@ -90,13 +90,15 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
   }
 
   test("NodeAddress serialization") {
-    val ipv4 = NodeAddress.fromParts("10.0.0.1", 8888).get
-    val ipv6LocalHost = NodeAddress.fromParts(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)).getHostAddress, 9735).get
+    val ipv4 = IPAddress(InetAddress.getByName("10.0.0.1"), 8888)
+    val ipv6 = IPAddress(InetAddress.getByName("[2405:204:66a9:536c:873f:dc4a:f055:a298]"), 9737)
+    val ipv6LocalHost = IPAddress(InetAddress.getByAddress(Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)), 9735)
     val tor2 = Tor2("aaaqeayeaudaocaj", 7777)
     val tor3 = Tor3("aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc", 9999)
 
     JsonSerializers.serialization.write(ipv4)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""10.0.0.1:8888""""
-    JsonSerializers.serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
+    JsonSerializers.serialization.write(ipv6)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""[2405:204:66a9:536c:873f:dc4a:f055:a298]:9737""""
+    JsonSerializers.serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""[::1]:9735""""
     JsonSerializers.serialization.write(tor2)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocaj.onion:7777""""
     JsonSerializers.serialization.write(tor3)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc.onion:9999""""
   }

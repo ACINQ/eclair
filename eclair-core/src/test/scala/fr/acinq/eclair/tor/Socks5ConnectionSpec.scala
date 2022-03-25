@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.tor
 
-import java.net.InetSocketAddress
+import fr.acinq.eclair.wire.protocol.NodeAddress
 
+import java.net.InetSocketAddress
 import org.scalatest.funsuite.AnyFunSuite
 
 /**
@@ -30,27 +31,27 @@ class Socks5ConnectionSpec extends AnyFunSuite {
     val proxyAddress = new InetSocketAddress(9050)
 
     assert(Socks5ProxyParams.proxyAddress(
-      socketAddress = new InetSocketAddress("1.2.3.4", 9735),
+      address = NodeAddress.fromParts("1.2.3.4", 9735).get,
       proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
-      socketAddress = new InetSocketAddress("1.2.3.4", 9735),
+      address = NodeAddress.fromParts("1.2.3.4", 9735).get,
       proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = false, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).isEmpty)
 
     assert(Socks5ProxyParams.proxyAddress(
-      socketAddress = new InetSocketAddress("[fc92:97a3:e057:b290:abd8:9bd6:135d:7e7]", 9735),
+      address = NodeAddress.fromParts("[fc92:97a3:e057:b290:abd8:9bd6:135d:7e7]", 9735).get,
       proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
-      socketAddress = new InetSocketAddress("[fc92:97a3:e057:b290:abd8:9bd6:135d:7e7]", 9735),
+      address = NodeAddress.fromParts("[fc92:97a3:e057:b290:abd8:9bd6:135d:7e7]", 9735).get,
       proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = false, useForTor = true, useForWatchdogs = true)).isEmpty)
 
     assert(Socks5ProxyParams.proxyAddress(
-      socketAddress = new InetSocketAddress("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735),
+      address = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get,
       proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
-      socketAddress = new InetSocketAddress("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735),
+      address = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get,
       proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = false, useForWatchdogs = true)).isEmpty)
 
   }

@@ -18,11 +18,12 @@ package fr.acinq.eclair.io
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.wire.protocol.NodeAddress
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success, Try}
 
-case class NodeURI(nodeId: PublicKey, address: HostAndPort) {
+case class NodeURI(nodeId: PublicKey, address: NodeAddress) {
   override def toString: String = s"$nodeId@$address"
 }
 
@@ -40,10 +41,10 @@ object NodeURI {
   @throws[IllegalArgumentException]
   def parse(uri: String): NodeURI = {
     uri.split("@") match {
-      case Array(nodeId, address) => (Try(PublicKey(ByteVector.fromValidHex(nodeId))), Try(HostAndPort.fromString(address).withDefaultPort(DEFAULT_PORT))) match {
-        case (Success(pk), Success(hostAndPort)) => NodeURI(pk, hostAndPort)
-        case (Failure(_), _) => throw new IllegalArgumentException("Invalid node id")
-        case (_, Failure(_)) => throw new IllegalArgumentException("Invalid host:port")
+      case Array(nodeId, address) => (Try(PublicKey(ByteVector.fromValidHex(nodeId))), Try(HostAndPort.fromString(address)).flatMap(hostAndPort => NodeAddress.fromParts(hostAndPort.getHost, hostAndPort.getPortOrDefault(DEFAULT_PORT)))) match {
+        case (Success(pk), Success(nodeAddress)) => NodeURI(pk, nodeAddress)
+        case (Failure(t), _) => throw new IllegalArgumentException("Invalid node id", t)
+        case (_, Failure(t)) => throw new IllegalArgumentException("Invalid host:port", t)
       }
       case _ => throw new IllegalArgumentException("Invalid uri, should be nodeId@host:port")
     }

@@ -32,7 +32,6 @@ import fr.acinq.eclair.{FSMDiagnosticActorLogging, Feature, Features, InitFeatur
 import scodec.Attempt
 import scodec.bits.ByteVector
 
-import java.net.InetSocketAddress
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -87,8 +86,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
   when(AUTHENTICATING) {
     case Event(TransportHandler.HandshakeCompleted(remoteNodeId), d: AuthenticatingData) =>
       cancelTimer(AUTH_TIMER)
-      import d.pendingAuth.address
-      log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
+      log.info(s"connection authenticated (direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"})")
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
       switchboard ! Authenticated(self, remoteNodeId)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport, d.isPersistent)
@@ -104,8 +102,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.info(s"using features=$localFeatures")
-      val localInit = IPAddress(d.pendingAuth.address.getAddress, d.pendingAuth.address.getPort) match {
-        case Some(remoteAddress) if !d.pendingAuth.outgoing && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
+      val localInit = d.pendingAuth.address match {
+        case remoteAddress if !d.pendingAuth.outgoing && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
         case _ => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
       }
       d.transport ! localInit
@@ -120,7 +118,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         d.transport ! TransportHandler.ReadAck(remoteInit)
 
         log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
-        remoteInit.remoteAddress_opt.foreach(address => log.info("peer reports that our IP address is {} (public={})", address.socketAddress.toString, NodeAddress.isPublicIPAddress(address)))
+        remoteInit.remoteAddress_opt.foreach(address => log.info("peer reports that our IP address is {} (public={})", address.toString, NodeAddress.isPublicIPAddress(address)))
 
         val featureGraphErr_opt = Features.validateFeatureGraph(remoteInit.features)
         if (remoteInit.networks.nonEmpty && remoteInit.networks.intersect(d.localInit.networks).isEmpty) {
@@ -552,12 +550,12 @@ object PeerConnection {
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None, isPersistent: Boolean) {
+  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: NodeAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None, isPersistent: Boolean) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey) extends RemoteTypes
   case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features[InitFeature], doSync: Boolean) extends RemoteTypes
-  case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: protocol.Init, remoteInit: protocol.Init) extends RemoteTypes
+  case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: NodeAddress, outgoing: Boolean, localInit: protocol.Init, remoteInit: protocol.Init) extends RemoteTypes
 
   sealed trait ConnectionResult extends RemoteTypes
   object ConnectionResult {
@@ -569,7 +567,7 @@ object PeerConnection {
     }
 
     case object NoAddressFound extends ConnectionResult.Failure { override def toString: String = "no address found" }
-    case class ConnectionFailed(address: InetSocketAddress) extends ConnectionResult.Failure { override def toString: String = s"connection failed to $address" }
+    case class ConnectionFailed(address: NodeAddress) extends ConnectionResult.Failure { override def toString: String = s"connection failed to $address" }
     case class AuthenticationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
     case class InitializationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
     case class AlreadyConnected(peerConnection: ActorRef, peer: ActorRef) extends ConnectionResult.Failure with HasConnection { override def toString: String = "already connected" }

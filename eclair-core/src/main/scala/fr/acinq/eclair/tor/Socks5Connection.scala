@@ -231,12 +231,13 @@ object Socks5ProxyParams {
   )
 
 
-  def proxyAddress(socketAddress: InetSocketAddress, proxyParams: Socks5ProxyParams): Option[InetSocketAddress] =
-    NodeAddress.fromParts(socketAddress.getHostString, socketAddress.getPort).toOption collect {
-      case _: IPv4 if proxyParams.useForIPv4 => proxyParams.address
-      case _: IPv6 if proxyParams.useForIPv6 => proxyParams.address
-      case _: Tor2 if proxyParams.useForTor => proxyParams.address
-      case _: Tor3 if proxyParams.useForTor => proxyParams.address
+  def proxyAddress(address: NodeAddress, proxyParams: Socks5ProxyParams): Option[InetSocketAddress] =
+    address match {
+      case _: IPv4 if proxyParams.useForIPv4 => Some(proxyParams.address)
+      case _: IPv6 if proxyParams.useForIPv6 => Some(proxyParams.address)
+      case _: Tor2 if proxyParams.useForTor => Some(proxyParams.address)
+      case _: Tor3 if proxyParams.useForTor => Some(proxyParams.address)
+      case _ => None
     }
 
   def proxyCredentials(proxyParams: Socks5ProxyParams): Option[Socks5Connection.Credentials] =

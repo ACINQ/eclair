@@ -25,7 +25,7 @@ import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
-import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries, SendChannelQuery}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -35,7 +35,6 @@ import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InitFeature}
 import scodec._
 import scodec.codecs._
 
-import java.net.{InetAddress, InetSocketAddress}
 import scala.concurrent.duration._
 
 class EclairInternalsSerializer(val system: ExtendedActorSystem) extends ScodecSerializer(43, EclairInternalsSerializer.codec(system))
@@ -88,7 +87,7 @@ object EclairInternalsSerializer {
 
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::
-    ("channelExcludeDuration" | finiteDurationCodec) ::
+      ("channelExcludeDuration" | finiteDurationCodec) ::
       ("routerBroadcastInterval" | finiteDurationCodec) ::
       ("requestNodeAnnouncements" | bool(8)) ::
       ("encodingType" | discriminated[EncodingType].by(uint8)
@@ -131,15 +130,9 @@ object EclairInternalsSerializer {
     (path: String) => system.provider.resolveActorRef(path),
     (actor: ActorRef) => Serialization.serializedActorPath(actor))
 
-  val inetAddressCodec: Codec[InetAddress] = discriminated[InetAddress].by(uint8)
-    .typecase(0, ipv4address)
-    .typecase(1, ipv6address)
-
-  val inetSocketAddressCodec: Codec[InetSocketAddress] = (inetAddressCodec ~ uint16).xmap({ case (addr, port) => new InetSocketAddress(addr, port) }, socketAddr => (socketAddr.getAddress, socketAddr.getPort))
-
   def connectionRequestCodec(system: ExtendedActorSystem): Codec[ClientSpawner.ConnectionRequest] = (
-    ("address" | inetSocketAddressCodec) ::
-      ("remoteNodeId" | publicKey) ::
+    ("remoteNodeId" | publicKey) ::
+      ("address" | nodeaddress) ::
       ("origin" | actorRefCodec(system)) ::
       ("isPersistent" | bool8)).as[ClientSpawner.ConnectionRequest]
 
@@ -152,7 +145,7 @@ object EclairInternalsSerializer {
   def connectionReadyCodec(system: ExtendedActorSystem): Codec[PeerConnection.ConnectionReady] = (
     ("peerConnection" | actorRefCodec(system)) ::
       ("remoteNodeId" | publicKey) ::
-      ("address" | inetSocketAddressCodec) ::
+      ("address" | nodeaddress) ::
       ("outgoing" | bool(8)) ::
       ("localInit" | lengthPrefixedInitCodec) ::
       ("remoteInit" | lengthPrefixedInitCodec)).as[PeerConnection.ConnectionReady]
@@ -184,7 +177,7 @@ object EclairInternalsSerializer {
     .typecase(11, initializeConnectionCodec(system))
     .typecase(12, connectionReadyCodec(system))
     .typecase(13, provide(PeerConnection.ConnectionResult.NoAddressFound))
-    .typecase(14, inetSocketAddressCodec.as[PeerConnection.ConnectionResult.ConnectionFailed])
+    .typecase(14, nodeaddress.as[PeerConnection.ConnectionResult.ConnectionFailed])
     .typecase(15, variableSizeBytes(uint16, utf8).as[PeerConnection.ConnectionResult.AuthenticationFailed])
     .typecase(16, variableSizeBytes(uint16, utf8).as[PeerConnection.ConnectionResult.InitializationFailed])
     .typecase(17, (actorRefCodec(system) :: actorRefCodec(system)).as[PeerConnection.ConnectionResult.AlreadyConnected])
