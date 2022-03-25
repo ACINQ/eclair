@@ -5,6 +5,9 @@ on:
     # Run at midnight on Sunday and Wednesday.
     - cron: '0 0 * * 0,3'
 
+permissions:
+  contents: read
+
 jobs:
 
   regression-tests:
