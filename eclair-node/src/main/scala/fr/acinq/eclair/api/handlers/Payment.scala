@@ -37,10 +37,6 @@ trait Payment {
     complete(eclairApi.usableBalances())
   }
 
-  val channelBalances: Route = postRequest("channelbalances") { implicit t =>
-    complete(eclairApi.channelBalances())
-  }
-
   val payInvoice: Route = postRequest("payinvoice") { implicit t =>
     formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "blocking".as[Boolean].?, "pathFindingExperimentName".?) {
       case (invoice@Bolt11Invoice(_, Some(amount), _, nodeId, _, _), None, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, blocking_opt, pathFindingExperimentName_opt) =>
@@ -98,6 +94,6 @@ trait Payment {
     }
   }
 
-  val paymentRoutes: Route = usableBalances ~ channelBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo
+  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo
 
 }

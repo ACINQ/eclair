@@ -106,6 +106,10 @@ trait Channel {
     }
   }
 
-  val channelRoutes: Route = open ~ close ~ forceClose ~ channel ~ channels ~ allChannels ~ allUpdates ~ channelStats
+  val channelBalances: Route = postRequest("channelbalances") { implicit t =>
+    complete(eclairApi.channelBalances())
+  }
+
+  val channelRoutes: Route = open ~ close ~ forceClose ~ channel ~ channels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
 
 }
