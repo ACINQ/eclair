@@ -44,7 +44,7 @@ class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams],
 
   def receive: Receive = {
     case Symbol("connect") =>
-      // note that there is no resolution here, it's easier plain ip addresses, or unresolved tor hostnames
+      // note that there is no resolution here, it's either plain ip addresses, or unresolved tor hostnames
       val remoteAddress = remoteNodeAddress match {
         case addr: IPv4 => new InetSocketAddress(addr.ipv4, addr.port)
         case addr: IPv6 => new InetSocketAddress(addr.ipv6, addr.port)
