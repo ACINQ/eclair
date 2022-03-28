@@ -17,15 +17,12 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
-import akka.actor.{ActorRef, FSM, Status}
+import akka.actor.{FSM, Status}
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
-import fr.acinq.eclair.blockchain.OnChainChannelFunder
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse, WatchFundingSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT, FUNDING_TIMEOUT_FUNDEE}
-import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
 import fr.acinq.eclair.wire.protocol.Error
 
@@ -40,17 +37,9 @@ import scala.util.{Failure, Success}
 /**
  * This trait contains handlers related to funding channel transactions.
  */
-trait FundingHandlers extends FSM[ChannelState, ChannelData] with UtilityHandlers {
+trait FundingHandlers extends FSM[ChannelState, ChannelData] with CommonHandlers {
 
   implicit def ec: ExecutionContext
-
-  // @formatter:off
-  def wallet: OnChainChannelFunder
-  def origin_opt: Option[ActorRef]
-
-  def txPublisher: akka.actor.typed.ActorRef[TxPublisher.Command]
-  def blockchain: akka.actor.typed.ActorRef[ZmqWatcher.Command]
-  // @formatter:on
 
   /**
    * This function is used to return feedback to user at channel opening

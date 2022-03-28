@@ -18,21 +18,17 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, FSM}
-import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction}
+import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchTxConfirmed}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
-import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
-import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.ClosingTx
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel}
-import fr.acinq.eclair.{NodeParams, NotificationsLogger}
 
 import java.sql.SQLException
 
@@ -43,21 +39,7 @@ import java.sql.SQLException
 /**
  * This trait contains handlers for error scenarios (channel closing, force-closing, unhandled, exceptions, etc).
  */
-trait ErrorHandlers extends FSM[ChannelState, ChannelData] with UtilityHandlers {
-
-  // @formatter:off
-  def nodeParams: NodeParams
-  def remoteNodeId: PublicKey
-  def keyManager: ChannelKeyManager
-
-  def txPublisher: akka.actor.typed.ActorRef[TxPublisher.Command]
-  def blockchain: akka.actor.typed.ActorRef[ZmqWatcher.Command]
-  def peer: akka.actor.ActorRef
-  def activeConnection: akka.actor.ActorRef
-  def self: akka.actor.ActorRef
-  // @formatter:on
-
-  implicit def implicitLog: akka.event.DiagnosticLoggingAdapter
+trait ErrorHandlers extends FSM[ChannelState, ChannelData] with CommonHandlers {
 
   def handleFastClose(c: CloseCommand, channelId: ByteVector32) = {
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo

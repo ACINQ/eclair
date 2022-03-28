@@ -16,11 +16,15 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.FSM
+import akka.actor.{ActorRef, FSM}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.blockchain.OnChainChannelFunder
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.publish.TxPublisher
+import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.{HtlcSettlementMessage, LightningMessage, UpdateMessage}
@@ -34,15 +38,21 @@ import scala.concurrent.duration.DurationInt
 /**
  * This trait contains utility functions for basic channel tasks.
  */
-trait UtilityHandlers extends FSM[ChannelState, ChannelData] {
+trait CommonHandlers extends FSM[ChannelState, ChannelData] {
 
   // @formatter:off
   def nodeParams: NodeParams
   def remoteNodeId: PublicKey
+  def keyManager: ChannelKeyManager
+  def origin_opt: Option[ActorRef]
+
+  def wallet: OnChainChannelFunder
 
   def peer: akka.actor.ActorRef
   def activeConnection: akka.actor.ActorRef
   def self: akka.actor.ActorRef
+  def txPublisher: akka.actor.typed.ActorRef[TxPublisher.Command]
+  def blockchain: akka.actor.typed.ActorRef[ZmqWatcher.Command]
   // @formatter:on
 
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter
