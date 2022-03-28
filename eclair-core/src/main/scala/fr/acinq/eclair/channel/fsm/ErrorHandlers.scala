@@ -39,7 +39,9 @@ import java.sql.SQLException
 /**
  * This trait contains handlers for error scenarios (channel closing, force-closing, unhandled, exceptions, etc).
  */
-trait ErrorHandlers extends FSM[ChannelState, ChannelData] with CommonHandlers {
+trait ErrorHandlers extends CommonHandlers {
+
+  this: Channel =>
 
   def handleFastClose(c: CloseCommand, channelId: ByteVector32) = {
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo

@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
-import akka.actor.{FSM, Status}
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse, WatchFundingSpent}
@@ -26,7 +26,6 @@ import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITC
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
 import fr.acinq.eclair.wire.protocol.Error
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
 
@@ -37,9 +36,9 @@ import scala.util.{Failure, Success}
 /**
  * This trait contains handlers related to funding channel transactions.
  */
-trait FundingHandlers extends FSM[ChannelState, ChannelData] with CommonHandlers {
+trait FundingHandlers extends CommonHandlers {
 
-  implicit def ec: ExecutionContext
+  this: Channel =>
 
   /**
    * This function is used to return feedback to user at channel opening

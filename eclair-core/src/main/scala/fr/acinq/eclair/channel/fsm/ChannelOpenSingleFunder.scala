@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.actor.{FSM, Status}
 import akka.pattern.pipe
 import fr.acinq.bitcoin.{SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
@@ -44,7 +44,9 @@ import scala.util.{Failure, Success, Try}
 /**
  * This trait contains the state machine for the single-funder channel funding flow.
  */
-trait ChannelOpenSingleFunder extends FSM[ChannelState, ChannelData] with FundingHandlers with CommonHandlers with ErrorHandlers {
+trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
+
+  this: Channel =>
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit, channelConfig, channelType))) =>

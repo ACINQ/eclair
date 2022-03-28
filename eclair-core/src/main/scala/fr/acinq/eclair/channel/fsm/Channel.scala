@@ -161,7 +161,8 @@ object Channel {
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val remoteNodeId: PublicKey, val blockchain: typed.ActorRef[ZmqWatcher.Command], val relayer: ActorRef, val txPublisherFactory: Channel.TxPublisherFactory, val origin_opt: Option[ActorRef] = None)(implicit val ec: ExecutionContext = ExecutionContext.Implicits.global)
-  extends FSM[ChannelState, ChannelData] with FSMDiagnosticActorLogging[ChannelState, ChannelData]
+  extends FSM[ChannelState, ChannelData]
+    with FSMDiagnosticActorLogging[ChannelState, ChannelData]
     with ChannelOpenSingleFunder
     with CommonHandlers
     with FundingHandlers
