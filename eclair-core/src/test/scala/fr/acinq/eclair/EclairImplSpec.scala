@@ -30,13 +30,12 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.OpenChannel
-import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
-import fr.acinq.eclair.payment.{PaymentFailed, Invoice}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, Router}
@@ -56,7 +55,7 @@ import scala.concurrent.duration._
 class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
   implicit val timeout: Timeout = Timeout(30 seconds)
 
-  case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, sender: TestProbe, kit: Kit)
+  case class FixtureParam(register: TestProbe, relayer: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, sender: TestProbe, kit: Kit)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val watcher = TestProbe()
@@ -86,7 +85,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       postman.ref.toTyped,
       new DummyOnChainWallet()
     )
-    withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
+    withFixture(test.toNoArgTest(FixtureParam(register, relayer, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
   }
 
   test("convert fee rate properly") { f =>
@@ -609,6 +608,17 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     peersDb.addOrUpdateRelayFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
     peersDb.addOrUpdateRelayFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
+  }
+
+  test("channelBalances asks for all channels, usableBalances only for enabled ones") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    eclair.channelBalances().pipeTo(sender.ref)
+    relayer.expectMsg(GetOutgoingChannels(enabledOnly=false))
+    eclair.usableBalances().pipeTo(sender.ref)
+    relayer.expectMsg(GetOutgoingChannels())
   }
 
 }

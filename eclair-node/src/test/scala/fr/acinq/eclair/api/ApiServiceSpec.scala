@@ -201,7 +201,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'usablebalances' asks relayer for current usable balances") {
+  test("'usablebalances' returns expected balance json only for enabled channels") {
     val eclair = mock[Eclair]
     eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
       ChannelBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
@@ -221,7 +221,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'channelbalances' asks relayer for current balances from all channels even if disabled") {
+  test("'channelbalances' returns expected balance json for all channels") {
     val eclair = mock[Eclair]
     eclair.channelBalances()(any[Timeout]) returns Future.successful(List(
       ChannelBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
