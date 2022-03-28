@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.Channel.{ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll

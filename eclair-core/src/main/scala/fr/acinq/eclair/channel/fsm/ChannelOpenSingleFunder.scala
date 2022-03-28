@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, FSM, Status}
@@ -23,8 +23,9 @@ import fr.acinq.bitcoin.{SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel.Helpers.{Funding, getRelayFees}
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.Announcements

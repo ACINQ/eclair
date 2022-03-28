@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.fsm
 
 import akka.actor.FSM
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.{HtlcSettlementMessage, LightningMessage, UpdateMessage}

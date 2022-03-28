@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, FSM}
@@ -23,8 +23,9 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchTxConfirmed}
-import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager

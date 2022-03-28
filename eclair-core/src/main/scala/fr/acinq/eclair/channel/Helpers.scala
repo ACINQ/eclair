@@ -23,7 +23,8 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
-import fr.acinq.eclair.channel.Channel.{ChannelConf, REFRESH_CHANNEL_UPDATE_INTERVAL}
+import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.ChannelsDb
