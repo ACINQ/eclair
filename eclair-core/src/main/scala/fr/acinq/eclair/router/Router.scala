@@ -473,8 +473,10 @@ object Router {
     require(hops.nonEmpty, "route cannot be empty")
 
     val length = hops.length
-    lazy val fee: MilliSatoshi = {
-      val amountToSend = hops.drop(1).reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
+
+    def fee(includeLocalChannelCost: Boolean): MilliSatoshi = {
+      val hopsToPay = if (includeLocalChannelCost) hops else hops.drop(1)
+      val amountToSend = hopsToPay.reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
       amountToSend - amount
     }
 
