@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}

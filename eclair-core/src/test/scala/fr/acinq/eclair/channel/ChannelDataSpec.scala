@@ -20,6 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}

@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop, UpdateConfirmationTarget}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._

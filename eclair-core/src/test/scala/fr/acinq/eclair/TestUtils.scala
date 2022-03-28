@@ -19,7 +19,7 @@ package fr.acinq.eclair
 import akka.actor.ActorRef
 import akka.event.DiagnosticLoggingAdapter
 import akka.testkit.{TestActor, TestProbe}
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.LightningMessage
 

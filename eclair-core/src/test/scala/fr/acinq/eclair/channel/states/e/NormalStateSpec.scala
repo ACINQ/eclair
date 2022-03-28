@@ -27,8 +27,9 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
-import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.Sphinx

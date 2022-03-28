@@ -20,8 +20,9 @@ import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.blockchain.NoOpOnChainWallet
-import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass}

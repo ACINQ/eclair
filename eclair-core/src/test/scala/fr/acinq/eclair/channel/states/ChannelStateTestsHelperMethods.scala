@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory

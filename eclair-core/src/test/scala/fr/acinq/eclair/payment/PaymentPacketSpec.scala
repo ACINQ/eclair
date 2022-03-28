@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPo
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._

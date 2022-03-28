@@ -30,7 +30,8 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.{Channel, Register}
+import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
