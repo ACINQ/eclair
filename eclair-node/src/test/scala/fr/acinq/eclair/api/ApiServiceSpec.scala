@@ -42,7 +42,7 @@ import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
+import fr.acinq.eclair.payment.relay.Relayer.ChannelBalance
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router
@@ -204,8 +204,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'usablebalances' asks relayer for current usable balances") {
     val eclair = mock[Eclair]
     eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
-      UsableBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true),
-      UsableBalance(aliceNodeId, ShortChannelId(2), 400000000 msat, 30000000 msat, isPublic = false)
+      ChannelBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
+      ChannelBalance(aliceNodeId, ShortChannelId(2), 400000000 msat, 30000000 msat, isPublic = false, isEnabled = true)
     ))
 
     val mockService = mockApi(eclair)
@@ -224,8 +224,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'channelbalances' asks relayer for current balances from all channels even if disabled") {
     val eclair = mock[Eclair]
     eclair.channelBalances()(any[Timeout]) returns Future.successful(List(
-      UsableBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true),
-      UsableBalance(aliceNodeId, ShortChannelId(2), 0 msat, 30000000 msat, isPublic = false)
+      ChannelBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
+      ChannelBalance(aliceNodeId, ShortChannelId(2), 0 msat, 30000000 msat, isPublic = false, isEnabled = false)
     ))
 
     val mockService = mockApi(eclair)

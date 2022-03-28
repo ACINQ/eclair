@@ -40,7 +40,7 @@ import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
-import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, RelayFees, UsableBalance}
+import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.router.Router
@@ -144,9 +144,9 @@ trait Eclair {
 
   def getInfo()(implicit timeout: Timeout): Future[GetInfoResponse]
 
-  def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
+  def usableBalances()(implicit timeout: Timeout): Future[Iterable[ChannelBalance]]
 
-  def channelBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
+  def channelBalances()(implicit timeout: Timeout): Future[Iterable[ChannelBalance]]
 
   def onChainBalance(): Future[OnChainBalance]
 
@@ -484,11 +484,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       instanceId = appKit.nodeParams.instanceId.toString)
   )
 
-  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =
-    (appKit.relayer ? GetOutgoingChannels()).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance))
+  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[ChannelBalance]] =
+    (appKit.relayer ? GetOutgoingChannels()).mapTo[OutgoingChannels].map(_.channels.map(_.toChannelBalance))
 
-  override def channelBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =
-    (appKit.relayer ? GetOutgoingChannels(enabledOnly = false)).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance))
+  override def channelBalances()(implicit timeout: Timeout): Future[Iterable[ChannelBalance]] =
+    (appKit.relayer ? GetOutgoingChannels(enabledOnly = false)).mapTo[OutgoingChannels].map(_.channels.map(_.toChannelBalance))
 
   override def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance] = {
     for {
