@@ -18,9 +18,10 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
+import fr.acinq.eclair.wire.protocol.ChannelTlv.ChannelTypeTlv
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
-import fr.acinq.eclair.{FeatureSupport, Features, UInt64}
+import fr.acinq.eclair.{FeatureSupport, Features, ShortChannelId, UInt64}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -110,7 +111,14 @@ object FundingSignedTlv {
 sealed trait ChannelReadyTlv extends Tlv
 
 object ChannelReadyTlv {
-  val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint))
+
+  case class ShortChannelIdTlv(alias: ShortChannelId) extends ChannelReadyTlv
+
+  val channelTypeCodec: Codec[ShortChannelIdTlv] = variableSizeBytesLong(varintoverflow, "alias" | shortchannelid).as[ShortChannelIdTlv]
+
+  val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint)
+    .typecase(UInt64(1), channelTypeCodec)
+  )
 }
 
 sealed trait ChannelReestablishTlv extends Tlv
