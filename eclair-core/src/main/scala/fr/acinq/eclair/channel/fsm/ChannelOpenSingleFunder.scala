@@ -80,7 +80,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-          val minimumDepth = Helpers.minDepthForFunding(nodeParams.channelConf, open.fundingSatoshis)
+          val minimumDepth = if (channelFeatures.hasFeature(Features.ZeroConf)) 0 else Helpers.minDepthForFunding(nodeParams.channelConf, open.fundingSatoshis)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty

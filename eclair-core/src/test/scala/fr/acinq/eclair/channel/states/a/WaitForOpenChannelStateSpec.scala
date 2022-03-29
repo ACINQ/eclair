@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -286,6 +286,14 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.fromValidHex("deadbeef"))))
     alice2bob.forward(bob, open1)
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenChannel (zeroconf)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    alice2bob.forward(bob, open)
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    assert(accept.minimumDepth == 0)
   }
 
   test("recv Error") { f =>

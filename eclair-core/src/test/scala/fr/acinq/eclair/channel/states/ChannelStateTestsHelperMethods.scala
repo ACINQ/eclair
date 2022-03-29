@@ -72,6 +72,8 @@ object ChannelStateTestsTags {
   val HighDustLimitDifferenceBobAlice = "high_dust_limit_difference_bob_alice"
   /** If set, channels will use option_channel_type. */
   val ChannelType = "option_channel_type"
+  /** If set, channels will use option_zeroconf. */
+  val ZeroConf = "zeroconf"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -157,6 +159,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(_.updated(Features.UpfrontShutdownScript, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .initFeatures()
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
@@ -166,6 +170,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(_.updated(Features.UpfrontShutdownScript, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .initFeatures()
 
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, channelFlags.announceChannel)
