@@ -21,7 +21,7 @@ jobs:
           path: bitcoin
 
       - name: Install bitcoind dependencies
-        run: sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 libssl-dev libevent-dev libboost-system-dev libboost-filesystem-dev libboost-chrono-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libqt5gui5 libqt5core5a libqt5dbus5 qttools5-dev qttools5-dev-tools libprotobuf-dev protobuf-compiler git libsqlite3-dev ccache
+        run: sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 libevent-dev libboost-dev                                                                                          libminiupnpc-dev libnatpmp-dev    libzmq3-dev                                        libsqlite3-dev            systemtap-sdt-dev
         working-directory: ./bitcoin
 
       - name: Autogen bitcoind
