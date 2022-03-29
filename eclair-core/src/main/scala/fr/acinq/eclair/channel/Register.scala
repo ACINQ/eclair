@@ -17,8 +17,8 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.Register._
 

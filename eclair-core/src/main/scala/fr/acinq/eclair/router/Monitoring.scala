@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.{BtcDouble, MilliBtcDouble, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{BtcDouble, MilliBtcDouble, SatoshiLong}
 import fr.acinq.eclair.router.Router.GossipDecision
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{MilliSatoshi, getSimpleClassName}

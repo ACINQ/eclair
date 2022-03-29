@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.{ByteVector32, Protocol}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Protocol}
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.{DecryptionError, EncryptionError, InvalidCounter}
 import grizzled.slf4j.Logging
 import org.bouncycastle.crypto.engines.ChaCha7539Engine

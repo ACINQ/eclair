@@ -1,6 +1,6 @@
 package fr.acinq.eclair.wire.internal.channel.version2
 
-import fr.acinq.bitcoin.{ByteVector64, OutPoint, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, OutPoint, Transaction}
 import fr.acinq.eclair.channel.{ChannelConfig, ChannelFeatures, HtlcTxAndRemoteSig}
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2.stateDataCodec

@@ -3,8 +3,8 @@ package fr.acinq.eclair.io
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{Actor, ActorContext, ActorRef, Props, Status}
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.ByteVector64
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.channel.ChannelIdAssigned
 import fr.acinq.eclair.io.Switchboard._

@@ -19,8 +19,8 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec

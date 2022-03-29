@@ -19,8 +19,8 @@ package fr.acinq.eclair.crypto
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.blockchain.NewBlock
 import fr.acinq.eclair.channel.ChannelSignatureReceived

@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._

@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment.relay
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{Logs, NodeParams}
 

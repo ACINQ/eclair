@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.watchdogs
 
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.scalacompat.Block
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.LatestHeaders
 import fr.acinq.eclair.blockchain.watchdogs.ExplorerApi.{BlockcypherExplorer, BlockstreamExplorer, CheckLatestHeaders, MempoolSpaceExplorer}
 import fr.acinq.eclair.{BlockHeight, TestTags}

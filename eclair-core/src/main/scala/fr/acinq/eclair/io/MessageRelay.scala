@@ -20,8 +20,8 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.{ActorRef, typed}
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.wire.protocol.OnionMessage

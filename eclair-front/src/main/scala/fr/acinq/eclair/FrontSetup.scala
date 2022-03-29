@@ -24,7 +24,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import com.amazonaws.services.secretsmanager.AWSSecretsManagerClient
 import com.amazonaws.services.secretsmanager.model.GetSecretValueRequest
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.LocalNodeKeyManager
 import fr.acinq.eclair.io.Switchboard.{GetRouterPeerConf, RouterPeerConf}

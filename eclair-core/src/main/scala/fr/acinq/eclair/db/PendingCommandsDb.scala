@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import akka.actor.ActorRef
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
 

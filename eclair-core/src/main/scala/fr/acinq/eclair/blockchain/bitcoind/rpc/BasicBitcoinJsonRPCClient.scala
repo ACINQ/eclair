@@ -16,12 +16,12 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
-import org.json4s.JsonAST.{JString, JValue}
+import fr.acinq.eclair.json.{ByteVector32KmpSerializer, ByteVector32Serializer}
+import org.json4s.DefaultFormats
+import org.json4s.JsonAST.JValue
 import org.json4s.jackson.Serialization
-import org.json4s.{CustomSerializer, DefaultFormats}
 import sttp.client3._
 import sttp.client3.json4s._
 import sttp.model.StatusCode
@@ -34,14 +34,8 @@ import scala.util.{Failure, Success, Try}
 
 class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit sb: SttpBackend[Future, _]) extends BitcoinJsonRPCClient {
 
-  // necessary to properly serialize ByteVector32 into String readable by bitcoind
-  object ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {
-    null
-  }, {
-    case x: ByteVector32 => JString(x.toHex)
-  }))
+  implicit val formats = DefaultFormats.withBigDecimal + ByteVector32Serializer + ByteVector32KmpSerializer
 
-  implicit val formats = DefaultFormats.withBigDecimal + ByteVector32Serializer
   private val scheme = if (ssl) "https" else "http"
   private val serviceUri = wallet match {
     case Some(name) => uri"$scheme://$host:$port/wallet/$name"

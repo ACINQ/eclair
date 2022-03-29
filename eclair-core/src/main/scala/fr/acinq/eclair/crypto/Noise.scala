@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Crypto, Protocol}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.{Crypto, Protocol}
 import fr.acinq.eclair.randomBytes
 import grizzled.slf4j.Logging
 import org.bouncycastle.crypto.digests.SHA256Digest
@@ -64,10 +64,7 @@ object Noise {
      * @return sha256(publicKey * keyPair.priv in compressed format)
      */
     override def dh(keyPair: KeyPair, publicKey: ByteVector): ByteVector = {
-      val point = Crypto.curve.getCurve.decodePoint(publicKey.toArray)
-      val scalar = new BigInteger(1, keyPair.priv.take(32).toArray)
-      val point1 = point.multiply(scalar).normalize()
-      Crypto.sha256(ByteVector.view(point1.getEncoded(true)))
+      Crypto.ecdh(PrivateKey(keyPair.priv), PublicKey(publicKey))
     }
 
     override def dhLen: Int = 32

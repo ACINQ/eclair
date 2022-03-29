@@ -18,7 +18,7 @@ package fr.acinq.eclair.integration
 
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.payment._

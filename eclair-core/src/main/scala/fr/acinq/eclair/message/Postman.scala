@@ -19,8 +19,8 @@ package fr.acinq.eclair.message
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.{MessageRelay, Switchboard}
 import fr.acinq.eclair.message.OnionMessages.ReceiveMessage
 import fr.acinq.eclair.randomBytes32

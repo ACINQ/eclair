@@ -19,7 +19,7 @@ package fr.acinq.eclair.integration
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.channel._

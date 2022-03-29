@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair.db.ChannelsDbSpec.{getPgTimestamp, getTimestamp, testCases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent

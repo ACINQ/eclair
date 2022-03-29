@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.watchdogs
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.scalacompat.Block
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{DangerousBlocksSkew, WrappedCurrentBlockHeight}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.{BlockHeight, NodeParams, TestConstants, TestTags}

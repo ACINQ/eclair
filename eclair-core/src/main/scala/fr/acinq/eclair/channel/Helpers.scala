@@ -17,9 +17,10 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
+import fr.acinq.bitcoin.scalacompat.Script._
+import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}

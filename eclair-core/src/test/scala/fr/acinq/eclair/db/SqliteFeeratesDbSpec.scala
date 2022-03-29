@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
 import fr.acinq.eclair.db.pg.PgUtils.setVersion

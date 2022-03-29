@@ -17,8 +17,8 @@
 package fr.acinq.eclair.wire.protocol
 
 import com.google.common.net.InetAddresses
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.crypto.Hmac256

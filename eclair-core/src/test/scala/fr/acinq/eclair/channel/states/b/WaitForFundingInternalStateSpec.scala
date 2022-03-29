@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel

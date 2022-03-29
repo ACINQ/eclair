@@ -17,8 +17,8 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors.{pubkeyListUnmarshaller, _}
