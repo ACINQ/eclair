@@ -107,10 +107,10 @@ object FundingSignedTlv {
   val fundingSignedTlvCodec: Codec[TlvStream[FundingSignedTlv]] = tlvStream(discriminated[FundingSignedTlv].by(varint))
 }
 
-sealed trait FundingLockedTlv extends Tlv
+sealed trait ChannelReadyTlv extends Tlv
 
-object FundingLockedTlv {
-  val fundingLockedTlvCodec: Codec[TlvStream[FundingLockedTlv]] = tlvStream(discriminated[FundingLockedTlv].by(varint))
+object ChannelReadyTlv {
+  val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint))
 }
 
 sealed trait ChannelReestablishTlv extends Tlv

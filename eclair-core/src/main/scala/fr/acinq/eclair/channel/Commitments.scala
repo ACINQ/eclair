@@ -915,7 +915,7 @@ object Commitments {
     case _: CommitSig => s"sig"
     case _: RevokeAndAck => s"rev"
     case _: Error => s"err"
-    case _: FundingLocked => s"funding_locked"
+    case _: ChannelReady => s"channel_ready"
     case _ => "???"
   }
 

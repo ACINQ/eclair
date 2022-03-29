@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -53,7 +53,7 @@ case object WAIT_FOR_FUNDING_INTERNAL extends ChannelState
 case object WAIT_FOR_FUNDING_CREATED extends ChannelState
 case object WAIT_FOR_FUNDING_SIGNED extends ChannelState
 case object WAIT_FOR_FUNDING_CONFIRMED extends ChannelState
-case object WAIT_FOR_FUNDING_LOCKED extends ChannelState
+case object WAIT_FOR_CHANNEL_READY extends ChannelState
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
 case object NEGOTIATING extends ChannelState
@@ -422,9 +422,9 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
-                                                 deferred: Option[FundingLocked],
+                                                 deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends PersistentChannelData
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: ChannelReady) extends PersistentChannelData
 final case class DATA_NORMAL(commitments: Commitments,
                              shortChannelId: ShortChannelId,
                              buried: Boolean,

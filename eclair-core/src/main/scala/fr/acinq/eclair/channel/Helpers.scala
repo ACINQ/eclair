@@ -56,7 +56,7 @@ object Helpers {
       remoteParams = data.commitments.remoteParams.copy(initFeatures = remoteInit.features))
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
-      case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = commitments1)
+      case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments1)
       case d: DATA_NORMAL => d.copy(commitments = commitments1)
       case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
       case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)

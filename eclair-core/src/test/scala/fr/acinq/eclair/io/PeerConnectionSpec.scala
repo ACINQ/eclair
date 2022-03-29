@@ -423,7 +423,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     probe.send(peerConnection, message)
     assert(peerConnection.stateName == PeerConnection.CONNECTED)
-    probe.send(peerConnection, FundingLocked(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
+    probe.send(peerConnection, ChannelReady(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
     peerConnection.stateData match {
       case d: PeerConnection.ConnectedData => assert(d.isPersistent)
       case _ => fail()

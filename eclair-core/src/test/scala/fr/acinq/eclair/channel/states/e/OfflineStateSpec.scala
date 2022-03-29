@@ -85,9 +85,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.forward(bob, reestablishA)
     bob2alice.forward(alice, reestablishB)
 
-    // both nodes will send the funding_locked message because all updates have been cancelled
-    alice2bob.expectMsgType[FundingLocked]
-    bob2alice.expectMsgType[FundingLocked]
+    // both nodes will send the channel_ready message because all updates have been cancelled
+    alice2bob.expectMsgType[ChannelReady]
+    bob2alice.expectMsgType[ChannelReady]
 
     // alice will re-send the update and the sig
     alice2bob.expectMsg(htlc)
@@ -660,7 +660,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
 
-    alice2bob.expectMsgType[FundingLocked] // since the channel's commitment hasn't been updated, we re-send funding_locked
+    alice2bob.expectMsgType[ChannelReady] // since the channel's commitment hasn't been updated, we re-send channel_ready
     if (shouldUpdateFee) {
       alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
     } else {
@@ -734,8 +734,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.forward(bob)
 
     // at this point the channel isn't deeply buried: channel_update isn't sent again
-    alice2bob.expectMsgType[FundingLocked]
-    bob2alice.expectMsgType[FundingLocked]
+    alice2bob.expectMsgType[ChannelReady]
+    bob2alice.expectMsgType[ChannelReady]
     alice2bob.expectNoMessage()
     bob2alice.expectNoMessage()
 

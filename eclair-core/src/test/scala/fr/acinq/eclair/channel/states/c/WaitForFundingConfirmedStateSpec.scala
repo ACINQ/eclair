@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITC
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, ChannelReady, FundingSigned, Init, OpenChannel}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
 import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -79,20 +79,20 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     }
   }
 
-  test("recv FundingLocked") { f =>
+  test("recv ChannelReady") { f =>
     import f._
     // we create a new listener that registers after alice has published the funding tx
     val listener = TestProbe()
     bob.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     bob.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
-    // make bob send a FundingLocked msg
+    // make bob send a ChannelReady msg
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx == fundingTx)
     assert(txPublished.miningFee == 0.sat) // bob is fundee
     assert(listener.expectMsgType[TransactionConfirmed].tx == fundingTx)
-    val msg = bob2alice.expectMsgType[FundingLocked]
+    val msg = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].deferred.contains(msg))
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
@@ -107,9 +107,9 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
     assert(listener.expectMsgType[TransactionConfirmed].tx == fundingTx)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
+    awaitCond(alice.stateName == ChannelReady)
     alice2blockchain.expectMsgType[WatchFundingLost]
-    alice2bob.expectMsgType[FundingLocked]
+    alice2bob.expectMsgType[ChannelReady]
   }
 
   test("recv WatchFundingConfirmedTriggered (bad funding pubkey script)") { f =>

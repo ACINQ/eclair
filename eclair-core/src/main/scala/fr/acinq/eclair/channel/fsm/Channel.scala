@@ -714,7 +714,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
 
-    case Event(_: FundingLocked, _: DATA_NORMAL) => stay() // will happen after a reconnection if no updates were ever committed to the channel
+    case Event(_: ChannelReady, _: DATA_NORMAL) => stay() // will happen after a reconnection if no updates were ever committed to the channel
 
   })
 
@@ -1316,12 +1316,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       blockchain ! WatchFundingConfirmed(self, d.commitments.commitInput.outPoint.txid, minDepth)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
-    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
-      log.debug("re-sending fundingLocked")
+    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
+      log.debug("re-sending channelReady")
       val channelKeyPath = keyManager.keyPath(d.commitments.localParams, d.commitments.channelConfig)
       val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-      val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
-      goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
+      val channelReady = ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
+      goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
       Syncing.checkSync(keyManager, d, channelReestablish) match {
@@ -1332,12 +1332,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           // normal case, our data is up-to-date
 
           if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
-            // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
-            log.debug("re-sending fundingLocked")
+            // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit channel_ready, otherwise it MUST NOT
+            log.debug("re-sending channelReady")
             val channelKeyPath = keyManager.keyPath(d.commitments.localParams, d.commitments.channelConfig)
             val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-            val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
-            sendQueue = sendQueue :+ fundingLocked
+            val channelReady = ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
+            sendQueue = sendQueue :+ channelReady
           }
 
           // we may need to retransmit updates and/or commit_sig and/or revocation
@@ -1441,14 +1441,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       }
 
     // This handler is a workaround for an issue in lnd: starting with versions 0.10 / 0.11, they sometimes fail to send
-    // a channel_reestablish when reconnecting a channel that recently got confirmed, and instead send a funding_locked
+    // a channel_reestablish when reconnecting a channel that recently got confirmed, and instead send a channel_ready
     // first and then go silent. This is due to a race condition on their side, so we trigger a reconnection, hoping that
     // we will eventually receive their channel_reestablish.
-    case Event(_: FundingLocked, d) =>
-      log.warning("received funding_locked before channel_reestablish (known lnd bug): disconnecting...")
+    case Event(_: ChannelReady, d) =>
+      log.warning("received channel_ready before channel_reestablish (known lnd bug): disconnecting...")
       // NB: we use a small delay to ensure we've sent our warning before disconnecting.
       context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
-      stay() sending Warning(d.channelId, "spec violation: you sent funding_locked before channel_reestablish")
+      stay() sending Warning(d.channelId, "spec violation: you sent channel_ready before channel_reestablish")
 
     // This handler is a workaround for an issue in lnd similar to the one above: they sometimes send announcement_signatures
     // before channel_reestablish, which is a minor spec violation. It doesn't halt the channel, we can simply postpone
@@ -1615,7 +1615,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
       val emitEvent_opt: Option[EmitLocalChannelEvent] = (state, nextState, stateData, nextStateData) match {
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate(d))
-        case (WAIT_FOR_FUNDING_LOCKED, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate(d))
+        case (WAIT_FOR_CHANNEL_READY, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate(d))
         case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
         case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
         case (NORMAL, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
@@ -1637,8 +1637,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       (stateData, nextStateData) match {
         // NORMAL->NORMAL, NORMAL->OFFLINE, SYNCING->NORMAL
         case (d1: DATA_NORMAL, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = Some(d1.channelUpdate), d2)
-        // WAIT_FOR_FUNDING_LOCKED->NORMAL
-        case (_: DATA_WAIT_FOR_FUNDING_LOCKED, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
+        // WAIT_FOR_CHANNEL_READY->NORMAL
+        case (_: DATA_WAIT_FOR_CHANNEL_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
         case _ => ()
       }
   }

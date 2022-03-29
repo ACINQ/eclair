@@ -164,10 +164,10 @@ object LightningMessageCodecs {
       ("signature" | bytes64) ::
       ("tlvStream" | FundingSignedTlv.fundingSignedTlvCodec)).as[FundingSigned]
 
-  val fundingLockedCodec: Codec[FundingLocked] = (
+  val channelReadyCodec: Codec[ChannelReady] = (
     ("channelId" | bytes32) ::
       ("nextPerCommitmentPoint" | publicKey) ::
-      ("tlvStream" | FundingLockedTlv.fundingLockedTlvCodec)).as[FundingLocked]
+      ("tlvStream" | ChannelReadyTlv.channelReadyTlvCodec)).as[ChannelReady]
 
   val txAddInputCodec: Codec[TxAddInput] = (
     ("channelId" | bytes32) ::
@@ -441,7 +441,7 @@ object LightningMessageCodecs {
     .typecase(33, acceptChannelCodec)
     .typecase(34, fundingCreatedCodec)
     .typecase(35, fundingSignedCodec)
-    .typecase(36, fundingLockedCodec)
+    .typecase(36, channelReadyCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
     .typecase(64, openDualFundedChannelCodec)

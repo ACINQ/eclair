@@ -229,9 +229,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
     alice2blockchain.expectMsgType[WatchFundingLost]
     bob2blockchain.expectMsgType[WatchFundingLost]
-    alice2bob.expectMsgType[FundingLocked]
+    alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[FundingLocked]
+    bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]

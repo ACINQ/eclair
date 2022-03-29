@@ -71,7 +71,7 @@ object TestDatabases {
       // serialized and deserialized we need to turn "hot" payments into cold ones
       def freeze3(input: PersistentChannelData): PersistentChannelData = input match {
         case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))

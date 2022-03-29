@@ -495,7 +495,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     val channelId = sender.expectMsgType[RES_GET_CHANNEL_DATA[PersistentChannelData]].data.channelId
     awaitCond({
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
-      sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_FUNDING_LOCKED
+      sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_CHANNEL_READY
     })
 
     generateBlocks(6)
@@ -506,7 +506,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     // after 8 blocks the funder is still waiting for funding_locked from the fundee
     funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
-    assert(sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_FUNDING_LOCKED)
+    assert(sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_CHANNEL_READY)
 
     // simulate a disconnection
     sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
@@ -520,7 +520,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       fundeeState == OFFLINE && funderState == OFFLINE
     })
 
-    // reconnect and check the fundee is waiting for more conf, funder is waiting for fundee to send funding_locked
+    // reconnect and check the fundee is waiting for more conf, funder is waiting for fundee to send channel_ready
     awaitCond({
       // reconnection
       sender.send(fundee.switchboard, Peer.Connect(
@@ -535,7 +535,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       val fundeeState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
       val funderState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
-      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
+      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_CHANNEL_READY
     }, max = 30 seconds, interval = 10 seconds)
 
     // 5 extra blocks make it 13, just the amount of confirmations needed

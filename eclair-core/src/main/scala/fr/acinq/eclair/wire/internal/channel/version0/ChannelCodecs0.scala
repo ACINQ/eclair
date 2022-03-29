@@ -349,30 +349,30 @@ private[channel] object ChannelCodecs0 {
         ("signature" | bytes64) ::
         ("tlvStream" | provide(TlvStream.empty[FundingSignedTlv]))).as[FundingSigned]
 
-    val fundingLockedCodec: Codec[FundingLocked] = (
+    val channelReadyCodec: Codec[ChannelReady] = (
       ("channelId" | bytes32) ::
         ("nextPerCommitmentPoint" | publicKey) ::
-        ("tlvStream" | provide(TlvStream.empty[FundingLockedTlv]))).as[FundingLocked]
+        ("tlvStream" | provide(TlvStream.empty[ChannelReadyTlv]))).as[ChannelReady]
 
     // this is a decode-only codec compatible with versions 997acee and below, with placeholders for new fields
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | provide[Option[Transaction]](None)) ::
         ("waitingSince" | provide(BlockHeight(TimestampSecond.now().toLong))) ::
-        ("deferred" | optional(bool, fundingLockedCodec)) ::
+        ("deferred" | optional(bool, channelReadyCodec)) ::
         ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | optional(bool, txCodec)) ::
         ("waitingSince" | int64.as[BlockHeight]) ::
-        ("deferred" | optional(bool, fundingLockedCodec)) ::
+        ("deferred" | optional(bool, channelReadyCodec)) ::
         ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
-    val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
+    val DATA_WAIT_FOR_CHANNEL_READY_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
-        ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED].decodeOnly
+        ("lastSent" | channelReadyCodec)).as[DATA_WAIT_FOR_CHANNEL_READY].decodeOnly
 
     val shutdownCodec: Codec[Shutdown] = (
       ("channelId" | bytes32) ::
@@ -457,7 +457,7 @@ private[channel] object ChannelCodecs0 {
     .typecase(0x09, Codecs.DATA_CLOSING_Codec)
     .typecase(0x08, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x01, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
-    .typecase(0x02, Codecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
+    .typecase(0x02, Codecs.DATA_WAIT_FOR_CHANNEL_READY_Codec)
     .typecase(0x03, Codecs.DATA_NORMAL_COMPAT_03_Codec)
     .typecase(0x04, Codecs.DATA_SHUTDOWN_Codec)
     .typecase(0x05, Codecs.DATA_NEGOTIATING_Codec)

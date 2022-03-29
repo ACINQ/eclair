@@ -225,9 +225,9 @@ case class FundingSigned(channelId: ByteVector32,
                          signature: ByteVector64,
                          tlvStream: TlvStream[FundingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
 
-case class FundingLocked(channelId: ByteVector32,
+case class ChannelReady(channelId: ByteVector32,
                          nextPerCommitmentPoint: PublicKey,
-                         tlvStream: TlvStream[FundingLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
+                         tlvStream: TlvStream[ChannelReadyTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
 
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector,

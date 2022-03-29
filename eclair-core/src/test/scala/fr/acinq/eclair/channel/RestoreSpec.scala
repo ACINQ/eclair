@@ -19,7 +19,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
-import fr.acinq.eclair.wire.protocol.{ChannelReestablish, CommitSig, Error, FundingLocked, Init, RevokeAndAck}
+import fr.acinq.eclair.wire.protocol.{ChannelReestablish, CommitSig, Error, ChannelReady, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestKitBaseClass, _}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -234,8 +234,8 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       bob2alice.expectMsgType[ChannelReestablish]
       alice2bob.forward(bob)
       bob2alice.forward(newAlice)
-      alice2bob.expectMsgType[FundingLocked]
-      bob2alice.expectMsgType[FundingLocked]
+      alice2bob.expectMsgType[ChannelReady]
+      bob2alice.expectMsgType[ChannelReady]
       alice2bob.forward(bob)
       bob2alice.forward(newAlice)
       awaitCond(newAlice.stateName == NORMAL)

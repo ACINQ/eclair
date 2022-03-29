@@ -495,7 +495,7 @@ object CustomTypeHints {
       classOf[DATA_WAIT_FOR_FUNDING_INTERNAL],
       classOf[DATA_WAIT_FOR_FUNDING_CREATED],
       classOf[DATA_WAIT_FOR_FUNDING_SIGNED],
-      classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
+      classOf[DATA_WAIT_FOR_CHANNEL_READY],
       classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED],
       classOf[DATA_NORMAL],
       classOf[DATA_SHUTDOWN],
