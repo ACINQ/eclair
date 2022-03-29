@@ -699,8 +699,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val channels1 = sender.expectMsgType[Relayer.OutgoingChannels]
     val channels2 = sender.expectMsgType[Relayer.OutgoingChannels]
 
-    logger.info(channels1.channels.map(_.toUsableBalance))
-    logger.info(channels2.channels.map(_.toUsableBalance))
+    logger.info(channels1.channels.map(_.toChannelBalance))
+    logger.info(channels2.channels.map(_.toChannelBalance))
   }
 
 }

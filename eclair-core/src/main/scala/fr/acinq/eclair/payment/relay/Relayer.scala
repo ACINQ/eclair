@@ -132,7 +132,7 @@ object Relayer extends Logging {
   }
 
   case class RelayForward(add: UpdateAddHtlc)
-  case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
+  case class ChannelBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
 
   /**
    * Get the list of local outgoing channels.
@@ -141,12 +141,13 @@ object Relayer extends Logging {
    */
   case class GetOutgoingChannels(enabledOnly: Boolean = true)
   case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: AbstractCommitments) {
-    def toUsableBalance: UsableBalance = UsableBalance(
+    def toChannelBalance: ChannelBalance = ChannelBalance(
       remoteNodeId = nextNodeId,
       shortChannelId = channelUpdate.shortChannelId,
       canSend = commitments.availableBalanceForSend,
       canReceive = commitments.availableBalanceForReceive,
-      isPublic = commitments.announceChannel)
+      isPublic = commitments.announceChannel,
+      isEnabled = channelUpdate.channelFlags.isEnabled)
   }
   case class OutgoingChannels(channels: Seq[OutgoingChannel])
 

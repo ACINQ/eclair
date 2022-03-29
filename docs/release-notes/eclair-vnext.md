@@ -8,7 +8,7 @@
 
 ### API changes
 
-<insert changes>
+- `channelbalances` Retrieves information about the balances of all local channels. (#2196)
 
 ### Miscellaneous improvements and bug fixes
 

@@ -42,12 +42,13 @@ import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
+import fr.acinq.eclair.payment.relay.Relayer.ChannelBalance
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.PredefinedNodeRoute
 import fr.acinq.eclair.wire.protocol._
+import org.json4s.{Formats, Serialization}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
@@ -62,12 +63,12 @@ import scala.util.Try
 
 class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticMockito with Matchers {
 
-  implicit val formats = JsonSupport.formats
-  implicit val serialization = JsonSupport.serialization
-  implicit val routeTestTimeout = RouteTestTimeout(3 seconds)
+  implicit val formats: Formats = JsonSupport.formats
+  implicit val serialization: Serialization = JsonSupport.serialization
+  implicit val routeTestTimeout: RouteTestTimeout = RouteTestTimeout(3 seconds)
 
-  val aliceNodeId = PublicKey(hex"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0")
-  val bobNodeId = PublicKey(hex"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
+  val aliceNodeId: PublicKey = PublicKey(hex"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0")
+  val bobNodeId: PublicKey = PublicKey(hex"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 
   object PluginApi extends RouteProvider {
     override def route(directives: EclairDirectives): Route = {
@@ -200,11 +201,11 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'usablebalances' asks relayer for current usable balances") {
+  test("'usablebalances' returns expected balance json only for enabled channels") {
     val eclair = mock[Eclair]
     eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
-      UsableBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true),
-      UsableBalance(aliceNodeId, ShortChannelId(2), 400000000 msat, 30000000 msat, isPublic = false)
+      ChannelBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
+      ChannelBalance(aliceNodeId, ShortChannelId(2), 400000000 msat, 30000000 msat, isPublic = false, isEnabled = true)
     ))
 
     val mockService = mockApi(eclair)
@@ -217,6 +218,26 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         val response = entityAs[String]
         eclair.usableBalances()(any[Timeout]).wasCalled(once)
         matchTestJson("usablebalances", response)
+      }
+  }
+
+  test("'channelbalances' returns expected balance json for all channels") {
+    val eclair = mock[Eclair]
+    eclair.channelBalances()(any[Timeout]) returns Future.successful(List(
+      ChannelBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
+      ChannelBalance(aliceNodeId, ShortChannelId(2), 0 msat, 30000000 msat, isPublic = false, isEnabled = false)
+    ))
+
+    val mockService = mockApi(eclair)
+    Post("/channelbalances") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.channelBalances) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val response = entityAs[String]
+        eclair.channelBalances()(any[Timeout]).wasCalled(once)
+        matchTestJson("channelbalances", response)
       }
   }
 

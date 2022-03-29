@@ -463,9 +463,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val channels1 = getOutgoingChannels(true)
     assert(channels1.size === 2)
     assert(channels1.head.channelUpdate === channelUpdate_ab)
-    assert(channels1.head.toUsableBalance === Relayer.UsableBalance(a, channelUpdate_ab.shortChannelId, 0 msat, 300000 msat, isPublic = false))
+    assert(channels1.head.toChannelBalance === Relayer.ChannelBalance(a, channelUpdate_ab.shortChannelId, 0 msat, 300000 msat, isPublic = false, isEnabled = true))
     assert(channels1.last.channelUpdate === channelUpdate_bc)
-    assert(channels1.last.toUsableBalance === Relayer.UsableBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false))
+    assert(channels1.last.toChannelBalance === Relayer.ChannelBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false, isEnabled = true))
 
     channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
     val channels2 = getOutgoingChannels(true)
