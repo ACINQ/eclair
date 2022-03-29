@@ -30,6 +30,13 @@ The `eclair.channel.min-funding-satoshis` setting has been deprecated and replac
 
 If your configuration file changes `eclair.channel.min-funding-satoshis` then you should replace it with both of these new settings.
 
+#### Expired incoming invoices now purged if unpaid
+
+Expired incoming invoices that are unpaid will be searched for and purged from the database when Eclair starts up. Thereafter searches for expired unpaid invoices to purge will run once every 24 hours. You can disable this feature, or change the search interval with two new settings:
+
+* `eclair.purge-expired-invoices.enabled = true
+* `eclair.purge-expired-invoices.interval = 24 hours`
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key 7A73FE77DE2C4027. Note that you can get it:
