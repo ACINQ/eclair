@@ -19,6 +19,24 @@ By default, eclair will still accept the old fee for 10 minutes, you can change 
 
 If you want a specific fee update to ignore this delay, you can update the fee twice to make eclair forget about the previous fee.
 
+#### New minimum funding setting for private channels
+
+New settings have been added to independently control the minimum funding required to open public and private channels to your node.
+
+The `eclair.channel.min-funding-satoshis` setting has been deprecated and replaced with the following two new settings and defaults:
+
+* `eclair.channel.min-public-funding-satoshis = 100000`
+* `eclair.channel.min-private-funding-satoshis = 100000`
+
+If your configuration file changes `eclair.channel.min-funding-satoshis` then you should replace it with both of these new settings.
+
+#### Expired incoming invoices now purged if unpaid
+
+Expired incoming invoices that are unpaid will be searched for and purged from the database when Eclair starts up. Thereafter searches for expired unpaid invoices to purge will run once every 24 hours. You can disable this feature, or change the search interval with two new settings:
+
+* `eclair.purge-expired-invoices.enabled = true
+* `eclair.purge-expired-invoices.interval = 24 hours`
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key 7A73FE77DE2C4027. Note that you can get it:
