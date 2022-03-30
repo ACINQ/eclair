@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, Status}
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -231,6 +232,25 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     router.expectMsg(Router.GetChannelsMap)
     router.reply(channels)
     assert(sender.expectMsgType[Iterable[ChannelUpdate]].map(_.shortChannelId).toSet == Set(ShortChannelId(2)))
+  }
+
+  test("open with bad arguments") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    // option_scid_alias is not compatible with public channels
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Status.Failure].cause.getMessage.contains("option_scid_alias is not compatible with public channels"))
+
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    switchboard.expectMsgType[Peer.OpenChannel]
+
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    switchboard.expectMsgType[Peer.OpenChannel]
+
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    switchboard.expectMsgType[Peer.OpenChannel]
   }
 
   test("close and forceclose should work both with channelId and shortChannelId") { f =>

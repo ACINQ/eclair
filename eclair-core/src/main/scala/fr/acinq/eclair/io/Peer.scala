@@ -146,14 +146,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         } else {
           val channelConfig = ChannelConfig.standard
           // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
-          val channelType = c.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures))
+          val channelFlags = c.channelFlags.getOrElse(nodeParams.channelConf.channelFlags)
+          val channelType = c.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, channelFlags.announceChannel))
           val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, isInitiator = true, c.fundingSatoshis, origin_opt = Some(sender()))
           c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
           val temporaryChannelId = randomBytes32()
           val channelFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingSatoshis, None)
           val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
           log.info(s"requesting a new channel with type=$channelType fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-          channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType)
+          channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, channelFlags, channelConfig, channelType)
           stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         }
 
@@ -165,12 +166,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
               // remote explicitly specifies a channel type: we check whether we want to allow it
               case Some(remoteChannelType) => ChannelTypes.areCompatible(d.localFeatures, remoteChannelType) match {
                 case Some(acceptedChannelType) => Right(acceptedChannelType)
-                case None => Left(InvalidChannelType(msg.temporaryChannelId, ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures), remoteChannelType))
+                case None => Left(InvalidChannelType(msg.temporaryChannelId, ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, msg.channelFlags.announceChannel), remoteChannelType))
               }
               // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
               case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.ChannelType) => Left(MissingChannelType(msg.temporaryChannelId))
               // remote doesn't specify a channel type: we use spec-defined defaults
-              case None => Right(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures))
+              case None => Right(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, msg.channelFlags.announceChannel))
             }
             chosenChannelType match {
               case Right(channelType) =>
@@ -465,9 +466,10 @@ object Peer {
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelType_opt: Option[SupportedChannelType], fundingTxFeeratePerKw_opt: Option[FeeratePerKw], channelFlags: Option[ChannelFlags], timeout_opt: Option[Timeout]) extends PossiblyHarmful {
-    require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
-    require(fundingSatoshis >= 0.sat, s"fundingSatoshis must be positive")
-    require(pushMsat >= 0.msat, s"pushMsat must be positive")
+    require(!(channelType_opt.exists(_.features.contains(Features.ScidAlias)) && channelFlags.exists(_.announceChannel)), "option_scid_alias is not compatible with public channels")
+    require(pushMsat <= fundingSatoshis, "pushMsat must be less or equal to fundingSatoshis")
+    require(fundingSatoshis >= 0.sat, "fundingSatoshis must be positive")
+    require(pushMsat >= 0.msat, "pushMsat must be positive")
     fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum ${FeeratePerKw.MinimumFeeratePerKw} rate/kw"))
   }
 

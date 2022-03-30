@@ -240,7 +240,7 @@ object Features {
     val mandatory = 44
   }
 
-  case object ScidAlias extends Feature with InitFeature with NodeFeature {
+  case object ScidAlias extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_scid_alias"
     val mandatory = 46
   }
@@ -250,7 +250,7 @@ object Features {
     val mandatory = 48
   }
 
-  case object ZeroConf extends Feature with InitFeature with NodeFeature {
+  case object ZeroConf extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_zeroconf"
     val mandatory = 50
   }

@@ -33,13 +33,13 @@ trait Channel {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, channelType, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
+    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "zeroConf".as[Boolean]?false, "openTimeoutSeconds".as[Timeout].?) {
+      (nodeId, fundingSatoshis, pushMsat, channelType, fundingFeerateSatByte, announceChannel_opt, zeroConf, openTimeout_opt) =>
         val (channelTypeOk, channelType_opt) = channelType match {
           case Some(str) if str == ChannelTypes.Standard.toString => (true, Some(ChannelTypes.Standard))
           case Some(str) if str == ChannelTypes.StaticRemoteKey.toString => (true, Some(ChannelTypes.StaticRemoteKey))
           case Some(str) if str == ChannelTypes.AnchorOutputs.toString => (true, Some(ChannelTypes.AnchorOutputs))
-          case Some(str) if str == ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString => (true, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))
+          case Some(str) if str == ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString => (true, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = announceChannel_opt.contains(true), zeroConf = zeroConf))) // alias feature is incompatible with public channel
           case Some(_) => (false, None)
           case None => (true, None)
         }

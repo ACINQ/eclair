@@ -164,10 +164,10 @@ object Helpers {
       case None if Features.canUseFeature(localFeatures, remoteFeatures, Features.ChannelType) =>
         // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
         return Left(MissingChannelType(open.temporaryChannelId))
-      case None if channelType != ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures) =>
+      case None if channelType != ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, open.channelFlags.announceChannel) =>
         // If we have overridden the default channel type, but they didn't support explicit channel type negotiation,
         // we need to abort because they expect a different channel type than what we offered.
-        return Left(InvalidChannelType(open.temporaryChannelId, channelType, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures)))
+        return Left(InvalidChannelType(open.temporaryChannelId, channelType, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, open.channelFlags.announceChannel)))
       case _ => // we agree on channel type
     }
 

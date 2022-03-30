@@ -146,7 +146,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
-  def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, LocalParams, SupportedChannelType) = {
+  def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalParams, LocalParams, SupportedChannelType) = {
     import setup._
 
     val aliceInitFeatures = Alice.nodeParams.features
@@ -168,7 +168,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
       .initFeatures()
 
-    val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures)
+    val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, channelFlags.announceChannel)
 
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceParams = Alice.channelParams
@@ -193,8 +193,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     import setup._
 
     val channelConfig = ChannelConfig.standard
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags)
     val channelFlags = ChannelFlags(announceChannel = tags.contains(ChannelStateTestsTags.ChannelsPublic))
+    val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags, channelFlags)
     val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(ChannelStateTestsTags.NoPushMsat)) {
       (TestConstants.fundingSatoshis, 0.msat)

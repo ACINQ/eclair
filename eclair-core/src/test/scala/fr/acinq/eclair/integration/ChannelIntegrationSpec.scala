@@ -829,7 +829,7 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
   }
 
   test("open channel C <-> F, send payments and close (anchor outputs zero fee htlc txs)") {
-    testOpenPayClose(ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
+    testOpenPayClose(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false))
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs zero fee htlc txs)") {

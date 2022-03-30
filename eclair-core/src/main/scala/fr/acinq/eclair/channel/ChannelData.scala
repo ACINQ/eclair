@@ -85,7 +85,9 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              remoteInit: Init,
                              channelFlags: ChannelFlags,
                              channelConfig: ChannelConfig,
-                             channelType: SupportedChannelType)
+                             channelType: SupportedChannelType) {
+  require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
+}
 case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
                              localParams: LocalParams,
                              remote: ActorRef,
