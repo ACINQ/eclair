@@ -465,7 +465,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("F").paymentHandler, ReceivePayment(Some(amount), Left("like trampoline much?")))
     val invoice = sender.expectMsgType[Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(invoice.features.hasFeature(Features.TrampolinePayment))
+    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
     // The best route from G is G -> C -> F which has a fee of 1210091 msat
 
@@ -510,7 +510,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amount), Left("trampoline-MPP is so #reckless")))
     val invoice = sender.expectMsgType[Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(invoice.features.hasFeature(Features.TrampolinePayment))
+    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
 
     // The direct route C -> B does not have enough capacity, the payment will be split between
@@ -566,7 +566,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("A").paymentHandler, ReceivePayment(Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
     val invoice = sender.expectMsgType[Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(!invoice.features.hasFeature(Features.TrampolinePayment))
+    assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
 
     val payment = SendTrampolinePayment(amount, invoice, nodes("C").nodeParams.nodeId, Seq((1500000 msat, CltvExpiryDelta(432))), routeParams = integrationTestRouteParams)
@@ -614,7 +614,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), Left("I iz Satoshi")))
     val invoice = sender.expectMsgType[Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(invoice.features.hasFeature(Features.TrampolinePayment))
+    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
     val payment = SendTrampolinePayment(amount, invoice, nodes("C").nodeParams.nodeId, Seq((250000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("B").paymentInitiator, payment)
@@ -635,7 +635,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), Left("I iz not Satoshi")))
     val invoice = sender.expectMsgType[Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(invoice.features.hasFeature(Features.TrampolinePayment))
+    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
     val payment = SendTrampolinePayment(amount, invoice, nodes("B").nodeParams.nodeId, Seq((450000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, payment)

@@ -190,28 +190,28 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       sender.send(handler, ReceivePayment(Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Invoice]
       assert(!invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(!invoice.features.hasFeature(Features.TrampolinePayment))
+      assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     }
     {
       val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false, features = featuresWithMpp), TestProbe().ref))
       sender.send(handler, ReceivePayment(Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Invoice]
       assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(!invoice.features.hasFeature(Features.TrampolinePayment))
+      assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     }
     {
       val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = featuresWithoutMpp), TestProbe().ref))
       sender.send(handler, ReceivePayment(Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Invoice]
       assert(!invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(Features.TrampolinePayment))
+      assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     }
     {
       val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = featuresWithMpp), TestProbe().ref))
       sender.send(handler, ReceivePayment(Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Invoice]
       assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(Features.TrampolinePayment))
+      assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     }
   }
 
