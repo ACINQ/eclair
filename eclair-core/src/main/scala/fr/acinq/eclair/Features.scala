@@ -240,9 +240,19 @@ object Features {
     val mandatory = 44
   }
 
+  case object ScidAlias extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_scid_alias"
+    val mandatory = 46
+  }
+
   case object PaymentMetadata extends Feature with InvoiceFeature {
     val rfcName = "option_payment_metadata"
     val mandatory = 48
+  }
+
+  case object ZeroConf extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_zeroconf"
+    val mandatory = 50
   }
 
   case object KeySend extends Feature with NodeFeature {
@@ -278,9 +288,11 @@ object Features {
     DualFunding,
     OnionMessages,
     ChannelType,
+    ScidAlias,
     PaymentMetadata,
-    TrampolinePaymentPrototype,
-    KeySend
+    ZeroConf,
+    KeySend,
+    TrampolinePaymentPrototype
   )
 
   // Features may depend on other features, as specified in Bolt 9.
