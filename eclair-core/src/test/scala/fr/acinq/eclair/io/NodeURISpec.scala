@@ -26,7 +26,6 @@ class NodeURISpec extends AnyFunSuite {
   val IPV4_ENDURANCE = "34.250.234.192"
   val NAME_ENDURANCE = "endurance.acinq.co"
   val IPV6 = "[2405:204:66a9:536c:873f:dc4a:f055:a298]"
-  val IPV6_ZONE_IDENTIFIER = "[2001:db8:a0b:12f0::1%eth0]"
 
   test("default port") {
     assert(NodeURI.DEFAULT_PORT == 9735)
@@ -42,8 +41,6 @@ class NodeURISpec extends AnyFunSuite {
       TestCase(s"$PUBKEY@$NAME_ENDURANCE", "13.248.222.197", 9735),
       TestCase(s"$PUBKEY@$IPV6:9737", "[2405:204:66a9:536c:873f:dc4a:f055:a298]", 9737),
       TestCase(s"$PUBKEY@$IPV6", "[2405:204:66a9:536c:873f:dc4a:f055:a298]", 9735),
-      TestCase(s"$PUBKEY@$IPV6_ZONE_IDENTIFIER:9737", "[2001:db8:a0b:12f0::1]", 9737),
-      TestCase(s"$PUBKEY@$IPV6_ZONE_IDENTIFIER", "[2001:db8:a0b:12f0::1]", 9735),
     )
 
     for (testCase <- testCases) {
