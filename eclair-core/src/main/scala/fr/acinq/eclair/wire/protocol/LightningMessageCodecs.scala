@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.ScriptWitness
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.PeerSwapMessageCodecs._
 import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt}
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
@@ -463,6 +464,14 @@ object LightningMessageCodecs {
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
     .typecase(513, onionMessageCodec)
+    // TODO: move PeerSwap message handling to a plugin
+    .typecase(42069, swapInRequestCodec)
+    .typecase(42071, swapOutRequestCodec)
+    .typecase(42073, swapInAgreementCodec)
+    .typecase(42075, swapOutAgreementCodec)
+    .typecase(42077, openingTxBroadcastedCodec)
+    .typecase(42079, canceledCodec)
+    .typecase(42081, coopCloseCodec)
   // NB: blank lines to minimize merge conflicts
 
   //
