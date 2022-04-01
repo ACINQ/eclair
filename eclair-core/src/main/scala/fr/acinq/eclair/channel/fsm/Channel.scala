@@ -195,39 +195,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
 
   /*
-          8888888 888b    888 8888888 88888888888
-            888   8888b   888   888       888
-            888   88888b  888   888       888
-            888   888Y88b 888   888       888
-            888   888 Y88b888   888       888
-            888   888  Y88888   888       888
-            888   888   Y8888   888       888
-          8888888 888    Y888 8888888     888
-   */
-
-  /*
-                                                NEW
-                              FUNDER                            FUNDEE
-                                 |                                |
-                                 |          open_channel          |WAIT_FOR_OPEN_CHANNEL
-                                 |------------------------------->|
-          WAIT_FOR_ACCEPT_CHANNEL|                                |
-                                 |         accept_channel         |
-                                 |<-------------------------------|
-                                 |                                |WAIT_FOR_FUNDING_CREATED
-                                 |        funding_created         |
-                                 |------------------------------->|
-          WAIT_FOR_FUNDING_SIGNED|                                |
-                                 |         funding_signed         |
-                                 |<-------------------------------|
-          WAIT_FOR_FUNDING_LOCKED|                                |WAIT_FOR_FUNDING_LOCKED
-                                 | funding_locked  funding_locked |
-                                 |---------------  ---------------|
-                                 |               \/               |
-                                 |               /\               |
-                                 |<--------------  -------------->|
-                           NORMAL|                                |NORMAL
-   */
+        8888888 888b    888 8888888 88888888888
+          888   8888b   888   888       888
+          888   88888b  888   888       888
+          888   888Y88b 888   888       888
+          888   888 Y88b888   888       888
+          888   888  Y88888   888       888
+          888   888   Y8888   888       888
+        8888888 888    Y888 8888888     888
+ */
 
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
