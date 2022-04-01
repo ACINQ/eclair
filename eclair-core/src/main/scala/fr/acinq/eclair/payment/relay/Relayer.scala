@@ -23,6 +23,7 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, typed}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -141,6 +142,7 @@ object Relayer extends Logging {
    */
   case class GetOutgoingChannels(enabledOnly: Boolean = true)
   case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: AbstractCommitments) {
+    val channelId: ByteVector32 = commitments.channelId
     def toChannelBalance: ChannelBalance = ChannelBalance(
       remoteNodeId = nextNodeId,
       shortChannelId = channelUpdate.shortChannelId,
