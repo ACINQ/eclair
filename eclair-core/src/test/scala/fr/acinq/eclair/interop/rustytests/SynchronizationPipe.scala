@@ -16,15 +16,16 @@
 
 package fr.acinq.eclair.interop.rustytests
 
-import java.io.{BufferedWriter, File, FileWriter}
-import java.util.UUID
-import java.util.concurrent.CountDownLatch
-
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.eclair.channel.ChannelStateData.DATA_NORMAL
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestUtils}
+
+import java.io.{BufferedWriter, File, FileWriter}
+import java.util.UUID
+import java.util.concurrent.CountDownLatch
 
 /**
  * Created by PM on 30/05/2016.
@@ -81,7 +82,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         fout.newLine()
         exec(rest, a, b)
       case dump(x) :: rest =>
-        resolve(x) ! CMD_GETSTATEDATA(ActorRef.noSender)
+        resolve(x) ! CMD_GET_CHANNEL_DATA(ActorRef.noSender)
         context.become(wait(a, b, script))
       case "" :: rest =>
         exec(rest, a, b)
@@ -126,7 +127,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       a forward msg
       unstashAll()
       exec(script.drop(1), a, b)
-    case RES_GETSTATEDATA(d: DATA_NORMAL) if script.head.endsWith(":dump") =>
+    case RES_GET_CHANNEL_DATA(_, d: DATA_NORMAL) if script.head.endsWith(":dump") =>
       def rtrim(s: String) = s.replaceAll("\\s+$", "")
       import d.commitments._
       val l = List(

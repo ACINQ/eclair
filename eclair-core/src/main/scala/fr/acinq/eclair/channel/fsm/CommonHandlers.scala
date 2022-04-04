@@ -40,32 +40,36 @@ trait CommonHandlers {
     peer ! Peer.OutgoingMessage(msg, activeConnection)
   }
 
-  implicit def state2mystate(state: FSM.State[ChannelState, ChannelData]): MyState = MyState(state)
+  implicit def state2mystate(state: FSM.State[ChannelState, ChannelStateData]): MyState = MyState(state)
 
   /**
    * We wrap the FSM state to add some utility functions that can be called on state transitions.
    */
-  case class MyState(state: FSM.State[ChannelState, ChannelData]) {
+  case class MyState(state: FSM.State[ChannelState, ChannelStateData]) {
 
-    def storing(unused: Unit = ()): FSM.State[ChannelState, ChannelData] = {
-      state.stateData match {
-        case d: HasCommitments =>
+    def storing(unused: Unit = ()): FSM.State[ChannelState, ChannelStateData] = {
+      val channelData = state.stateData match {
+        case stateData: ChannelData => stateData
+        case stateData: WrappedChannelData => stateData.data
+      }
+      channelData match {
+        case d: PersistentChannelData =>
           log.debug("updating database record for channelId={}", d.channelId)
           nodeParams.db.channels.addOrUpdateChannel(d)
           context.system.eventStream.publish(ChannelPersisted(self, remoteNodeId, d.channelId, d))
           state
-        case _ =>
+        case _: TransientChannelData =>
           log.error(s"can't store data=${state.stateData} in state=${state.stateName}")
           state
       }
     }
 
-    def sending(msgs: Seq[LightningMessage]): FSM.State[ChannelState, ChannelData] = {
+    def sending(msgs: Seq[LightningMessage]): FSM.State[ChannelState, ChannelStateData] = {
       msgs.foreach(sending)
       state
     }
 
-    def sending(msg: LightningMessage): FSM.State[ChannelState, ChannelData] = {
+    def sending(msg: LightningMessage): FSM.State[ChannelState, ChannelStateData] = {
       send(msg)
       state
     }
@@ -74,7 +78,7 @@ trait CommonHandlers {
      * This method allows performing actions during the transition, e.g. after a call to [[MyState.storing]]. This is
      * particularly useful to publish transactions only after we are sure that the state has been persisted.
      */
-    def calling(f: => Unit): FSM.State[ChannelState, ChannelData] = {
+    def calling(f: => Unit): FSM.State[ChannelState, ChannelStateData] = {
       f
       state
     }
@@ -85,13 +89,13 @@ trait CommonHandlers {
      *
      * @param cmd fail/fulfill command that has been processed
      */
-    def acking(channelId: ByteVector32, cmd: HtlcSettlementCommand): FSM.State[ChannelState, ChannelData] = {
+    def acking(channelId: ByteVector32, cmd: HtlcSettlementCommand): FSM.State[ChannelState, ChannelStateData] = {
       log.debug("scheduling acknowledgement of cmd id={}", cmd.id)
       context.system.scheduler.scheduleOnce(10 seconds)(PendingCommandsDb.ackSettlementCommand(nodeParams.db.pendingCommands, channelId, cmd))(context.system.dispatcher)
       state
     }
 
-    def acking(updates: List[UpdateMessage]): FSM.State[ChannelState, ChannelData] = {
+    def acking(updates: List[UpdateMessage]): FSM.State[ChannelState, ChannelStateData] = {
       log.debug("scheduling acknowledgement of cmds ids={}", updates.collect { case s: HtlcSettlementMessage => s.id }.mkString(","))
       context.system.scheduler.scheduleOnce(10 seconds)(PendingCommandsDb.ackSettlementCommands(nodeParams.db.pendingCommands, updates))(context.system.dispatcher)
       state

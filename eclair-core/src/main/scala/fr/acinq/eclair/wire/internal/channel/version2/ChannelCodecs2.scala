@@ -18,6 +18,8 @@ package fr.acinq.eclair.wire.internal.channel.version2
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.BlockHeight
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -27,7 +29,6 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSi
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Features, InitFeature}
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -320,7 +321,7 @@ private[channel] object ChannelCodecs2 {
         ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
   }
 
-  val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
+  val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
     .typecase(0x00, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x01, Codecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
     .typecase(0x02, Codecs.DATA_NORMAL_Codec)

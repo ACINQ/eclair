@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
@@ -36,7 +37,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Feature, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -481,22 +482,21 @@ object CustomTypeHints {
     classOf[MessageReceivedJson] -> "onion-message-received"
   ))
 
-  val channelStates: ShortTypeHints = ShortTypeHints(
-    List(
-      classOf[Nothing],
-      classOf[DATA_WAIT_FOR_OPEN_CHANNEL],
-      classOf[DATA_WAIT_FOR_ACCEPT_CHANNEL],
-      classOf[DATA_WAIT_FOR_FUNDING_INTERNAL],
-      classOf[DATA_WAIT_FOR_FUNDING_CREATED],
-      classOf[DATA_WAIT_FOR_FUNDING_SIGNED],
-      classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
-      classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED],
-      classOf[DATA_NORMAL],
-      classOf[DATA_SHUTDOWN],
-      classOf[DATA_NEGOTIATING],
-      classOf[DATA_CLOSING],
-      classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
-    ), typeHintFieldName = "type")
+  val channelStates: CustomTypeHints = CustomTypeHints(Map(
+      classOf[DATA_WAIT_FOR_INIT_INTERNAL] -> "DATA_WAIT_FOR_INIT_INTERNAL",
+      classOf[DATA_WAIT_FOR_OPEN_CHANNEL] -> "DATA_WAIT_FOR_OPEN_CHANNEL",
+      classOf[DATA_WAIT_FOR_ACCEPT_CHANNEL] -> "DATA_WAIT_FOR_ACCEPT_CHANNEL",
+      classOf[DATA_WAIT_FOR_FUNDING_INTERNAL] -> "DATA_WAIT_FOR_FUNDING_INTERNAL",
+      classOf[DATA_WAIT_FOR_FUNDING_CREATED] -> "DATA_WAIT_FOR_FUNDING_CREATED",
+      classOf[DATA_WAIT_FOR_FUNDING_SIGNED] -> "DATA_WAIT_FOR_FUNDING_SIGNED",
+      classOf[DATA_WAIT_FOR_FUNDING_LOCKED] -> "DATA_WAIT_FOR_FUNDING_LOCKED",
+      classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED] -> "DATA_WAIT_FOR_FUNDING_CONFIRMED",
+      classOf[DATA_NORMAL] -> "DATA_NORMAL",
+      classOf[DATA_SHUTDOWN] -> "DATA_SHUTDOWN",
+      classOf[DATA_NEGOTIATING] -> "DATA_NEGOTIATING",
+      classOf[DATA_CLOSING] -> "DATA_CLOSING",
+      classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] -> "DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT"
+    ))
 }
 
 object JsonSerializers {

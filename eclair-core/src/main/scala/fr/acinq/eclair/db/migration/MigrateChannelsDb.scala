@@ -2,7 +2,7 @@ package fr.acinq.eclair.db.migration
 
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.migration.MigrateDb.{checkVersions, migrateTable}
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import scodec.bits.BitVector
 
 import java.sql.{Connection, PreparedStatement, ResultSet, Timestamp}
@@ -19,8 +19,8 @@ object MigrateChannelsDb {
     def migrate(rs: ResultSet, insertStatement: PreparedStatement): Unit = {
       insertStatement.setString(1, rs.getByteVector32("channel_id").toHex)
       insertStatement.setBytes(2, rs.getBytes("data"))
-      val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-      val json = serialization.writePretty(state)
+      val channelData = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+      val json = serialization.writePretty(channelData)
       insertStatement.setString(3, json)
       insertStatement.setBoolean(4, rs.getBoolean("is_closed"))
       insertStatement.setTimestamp(5, rs.getLongNullable("created_timestamp").map(l => Timestamp.from(Instant.ofEpochMilli(l))).orNull)

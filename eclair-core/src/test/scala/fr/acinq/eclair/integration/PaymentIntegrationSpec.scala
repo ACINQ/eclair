@@ -26,6 +26,8 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.channel.ChannelState.NORMAL
+import fr.acinq.eclair.channel.ChannelStateData.DATA_NORMAL
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
@@ -180,8 +182,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").router, Router.GetChannels)
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
     // we also need the full commitment
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO(ActorRef.noSender))
-    val commitmentBC = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].commitments
+    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
+    val commitmentBC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments
     // we then forge a new channel_update for B-C...
     val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.channelConf.expiryDelta + 1, nodes("C").nodeParams.channelConf.htlcMinimum, nodes("B").nodeParams.relayParams.publicChannelFees.feeBase, nodes("B").nodeParams.relayParams.publicChannelFees.feeProportionalMillionths, 500000000 msat)
     // ...and notify B's relayer
@@ -212,8 +214,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
     sender.expectNoMessage(3 seconds)
     nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, BroadcastChannelUpdate(PeriodicRefresh))
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO(ActorRef.noSender))
-    val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
+    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
+    val channelUpdateBC_new = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.channelUpdate
     logger.info(s"channelUpdateBC=$channelUpdateBC")
     logger.info(s"channelUpdateBC_new=$channelUpdateBC_new")
     assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)

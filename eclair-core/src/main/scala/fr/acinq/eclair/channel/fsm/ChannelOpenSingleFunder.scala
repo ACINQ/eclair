@@ -23,6 +23,8 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.channel.ChannelState._
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel.Helpers.{Funding, getRelayFees}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
@@ -122,11 +124,11 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.firstPerCommitmentPoint, open.channelFlags, channelConfig, channelFeatures, accept) sending accept
       }
 
-    case Event(c: CloseCommand, d) => handleFastClose(c, d.channelId)
+    case Event(c: CloseCommand, d: DATA_WAIT_FOR_OPEN_CHANNEL) => handleFastClose(c, d)
 
     case Event(e: Error, d: DATA_WAIT_FOR_OPEN_CHANNEL) => handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_OPEN_CHANNEL) => goto(CLOSED) using DATA_CLOSED(d)
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
@@ -159,20 +161,20 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.lastSent.temporaryChannelId)))
-      handleFastClose(c, d.lastSent.temporaryChannelId)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      handleFastClose(c, d)
 
     case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       channelOpenReplyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) =>
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
-      goto(CLOSED)
+      goto(CLOSED) using DATA_CLOSED(d)
 
-    case Event(TickChannelOpenTimeout, _) =>
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
-      goto(CLOSED)
+      goto(CLOSED) using DATA_CLOSED(d)
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
@@ -201,23 +203,23 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
     case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       log.error(t, s"wallet returned error: ")
       channelOpenReplyToUser(Left(LocalError(t)))
-      handleLocalError(ChannelFundingError(d.temporaryChannelId), d, None) // we use a generic exception and don't send the internal error to the peer
+      handleLocalError(ChannelFundingError(d.channelId), d, None) // we use a generic exception and don't send the internal error to the peer
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.temporaryChannelId)))
-      handleFastClose(c, d.temporaryChannelId)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      handleFastClose(c, d)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       channelOpenReplyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) =>
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
-      goto(CLOSED)
+      goto(CLOSED) using DATA_CLOSED(d)
 
-    case Event(TickChannelOpenTimeout, _) =>
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
-      goto(CLOSED)
+      goto(CLOSED) using DATA_CLOSED(d)
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
@@ -262,12 +264,12 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_CREATED) =>
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.temporaryChannelId)))
-      handleFastClose(c, d.temporaryChannelId)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      handleFastClose(c, d)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_CREATED) => handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_CREATED) => goto(CLOSED) using DATA_CLOSED(d)
   })
 
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
@@ -321,7 +323,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
-      handleFastClose(c, d.channelId)
+      handleFastClose(c, d)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
@@ -339,7 +341,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
-      goto(CLOSED)
+      goto(CLOSED) using DATA_CLOSED(d)
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
@@ -365,7 +367,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           goto(WAIT_FOR_FUNDING_LOCKED) using DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, fundingLocked) storing() sending fundingLocked
         case Failure(t) =>
           log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
-          goto(CLOSED)
+          goto(CLOSED) using DATA_CLOSED(d)
       }
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>

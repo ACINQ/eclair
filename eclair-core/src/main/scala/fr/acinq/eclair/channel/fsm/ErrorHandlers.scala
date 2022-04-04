@@ -18,10 +18,12 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, FSM}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchTxConfirmed}
+import fr.acinq.eclair.channel.ChannelState._
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
@@ -43,10 +45,10 @@ trait ErrorHandlers extends CommonHandlers {
 
   this: Channel =>
 
-  def handleFastClose(c: CloseCommand, channelId: ByteVector32) = {
+  def handleFastClose(c: CloseCommand, d: ChannelData) = {
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-    replyTo ! RES_SUCCESS(c, channelId)
-    goto(CLOSED)
+    replyTo ! RES_SUCCESS(c, d.channelId)
+    goto(CLOSED) using DATA_CLOSED(d)
   }
 
   def handleMutualClose(closingTx: ClosingTx, d: Either[DATA_NEGOTIATING, DATA_CLOSING]) = {
@@ -80,15 +82,15 @@ trait ErrorHandlers extends CommonHandlers {
     }
 
     val error = Error(d.channelId, cause.getMessage)
-    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = true))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(cause), isFatal = true))
 
     d match {
-      case dd: HasCommitments if Closing.nothingAtStake(dd) => goto(CLOSED)
+      case dd: PersistentChannelData if Closing.nothingAtStake(dd) => goto(CLOSED) using DATA_CLOSED(dd)
       case negotiating@DATA_NEGOTIATING(_, _, _, _, Some(bestUnpublishedClosingTx)) =>
         log.info(s"we have a valid closing tx, publishing it instead of our commitment: closingTxId=${bestUnpublishedClosingTx.tx.txid}")
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
-      case dd: HasCommitments =>
+      case dd: PersistentChannelData =>
         cause match {
           case _: ChannelException =>
             // known channel exception: we force close using our current commitment
@@ -113,23 +115,23 @@ trait ErrorHandlers extends CommonHandlers {
                 stop(FSM.Shutdown)
             }
         }
-      case _ => goto(CLOSED) sending error // when there is no commitment yet, we just send an error to our peer and go to CLOSED state
+      case _ => goto(CLOSED) using DATA_CLOSED(d) sending error // when there is no commitment yet, we just send an error to our peer and go to CLOSED state
     }
   }
 
   def handleRemoteError(e: Error, d: ChannelData) = {
     // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
     log.error(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}")
-    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, RemoteError(e), isFatal = true))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, RemoteError(e), isFatal = true))
 
     d match {
       case _: DATA_CLOSING => stay() // nothing to do, there is already a spending tx published
       case negotiating@DATA_NEGOTIATING(_, _, _, _, Some(bestUnpublishedClosingTx)) =>
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED if Closing.nothingAtStake(d) => goto(CLOSED) // the channel was never used and the funding tx may be double-spent
-      case hasCommitments: HasCommitments => spendLocalCurrent(hasCommitments) // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
-      case _ => goto(CLOSED) // when there is no commitment yet, we just go to CLOSED state in case an error occurs
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED if Closing.nothingAtStake(d) => goto(CLOSED) using DATA_CLOSED(d) // the channel was never used and the funding tx may be double-spent
+      case d: PersistentChannelData => spendLocalCurrent(d) // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
+      case _: TransientChannelData => goto(CLOSED) using DATA_CLOSED(d) // when there is no commitment yet, we just go to CLOSED state in case an error occurs
     }
   }
 
@@ -166,7 +168,7 @@ trait ErrorHandlers extends CommonHandlers {
     skip.foreach(output => log.info(s"no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent.get(output).map(_.txid)}"))
   }
 
-  def spendLocalCurrent(d: HasCommitments) = {
+  def spendLocalCurrent(d: PersistentChannelData) = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
@@ -217,7 +219,7 @@ trait ErrorHandlers extends CommonHandlers {
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleRemoteSpentCurrent(commitTx: Transaction, d: HasCommitments) = {
+  def handleRemoteSpentCurrent(commitTx: Transaction, d: PersistentChannelData) = {
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
@@ -246,7 +248,7 @@ trait ErrorHandlers extends CommonHandlers {
     goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
   }
 
-  def handleRemoteSpentNext(commitTx: Transaction, d: HasCommitments) = {
+  def handleRemoteSpentNext(commitTx: Transaction, d: PersistentChannelData) = {
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
     require(d.commitments.remoteNextCommitInfo.isLeft, "next remote commit must be defined")
     val Left(waitingForRevocation) = d.commitments.remoteNextCommitInfo
@@ -282,7 +284,7 @@ trait ErrorHandlers extends CommonHandlers {
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
+  def handleRemoteSpentOther(tx: Transaction, d: PersistentChannelData) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
     Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
       case Some(revokedCommitPublished) =>
@@ -302,7 +304,7 @@ trait ErrorHandlers extends CommonHandlers {
         // the published tx was neither their current commitment nor a revoked one
         log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
         context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${d.commitments.commitInput.outPoint.txid} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
-        goto(ERR_INFORMATION_LEAK)
+        goto(ERR_INFORMATION_LEAK) using DATA_ERR_INFORMATION_LEAK(d)
     }
   }
 
@@ -323,7 +325,7 @@ trait ErrorHandlers extends CommonHandlers {
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleInformationLeak(tx: Transaction, d: HasCommitments) = {
+  def handleInformationLeak(tx: Transaction, d: PersistentChannelData) = {
     // this is never supposed to happen !!
     log.error(s"our funding tx ${d.commitments.commitInput.outPoint.txid} was spent by txid=${tx.txid}!!")
     context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${d.commitments.commitInput.outPoint.txid} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
@@ -334,10 +336,10 @@ trait ErrorHandlers extends CommonHandlers {
     val commitTx = d.commitments.fullySignedLocalCommitTx(keyManager).tx
     val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
 
-    goto(ERR_INFORMATION_LEAK) calling doPublish(localCommitPublished, d.commitments) sending error
+    goto(ERR_INFORMATION_LEAK) using DATA_ERR_INFORMATION_LEAK(d) calling doPublish(localCommitPublished, d.commitments) sending error
   }
 
-  def handleOutdatedCommitment(channelReestablish: ChannelReestablish, d: HasCommitments) = {
+  def handleOutdatedCommitment(channelReestablish: ChannelReestablish, d: PersistentChannelData) = {
     val exc = PleasePublishYourCommitment(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
     goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish) storing() sending error
@@ -355,7 +357,12 @@ trait ErrorHandlers extends CommonHandlers {
           log.error(t, "fatal database error\n")
           NotificationsLogger.logFatalError("eclair is shutting down because of a fatal database error", t)
           sys.exit(1)
-        case t: Throwable => handleLocalError(t, event.stateData, None)
+        case t: Throwable =>
+          val channelData = event.stateData match {
+            case stateData: ChannelData => stateData
+            case stateData: WrappedChannelData => stateData.data
+          }
+          handleLocalError(t, channelData, None)
       }
   }
 

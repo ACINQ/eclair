@@ -17,13 +17,13 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.{CltvExpiry, TimestampMilli}
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
+import fr.acinq.eclair.{CltvExpiry, TimestampMilli}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -70,8 +70,8 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         (rs, statement) => {
           // This forces a re-serialization of the channel data with latest codecs, because as of codecs v3 we don't
           // store local commitment signatures anymore, and we want to clean up existing data
-          val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-          val data = stateDataCodec.encode(state).require.toByteArray
+          val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+          val data = channelDataCodec.encode(state).require.toByteArray
           statement.setBytes(1, data)
           statement.setBytes(2, state.channelId.toArray)
         }
@@ -100,25 +100,25 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
-    val data = stateDataCodec.encode(state).require.toByteArray
+  override def addOrUpdateChannel(data: PersistentChannelData): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
+    val encoded = channelDataCodec.encode(data).require.toByteArray
     using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
-      update.setBytes(1, data)
-      update.setBytes(2, state.channelId.toArray)
+      update.setBytes(1, encoded)
+      update.setBytes(2, data.channelId.toArray)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
-          statement.setBytes(1, state.channelId.toArray)
-          statement.setBytes(2, data)
+          statement.setBytes(1, data.channelId.toArray)
+          statement.setBytes(2, encoded)
           statement.executeUpdate()
         }
       }
     }
   }
 
-  override def getChannel(channelId: ByteVector32): Option[HasCommitments] = withMetrics("channels/get-channel", DbBackends.Sqlite) {
+  override def getChannel(channelId: ByteVector32): Option[PersistentChannelData] = withMetrics("channels/get-channel", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM local_channels WHERE channel_id=? AND is_closed=0")) { statement =>
       statement.setBytes(1, channelId.toArray)
-      statement.executeQuery.mapCodec(stateDataCodec).lastOption
+      statement.executeQuery.mapCodec(channelDataCodec).lastOption
     }
   }
 
@@ -162,10 +162,10 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  override def listLocalChannels(): Seq[HasCommitments] = withMetrics("channels/list-local-channels", DbBackends.Sqlite) {
+  override def listLocalChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-local-channels", DbBackends.Sqlite) {
     using(sqlite.createStatement) { statement =>
       statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-        .mapCodec(stateDataCodec).toSeq
+        .mapCodec(channelDataCodec).toSeq
     }
   }
 

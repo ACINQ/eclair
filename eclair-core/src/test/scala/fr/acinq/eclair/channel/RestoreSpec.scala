@@ -12,6 +12,8 @@ import fr.acinq.bitcoin
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.ChannelState._
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.crypto.Generators
@@ -50,7 +52,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     val sender = TestProbe()
 
     // we start by storing the current state
-    val oldStateData = alice.stateData.asInstanceOf[HasCommitments]
+    val oldStateData = alice.stateData.asInstanceOf[PersistentChannelData]
     // then we add an htlc and sign it
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN())
@@ -70,7 +72,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     alice.stop()
 
     // we restart Alice
-    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val newAlice: TestFSMRef[ChannelState, ChannelStateData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     newAlice ! INPUT_RESTORED(oldStateData)
 
     // then we reconnect them
@@ -170,7 +172,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     alice.stop()
 
     // we restart Alice
-    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val newAlice: TestFSMRef[ChannelState, ChannelStateData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     newAlice ! INPUT_RESTORED(oldStateData)
 
     newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
@@ -219,7 +221,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
         .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
     ) foreach { newConfig =>
 
-      val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+      val newAlice: TestFSMRef[ChannelState, ChannelStateData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
       newAlice ! INPUT_RESTORED(oldStateData)
 
       val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]

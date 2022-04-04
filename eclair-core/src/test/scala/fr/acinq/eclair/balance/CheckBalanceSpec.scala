@@ -6,13 +6,14 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, MainAndHtlcBalance, OffChainBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{apply => _, _}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.channel.ChannelStateData.{DATA_CLOSING, DATA_NORMAL}
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
-import fr.acinq.eclair.channel.{CLOSING, CMD_SIGN, DATA_CLOSING, DATA_NORMAL}
+import fr.acinq.eclair.channel.{CMD_SIGN, ChannelState}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, Error, RevokeAndAck}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32}
 import org.scalatest.Outcome
@@ -181,7 +182,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! Error(ByteVector32.Zeroes, "oops")
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
     assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
-    awaitCond(alice.stateName == CLOSING)
+    awaitCond(alice.stateName == ChannelState.CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
@@ -230,7 +231,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:$dbFile", sqliteConfig.toProperties)
     val channels = using(sqlite.createStatement) { statement =>
       statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-        .mapCodec(stateDataCodec)
+        .mapCodec(channelDataCodec)
     }
     val knownPreimages: Set[(ByteVector32, Long)] = using(sqlite.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
       val rs = statement.executeQuery()

@@ -28,6 +28,8 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
+import fr.acinq.eclair.channel.ChannelState._
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -49,7 +51,7 @@ import scala.concurrent.duration._
  */
 trait ChannelStateTestsBase extends ChannelStateTestsHelperMethods with FixtureTestSuite with ParallelTestExecution {
 
-  implicit class ChannelWithTestFeeConf(a: TestFSMRef[ChannelState, ChannelData, Channel]) {
+  implicit class ChannelWithTestFeeConf(a: TestFSMRef[ChannelState, ChannelStateData, Channel]) {
     // @formatter:off
     def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
     def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
@@ -89,8 +91,8 @@ object ChannelStateTestsTags {
 
 trait ChannelStateTestsHelperMethods extends TestKitBase {
 
-  case class SetupFixture(alice: TestFSMRef[ChannelState, ChannelData, Channel],
-                          bob: TestFSMRef[ChannelState, ChannelData, Channel],
+  case class SetupFixture(alice: TestFSMRef[ChannelState, ChannelStateData, Channel],
+                          bob: TestFSMRef[ChannelState, ChannelStateData, Channel],
                           aliceOrigin: TestProbe,
                           alice2bob: TestProbe,
                           bob2alice: TestProbe,
@@ -132,8 +134,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
-    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
-    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    val alice: TestFSMRef[ChannelState, ChannelStateData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
+    val bob: TestFSMRef[ChannelState, ChannelStateData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
@@ -254,48 +256,48 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     (paymentPreimage, cmd)
   }
 
-  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
+  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
     addHtlc(amount, CltvExpiryDelta(144), s, r, s2r, r2s)
   }
 
-  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef): (ByteVector32, UpdateAddHtlc) = {
+  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef): (ByteVector32, UpdateAddHtlc) = {
     addHtlc(amount, CltvExpiryDelta(144), s, r, s2r, r2s, replyTo)
   }
 
-  def addHtlc(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef = TestProbe().ref): (ByteVector32, UpdateAddHtlc) = {
+  def addHtlc(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef = TestProbe().ref): (ByteVector32, UpdateAddHtlc) = {
     val currentBlockHeight = s.underlyingActor.nodeParams.currentBlockHeight
     val (payment_preimage, cmd) = makeCmdAdd(amount, cltvExpiryDelta, r.underlyingActor.nodeParams.nodeId, randomBytes32(), currentBlockHeight, Upstream.Local(UUID.randomUUID()), replyTo)
     val htlc = addHtlc(cmd, s, r, s2r, r2s)
     (payment_preimage, htlc)
   }
 
-  def addHtlc(cmdAdd: CMD_ADD_HTLC, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): UpdateAddHtlc = {
+  def addHtlc(cmdAdd: CMD_ADD_HTLC, s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe): UpdateAddHtlc = {
     s ! cmdAdd
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(htlc))
+    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(htlc))
     htlc
   }
 
-  def fulfillHtlc(id: Long, preimage: ByteVector32, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+  def fulfillHtlc(id: Long, preimage: ByteVector32, s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     s ! CMD_FULFILL_HTLC(id, preimage)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
+    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(fulfill))
   }
 
-  def failHtlc(id: Long, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+  def failHtlc(id: Long, s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     s ! CMD_FAIL_HTLC(id, Right(TemporaryNodeFailure))
     val fail = s2r.expectMsgType[UpdateFailHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fail))
+    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(fail))
   }
 
-  def crossSign(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+  def crossSign(s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
-    val sCommitIndex = s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
-    val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
-    val rHasChanges = Commitments.localHasChanges(r.stateData.asInstanceOf[HasCommitments].commitments)
+    val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index
+    val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index
+    val rHasChanges = Commitments.localHasChanges(r.stateData.asInstanceOf[PersistentChannelData].commitments)
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
     s2r.expectMsgType[CommitSig]
@@ -311,19 +313,19 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       s2r.forward(r)
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
-      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == sCommitIndex + 1)
-      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == sCommitIndex + 2)
-      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 2)
-      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == sCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == sCommitIndex + 2)
+      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == rCommitIndex + 2)
+      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == rCommitIndex + 1)
     } else {
-      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == sCommitIndex + 1)
-      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == sCommitIndex + 1)
-      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 1)
-      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == sCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == sCommitIndex + 1)
+      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == rCommitIndex + 1)
+      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == rCommitIndex + 1)
     }
   }
 
-  def updateFee(feerate: FeeratePerKw, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+  def updateFee(feerate: FeeratePerKw, s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     s ! CMD_UPDATE_FEE(feerate, commit = true)
     s2r.expectMsgType[UpdateFee]
     s2r.forward(r)
@@ -335,10 +337,10 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     r2s.forward(s)
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
-    awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.spec.commitTxFeerate == feerate)
+    awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.spec.commitTxFeerate == feerate)
   }
 
-  def mutualClose(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, s2blockchain: TestProbe, r2blockchain: TestProbe): Unit = {
+  def mutualClose(s: TestFSMRef[ChannelState, ChannelStateData, Channel], r: TestFSMRef[ChannelState, ChannelStateData, Channel], s2r: TestProbe, r2s: TestProbe, s2blockchain: TestProbe, r2blockchain: TestProbe): Unit = {
     val sender = TestProbe()
     // s initiates a closing
     s ! CMD_CLOSE(sender.ref, None, None)
@@ -363,7 +365,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
   }
 
-  def localClose(s: TestFSMRef[ChannelState, ChannelData, Channel], s2blockchain: TestProbe): LocalCommitPublished = {
+  def localClose(s: TestFSMRef[ChannelState, ChannelStateData, Channel], s2blockchain: TestProbe): LocalCommitPublished = {
     // an error occurs and s publishes its commit tx
     val localCommit = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit
     // check that we store the local txs without sigs
@@ -414,7 +416,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     closingState.localCommitPublished.get
   }
 
-  def remoteClose(rCommitTx: Transaction, s: TestFSMRef[ChannelState, ChannelData, Channel], s2blockchain: TestProbe): RemoteCommitPublished = {
+  def remoteClose(rCommitTx: Transaction, s: TestFSMRef[ChannelState, ChannelStateData, Channel], s2blockchain: TestProbe): RemoteCommitPublished = {
     // we make s believe r unilaterally closed the channel
     s ! WatchFundingSpentTriggered(rCommitTx)
     awaitCond(s.stateName == CLOSING)
@@ -450,7 +452,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     remoteCommitPublished
   }
 
-  def channelId(a: TestFSMRef[ChannelState, ChannelData, Channel]): ByteVector32 = a.stateData.channelId
+  def channelId(a: TestFSMRef[ChannelState, ChannelStateData, Channel]): ByteVector32 = a.stateData.channelId
 
   def getHtlcSuccessTxs(lcp: LocalCommitPublished): Seq[HtlcSuccessTx] = lcp.htlcTxs.values.collect { case Some(tx: HtlcSuccessTx) => tx }.toSeq
 

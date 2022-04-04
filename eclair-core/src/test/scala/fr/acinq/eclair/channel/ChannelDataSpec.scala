@@ -19,6 +19,8 @@ package fr.acinq.eclair.channel
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
+import fr.acinq.eclair.channel.ChannelState._
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
@@ -34,7 +36,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
   case class HtlcWithPreimage(preimage: ByteVector32, htlc: UpdateAddHtlc)
 
-  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel], alicePendingHtlc: HtlcWithPreimage, bob: TestFSMRef[ChannelState, ChannelData, Channel], bobPendingHtlc: HtlcWithPreimage, probe: TestProbe)
+  case class Fixture(alice: TestFSMRef[ChannelState, ChannelStateData, Channel], alicePendingHtlc: HtlcWithPreimage, bob: TestFSMRef[ChannelState, ChannelStateData, Channel], bobPendingHtlc: HtlcWithPreimage, probe: TestProbe)
 
   private def setupClosingChannel(testTags: Set[String] = Set.empty): Fixture = {
     val probe = TestProbe()
@@ -70,7 +72,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     Fixture(alice, HtlcWithPreimage(rb2, htlcb2), bob, HtlcWithPreimage(ra2, htlca2), TestProbe())
   }
 
-  case class LocalFixture(nodeParams: NodeParams, alice: TestFSMRef[ChannelState, ChannelData, Channel], alicePendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, htlcTimeoutTxs: Seq[HtlcTimeoutTx], htlcSuccessTxs: Seq[HtlcSuccessTx], probe: TestProbe) {
+  case class LocalFixture(nodeParams: NodeParams, alice: TestFSMRef[ChannelState, ChannelStateData, Channel], alicePendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, htlcTimeoutTxs: Seq[HtlcTimeoutTx], htlcSuccessTxs: Seq[HtlcSuccessTx], probe: TestProbe) {
     val aliceClosing = alice.stateData.asInstanceOf[DATA_CLOSING]
   }
 
@@ -258,7 +260,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(lcp5.isDone)
   }
 
-  case class RemoteFixture(bob: TestFSMRef[ChannelState, ChannelData, Channel], bobPendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, claimHtlcTimeoutTxs: Seq[ClaimHtlcTimeoutTx], claimHtlcSuccessTxs: Seq[ClaimHtlcSuccessTx], probe: TestProbe)
+  case class RemoteFixture(bob: TestFSMRef[ChannelState, ChannelStateData, Channel], bobPendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, claimHtlcTimeoutTxs: Seq[ClaimHtlcTimeoutTx], claimHtlcSuccessTxs: Seq[ClaimHtlcSuccessTx], probe: TestProbe)
 
   private def setupClosingChannelForRemoteClose(): RemoteFixture = {
     val f = setupClosingChannel()

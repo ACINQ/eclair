@@ -29,6 +29,8 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.channel.ChannelState.NORMAL
+import fr.acinq.eclair.channel.ChannelStateData.DATA_NORMAL
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop, UpdateConfirmationTarget}
@@ -57,8 +59,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     stopBitcoind()
   }
 
-  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel],
-                     bob: TestFSMRef[ChannelState, ChannelData, Channel],
+  case class Fixture(alice: TestFSMRef[ChannelState, ChannelStateData, Channel],
+                     bob: TestFSMRef[ChannelState, ChannelStateData, Channel],
                      alice2bob: TestProbe,
                      bob2alice: TestProbe,
                      alice2blockchain: TestProbe,

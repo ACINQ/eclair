@@ -20,6 +20,7 @@ import akka.actor.{Actor, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.eclair.channel.ChannelState._
 import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel.Monitoring.{Metrics => ChannelMetrics, Tags => ChannelTags}
 import fr.acinq.eclair.channel._

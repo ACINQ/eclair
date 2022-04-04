@@ -3,6 +3,7 @@ package fr.acinq.eclair.balance
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose, NextRemoteClose, RemoteClose}
 import fr.acinq.eclair.channel._
@@ -186,8 +187,8 @@ object CheckBalance {
    *
    * Assumptions:
    * - If the commitment transaction hasn't been published, we simply take our local amount (and htlc amount in states
-   * where they may exist, namely [[NORMAL]] and [[SHUTDOWN]]).
-   * - In [[CLOSING]] state:
+   * where they may exist, namely [[ChannelState.NORMAL]] and [[ChannelState.SHUTDOWN]]).
+   * - In [[ChannelState.CLOSING]] state:
    *   - If we know for sure we are in a mutual close scenario, then we don't count the amount, because the tx will
    *     already have been published.
    *   - If we know for sure we are in a local, then we take the amounts based on the outputs of
@@ -197,7 +198,7 @@ object CheckBalance {
    *   - In the other cases, we simply take our local amount
    *   - TODO?: we disregard anchor outputs
    */
-  def computeOffChainBalance(channels: Iterable[HasCommitments], knownPreimages: Set[(ByteVector32, Long)]): OffChainBalance = {
+  def computeOffChainBalance(channels: Iterable[PersistentChannelData], knownPreimages: Set[(ByteVector32, Long)]): OffChainBalance = {
     channels
       .foldLeft(OffChainBalance()) {
         case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
@@ -293,7 +294,7 @@ object CheckBalance {
     val total: Btc = onChain.total + offChain.total
   }
 
-  def computeGlobalBalance(channels: Map[ByteVector32, HasCommitments], db: Databases, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[GlobalBalance] = for {
+  def computeGlobalBalance(channels: Map[ByteVector32, PersistentChannelData], db: Databases, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[GlobalBalance] = for {
     onChain <- CheckBalance.computeOnChainBalance(bitcoinClient)
     knownPreimages = db.pendingCommands.listSettlementCommands().collect { case (channelId, cmd: CMD_FULFILL_HTLC) => (channelId, cmd.id) }.toSet
     offChainRaw = CheckBalance.computeOffChainBalance(channels.values, knownPreimages)

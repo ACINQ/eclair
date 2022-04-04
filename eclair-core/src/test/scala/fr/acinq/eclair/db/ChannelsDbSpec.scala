@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.pg.PgUtils.{getVersion, setVersion}
 import fr.acinq.eclair.db.pg.{PgChannelsDb, PgUtils}
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.{CltvExpiry, ShortChannelId, TestDatabases, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
@@ -362,7 +362,7 @@ object ChannelsDbSpec {
 
   val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield {
     val channelId = randomBytes32()
-    val data = stateDataCodec.encode(ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(channelId)).require.bytes
+    val data = channelDataCodec.encode(ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(channelId)).require.bytes
     TestCase(
       channelId = channelId,
       data = data,

@@ -21,6 +21,8 @@ import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse, WatchFundingSpent}
+import fr.acinq.eclair.channel.ChannelState.CLOSED
+import fr.acinq.eclair.channel.ChannelStateData.DATA_CLOSED
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT, FUNDING_TIMEOUT_FUNDEE}
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
@@ -102,22 +104,22 @@ trait FundingHandlers extends CommonHandlers {
     stay()
   }
 
-  def handleFundingPublishFailed(d: HasCommitments) = {
+  def handleFundingPublishFailed(d: PersistentChannelData) = {
     log.error(s"failed to publish funding tx")
     val exc = ChannelFundingError(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
     // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
     // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
-    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(exc), isFatal = true))
-    goto(CLOSED) sending error
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(exc), isFatal = true))
+    goto(CLOSED) using DATA_CLOSED(d) sending error
   }
 
-  def handleFundingTimeout(d: HasCommitments) = {
+  def handleFundingTimeout(d: PersistentChannelData) = {
     log.warning(s"funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE")
     val exc = FundingTxTimedout(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
-    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(exc), isFatal = true))
-    goto(CLOSED) sending error
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(exc), isFatal = true))
+    goto(CLOSED) using DATA_CLOSED(d) sending error
   }
 
 }

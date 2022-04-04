@@ -19,6 +19,8 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.channel.ChannelState.NORMAL
+import fr.acinq.eclair.channel.ChannelStateData.DATA_NORMAL
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase

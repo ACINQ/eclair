@@ -22,6 +22,8 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
+import fr.acinq.eclair.channel.ChannelState._
+import fr.acinq.eclair.channel.ChannelStateData._
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
@@ -58,7 +60,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     Helpers.nextChannelUpdateRefresh(TimestampSecond.now()).toSeconds should equal(10 * 24 * 3600L +- 100)
   }
 
-  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceCommitPublished: LocalCommitPublished, aliceHtlcs: Set[UpdateAddHtlc], bob: TestFSMRef[ChannelState, ChannelData, Channel], bobCommitPublished: RemoteCommitPublished, bobHtlcs: Set[UpdateAddHtlc], probe: TestProbe)
+  case class Fixture(alice: TestFSMRef[ChannelState, ChannelStateData, Channel], aliceCommitPublished: LocalCommitPublished, aliceHtlcs: Set[UpdateAddHtlc], bob: TestFSMRef[ChannelState, ChannelStateData, Channel], bobCommitPublished: RemoteCommitPublished, bobHtlcs: Set[UpdateAddHtlc], probe: TestProbe)
 
   def setupHtlcs(testTags: Set[String] = Set.empty): Fixture = {
     val probe = TestProbe()
