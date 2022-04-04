@@ -1641,47 +1641,50 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       // if channel is private, we send the channel_update directly to remote
       // they need it "to learn the other end's forwarding parameters" (BOLT 7)
       (state, nextState, stateData, nextStateData) match {
-        case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
+        case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
           // for a private channel, when the tx was just buried we need to send the channel_update to our peer (even if it didn't change)
           send(d2.channelUpdate)
-        case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d2.buried =>
+        case (SYNCING, NORMAL, DATA_SYNCING(d1: DATA_NORMAL), d2: DATA_NORMAL) if !d1.commitments.announceChannel && d2.buried =>
           // otherwise if we're coming back online, we rebroadcast the latest channel_update
           // this makes sure that if the channel_update was missed, we have a chance to re-send it
           send(d2.channelUpdate)
-        case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && d2.buried =>
+        case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && d2.buried =>
           // otherwise, we only send it when it is different, and tx is already buried
           send(d2.channelUpdate)
         case _ => ()
       }
 
-      (state, nextState, stateData, nextStateData) match {
-        // ORDER MATTERS!
-        case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
-          Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-            log.debug("re-emitting channel_update={} enabled={} ", normal.channelUpdate, normal.channelUpdate.channelFlags.isEnabled)
-          }
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
-        case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
-          // don't do anything if neither the channel_update nor the channel_announcement didn't change
-          ()
-        case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
-          // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
-          log.info("emitting channel_update={} enabled={} ", normal.channelUpdate, normal.channelUpdate.channelFlags.isEnabled)
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
-        case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
-          // in any other case (e.g. OFFLINE->SYNCING) we do nothing
-          ()
-        case (_, _, normal: DATA_NORMAL, _) =>
-          // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to go to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
-          // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
-          context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
-        case _ => ()
+      sealed trait EmitLocalChannelEvent
+      case class EmitLocalChannelUpdate(d: DATA_NORMAL) extends EmitLocalChannelEvent
+      case class EmitLocalChannelDown(d: DATA_NORMAL) extends EmitLocalChannelEvent
+
+      val emitEvent_opt: Option[EmitLocalChannelEvent] = (state, nextState, stateData, nextStateData) match {
+        case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, DATA_OFFLINE(d: DATA_NORMAL)) => Some(EmitLocalChannelUpdate(d))
+        case (WAIT_FOR_FUNDING_LOCKED, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate(d))
+        case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
+        case (SYNCING, NORMAL, DATA_SYNCING(d1: DATA_NORMAL), d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
+        case (NORMAL, OFFLINE, d1: DATA_NORMAL, DATA_OFFLINE(d2: DATA_NORMAL)) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
+        case (OFFLINE, OFFLINE, DATA_OFFLINE(d1: DATA_NORMAL), DATA_OFFLINE(d2: DATA_NORMAL)) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
+        // When a channel that could previously be used to relay payments starts closing, we advertise the fact that this channel can't be used for payments anymore
+        // If the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
+        case (NORMAL, SHUTDOWN | NEGOTIATING | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
+        case (SYNCING, SHUTDOWN | NEGOTIATING | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, DATA_SYNCING(d: DATA_NORMAL), _) => Some(EmitLocalChannelDown(d))
+        case (OFFLINE, SHUTDOWN | NEGOTIATING | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, DATA_OFFLINE(d: DATA_NORMAL), _) => Some(EmitLocalChannelDown(d))
+        case _ => None
+      }
+      emitEvent_opt.foreach {
+        case EmitLocalChannelUpdate(d) =>
+          log.info("emitting channel_update={} enabled={} ", d.channelUpdate, d.channelUpdate.channelFlags.isEnabled)
+          context.system.eventStream.publish(LocalChannelUpdate(self, d.channelId, d.shortChannelId, d.commitments.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.commitments))
+        case EmitLocalChannelDown(d) =>
+          context.system.eventStream.publish(LocalChannelDown(self, d.channelId, d.shortChannelId, d.commitments.remoteParams.nodeId))
       }
 
+      // When we change our channel update parameters (e.g. relay fees), we want to advertise it to other actors.
       (stateData, nextStateData) match {
-        // NORMAL->NORMAL, NORMAL->OFFLINE, SYNCING->NORMAL
+        case (d1: DATA_NORMAL, DATA_OFFLINE(d2: DATA_NORMAL)) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = Some(d1.channelUpdate), d2)
+        case (DATA_SYNCING(d1: DATA_NORMAL), d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = Some(d1.channelUpdate), d2)
         case (d1: DATA_NORMAL, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = Some(d1.channelUpdate), d2)
-        // WAIT_FOR_FUNDING_LOCKED->NORMAL
         case (_: DATA_WAIT_FOR_FUNDING_LOCKED, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
         case _ => ()
       }

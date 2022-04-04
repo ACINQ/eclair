@@ -290,7 +290,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     crossSign(alice, bob, alice2bob, bob2alice)
     val (ra3, htlca3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    val oldStateData = alice.stateData
+    val oldStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
     fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     fulfillHtlc(htlca2.id, ra2, bob, alice, bob2alice, alice2bob)
@@ -302,7 +302,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     // then we manually replace alice's state with an older one
-    alice.setState(OFFLINE, oldStateData)
+    alice.setState(OFFLINE, DATA_OFFLINE(oldStateData))
 
     // then we reconnect them
     reconnect(alice, bob, alice2bob, bob2alice)
@@ -335,7 +335,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     // we start by storing the current state
-    val oldStateData = alice.stateData
+    val oldStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
     // then we add an htlc and sign it
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN()
@@ -352,7 +352,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     // then we manually replace alice's state with an older one
-    alice.setState(OFFLINE, oldStateData)
+    alice.setState(OFFLINE, DATA_OFFLINE(oldStateData))
 
     // then we reconnect them
     reconnect(alice, bob, alice2bob, bob2alice)
@@ -597,10 +597,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection
     disconnect(alice, bob)
 
-    val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val aliceCommitTx = aliceStateData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-
-    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.commitTxFeerate
+    val aliceChannelData = alice.stateData.asInstanceOf[DATA_OFFLINE].data
+    val aliceCommitTx = aliceChannelData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val currentFeeratePerKw = aliceChannelData.commitments.localCommit.spec.commitTxFeerate
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
@@ -625,8 +624,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection
     disconnect(alice, bob)
 
-    val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.commitTxFeerate
+    val aliceChannelData = alice.stateData.asInstanceOf[DATA_OFFLINE].data
+    val currentFeeratePerKw = aliceChannelData.commitments.localCommit.spec.commitTxFeerate
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
@@ -644,7 +643,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection
     disconnect(alice, bob)
 
-    val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.commitTxFeerate
+    val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_OFFLINE].data.commitments.localCommit.spec.commitTxFeerate
     val networkFeeratePerKw = localFeeratePerKw * 2
     val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
@@ -706,10 +705,10 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection
     disconnect(alice, bob)
 
-    val bobStateData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val bobCommitTx = bobStateData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobChannelData = bob.stateData.asInstanceOf[DATA_OFFLINE].data
+    val bobCommitTx = bobChannelData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
-    val currentFeeratePerKw = bobStateData.commitments.localCommit.spec.commitTxFeerate
+    val currentFeeratePerKw = bobChannelData.commitments.localCommit.spec.commitTxFeerate
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Alice.nodeParams.nodeId).ratioLow)
@@ -789,12 +788,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
 
-    val aliceCommitments = alice.stateData.asInstanceOf[PersistentChannelData].commitments
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_SYNCING].data.commitments
     val aliceCurrentPerCommitmentPoint = TestConstants.Alice.channelKeyManager.commitmentPoint(
       TestConstants.Alice.channelKeyManager.keyPath(aliceCommitments.localParams, aliceCommitments.channelConfig),
       aliceCommitments.localCommit.index)
 
-    val bobCommitments = bob.stateData.asInstanceOf[PersistentChannelData].commitments
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_SYNCING].data.commitments
     val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
       TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.localParams, bobCommitments.channelConfig),
       bobCommitments.localCommit.index)

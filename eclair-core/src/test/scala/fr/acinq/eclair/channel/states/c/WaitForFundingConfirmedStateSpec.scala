@@ -184,7 +184,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(bob.stateName == OFFLINE)
     // We reset the waiting period to the current block height when starting up after updating eclair.
     val currentBlockHeight = bob.underlyingActor.nodeParams.currentBlockHeight
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince === currentBlockHeight)
+    val waitingSince = bob.stateData.asInstanceOf[DATA_OFFLINE].data.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince
+    assert(waitingSince === currentBlockHeight)
   }
 
   test("recv WatchFundingSpentTriggered (remote commit)") { f =>

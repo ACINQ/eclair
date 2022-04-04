@@ -11,9 +11,9 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
-import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.ChannelState._
 import fr.acinq.eclair.channel.ChannelStateData._
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.crypto.Generators
@@ -93,7 +93,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     awaitCond(newAlice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
     // bob is nice and publishes its commitment
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager).tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_SYNCING].data.commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager).tx
 
     // actual tests starts here: let's see what we can do with Bob's commit tx
     sender.send(newAlice, WatchFundingSpentTriggered(bobCommitTx))

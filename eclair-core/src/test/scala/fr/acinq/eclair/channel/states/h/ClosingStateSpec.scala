@@ -796,8 +796,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlc2)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, closingState.claimMainOutputTx.get.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, claimHtlcSuccessTx)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.irrevocablySpent.values.toSet === Set(bobCommitTx, closingState.claimMainOutputTx.get.tx, claimHtlcSuccessTx))
     awaitCond(alice.stateName == CLOSED)
+    val closingData = alice.stateData.asInstanceOf[DATA_CLOSED].data.asInstanceOf[DATA_CLOSING]
+    assert(closingData.remoteCommitPublished.get.irrevocablySpent.values.toSet === Set(bobCommitTx, closingState.claimMainOutputTx.get.tx, claimHtlcSuccessTx))
     alice2blockchain.expectNoMessage(100 millis)
     relayerA.expectNoMessage(100 millis)
   }
@@ -1003,8 +1004,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   private def testFutureRemoteCommitTxConfirmed(f: FixtureParam, channelFeatures: ChannelFeatures): Transaction = {
     import f._
-    val oldStateData = alice.stateData
-    assert(oldStateData.asInstanceOf[DATA_NORMAL].commitments.channelFeatures === channelFeatures)
+    val oldStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(oldStateData.commitments.channelFeatures === channelFeatures)
     // This HTLC will be fulfilled.
     val (ra1, htlca1) = addHtlc(25000000 msat, alice, bob, alice2bob, bob2alice)
     // These 2 HTLCs should timeout on-chain, but since alice lost data, she won't be able to claim them.
@@ -1020,7 +1021,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
     // then we manually replace alice's state with an older one
-    alice.setState(OFFLINE, oldStateData)
+    alice.setState(OFFLINE, DATA_OFFLINE(oldStateData))
     // then we reconnect them
     val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
     val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
@@ -1037,7 +1038,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice now waits for bob to publish its commitment
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
     // bob is nice and publishes its commitment
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_SYNCING].data.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     channelFeatures.commitmentFormat match {
       case _: AnchorOutputsCommitmentFormat => assert(bobCommitTx.txOut.length === 6) // two main outputs + two anchors + 2 HTLCs
       case DefaultCommitmentFormat => assert(bobCommitTx.txOut.length === 4) // two main outputs + 2 HTLCs
