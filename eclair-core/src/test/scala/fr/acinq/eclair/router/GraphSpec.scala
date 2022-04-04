@@ -259,7 +259,7 @@ class GraphSpec extends AnyFunSuite {
 
     val path :: Nil = yenKshortestPaths(graph, BalancesEstimates.baseline(graph, 1 day), a, e, 100000000 msat,
       Set.empty, Set.empty, Set.empty, 1,
-      Right(HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20))),
+      Right(HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20), false)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(path.path == Seq(edgeAB, edgeBC, edgeCE))
   }

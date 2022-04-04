@@ -365,6 +365,7 @@ object NodeParams extends Logging {
           lockedFundsRisk = config.getDouble("locked-funds-risk"),
           failureCost = getRelayFees(config.getConfig("failure-cost")),
           hopCost = getRelayFees(config.getConfig("hop-cost")),
+          usePastRelaysData = config.getBoolean("use-past-relay-data"),
         ))
       },
       mpp = MultiPartParams(

@@ -1797,6 +1797,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       lockedFundsRisk = 0.0,
       failureCost = RelayFees(1000 msat, 500),
       hopCost = RelayFees(0 msat, 0),
+      false,
     )
     val Success(routes) = findRoute(g, BalancesEstimates.baseline(g, 1 day), start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
     assert(routes.distinct.length == 1)
@@ -1822,6 +1823,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       lockedFundsRisk = 1e-7,
       failureCost = RelayFees(0 msat, 0),
       hopCost = RelayFees(0 msat, 0),
+      false,
     )
     val Success(routes) = findRoute(g, BalancesEstimates.baseline(g, 1 day), start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
     assert(routes.distinct.length == 1)
@@ -1841,6 +1843,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       lockedFundsRisk = 1e-7,
       failureCost = RelayFees(0 msat, 0),
       hopCost = RelayFees(0 msat, 0),
+      false,
     )
     val Success(routes) = findRoute(g, BalancesEstimates.baseline(g, 1 day), a, c, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
     assert(routes.distinct.length == 1)
@@ -1928,6 +1931,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       lockedFundsRisk = 0.0,
       failureCost = RelayFees(1000 msat, 500),
       hopCost = RelayFees(0 msat, 0),
+      true,
     )
     val Success(routes) = findRoute(g, balances, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
     assert(routes.distinct.length == 1)
@@ -1956,6 +1960,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       lockedFundsRisk = 0.0,
       failureCost = RelayFees(1000 msat, 500),
       hopCost = RelayFees(0 msat, 0),
+      true,
     )
     val Success(routes) = findRoute(g, balances, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
     assert(routes.distinct.length == 1)

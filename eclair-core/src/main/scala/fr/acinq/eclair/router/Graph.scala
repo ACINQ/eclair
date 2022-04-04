@@ -61,11 +61,12 @@ object Graph {
    * The fee for a failed attempt and the fee per hop are never actually spent, they are used to incentivize shorter
    * paths or path with higher success probability.
    *
-   * @param lockedFundsRisk cost of having funds locked in htlc in msat per msat per block
-   * @param failureCost     fee for a failed attempt
-   * @param hopCost         virtual fee per hop (how much we're willing to pay to make the route one hop shorter)
+   * @param lockedFundsRisk   cost of having funds locked in htlc in msat per msat per block
+   * @param failureCost       fee for a failed attempt
+   * @param hopCost           virtual fee per hop (how much we're willing to pay to make the route one hop shorter)
+   * @param usePastRelaysData use data from past relays to estimate the balance of the channels
    */
-  case class HeuristicsConstants(lockedFundsRisk: Double, failureCost: RelayFees, hopCost: RelayFees)
+  case class HeuristicsConstants(lockedFundsRisk: Double, failureCost: RelayFees, hopCost: RelayFees, usePastRelaysData: Boolean)
 
   case class WeightedNode(key: PublicKey, weight: RichWeight)
 
@@ -338,7 +339,14 @@ object Graph {
         val riskCost = totalAmount.toLong * totalCltv.toInt * heuristicsConstants.lockedFundsRisk
         // If the edge was added by the invoice, it is assumed that it can route the payment.
         // If we know the balance of the channel, then we will check separately that it can relay the payment.
-        val successProbability = if (edge.update.chainHash == ByteVector32.Zeroes || edge.balance_opt.nonEmpty) 1.0 else balance.canSend(prev.amount)
+        val successProbability =
+        if (edge.update.chainHash == ByteVector32.Zeroes || edge.balance_opt.nonEmpty){
+          1.0
+        } else if (heuristicsConstants.usePastRelaysData) {
+          balance.canSend(prev.amount)
+        } else {
+          1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
+        }
         if (successProbability < 0) {
           throw NegativeProbability(edge, prev, heuristicsConstants)
         }
