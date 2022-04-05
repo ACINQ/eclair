@@ -22,7 +22,8 @@ import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.io.dns.{AAAARecord, DnsProtocol}
 import akka.io.{Dns, IO}
-import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.BlockHeaderAt
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}

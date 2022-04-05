@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.CMD_FAIL_HTLC
 import kamon.Kamon

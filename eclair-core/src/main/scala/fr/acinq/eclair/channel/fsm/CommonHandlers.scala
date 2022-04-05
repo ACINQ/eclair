@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.FSM
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer

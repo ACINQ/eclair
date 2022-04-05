@@ -16,9 +16,12 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Script._
+import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.bitcoin.SigHash._
+import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG, SEQUENCE_LOCKTIME_MASK}
+import fr.acinq.bitcoin.Script.LockTimeThreshold
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
@@ -94,11 +97,11 @@ object Scripts {
     }
 
   private def sequenceToBlockHeight(sequence: Long): Long = {
-    if ((sequence & TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0) {
+    if ((sequence & SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0) {
       0
     } else {
-      require((sequence & TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG) == 0, "CSV timeout must use block heights, not block times")
-      sequence & TxIn.SEQUENCE_LOCKTIME_MASK
+      require((sequence & SEQUENCE_LOCKTIME_TYPE_FLAG) == 0, "CSV timeout must use block heights, not block times")
+      sequence & SEQUENCE_LOCKTIME_MASK
     }
   }
 

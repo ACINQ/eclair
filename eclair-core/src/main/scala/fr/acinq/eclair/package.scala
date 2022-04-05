@@ -16,8 +16,9 @@
 
 package fr.acinq
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.StrongRandom
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
@@ -82,14 +83,25 @@ package object eclair {
    * @return the public key script that matches the input address.
    */
   def addressToPublicKeyScript(address: String, chainHash: ByteVector32): Seq[ScriptElt] = {
-    Try(Base58Check.decode(address)) match {
+
+    def decodeBase58(input: String): (Byte, ByteVector) = {
+      val decoded = Base58Check.decode(input)
+      (decoded.getFirst.byteValue(), ByteVector.view(decoded.getSecond))
+    }
+
+    def decodeBech32(input: String): (String, Byte, ByteVector) = {
+      val decoded = Bech32.decodeWitnessAddress(input)
+      (decoded.getFirst, decoded.getSecond.byteValue(), ByteVector.view(decoded.getThird))
+    }
+
+    Try(decodeBase58(address)) match {
       case Success((Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
       case Success((Base58.Prefix.PubkeyAddress, pubKeyHash)) if chainHash == Block.LivenetGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
       case Success((Base58.Prefix.ScriptAddressTestnet, scriptHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
       case Success((Base58.Prefix.ScriptAddress, scriptHash)) if chainHash == Block.LivenetGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
       case Success(_) => throw new IllegalArgumentException("base58 address does not match our blockchain")
       case Failure(base58error) =>
-        Try(Bech32.decodeWitnessAddress(address)) match {
+        Try(decodeBech32(address)) match {
           case Success((_, version, _)) if version != 0.toByte => throw new IllegalArgumentException(s"invalid version $version in bech32 address")
           case Success((_, _, bin)) if bin.length != 20 && bin.length != 32 => throw new IllegalArgumentException("hash length in bech32 address must be either 20 or 32 bytes")
           case Success(("bc", _, bin)) if chainHash == Block.LivenetGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil

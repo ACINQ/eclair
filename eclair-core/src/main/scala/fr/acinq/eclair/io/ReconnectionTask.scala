@@ -21,7 +21,7 @@ import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator.Send
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol.{NodeAddress, OnionAddress}

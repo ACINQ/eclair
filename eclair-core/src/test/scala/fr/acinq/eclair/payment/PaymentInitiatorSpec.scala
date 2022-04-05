@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.scalacompat.Block
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.UInt64.Conversions._

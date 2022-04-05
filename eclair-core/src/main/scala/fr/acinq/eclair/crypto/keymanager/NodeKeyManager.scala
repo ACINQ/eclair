@@ -1,7 +1,7 @@
 package fr.acinq.eclair.crypto.keymanager
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, DeterministicWallet}
 import scodec.bits.ByteVector
 
 trait NodeKeyManager {

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
 import fr.acinq.eclair.db.FeeratesDb

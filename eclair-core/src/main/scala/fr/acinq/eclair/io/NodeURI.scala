@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.wire.protocol.NodeAddress
 import scodec.bits.ByteVector
 

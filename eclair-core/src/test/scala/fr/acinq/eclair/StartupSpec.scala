@@ -17,8 +17,8 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee.{DustTolerance, FeeratePerByte, FeeratePerKw, FeerateTolerance}
@@ -168,7 +168,7 @@ class StartupSpec extends AnyFunSuite {
       """
         |  override-init-features = [ // optional per-node features
         |      {
-        |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        |        nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |          features {
         |            var_onion_optin = mandatory
         |            payment_secret = mandatory
@@ -181,7 +181,7 @@ class StartupSpec extends AnyFunSuite {
     )
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    val perNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
+    val perNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
     assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelType -> Optional))
   }
 
@@ -190,7 +190,7 @@ class StartupSpec extends AnyFunSuite {
       """
         |  override-init-features = [ // optional per-node features
         |      {
-        |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        |        nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |          features {
         |            var_onion_optin = mandatory
         |            payment_secret = mandatory
@@ -199,7 +199,7 @@ class StartupSpec extends AnyFunSuite {
         |          }
         |      },
         |      {
-        |        nodeid = "02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        |        nodeid = "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
         |          features {
         |            var_onion_optin = mandatory
         |            payment_secret = mandatory
@@ -219,7 +219,7 @@ class StartupSpec extends AnyFunSuite {
       """
         |  on-chain-fees.override-feerate-tolerance = [
         |    {
-        |      nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        |      nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |      feerate-tolerance {
         |        ratio-low = 0.1
         |        ratio-high = 15.0
@@ -231,7 +231,7 @@ class StartupSpec extends AnyFunSuite {
         |      }
         |    },
         |    {
-        |      nodeid = "02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        |      nodeid = "03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b",
         |      feerate-tolerance {
         |        ratio-low = 0.75
         |        ratio-high = 5.0
@@ -247,9 +247,9 @@ class StartupSpec extends AnyFunSuite {
     )
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) === FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat)), DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")) === FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat)), DustTolerance(40_000 sat, closeOnUpdateFeeOverflow = false)))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat)), DustTolerance(50_000 sat, closeOnUpdateFeeOverflow = false)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")) === FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat)), DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b")) === FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat)), DustTolerance(40_000 sat, closeOnUpdateFeeOverflow = false)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat)), DustTolerance(50_000 sat, closeOnUpdateFeeOverflow = false)))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {

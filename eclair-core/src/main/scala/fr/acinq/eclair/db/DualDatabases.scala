@@ -1,7 +1,7 @@
 package fr.acinq.eclair.db
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent

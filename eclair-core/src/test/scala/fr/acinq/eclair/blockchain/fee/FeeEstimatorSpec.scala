@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.bitcoin.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.channel.ChannelTypes
 import fr.acinq.eclair.{TestFeeEstimator, randomKey}

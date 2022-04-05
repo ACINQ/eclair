@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment.receive
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.scalacompat.Block
 import fr.acinq.eclair.TestDatabases.TestSqliteDatabases
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, PaymentType, PaymentsDbSpec}
 import fr.acinq.eclair.payment.Bolt11Invoice

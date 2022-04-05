@@ -19,9 +19,9 @@ package fr.acinq.eclair.router
 import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult}

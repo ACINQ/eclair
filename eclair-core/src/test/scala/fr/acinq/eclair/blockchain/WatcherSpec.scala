@@ -16,8 +16,11 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{SigVersion, ScriptFlags}
+import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
+import fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL
 
 /**
  * Created by PM on 27/01/2017.
@@ -79,9 +82,9 @@ object WatcherSpec {
    */
   def createUnspentTxChain(tx: Transaction, priv: PrivateKey): (Transaction, Transaction) = {
     // tx1 spends tx
-    val tx1 = createSpendP2WPKH(tx, priv, priv.publicKey, 10000 sat, TxIn.SEQUENCE_FINAL, 0)
+    val tx1 = createSpendP2WPKH(tx, priv, priv.publicKey, 10000 sat, SEQUENCE_FINAL, 0)
     // and tx2 spends tx1
-    val tx2 = createSpendP2WPKH(tx1, priv, priv.publicKey, 10000 sat, TxIn.SEQUENCE_FINAL, 0)
+    val tx2 = createSpendP2WPKH(tx1, priv, priv.publicKey, 10000 sat, SEQUENCE_FINAL, 0)
     (tx1, tx2)
   }
 

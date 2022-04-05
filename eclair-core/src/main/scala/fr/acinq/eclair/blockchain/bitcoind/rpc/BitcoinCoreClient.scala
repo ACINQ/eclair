@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.{Bech32, Block}
+import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
@@ -32,6 +33,7 @@ import org.json4s.JsonAST._
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.jdk.CollectionConverters.ListHasAsScala
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -130,7 +132,11 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
    * @param outputIndex   index of the transaction output that has been spent.
    * @return the transaction spending the given output.
    */
-  def lookForSpendingTx(blockhash_opt: Option[ByteVector32], txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
+  def lookForSpendingTx(blockhash_opt: Option[ByteVector32], txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
+    lookForSpendingTx(blockhash_opt.map(KotlinUtils.scala2kmp), KotlinUtils.scala2kmp(txid), outputIndex)
+  }
+
+  def lookForSpendingTx(blockhash_opt: Option[fr.acinq.bitcoin.ByteVector32], txid: fr.acinq.bitcoin.ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
     for {
       blockhash <- blockhash_opt match {
         case Some(b) => Future.successful(b)
@@ -138,10 +144,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       }
       // with a verbosity of 0, getblock returns the raw serialized block
       block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
-      prevblockhash = block.header.hashPreviousBlock.reverse
-      res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
+      prevblockhash = block.header.hashPreviousBlock.reversed()
+      res <- block.tx.asScala.find(tx => tx.txIn.asScala.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
         case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
-        case Some(tx) => Future.successful(tx)
+        case Some(tx) => Future.successful(KotlinUtils.kmp2scala(tx))
       }
     } yield res
 
@@ -329,7 +335,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   def getChangeAddress()(implicit ec: ExecutionContext): Future[ByteVector] = {
     rpcClient.invoke("getrawchangeaddress", "bech32").collect {
       case JString(changeAddress) =>
-        val (_, _, pubkeyHash) = Bech32.decodeWitnessAddress(changeAddress)
+        val pubkeyHash = ByteVector.view(Bech32.decodeWitnessAddress(changeAddress).getThird)
         pubkeyHash
     }
   }

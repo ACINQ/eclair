@@ -19,9 +19,9 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
-import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
@@ -84,7 +84,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       assert(fundTxResponse.amountIn > 0.sat)
       assert(fundTxResponse.fee > 0.sat)
       fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.signatureScript.isEmpty && txIn.witness.isNull))
-      fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence === TxIn.SEQUENCE_FINAL - 2))
+      fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence === bitcoin.TxIn.SEQUENCE_FINAL - 2))
 
       bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
       val signTxResponse = sender.expectMsgType[SignTransactionResponse]
@@ -126,7 +126,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       assert(fundTxResponse.changePosition === Some(1))
       assert(!Set(230000 sat, 410000 sat).contains(fundTxResponse.tx.txOut(1).amount))
       assert(Set(230000 sat, 410000 sat) === Set(fundTxResponse.tx.txOut.head.amount, fundTxResponse.tx.txOut.last.amount))
-      fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence === TxIn.SEQUENCE_FINAL - 1))
+      fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence === bitcoin.TxIn.SEQUENCE_FINAL - 1))
     }
   }
 
@@ -407,13 +407,13 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       signTxResponse1.tx.txIn.tail.foreach(walletTxIn => assert(walletTxIn.witness.stack.nonEmpty))
 
       // if the non-wallet inputs are signed, bitcoind signs the remaining wallet inputs.
-      val nonWalletSig = Transaction.signInput(txWithNonWalletInput, 0, Script.pay2pkh(nonWalletKey.publicKey), SIGHASH_ALL, txToRemote.txOut.head.amount, SIGVERSION_WITNESS_V0, nonWalletKey)
+      val nonWalletSig = Transaction.signInput(txWithNonWalletInput, 0, Script.pay2pkh(nonWalletKey.publicKey), bitcoin.SigHash.SIGHASH_ALL, txToRemote.txOut.head.amount, bitcoin.SigVersion.SIGVERSION_WITNESS_V0, nonWalletKey)
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))
       val txWithSignedNonWalletInput = txWithNonWalletInput.updateWitness(0, nonWalletWitness)
       bitcoinClient.signTransaction(txWithSignedNonWalletInput, Nil).pipeTo(sender.ref)
       val signTxResponse2 = sender.expectMsgType[SignTransactionResponse]
       assert(signTxResponse2.complete)
-      Transaction.correctlySpends(signTxResponse2.tx, txToRemote +: walletInputTxs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(signTxResponse2.tx, txToRemote +: walletInputTxs, bitcoin.ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     {
       // bitcoind does not sign inputs that have already been confirmed.
@@ -441,7 +441,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(350000 sat, Script.pay2wpkh(randomKey().publicKey))), 0), opts).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       val txWithUnconfirmedInput = fundTxResponse.tx.copy(txIn = TxIn(OutPoint(unconfirmedTx, 0), ByteVector.empty, 0) +: fundTxResponse.tx.txIn)
-      val nonWalletSig = Transaction.signInput(txWithUnconfirmedInput, 0, Script.pay2pkh(nonWalletKey.publicKey), SIGHASH_ALL, unconfirmedTx.txOut.head.amount, SIGVERSION_WITNESS_V0, nonWalletKey)
+      val nonWalletSig = Transaction.signInput(txWithUnconfirmedInput, 0, Script.pay2pkh(nonWalletKey.publicKey), bitcoin.SigHash.SIGHASH_ALL, unconfirmedTx.txOut.head.amount, bitcoin.SigVersion.SIGVERSION_WITNESS_V0, nonWalletKey)
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))
       val txWithSignedUnconfirmedInput = txWithUnconfirmedInput.updateWitness(0, nonWalletWitness)
       val previousTx = PreviousTx(Transactions.InputInfo(OutPoint(unconfirmedTx.txid, 0), unconfirmedTx.txOut.head, Script.pay2pkh(nonWalletKey.publicKey)), nonWalletWitness)
@@ -481,7 +481,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       bitcoinrpcclient.invoke("createrawtransaction", Array(Map("txid" -> tx.txid.toHex, "vout" -> pos)), Map(address -> 5.999)).pipeTo(sender.ref)
       val JString(unsignedTxStr) = sender.expectMsgType[JValue]
       val unsignedTx = Transaction.read(unsignedTxStr)
-      val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(priv.publicKey), SIGHASH_ALL, 6.btc.toSatoshi, SIGVERSION_WITNESS_V0, priv)
+      val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(priv.publicKey), bitcoin.SigHash.SIGHASH_ALL, 6.btc.toSatoshi, bitcoin.SigVersion.SIGVERSION_WITNESS_V0, priv)
       unsignedTx.updateWitness(0, Script.witnessPay2wpkh(priv.publicKey, sig))
     }
     bitcoinClient.publishTransaction(spendingTx).pipeTo(sender.ref)

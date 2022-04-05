@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.pg
 
 import com.zaxxer.hikari.util.IsolationLevel
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb

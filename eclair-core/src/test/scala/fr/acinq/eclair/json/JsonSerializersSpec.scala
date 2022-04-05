@@ -17,8 +17,8 @@
 package fr.acinq.eclair.json
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Btc, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
@@ -51,7 +51,7 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     val error = intercept[org.json4s.MappingException] {
       JsonSerializers.serialization.write(map)(org.json4s.DefaultFormats)
     }
-    assert(error.msg.contains("Do not know how to serialize key of type class fr.acinq.bitcoin.OutPoint."))
+    assert(error.msg.contains("Do not know how to serialize key of type class fr.acinq.bitcoin.scalacompat.OutPoint. Consider implementing a CustomKeySerializer."))
 
     // but it works with our custom key serializer
     val json = JsonSerializers.serialization.write(map)(org.json4s.DefaultFormats + ByteVectorSerializer + OutPointKeySerializer)
@@ -70,7 +70,7 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     val error = intercept[org.json4s.MappingException] {
       JsonSerializers.serialization.write(map)(org.json4s.DefaultFormats)
     }
-    assert(error.msg.contains("Do not know how to serialize key of type class fr.acinq.bitcoin.OutPoint."))
+    assert(error.msg.contains("Do not know how to serialize key of type class fr.acinq.bitcoin.scalacompat.OutPoint. Consider implementing a CustomKeySerializer."))
 
     // but it works with our custom key serializer
     val json = JsonSerializers.serialization.write(map)(org.json4s.DefaultFormats + TransactionSerializer + OutPointKeySerializer)

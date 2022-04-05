@@ -6,7 +6,7 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.balance.ChannelsListener._
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.{ChannelPersisted, ChannelRestored, HasCommitments}
