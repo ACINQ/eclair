@@ -17,12 +17,13 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.keymanager.LocalChannelKeyManager
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
@@ -469,6 +470,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }
   }
 
+  test("check if channel seed has been modified") { f =>
+    val commitments = f.alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    Commitments.validateSeed(commitments, TestConstants.Alice.channelKeyManager)
+    val error = intercept[Throwable] {
+      Commitments.validateSeed(commitments, new LocalChannelKeyManager(ByteVector32.fromValidHex("42" * 32), Block.RegtestGenesisBlock.hash))
+    }
+    assert(error.getMessage.contains("public key does not match channel funding transaction"))
+  }
 }
 
 object CommitmentsSpec {

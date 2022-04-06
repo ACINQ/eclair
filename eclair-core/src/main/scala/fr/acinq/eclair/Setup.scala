@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.channel.{Commitments, Register}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
@@ -59,7 +59,7 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent._
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Setup eclair from a data directory.
@@ -134,6 +134,13 @@ class Setup(val datadir: File,
   }
 
   val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
+
+  // validate that channel seed is the same that was used when local channels were created
+  nodeParams.db.channels.listLocalChannels().foreach(hasCommitments => Try(Commitments.validateSeed(hasCommitments.commitments, channelKeyManager)) match {
+    case Success(_) => ()
+    case Failure(e) => throw InvalidChannelSeedException(e)
+  })
+
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
@@ -418,3 +425,5 @@ case object EmptyAPIPasswordException extends RuntimeException("must set a passw
 case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
+
+case class InvalidChannelSeedException(e: Throwable) extends RuntimeException("Channel seed has been modified", e)
