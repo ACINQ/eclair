@@ -286,7 +286,7 @@ private[channel] object ChannelCodecs1 {
   }
 
   // Order matters!
-  val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
+  val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
     .typecase(0x20, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x21, Codecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
     .typecase(0x22, Codecs.DATA_NORMAL_Codec)

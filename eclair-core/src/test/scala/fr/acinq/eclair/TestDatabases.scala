@@ -56,7 +56,7 @@ object TestDatabases {
    * @param innerDb actual database instance 
    */
   class SqliteChannelsDbWithValidation(innerDb: SqliteChannelsDb) extends SqliteChannelsDb(innerDb.sqlite) {
-    override def addOrUpdateChannel(state: HasCommitments): Unit = {
+    override def addOrUpdateChannel(data: PersistentChannelData): Unit = {
 
       def freeze1(input: Origin): Origin = input match {
         case h: Origin.LocalHot => Origin.LocalCold(h.id)
@@ -68,7 +68,7 @@ object TestDatabases {
 
       // payment origins are always "cold" when deserialized, so to compare a "live" channel state against a state that has been
       // serialized and deserialized we need to turn "hot" payments into cold ones
-      def freeze3(input: HasCommitments): HasCommitments = input match {
+      def freeze3(input: PersistentChannelData): PersistentChannelData = input match {
         case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
@@ -78,9 +78,9 @@ object TestDatabases {
         case d: DATA_SHUTDOWN => d.copy(commitments = freeze2(d.commitments))
       }
 
-      super.addOrUpdateChannel(state)
-      val check = super.getChannel(state.channelId)
-      val frozen = freeze3(state)
+      super.addOrUpdateChannel(data)
+      val check = super.getChannel(data.channelId)
+      val frozen = freeze3(data)
       require(check.contains(frozen), s"serialization/deserialization check failed, $check != $frozen")
     }
   }

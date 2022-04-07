@@ -273,7 +273,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     s ! cmdAdd
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(htlc))
+    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(htlc))
     htlc
   }
 
@@ -281,21 +281,21 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     s ! CMD_FULFILL_HTLC(id, preimage)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
+    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(fulfill))
   }
 
   def failHtlc(id: Long, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     s ! CMD_FAIL_HTLC(id, Right(TemporaryNodeFailure))
     val fail = s2r.expectMsgType[UpdateFailHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fail))
+    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(fail))
   }
 
   def crossSign(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
-    val sCommitIndex = s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
-    val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
-    val rHasChanges = Commitments.localHasChanges(r.stateData.asInstanceOf[HasCommitments].commitments)
+    val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index
+    val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index
+    val rHasChanges = Commitments.localHasChanges(r.stateData.asInstanceOf[PersistentChannelData].commitments)
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
     s2r.expectMsgType[CommitSig]
@@ -311,15 +311,15 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       s2r.forward(r)
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
-      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == sCommitIndex + 1)
-      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == sCommitIndex + 2)
-      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 2)
-      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == sCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == sCommitIndex + 2)
+      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == rCommitIndex + 2)
+      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == rCommitIndex + 1)
     } else {
-      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == sCommitIndex + 1)
-      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == sCommitIndex + 1)
-      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 1)
-      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == sCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == sCommitIndex + 1)
+      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == rCommitIndex + 1)
+      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == rCommitIndex + 1)
     }
   }
 
@@ -335,7 +335,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     r2s.forward(s)
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
-    awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.spec.commitTxFeerate == feerate)
+    awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.spec.commitTxFeerate == feerate)
   }
 
   def mutualClose(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, s2blockchain: TestProbe, r2blockchain: TestProbe): Unit = {

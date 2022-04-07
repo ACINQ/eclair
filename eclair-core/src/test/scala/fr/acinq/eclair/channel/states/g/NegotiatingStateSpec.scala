@@ -62,11 +62,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val bobShutdown = bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice, bobShutdown)
     awaitCond(alice.stateName == NEGOTIATING)
-    if (alice.stateData.asInstanceOf[HasCommitments].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+    if (alice.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
       assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
     }
     awaitCond(bob.stateName == NEGOTIATING)
-    if (bob.stateData.asInstanceOf[HasCommitments].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+    if (bob.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
       assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
     }
   }
@@ -81,11 +81,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val aliceShutdown = alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob, aliceShutdown)
     awaitCond(alice.stateName == NEGOTIATING)
-    if (alice.stateData.asInstanceOf[HasCommitments].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+    if (alice.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
       assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
     }
     awaitCond(bob.stateName == NEGOTIATING)
-    if (bob.stateData.asInstanceOf[HasCommitments].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+    if (bob.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
       assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
     }
   }

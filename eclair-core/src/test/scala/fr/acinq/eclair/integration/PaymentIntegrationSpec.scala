@@ -180,8 +180,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").router, Router.GetChannels)
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
     // we also need the full commitment
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO(ActorRef.noSender))
-    val commitmentBC = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].commitments
+    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
+    val commitmentBC = sender.expectMsgType[RES_GET_CHANNEL_INFO].data.asInstanceOf[DATA_NORMAL].commitments
     // we then forge a new channel_update for B-C...
     val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.channelConf.expiryDelta + 1, nodes("C").nodeParams.channelConf.htlcMinimum, nodes("B").nodeParams.relayParams.publicChannelFees.feeBase, nodes("B").nodeParams.relayParams.publicChannelFees.feeProportionalMillionths, 500000000 msat)
     // ...and notify B's relayer
@@ -212,8 +212,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
     sender.expectNoMessage(3 seconds)
     nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, BroadcastChannelUpdate(PeriodicRefresh))
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO(ActorRef.noSender))
-    val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
+    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
+    val channelUpdateBC_new = sender.expectMsgType[RES_GET_CHANNEL_INFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
     logger.info(s"channelUpdateBC=$channelUpdateBC")
     logger.info(s"channelUpdateBC_new=$channelUpdateBC_new")
     assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)

@@ -49,6 +49,29 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
 
   this: Channel =>
 
+  /*
+                            FUNDER                            FUNDEE
+                               |                                |
+                               |          open_channel          |WAIT_FOR_OPEN_CHANNEL
+                               |------------------------------->|
+        WAIT_FOR_ACCEPT_CHANNEL|                                |
+                               |         accept_channel         |
+                               |<-------------------------------|
+                               |                                |WAIT_FOR_FUNDING_CREATED
+                               |        funding_created         |
+                               |------------------------------->|
+        WAIT_FOR_FUNDING_SIGNED|                                |
+                               |         funding_signed         |
+                               |<-------------------------------|
+        WAIT_FOR_FUNDING_LOCKED|                                |WAIT_FOR_FUNDING_LOCKED
+                               | funding_locked  funding_locked |
+                               |---------------  ---------------|
+                               |               \/               |
+                               |               /\               |
+                               |<--------------  -------------->|
+                         NORMAL|                                |NORMAL
+ */
+
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit, channelConfig, channelType))) =>
       Helpers.validateParamsFundee(nodeParams, channelType, localParams.initFeatures, open, remoteNodeId, remoteInit.features) match {

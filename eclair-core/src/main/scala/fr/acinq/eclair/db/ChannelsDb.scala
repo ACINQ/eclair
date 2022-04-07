@@ -18,22 +18,22 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.CltvExpiry
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 
 import java.io.Closeable
 
 trait ChannelsDb extends Closeable {
 
-  def addOrUpdateChannel(state: HasCommitments): Unit
+  def addOrUpdateChannel(data: PersistentChannelData): Unit
 
-  def getChannel(channelId: ByteVector32): Option[HasCommitments]
+  def getChannel(channelId: ByteVector32): Option[PersistentChannelData]
 
   def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit
 
   def removeChannel(channelId: ByteVector32): Unit
 
-  def listLocalChannels(): Seq[HasCommitments]
+  def listLocalChannels(): Seq[PersistentChannelData]
 
   def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
 

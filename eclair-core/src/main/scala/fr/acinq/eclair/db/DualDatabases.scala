@@ -6,7 +6,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
-import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
@@ -224,12 +223,12 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-channels").build()))
 
-  override def addOrUpdateChannel(state: HasCommitments): Unit = {
-    runAsync(secondary.addOrUpdateChannel(state))
-    primary.addOrUpdateChannel(state)
+  override def addOrUpdateChannel(data: PersistentChannelData): Unit = {
+    runAsync(secondary.addOrUpdateChannel(data))
+    primary.addOrUpdateChannel(data)
   }
 
-  override def getChannel(channelId: ByteVector32): Option[HasCommitments] = {
+  override def getChannel(channelId: ByteVector32): Option[PersistentChannelData] = {
     runAsync(secondary.getChannel(channelId))
     primary.getChannel(channelId)
   }
@@ -244,7 +243,7 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.removeChannel(channelId)
   }
 
-  override def listLocalChannels(): Seq[HasCommitments] = {
+  override def listLocalChannels(): Seq[PersistentChannelData] = {
     runAsync(secondary.listLocalChannels())
     primary.listLocalChannels()
   }
