@@ -226,17 +226,20 @@ object Features {
     val mandatory = 48
   }
 
-  // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
-  // We're not advertising these bits yet in our announcements, clients have to assume support.
-  // This is why we haven't added them yet to `areSupported`.
-  case object TrampolinePayment extends Feature with InitFeature with NodeFeature with InvoiceFeature {
-    val rfcName = "trampoline_payment"
-    val mandatory = 50
-  }
-
   case object KeySend extends Feature with NodeFeature {
     val rfcName = "keysend"
     val mandatory = 54
+  }
+
+  // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
+  // We're not advertising these bits yet in our announcements, clients have to assume support.
+  // This is why we haven't added them yet to `areSupported`.
+  // The version of trampoline enabled by this feature bit does not match the latest spec PR: once the spec is accepted,
+  // we will introduce a new version of trampoline that will work in parallel to this legacy one, until we can safely
+  // deprecate it.
+  case object TrampolinePaymentPrototype extends Feature with InitFeature with NodeFeature with InvoiceFeature {
+    val rfcName = "trampoline_payment_prototype"
+    val mandatory = 148
   }
 
   val knownFeatures: Set[Feature] = Set(
@@ -256,7 +259,7 @@ object Features {
     OnionMessages,
     ChannelType,
     PaymentMetadata,
-    TrampolinePayment,
+    TrampolinePaymentPrototype,
     KeySend
   )
 
@@ -269,7 +272,7 @@ object Features {
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
     AnchorOutputs -> (StaticRemoteKey :: Nil),
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
-    TrampolinePayment -> (PaymentSecret :: Nil),
+    TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil)
   )
 
