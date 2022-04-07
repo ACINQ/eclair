@@ -472,11 +472,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("check if channel seed has been modified") { f =>
     val commitments = f.alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    Commitments.validateSeed(commitments, TestConstants.Alice.channelKeyManager)
-    val error = intercept[Throwable] {
-      Commitments.validateSeed(commitments, new LocalChannelKeyManager(ByteVector32.fromValidHex("42" * 32), Block.RegtestGenesisBlock.hash))
-    }
-    assert(error.getMessage.contains("public key does not match channel funding transaction"))
+    assert(Commitments.validateSeed(commitments, TestConstants.Alice.channelKeyManager))
+    assert(!Commitments.validateSeed(commitments, new LocalChannelKeyManager(ByteVector32.fromValidHex("42" * 32), Block.RegtestGenesisBlock.hash)))
   }
 }
 

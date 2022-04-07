@@ -294,11 +294,11 @@ case class Commitments(channelId: ByteVector32,
 
 object Commitments {
 
-  def validateSeed(commitments: Commitments, keyManager: ChannelKeyManager): Unit = {
+  def validateSeed(commitments: Commitments, keyManager: ChannelKeyManager): Boolean = {
     val localFundingKey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
     val remoteFundingKey = commitments.remoteParams.fundingPubKey
     val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
-    require(commitments.commitInput.redeemScript == fundingScript, s"public key does not match channel funding transaction for channel ${commitments.channelId}")
+    commitments.commitInput.redeemScript == fundingScript
   }
 
   /**

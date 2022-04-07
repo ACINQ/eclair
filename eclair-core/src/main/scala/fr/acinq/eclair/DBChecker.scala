@@ -24,18 +24,16 @@ import scala.util.{Failure, Success, Try}
 object DBChecker extends Logging {
 
   /**
-   * Tests if the channels data in the DB are compatible with the current version of eclair; throws an exception if incompatible.
+   * Tests if the channels data in the DB is valid (and throws an exception if not):
+   * - it is compatible with the current version of eclair
+   * - channel keys can be re-generated from the channel seed
    *
-   * @param nodeParams
+   * @param nodeParams node parameters
    */
   def checkChannelsDB(nodeParams: NodeParams): Unit = {
-    logger.info("listLocalChannels()")
     Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(channels) =>
-        channels.foreach(hasCommitments => Try(Commitments.validateSeed(hasCommitments.commitments, nodeParams.channelKeyManager)) match {
-          case Success(_) => ()
-          case Failure(e) => throw InvalidChannelSeedException(e)
-        })
+        channels.foreach(data => if (!Commitments.validateSeed(data.commitments, nodeParams.channelKeyManager)) throw InvalidChannelSeedException(data.channelId))
       case Failure(_) => throw IncompatibleDBException
     }
   }
@@ -47,7 +45,7 @@ object DBChecker extends Logging {
    */
   def checkNetworkDB(nodeParams: NodeParams): Unit =
     Try(nodeParams.db.network.listChannels(), nodeParams.db.network.listNodes()) match {
-      case Success(_) => {}
+      case Success(_) => ()
       case Failure(_) => throw IncompatibleNetworkDBException
     }
 }

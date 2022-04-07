@@ -419,4 +419,4 @@ case object IncompatibleDBException extends RuntimeException("database is not co
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
 
-case class InvalidChannelSeedException(e: Throwable) extends RuntimeException("Channel seed has been modified", e)
+case class InvalidChannelSeedException(channelId: ByteVector32) extends RuntimeException(s"channel seed has been modified for channel $channelId")
