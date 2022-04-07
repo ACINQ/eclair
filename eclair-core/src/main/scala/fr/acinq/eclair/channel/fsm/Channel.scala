@@ -205,30 +205,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           8888888 888    Y888 8888888     888
    */
 
-  /*
-                                                NEW
-                              FUNDER                            FUNDEE
-                                 |                                |
-                                 |          open_channel          |WAIT_FOR_OPEN_CHANNEL
-                                 |------------------------------->|
-          WAIT_FOR_ACCEPT_CHANNEL|                                |
-                                 |         accept_channel         |
-                                 |<-------------------------------|
-                                 |                                |WAIT_FOR_FUNDING_CREATED
-                                 |        funding_created         |
-                                 |------------------------------->|
-          WAIT_FOR_FUNDING_SIGNED|                                |
-                                 |         funding_signed         |
-                                 |<-------------------------------|
-          WAIT_FOR_FUNDING_LOCKED|                                |WAIT_FOR_FUNDING_LOCKED
-                                 | funding_locked  funding_locked |
-                                 |---------------  ---------------|
-                                 |               \/               |
-                                 |               /\               |
-                                 |<--------------  -------------->|
-                           NORMAL|                                |NORMAL
-   */
-
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
