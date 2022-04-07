@@ -94,9 +94,9 @@ trait Eclair {
 
   def updateRelayFee(nodes: List[PublicKey], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]]
 
-  def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]]
+  def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]]
 
-  def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GETINFO]]
+  def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GET_CHANNEL_INFO]]
 
   def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
@@ -216,7 +216,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       .map(_.filter(n => nodeIds_opt.forall(_.contains(n.nodeId))))
   }
 
-  override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = {
+  override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
     val futureResponse = toRemoteNode_opt match {
       case Some(pk) => (appKit.register ? Symbol("channelsTo")).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
       case None => (appKit.register ? Symbol("channels")).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
@@ -224,14 +224,14 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
     for {
       channelIds <- futureResponse
-      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[CMD_GETINFO, CommandResponse[CMD_GETINFO]](Left(channelId), CMD_GETINFO(ActorRef.noSender))))
+      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](Left(channelId), CMD_GET_CHANNEL_INFO(ActorRef.noSender))))
     } yield channels.collect {
-      case properResponse: RES_GETINFO => properResponse
+      case properResponse: RES_GET_CHANNEL_INFO => properResponse
     }
   }
 
-  override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GETINFO]] = {
-    sendToChannel[CMD_GETINFO, CommandResponse[CMD_GETINFO]](channel, CMD_GETINFO(ActorRef.noSender))
+  override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GET_CHANNEL_INFO]] = {
+    sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](channel, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
   }
 
   override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {

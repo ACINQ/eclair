@@ -81,7 +81,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         fout.newLine()
         exec(rest, a, b)
       case dump(x) :: rest =>
-        resolve(x) ! CMD_GETSTATEDATA(ActorRef.noSender)
+        resolve(x) ! CMD_GET_CHANNEL_DATA(ActorRef.noSender)
         context.become(wait(a, b, script))
       case "" :: rest =>
         exec(rest, a, b)
@@ -126,7 +126,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       a forward msg
       unstashAll()
       exec(script.drop(1), a, b)
-    case RES_GETSTATEDATA(d: DATA_NORMAL) if script.head.endsWith(":dump") =>
+    case RES_GET_CHANNEL_DATA(d: DATA_NORMAL) if script.head.endsWith(":dump") =>
       def rtrim(s: String) = s.replaceAll("\\s+$", "")
       import d.commitments._
       val l = List(

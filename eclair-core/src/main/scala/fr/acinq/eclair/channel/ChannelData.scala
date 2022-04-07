@@ -179,9 +179,9 @@ sealed trait CloseCommand extends HasReplyToCommand
 final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand
 final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
 final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta_opt: Option[CltvExpiryDelta]) extends HasReplyToCommand
-final case class CMD_GETSTATE(replyTo: ActorRef) extends HasReplyToCommand
-final case class CMD_GETSTATEDATA(replyTo: ActorRef) extends HasReplyToCommand
-final case class CMD_GETINFO(replyTo: ActorRef)extends HasReplyToCommand
+final case class CMD_GET_CHANNEL_STATE(replyTo: ActorRef) extends HasReplyToCommand
+final case class CMD_GET_CHANNEL_DATA(replyTo: ActorRef) extends HasReplyToCommand
+final case class CMD_GET_CHANNEL_INFO(replyTo: ActorRef)extends HasReplyToCommand
 
 /*
        88888888b.  8888888888  .d8888b.  88888888b.    ,ad8888ba,   888b      88  .d8888b.  8888888888  .d8888b.
@@ -225,9 +225,9 @@ object HtlcResult {
 final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
-final case class RES_GETSTATE[+S <: ChannelState](state: S) extends CommandSuccess[CMD_GETSTATE]
-final case class RES_GETSTATEDATA[+D <: ChannelData](data: D) extends CommandSuccess[CMD_GETSTATEDATA]
-final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: ChannelState, data: ChannelData) extends CommandSuccess[CMD_GETINFO]
+final case class RES_GET_CHANNEL_STATE(state: ChannelState) extends CommandSuccess[CMD_GET_CHANNEL_STATE]
+final case class RES_GET_CHANNEL_DATA[+D <: ChannelData](data: D) extends CommandSuccess[CMD_GET_CHANNEL_DATA]
+final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32, state: ChannelState, data: ChannelData) extends CommandSuccess[CMD_GET_CHANNEL_INFO]
 
 /**
  * Those are not response to [[Command]], but to [[fr.acinq.eclair.io.Peer.OpenChannel]]
