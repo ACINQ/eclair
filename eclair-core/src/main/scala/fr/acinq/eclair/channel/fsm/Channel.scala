@@ -331,14 +331,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           watchFundingTx(data.commitments)
           goto(OFFLINE) using data
       }
-
-    case Event(c: CloseCommand, d) =>
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
-      handleFastClose(c, d.channelId)
-
-    case Event(TickChannelOpenTimeout, _) =>
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
-      goto(CLOSED)
   })
 
   /*
@@ -1420,6 +1412,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
+    case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
+
     case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) =>
       Syncing.checkSync(keyManager, d, channelReestablish) match {
         case syncFailure: SyncResult.Failure =>
@@ -1501,13 +1495,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
   when(ERR_INFORMATION_LEAK)(errorStateHandler)
 
-  when(ERR_FUNDING_LOST)(errorStateHandler)
-
   whenUnhandled {
 
     case Event(INPUT_DISCONNECTED, _) => goto(OFFLINE)
-
-    case Event(WatchFundingLostTriggered(_), _) => goto(ERR_FUNDING_LOST)
 
     case Event(c: CMD_GETSTATE, _) =>
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
