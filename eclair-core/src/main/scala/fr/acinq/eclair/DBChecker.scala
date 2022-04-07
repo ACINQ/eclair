@@ -16,31 +16,36 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.eclair.channel.Commitments
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
 
-object DBCompatChecker extends Logging {
+object DBChecker extends Logging {
 
   /**
-    * Tests if the channels data in the DB are compatible with the current version of eclair; throws an exception if incompatible.
-    *
-    * @param nodeParams
-    */
-  def checkDBCompatibility(nodeParams: NodeParams): Unit =
+   * Tests if the channels data in the DB is valid (and throws an exception if not):
+   * - it is compatible with the current version of eclair
+   * - channel keys can be re-generated from the channel seed
+   *
+   * @param nodeParams node parameters
+   */
+  def checkChannelsDB(nodeParams: NodeParams): Unit = {
     Try(nodeParams.db.channels.listLocalChannels()) match {
-      case Success(_) => {}
+      case Success(channels) =>
+        channels.foreach(data => if (!Commitments.validateSeed(data.commitments, nodeParams.channelKeyManager)) throw InvalidChannelSeedException(data.channelId))
       case Failure(_) => throw IncompatibleDBException
     }
+  }
 
   /**
-    * Tests if the network database is readable.
-    *
-    * @param nodeParams
-    */
-  def checkNetworkDBCompatibility(nodeParams: NodeParams): Unit =
+   * Tests if the network database is readable.
+   *
+   * @param nodeParams
+   */
+  def checkNetworkDB(nodeParams: NodeParams): Unit =
     Try(nodeParams.db.network.listChannels(), nodeParams.db.network.listNodes()) match {
-      case Success(_) => {}
+      case Success(_) => ()
       case Failure(_) => throw IncompatibleNetworkDBException
     }
 }

@@ -139,8 +139,8 @@ class Setup(val datadir: File,
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
 
   // early checks
-  DBCompatChecker.checkDBCompatibility(nodeParams)
-  DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
+  DBChecker.checkChannelsDB(nodeParams)
+  DBChecker.checkNetworkDB(nodeParams)
   PortChecker.checkAvailable(serverBindingAddress)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
@@ -418,3 +418,5 @@ case object EmptyAPIPasswordException extends RuntimeException("must set a passw
 case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
+
+case class InvalidChannelSeedException(channelId: ByteVector32) extends RuntimeException(s"channel seed has been modified for channel $channelId")

@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -293,6 +293,13 @@ case class Commitments(channelId: ByteVector32,
 }
 
 object Commitments {
+
+  def validateSeed(commitments: Commitments, keyManager: ChannelKeyManager): Boolean = {
+    val localFundingKey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
+    val remoteFundingKey = commitments.remoteParams.fundingPubKey
+    val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
+    commitments.commitInput.redeemScript == fundingScript
+  }
 
   /**
    * Add a change to our proposed change list.
