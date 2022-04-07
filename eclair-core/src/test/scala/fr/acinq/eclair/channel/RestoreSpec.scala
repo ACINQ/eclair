@@ -50,7 +50,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     val sender = TestProbe()
 
     // we start by storing the current state
-    val oldStateData = alice.stateData.asInstanceOf[HasCommitments]
+    val oldStateData = alice.stateData.asInstanceOf[PersistentChannelData]
     // then we add an htlc and sign it
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN())

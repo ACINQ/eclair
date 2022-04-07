@@ -48,7 +48,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
   test("nonreg for der/bin64 signatures") {
     val bin = ByteVector.fromValidHex(Source.fromInputStream(getClass.getResourceAsStream("/normal_data_htlcs.bin")).mkString)
-    val c = ChannelCodecs.stateDataCodec.decode(bin.toBitVector).require.value
+    val c = ChannelCodecs.channelDataCodec.decode(bin.toBitVector).require.value
 
     val ref = Seq(
       hex"304502210097fcda40b22916b5d61badedf6126658c2b5927d5002cc2c3e5f88a78ba5f45b02204a74bcf8827d894cab153fc051f39d8e2aeb660162a6a05797f7140587a6133301",
@@ -86,15 +86,15 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // currently version=0 and discriminator type=1
     assert(bin_old.startsWith(hex"000001"))
     // let's decode the old data (this will use the old codec that provides default values for new fields)
-    val data_new = stateDataCodec.decode(bin_old.toBitVector).require.value
+    val data_new = channelDataCodec.decode(bin_old.toBitVector).require.value
     assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx === None)
     assert(TimestampSecond.now().toLong - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince.toLong < 3600) // we just set this to current time
     // and re-encode it with the new codec
-    val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
+    val bin_new = ByteVector(channelDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format
     assert(bin_new.startsWith(hex"030000"))
     // now let's decode it again
-    val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
+    val data_new2 = channelDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
     assert(data_new === data_new2)
   }
@@ -120,13 +120,13 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // check that this data has been encoded with the old 0x03 codec
       assert(oldbin.startsWith(hex"000003"))
       // we decode with compat codec
-      val oldnormal = stateDataCodec.decode(oldbin.bits).require.value
+      val oldnormal = channelDataCodec.decode(oldbin.bits).require.value
       // and we encode with new codec
-      val newbin = stateDataCodec.encode(oldnormal).require.bytes
+      val newbin = channelDataCodec.encode(oldnormal).require.bytes
       // make sure that encoding used the new codec
       assert(newbin.startsWith(hex"030007"))
       // make sure that round-trip yields the same data
-      val newnormal = stateDataCodec.decode(newbin.bits).require.value
+      val newnormal = channelDataCodec.decode(newbin.bits).require.value
       assert(newnormal === oldnormal)
     }
   }
@@ -144,11 +144,11 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
     refs.foreach { case (oldbin, refjson) =>
       // we decode with compat codec
-      val oldnormal = stateDataCodec.decode(oldbin.bits).require.value
+      val oldnormal = channelDataCodec.decode(oldbin.bits).require.value
       // we then encode with new codec
-      val newbin = stateDataCodec.encode(oldnormal).require.bytes
+      val newbin = channelDataCodec.encode(oldnormal).require.bytes
       // and we decode with the new codec
-      val newnormal = stateDataCodec.decode(newbin.bits).require.value
+      val newnormal = channelDataCodec.decode(newbin.bits).require.value
       // finally we check that the actual data is the same as before (we just remove the new json field)
       val oldjson = Serialization.write(oldnormal)(JsonSerializers.formats)
       val newjson = Serialization.write(newnormal)(JsonSerializers.formats)
@@ -171,41 +171,41 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // check that this data has been encoded with the old codec
       assert(oldBin.startsWith(hex"0100"))
       // we decode with the new codec
-      val decoded1 = stateDataCodec.decode(oldBin.bits).require.value
+      val decoded1 = channelDataCodec.decode(oldBin.bits).require.value
       // and we encode with the new codec
-      val newBin = stateDataCodec.encode(decoded1).require.bytes
+      val newBin = channelDataCodec.encode(decoded1).require.bytes
       // make sure that encoding used the new codec
       assert(newBin.startsWith(hex"0300"))
       // make sure that round-trip yields the same data
-      val decoded2 = stateDataCodec.decode(newBin.bits).require.value
+      val decoded2 = channelDataCodec.decode(newBin.bits).require.value
       assert(decoded1 === decoded2)
     })
 
-    val negotiating = stateDataCodec.decode(dataNegotiating.bits).require.value.asInstanceOf[DATA_NEGOTIATING]
+    val negotiating = channelDataCodec.decode(dataNegotiating.bits).require.value.asInstanceOf[DATA_NEGOTIATING]
     assert(negotiating.bestUnpublishedClosingTx_opt.nonEmpty)
     negotiating.bestUnpublishedClosingTx_opt.foreach(tx => assert(tx.toLocalOutput === None))
     assert(negotiating.closingTxProposed.flatten.nonEmpty)
     negotiating.closingTxProposed.flatten.foreach(tx => assert(tx.unsignedTx.toLocalOutput === None))
 
-    val normal = stateDataCodec.decode(dataNormal.bits).require.value.asInstanceOf[DATA_NORMAL]
+    val normal = channelDataCodec.decode(dataNormal.bits).require.value.asInstanceOf[DATA_NORMAL]
     assert(normal.commitments.localCommit.htlcTxsAndRemoteSigs.nonEmpty)
     normal.commitments.localCommit.htlcTxsAndRemoteSigs.foreach(tx => assert(tx.htlcTx.htlcId === 0))
 
-    val closingLocal = stateDataCodec.decode(dataClosingLocal.bits).require.value.asInstanceOf[DATA_CLOSING]
+    val closingLocal = channelDataCodec.decode(dataClosingLocal.bits).require.value.asInstanceOf[DATA_CLOSING]
     assert(closingLocal.localCommitPublished.nonEmpty)
     assert(closingLocal.localCommitPublished.get.commitTx.txOut.size === 6)
     assert(closingLocal.localCommitPublished.get.htlcTxs.size === 4)
     assert(closingLocal.localCommitPublished.get.claimHtlcDelayedTxs.size === 4)
     assert(closingLocal.localCommitPublished.get.irrevocablySpent.isEmpty)
 
-    val closingRemote = stateDataCodec.decode(dataClosingRemote.bits).require.value.asInstanceOf[DATA_CLOSING]
+    val closingRemote = channelDataCodec.decode(dataClosingRemote.bits).require.value.asInstanceOf[DATA_CLOSING]
     assert(closingRemote.remoteCommitPublished.nonEmpty)
     assert(closingRemote.remoteCommitPublished.get.commitTx.txOut.size === 7)
     assert(closingRemote.remoteCommitPublished.get.commitTx.txOut.count(_.amount === AnchorOutputsCommitmentFormat.anchorAmount) === 2)
     assert(closingRemote.remoteCommitPublished.get.claimHtlcTxs.size === 3)
     assert(closingRemote.remoteCommitPublished.get.irrevocablySpent.isEmpty)
 
-    val closingRevoked = stateDataCodec.decode(dataClosingRevoked.bits).require.value.asInstanceOf[DATA_CLOSING]
+    val closingRevoked = channelDataCodec.decode(dataClosingRevoked.bits).require.value.asInstanceOf[DATA_CLOSING]
     assert(closingRevoked.revokedCommitPublished.size === 1)
     assert(closingRevoked.revokedCommitPublished.head.commitTx.txOut.size === 6)
     assert(closingRevoked.revokedCommitPublished.head.htlcPenaltyTxs.size === 4)
@@ -231,11 +231,11 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
     oldbins.foreach { oldbin =>
       // we decode with compat codec
-      val oldnormal = stateDataCodec.decode(oldbin.bits).require.value
+      val oldnormal = channelDataCodec.decode(oldbin.bits).require.value
       // and we encode with new codec
-      val newbin = stateDataCodec.encode(oldnormal).require.bytes
+      val newbin = channelDataCodec.encode(oldnormal).require.bytes
       // make sure that round-trip yields the same data
-      val newnormal = stateDataCodec.decode(newbin.bits).require.value
+      val newnormal = channelDataCodec.decode(newbin.bits).require.value
       assert(newnormal === oldnormal)
       // make sure that we have stripped sigs from the transactions
       assert(newnormal.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))

@@ -492,7 +492,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
 
     sender.send(fundeeChannel, CMD_GETSTATEDATA(ActorRef.noSender))
-    val channelId = sender.expectMsgType[RES_GETSTATEDATA[HasCommitments]].data.channelId
+    val channelId = sender.expectMsgType[RES_GETSTATEDATA[PersistentChannelData]].data.channelId
     awaitCond({
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE(ActorRef.noSender))
       sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_LOCKED

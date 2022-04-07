@@ -320,7 +320,7 @@ private[channel] object ChannelCodecs2 {
         ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
   }
 
-  val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
+  val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
     .typecase(0x00, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x01, Codecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
     .typecase(0x02, Codecs.DATA_NORMAL_Codec)

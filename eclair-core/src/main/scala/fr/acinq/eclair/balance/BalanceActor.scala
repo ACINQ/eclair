@@ -11,7 +11,7 @@ import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Utxo
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.Databases
 import grizzled.slf4j.Logger
 import org.json4s.JsonAST.JInt
@@ -25,7 +25,7 @@ object BalanceActor {
   // @formatter:off
   sealed trait Command
   private final case object TickBalance extends Command
-  final case class GetGlobalBalance(replyTo: ActorRef[Try[GlobalBalance]], channels: Map[ByteVector32, HasCommitments]) extends Command
+  final case class GetGlobalBalance(replyTo: ActorRef[Try[GlobalBalance]], channels: Map[ByteVector32, PersistentChannelData]) extends Command
   private final case class WrappedChannels(wrapped: ChannelsListener.GetChannelsResponse) extends Command
   private final case class WrappedGlobalBalanceWithChannels(wrapped: Try[GlobalBalance], channelsCount: Int) extends Command
   private final case class WrappedUtxoInfo(wrapped: Try[UtxoInfo]) extends Command

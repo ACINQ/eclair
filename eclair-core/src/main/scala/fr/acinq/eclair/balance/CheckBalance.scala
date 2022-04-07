@@ -197,7 +197,7 @@ object CheckBalance {
    *   - In the other cases, we simply take our local amount
    *   - TODO?: we disregard anchor outputs
    */
-  def computeOffChainBalance(channels: Iterable[HasCommitments], knownPreimages: Set[(ByteVector32, Long)]): OffChainBalance = {
+  def computeOffChainBalance(channels: Iterable[PersistentChannelData], knownPreimages: Set[(ByteVector32, Long)]): OffChainBalance = {
     channels
       .foldLeft(OffChainBalance()) {
         case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
@@ -293,7 +293,7 @@ object CheckBalance {
     val total: Btc = onChain.total + offChain.total
   }
 
-  def computeGlobalBalance(channels: Map[ByteVector32, HasCommitments], db: Databases, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[GlobalBalance] = for {
+  def computeGlobalBalance(channels: Map[ByteVector32, PersistentChannelData], db: Databases, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[GlobalBalance] = for {
     onChain <- CheckBalance.computeOnChainBalance(bitcoinClient)
     knownPreimages = db.pendingCommands.listSettlementCommands().collect { case (channelId, cmd: CMD_FULFILL_HTLC) => (channelId, cmd.id) }.toSet
     offChainRaw = CheckBalance.computeOffChainBalance(channels.values, knownPreimages)

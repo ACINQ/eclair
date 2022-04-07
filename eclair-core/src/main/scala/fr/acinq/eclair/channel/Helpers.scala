@@ -50,7 +50,7 @@ object Helpers {
   /**
    * We update local/global features at reconnection
    */
-  def updateFeatures(data: HasCommitments, localInit: Init, remoteInit: Init): HasCommitments = {
+  def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData = {
     val commitments1 = data.commitments.copy(
       localParams = data.commitments.localParams.copy(initFeatures = localInit.features),
       remoteParams = data.commitments.remoteParams.copy(initFeatures = remoteInit.features))
@@ -335,7 +335,7 @@ object Helpers {
     /**
      * Check whether we are in sync with our peer.
      */
-    def checkSync(keyManager: ChannelKeyManager, d: HasCommitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
+    def checkSync(keyManager: ChannelKeyManager, d: PersistentChannelData, remoteChannelReestablish: ChannelReestablish): SyncResult = {
 
       // This is done in two steps:
       // - step 1: we check our local commitment
@@ -343,7 +343,7 @@ object Helpers {
       // step 2 depends on step 1 because we need to preserve ordering between commit_sig and revocation
 
       // step 2: we check the remote commitment
-      def checkRemoteCommit(d: HasCommitments, remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
+      def checkRemoteCommit(d: PersistentChannelData, remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
         d.commitments.remoteNextCommitInfo match {
           case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
             // we just sent a new commit_sig but they didn't receive it
@@ -441,7 +441,7 @@ object Helpers {
      *
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
-    def nothingAtStake(data: HasCommitments): Boolean =
+    def nothingAtStake(data: PersistentChannelData): Boolean =
       data.commitments.localCommit.index == 0 &&
         data.commitments.localCommit.spec.toLocal == 0.msat &&
         data.commitments.remoteCommit.index == 0 &&
@@ -483,7 +483,7 @@ object Helpers {
      *                                  because we don't store the closing tx in the channel state
      * @return the channel closing type, if applicable
      */
-    def isClosed(data: HasCommitments, additionalConfirmedTx_opt: Option[Transaction]): Option[ClosingType] = data match {
+    def isClosed(data: PersistentChannelData, additionalConfirmedTx_opt: Option[Transaction]): Option[ClosingType] = data match {
       case closing: DATA_CLOSING if additionalConfirmedTx_opt.exists(closing.mutualClosePublished.map(_.tx).contains) =>
         val closingTx = closing.mutualClosePublished.find(_.tx.txid == additionalConfirmedTx_opt.get.txid).get
         Some(MutualClose(closingTx))

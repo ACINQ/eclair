@@ -1230,10 +1230,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   when(CLOSED)(handleExceptions {
     case Event(Symbol("shutdown"), _) =>
       stateData match {
-        case d: HasCommitments =>
+        case d: PersistentChannelData =>
           log.info(s"deleting database record for channelId=${d.channelId}")
           nodeParams.db.channels.removeChannel(d.channelId)
-        case _ =>
+        case _: TransientChannelData => // nothing was stored in the DB
       }
       log.info("shutting down")
       stop(FSM.Normal)
@@ -1257,7 +1257,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
       goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d1 sending error
 
-    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: HasCommitments) =>
+    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: PersistentChannelData) =>
       activeConnection = r
 
       val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
@@ -1280,9 +1280,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     // note: this can only happen if state is NORMAL or SHUTDOWN
     // -> in NEGOTIATING there are no more htlcs
     // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
-    case Event(ProcessCurrentBlockHeight(c), d: HasCommitments) => handleNewBlock(c, d)
+    case Event(ProcessCurrentBlockHeight(c), d: PersistentChannelData) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) => handleCurrentFeerateDisconnected(c, d)
+    case Event(c: CurrentFeerates, d: PersistentChannelData) => handleCurrentFeerateDisconnected(c, d)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
@@ -1302,13 +1302,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
       handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
-    case Event(WatchFundingSpentTriggered(tx), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
+    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
-    case Event(WatchFundingSpentTriggered(tx), d: HasCommitments) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
+    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => handleRemoteSpentFuture(tx, d)
 
-    case Event(WatchFundingSpentTriggered(tx), d: HasCommitments) => handleRemoteSpentOther(tx, d)
+    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) => handleRemoteSpentOther(tx, d)
 
   })
 
@@ -1464,9 +1464,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
       stay() sending Warning(d.channelId, "spec violation: you sent announcement_signatures before channel_reestablish")
 
-    case Event(ProcessCurrentBlockHeight(c), d: HasCommitments) => handleNewBlock(c, d)
+    case Event(ProcessCurrentBlockHeight(c), d: PersistentChannelData) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) => handleCurrentFeerateDisconnected(c, d)
+    case Event(c: CurrentFeerates, d: PersistentChannelData) => handleCurrentFeerateDisconnected(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
 
@@ -1482,13 +1482,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
       handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
-    case Event(WatchFundingSpentTriggered(tx), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
+    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
-    case Event(WatchFundingSpentTriggered(tx), d: HasCommitments) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
+    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
 
-    case Event(WatchFundingSpentTriggered(tx), d: HasCommitments) => handleRemoteSpentOther(tx, d)
+    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) => handleRemoteSpentOther(tx, d)
 
-    case Event(e: Error, d: HasCommitments) => handleRemoteError(e, d)
+    case Event(e: Error, d: PersistentChannelData) => handleRemoteError(e, d)
   })
 
   when(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)(handleExceptions {
@@ -1524,7 +1524,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       replyTo ! RES_GETINFO(remoteNodeId, stateData.channelId, stateName, stateData)
       stay()
 
-    case Event(c: CMD_ADD_HTLC, d: HasCommitments) =>
+    case Event(c: CMD_ADD_HTLC, d: PersistentChannelData) =>
       log.info(s"rejecting htlc request in state=$stateName")
       val error = ChannelUnavailable(d.channelId)
       handleAddHtlcCommandError(c, error, None) // we don't provide a channel_update: this will be a permanent channel failure
@@ -1533,12 +1533,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CMD_FORCECLOSE, d) =>
       d match {
-        case data: HasCommitments =>
+        case data: PersistentChannelData =>
           val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
           replyTo ! RES_SUCCESS(c, data.channelId)
           val failure = ForcedLocalCommit(data.channelId)
           handleLocalError(failure, data, Some(c))
-        case _ => handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
+        case _: TransientChannelData =>
+          handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
       }
 
     // In states where we don't explicitly handle this command, we won't broadcast a new channel update immediately,
@@ -1572,12 +1573,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event("disconnecting", _) => stay()
 
     // funding tx was confirmed in time, let's just ignore this
-    case Event(BITCOIN_FUNDING_TIMEOUT, _: HasCommitments) => stay()
+    case Event(BITCOIN_FUNDING_TIMEOUT, _: PersistentChannelData) => stay()
 
     // peer doesn't cancel the timer
     case Event(TickChannelOpenTimeout, _) => stay()
 
-    case Event(WatchFundingSpentTriggered(tx), d: HasCommitments) if tx.txid == d.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid =>
+    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid =>
       log.warning(s"processing local commit spent in catch-all handler")
       spendLocalCurrent(d)
   }
@@ -1587,8 +1588,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case state -> nextState =>
       if (state != nextState) {
         val commitments_opt = nextStateData match {
-          case hasCommitments: HasCommitments => Some(hasCommitments.commitments)
-          case _ => None
+          case d: PersistentChannelData => Some(d.commitments)
+          case _: TransientChannelData => None
         }
         context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
       }
@@ -1661,7 +1662,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   /** Check pending settlement commands */
   onTransition {
     case _ -> CLOSING =>
-      PendingCommandsDb.getSettlementCommands(nodeParams.db.pendingCommands, nextStateData.asInstanceOf[HasCommitments].channelId) match {
+      PendingCommandsDb.getSettlementCommands(nodeParams.db.pendingCommands, nextStateData.channelId) match {
         case Nil =>
           log.debug("nothing to replay")
         case cmds =>
@@ -1669,7 +1670,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           cmds.foreach(self ! _) // they all have commit = false
       }
     case SYNCING -> (NORMAL | SHUTDOWN) =>
-      PendingCommandsDb.getSettlementCommands(nodeParams.db.pendingCommands, nextStateData.asInstanceOf[HasCommitments].channelId) match {
+      PendingCommandsDb.getSettlementCommands(nodeParams.db.pendingCommands, nextStateData.channelId) match {
         case Nil =>
           log.debug("nothing to replay")
         case cmds =>
@@ -1701,7 +1702,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
 
-  private def handleCurrentFeerate(c: CurrentFeerates, d: HasCommitments) = {
+  private def handleCurrentFeerate(c: CurrentFeerates, d: PersistentChannelData) = {
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelType, d.commitments.capacity, Some(c))
     val currentFeeratePerKw = d.commitments.localCommit.spec.commitTxFeerate
     val shouldUpdateFee = d.commitments.localParams.isFunder && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
@@ -1725,7 +1726,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
    * @param d the channel commtiments
    * @return
    */
-  private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: HasCommitments) = {
+  private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: PersistentChannelData) = {
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelType, d.commitments.capacity, Some(c))
     val currentFeeratePerKw = d.commitments.localCommit.spec.commitTxFeerate
     // if the network fees are too high we risk to not be able to confirm our current commitment
@@ -1760,7 +1761,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_ADD_FAILED(c, cause, channelUpdate)
-    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = false))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(cause), isFatal = false))
     stay()
   }
 
@@ -1771,11 +1772,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender()) else Some(hasReplyTo.replyTo)
     }
     replyTo_opt.foreach(replyTo => replyTo ! RES_FAILURE(c, cause))
-    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = false))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(cause), isFatal = false))
     stay()
   }
 
-  private def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: HasCommitments) = {
+  private def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: PersistentChannelData) = {
     d.commitments.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if revocationTimeout.remoteCommitNumber + 1 == waitingForRevocation.nextRemoteCommit.index =>
         log.warning(s"waited for too long for a revocation to remoteCommitNumber=${revocationTimeout.remoteCommitNumber}, disconnecting")
@@ -1817,7 +1818,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     stay() using d.copy(channelUpdate = channelUpdate1) storing()
   }
 
-  private def handleSyncFailure(channelReestablish: ChannelReestablish, syncFailure: SyncResult.Failure, d: HasCommitments) = {
+  private def handleSyncFailure(channelReestablish: ChannelReestablish, syncFailure: SyncResult.Failure, d: PersistentChannelData) = {
     syncFailure match {
       case res: SyncResult.LocalLateProven =>
         log.error(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourLocalCommitmentNumber=${res.ourLocalCommitmentNumber} theirRemoteCommitmentNumber=${res.theirRemoteCommitmentNumber}")
@@ -1846,7 +1847,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     }
   }
 
-  private def handleNewBlock(c: CurrentBlockHeight, d: HasCommitments) = {
+  private def handleNewBlock(c: CurrentBlockHeight, d: PersistentChannelData) = {
     val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockHeight)
     val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.channelConf.fulfillSafetyBeforeTimeout)
     if (timedOutOutgoing.nonEmpty) {

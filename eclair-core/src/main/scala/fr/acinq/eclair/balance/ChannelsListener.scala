@@ -9,7 +9,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.balance.ChannelsListener._
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.{ChannelPersisted, ChannelRestored, HasCommitments}
+import fr.acinq.eclair.channel.{ChannelPersisted, ChannelRestored, PersistentChannelData}
 
 import scala.concurrent.Promise
 import scala.concurrent.duration.DurationInt
@@ -18,14 +18,14 @@ object ChannelsListener {
 
   // @formatter:off
   sealed trait Command
-  private final case class ChannelData(channelId: ByteVector32, channel: akka.actor.ActorRef, data: HasCommitments) extends Command
+  private final case class ChannelData(channelId: ByteVector32, channel: akka.actor.ActorRef, data: PersistentChannelData) extends Command
   private final case class ChannelDied(channelId: ByteVector32) extends Command
   final case class GetChannels(replyTo: typed.ActorRef[GetChannelsResponse]) extends Command
   final case object SendDummyEvent extends Command
   final case object DummyEvent extends Command
   // @formatter:on
 
-  case class GetChannelsResponse(channels: Map[ByteVector32, HasCommitments])
+  case class GetChannelsResponse(channels: Map[ByteVector32, PersistentChannelData])
 
   def apply(ready: Promise[Done]): Behavior[Command] =
     Behaviors.setup { context =>
@@ -55,7 +55,7 @@ private class ChannelsListener(context: ActorContext[Command]) {
 
   private val log = context.log
 
-  def running(channels: Map[ByteVector32, HasCommitments]): Behavior[Command] =
+  def running(channels: Map[ByteVector32, PersistentChannelData]): Behavior[Command] =
     Behaviors.receiveMessage {
       case ChannelData(channelId, channel, data) =>
         Closing.isClosed(data, additionalConfirmedTx_opt = None) match {
