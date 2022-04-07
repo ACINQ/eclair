@@ -62,7 +62,6 @@ case object CLOSED extends ChannelState
 case object OFFLINE extends ChannelState
 case object SYNCING extends ChannelState
 case object WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT extends ChannelState
-case object ERR_FUNDING_LOST extends ChannelState
 case object ERR_INFORMATION_LEAK extends ChannelState
 
 /*

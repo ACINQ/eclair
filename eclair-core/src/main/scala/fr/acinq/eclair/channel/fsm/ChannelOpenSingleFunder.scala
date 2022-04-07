@@ -50,7 +50,6 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
   this: Channel =>
 
   /*
-                                              NEW
                             FUNDER                            FUNDEE
                                |                                |
                                |          open_channel          |WAIT_FOR_OPEN_CHANNEL
