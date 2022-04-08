@@ -70,15 +70,15 @@ class FeaturesSpec extends AnyFunSuite {
       bin"000000000000010000000000" -> false,
       bin"000000000000100010000000" -> true,
       bin"000000000000100001000000" -> true,
-      // payment_secret depends on var_onion_optin, but we allow not setting it to be compatible with Phoenix
-      bin"000000001000000000000000" -> true,
-      bin"000000000100000000000000" -> true,
+      // payment_secret depends on var_onion_optin
+      bin"000000001000000000000000" -> false,
+      bin"000000000100000000000000" -> false,
       bin"000000000100001000000000" -> true,
       // basic_mpp depends on payment_secret
       bin"000000100000000000000000" -> false,
       bin"000000010000000000000000" -> false,
-      bin"000000101000000000000000" -> true, // we allow not setting var_onion_optin
-      bin"000000011000000000000000" -> true, // we allow not setting var_onion_optin
+      bin"000000101000000100000000" -> true,
+      bin"000000011000000100000000" -> true,
       bin"000000011000001000000000" -> true,
       bin"000000100100000100000000" -> true,
       // option_anchor_outputs depends on option_static_remotekey
