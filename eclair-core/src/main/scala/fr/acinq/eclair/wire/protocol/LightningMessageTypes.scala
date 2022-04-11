@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, ScriptWitness, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
@@ -37,6 +37,7 @@ import scala.util.Try
 sealed trait LightningMessage extends Serializable
 sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
+sealed trait InteractiveTxMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
 sealed trait AnnouncementMessage extends RoutingMessage // <- not in the spec
@@ -78,6 +79,48 @@ object Error {
 case class Ping(pongLength: Int, data: ByteVector, tlvStream: TlvStream[PingTlv] = TlvStream.empty) extends SetupMessage
 
 case class Pong(data: ByteVector, tlvStream: TlvStream[PongTlv] = TlvStream.empty) extends SetupMessage
+
+case class TxAddInput(channelId: ByteVector32,
+                      serialId: UInt64,
+                      previousTx: Transaction,
+                      previousTxOutput: Long,
+                      sequence: Long,
+                      scriptSig_opt: Option[ByteVector],
+                      tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+
+case class TxAddOutput(channelId: ByteVector32,
+                       serialId: UInt64,
+                       amount: Satoshi,
+                       pubkeyScript: ByteVector,
+                       tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+
+case class TxRemoveInput(channelId: ByteVector32,
+                         serialId: UInt64,
+                         tlvStream: TlvStream[TxRemoveInputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+
+case class TxRemoveOutput(channelId: ByteVector32,
+                          serialId: UInt64,
+                          tlvStream: TlvStream[TxRemoveOutputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+
+case class TxComplete(channelId: ByteVector32,
+                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+
+case class TxSignatures(channelId: ByteVector32,
+                        txId: ByteVector32,
+                        witnesses: Seq[ScriptWitness],
+                        tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+
+case class TxInitRbf(channelId: ByteVector32,
+                     lockTime: Long,
+                     feerate: FeeratePerKw,
+                     tlvStream: TlvStream[TxInitRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+
+case class TxAckRbf(channelId: ByteVector32,
+                    tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+
+case class TxAbort(channelId: ByteVector32,
+                   data: ByteVector,
+                   tlvStream: TlvStream[TxAbortTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
 
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
@@ -126,6 +169,51 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
+}
+
+// NB: this message is named open_channel2 in the specification.
+case class OpenDualFundedChannel(chainHash: ByteVector32,
+                                 temporaryChannelId: ByteVector32,
+                                 fundingFeerate: FeeratePerKw,
+                                 commitmentFeerate: FeeratePerKw,
+                                 fundingAmount: Satoshi,
+                                 dustLimit: Satoshi,
+                                 maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                                 htlcMinimum: MilliSatoshi,
+                                 toSelfDelay: CltvExpiryDelta,
+                                 maxAcceptedHtlcs: Int,
+                                 lockTime: Long,
+                                 fundingPubkey: PublicKey,
+                                 revocationBasepoint: PublicKey,
+                                 paymentBasepoint: PublicKey,
+                                 delayedPaymentBasepoint: PublicKey,
+                                 htlcBasepoint: PublicKey,
+                                 firstPerCommitmentPoint: PublicKey,
+                                 tlvStream: TlvStream[OpenDualFundedChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash {
+  val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
+  val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
+  val announceChannel: Boolean = tlvStream.get[ChannelTlv.DualFundedChannelFlagsTlv].exists(_.announceChannel)
+}
+
+// NB: this message is named accept_channel2 in the specification.
+case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
+                                   fundingAmount: Satoshi,
+                                   dustLimit: Satoshi,
+                                   maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                                   htlcMinimum: MilliSatoshi,
+                                   minimumDepth: Long,
+                                   toSelfDelay: CltvExpiryDelta,
+                                   maxAcceptedHtlcs: Int,
+                                   fundingPubkey: PublicKey,
+                                   revocationBasepoint: PublicKey,
+                                   paymentBasepoint: PublicKey,
+                                   delayedPaymentBasepoint: PublicKey,
+                                   htlcBasepoint: PublicKey,
+                                   firstPerCommitmentPoint: PublicKey,
+                                   tlvStream: TlvStream[AcceptDualFundedChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
+  val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
+  val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
+  val announceChannel: Boolean = tlvStream.get[ChannelTlv.DualFundedChannelFlagsTlv].exists(_.announceChannel)
 }
 
 case class FundingCreated(temporaryChannelId: ByteVector32,

@@ -29,21 +29,32 @@ sealed trait OpenChannelTlv extends Tlv
 
 sealed trait AcceptChannelTlv extends Tlv
 
+sealed trait OpenDualFundedChannelTlv extends Tlv
+
+sealed trait AcceptDualFundedChannelTlv extends Tlv
+
 object ChannelTlv {
 
   /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
-  case class UpfrontShutdownScriptTlv(script: ByteVector) extends OpenChannelTlv with AcceptChannelTlv {
+  case class UpfrontShutdownScriptTlv(script: ByteVector) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv {
     val isEmpty: Boolean = script.isEmpty
   }
 
   val upfrontShutdownScriptCodec: Codec[UpfrontShutdownScriptTlv] = variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScriptTlv]
 
   /** A channel type is a set of even feature bits that represent persistent features which affect channel operations. */
-  case class ChannelTypeTlv(channelType: ChannelType) extends OpenChannelTlv with AcceptChannelTlv
+  case class ChannelTypeTlv(channelType: ChannelType) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
 
   val channelTypeCodec: Codec[ChannelTypeTlv] = variableSizeBytesLong(varintoverflow, bytes).xmap(
     b => ChannelTypeTlv(ChannelTypes.fromFeatures(Features(b).initFeatures())),
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
+  )
+
+  case class DualFundedChannelFlagsTlv(announceChannel: Boolean) extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
+
+  val dualFundedChannelFlagsCodec: Codec[DualFundedChannelFlagsTlv] = variableSizeBytesLong(varintoverflow, bytes).xmap(
+    b => DualFundedChannelFlagsTlv(b.lastOption.exists(v => (v % 2) == 1)),
+    tlv => if (tlv.announceChannel) ByteVector(1.toByte) else ByteVector(0.toByte)
   )
 
 }
@@ -67,6 +78,30 @@ object AcceptChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
   )
+}
+
+object OpenDualFundedChannelTlv {
+
+  import ChannelTlv._
+
+  val openTlvCodec: Codec[TlvStream[OpenDualFundedChannelTlv]] = tlvStream(discriminated[OpenDualFundedChannelTlv].by(varint)
+    .typecase(UInt64(0), upfrontShutdownScriptCodec)
+    .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(2), dualFundedChannelFlagsCodec)
+  )
+
+}
+
+object AcceptDualFundedChannelTlv {
+
+  import ChannelTlv._
+
+  val acceptTlvCodec: Codec[TlvStream[AcceptDualFundedChannelTlv]] = tlvStream(discriminated[AcceptDualFundedChannelTlv].by(varint)
+    .typecase(UInt64(0), upfrontShutdownScriptCodec)
+    .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(2), dualFundedChannelFlagsCodec)
+  )
+
 }
 
 sealed trait FundingCreatedTlv extends Tlv

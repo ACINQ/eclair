@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.scalacompat.ScriptWitness
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt, NodeFeature}
+import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -81,7 +82,7 @@ object LightningMessageCodecs {
       ("fundingSatoshis" | satoshi) ::
       ("pushMsat" | millisatoshi) ::
       ("dustLimitSatoshis" | satoshi) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | uint64) :: // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
       ("channelReserveSatoshis" | satoshi) ::
       ("htlcMinimumMsat" | millisatoshi) ::
       ("feeratePerKw" | feeratePerKw) ::
@@ -96,10 +97,30 @@ object LightningMessageCodecs {
       ("channelFlags" | channelflags) ::
       ("tlvStream" | OpenChannelTlv.openTlvCodec)).as[OpenChannel]
 
+  val openDualFundedChannelCodec: Codec[OpenDualFundedChannel] = (
+    ("chainHash" | bytes32) ::
+      ("temporaryChannelId" | bytes32) ::
+      ("fundingFeerate" | feeratePerKw) ::
+      ("commitmentFeerate" | feeratePerKw) ::
+      ("fundingAmount" | satoshi) ::
+      ("dustLimit" | satoshi) ::
+      ("maxHtlcValueInFlightMsat" | uint64) :: // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+      ("htlcMinimumMsat" | millisatoshi) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
+      ("maxAcceptedHtlcs" | uint16) ::
+      ("lockTime" | uint32) ::
+      ("fundingPubkey" | publicKey) ::
+      ("revocationBasepoint" | publicKey) ::
+      ("paymentBasepoint" | publicKey) ::
+      ("delayedPaymentBasepoint" | publicKey) ::
+      ("htlcBasepoint" | publicKey) ::
+      ("firstPerCommitmentPoint" | publicKey) ::
+      ("tlvStream" | OpenDualFundedChannelTlv.openTlvCodec)).as[OpenDualFundedChannel]
+
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
       ("dustLimitSatoshis" | satoshi) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | uint64) :: // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
       ("channelReserveSatoshis" | satoshi) ::
       ("htlcMinimumMsat" | millisatoshi) ::
       ("minimumDepth" | uint32) ::
@@ -112,6 +133,23 @@ object LightningMessageCodecs {
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
       ("tlvStream" | AcceptChannelTlv.acceptTlvCodec)).as[AcceptChannel]
+
+  val acceptDualFundedChannelCodec: Codec[AcceptDualFundedChannel] = (
+    ("temporaryChannelId" | bytes32) ::
+      ("fundingAmount" | satoshi) ::
+      ("dustLimit" | satoshi) ::
+      ("maxHtlcValueInFlightMsat" | uint64) :: // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+      ("htlcMinimumMsat" | millisatoshi) ::
+      ("minimumDepth" | uint32) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
+      ("maxAcceptedHtlcs" | uint16) ::
+      ("fundingPubkey" | publicKey) ::
+      ("revocationBasepoint" | publicKey) ::
+      ("paymentBasepoint" | publicKey) ::
+      ("delayedPaymentBasepoint" | publicKey) ::
+      ("htlcBasepoint" | publicKey) ::
+      ("firstPerCommitmentPoint" | publicKey) ::
+      ("tlvStream" | AcceptDualFundedChannelTlv.acceptTlvCodec)).as[AcceptDualFundedChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | bytes32) ::
@@ -129,6 +167,66 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("nextPerCommitmentPoint" | publicKey) ::
       ("tlvStream" | FundingLockedTlv.fundingLockedTlvCodec)).as[FundingLocked]
+
+  private val scriptSigOptCodec: Codec[Option[ByteVector]] = lengthDelimited(bytes).xmap[Option[ByteVector]](
+    b => if (b.isEmpty) None else Some(b),
+    b => b.getOrElse(ByteVector.empty)
+  )
+
+  val txAddInputCodec: Codec[TxAddInput] = (
+    ("channelId" | bytes32) ::
+      ("serialId" | uint64) ::
+      ("previousTx" | lengthDelimited(txCodec)) ::
+      ("previousTxOutput" | uint32) ::
+      ("sequence" | uint32) ::
+      ("scriptSig" | scriptSigOptCodec) ::
+      ("tlvStream" | TxAddInputTlv.txAddInputTlvCodec)).as[TxAddInput]
+
+  val txAddOutputCodec: Codec[TxAddOutput] = (
+    ("channelId" | bytes32) ::
+      ("serialId" | uint64) ::
+      ("amount" | satoshi) ::
+      ("scriptPubKey" | lengthDelimited(bytes)) ::
+      ("tlvStream" | TxAddOutputTlv.txAddOutputTlvCodec)).as[TxAddOutput]
+
+  val txRemoveInputCodec: Codec[TxRemoveInput] = (
+    ("channelId" | bytes32) ::
+      ("serialId" | uint64) ::
+      ("tlvStream" | TxRemoveInputTlv.txRemoveInputTlvCodec)).as[TxRemoveInput]
+
+  val txRemoveOutputCodec: Codec[TxRemoveOutput] = (
+    ("channelId" | bytes32) ::
+      ("serialId" | uint64) ::
+      ("tlvStream" | TxRemoveOutputTlv.txRemoveOutputTlvCodec)).as[TxRemoveOutput]
+
+  val txCompleteCodec: Codec[TxComplete] = (
+    ("channelId" | bytes32) ::
+      ("tlvStream" | TxCompleteTlv.txCompleteTlvCodec)).as[TxComplete]
+
+  private val witnessElementCodec: Codec[ByteVector] = lengthDelimited(bytes)
+  private val witnessStackCodec: Codec[ScriptWitness] = listOfN(smallvarint, witnessElementCodec).xmap(s => ScriptWitness(s.toSeq), w => w.stack.toList)
+  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(smallvarint, witnessStackCodec).xmap(l => l.toSeq, l => l.toList)
+
+  val txSignaturesCodec: Codec[TxSignatures] = (
+    ("channelId" | bytes32) ::
+      ("txId" | sha256) ::
+      ("witnesses" | witnessesCodec) ::
+      ("tlvStream" | TxSignaturesTlv.txSignaturesTlvCodec)).as[TxSignatures]
+
+  val txInitRbfCodec: Codec[TxInitRbf] = (
+    ("channelId" | bytes32) ::
+      ("lockTime" | uint32) ::
+      ("feerate" | feeratePerKw) ::
+      ("tlvStream" | TxInitRbfTlv.txInitRbfTlvCodec)).as[TxInitRbf]
+
+  val txAckRbfCodec: Codec[TxAckRbf] = (
+    ("channelId" | bytes32) ::
+      ("tlvStream" | TxAckRbfTlv.txAckRbfTlvCodec)).as[TxAckRbf]
+
+  val txAbortCodec: Codec[TxAbort] = (
+    ("channelId" | bytes32) ::
+      ("data" | lengthDelimited(bytes)) ::
+      ("tlvStream" | TxAbortTlv.txAbortTlvCodec)).as[TxAbort]
 
   val shutdownCodec: Codec[Shutdown] = (
     ("channelId" | bytes32) ::
@@ -351,6 +449,17 @@ object LightningMessageCodecs {
     .typecase(36, fundingLockedCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
+    .typecase(64, openDualFundedChannelCodec)
+    .typecase(65, acceptDualFundedChannelCodec)
+    .typecase(66, txAddInputCodec)
+    .typecase(67, txAddOutputCodec)
+    .typecase(68, txRemoveInputCodec)
+    .typecase(69, txRemoveOutputCodec)
+    .typecase(70, txCompleteCodec)
+    .typecase(71, txSignaturesCodec)
+    .typecase(72, txInitRbfCodec)
+    .typecase(73, txAckRbfCodec)
+    .typecase(74, txAbortCodec)
     .typecase(128, updateAddHtlcCodec)
     .typecase(130, updateFulfillHtlcCodec)
     .typecase(131, updateFailHtlcCodec)

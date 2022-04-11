@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.crypto.Mac32
@@ -100,6 +100,9 @@ object CommonCodecs {
   // It is useful in combination with variableSizeBytesLong to encode/decode TLV lengths because those will always be < 2^63.
   val varintoverflow: Codec[Long] = varint.narrow(l => if (l <= UInt64(Long.MaxValue)) Attempt.successful(l.toBigInt.toLong) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
 
+  // This codec can be safely used for values < 2^32 and will fail otherwise.
+  val smallvarint: Codec[Int] = varint.narrow(l => if (l <= UInt64(Int.MaxValue)) Attempt.successful(l.toBigInt.toInt) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
+
   val bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
 
   val bytes64: Codec[ByteVector64] = limitedSizeBytes(64, bytesStrict(64).xmap(d => ByteVector64(d), d => d.bytes))
@@ -143,6 +146,8 @@ object CommonCodecs {
   )
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
+
+  val txCodec: Codec[Transaction] = bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d))
 
   def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(size, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
 
