@@ -266,9 +266,7 @@ object Features {
   // Features may depend on other features, as specified in Bolt 9.
   private val featuresDependency = Map(
     ChannelRangeQueriesExtended -> (ChannelRangeQueries :: Nil),
-    // This dependency requirement was added to the spec after the Phoenix release, which means Phoenix users have "invalid"
-    // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
-    // PaymentSecret -> (VariableLengthOnion :: Nil),
+    PaymentSecret -> (VariableLengthOnion :: Nil),
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
     AnchorOutputs -> (StaticRemoteKey :: Nil),
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
