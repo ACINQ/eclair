@@ -534,10 +534,10 @@ class SphinxSpec extends AnyFunSuite {
       TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(450)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(900)), OnionPaymentPayloadTlv.OutgoingChannelId(ShortChannelId(15))),
     ).map(tlvs => PaymentOnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes) ++ Seq(
       // The sender includes the blinding key and the first encrypted recipient data in the introduction node's payload.
-      TlvStream[BlindOnionPaymentPayloadTlv](OnionPaymentPayloadTlv.BlindingPoint(blindingEphemeralKey0), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(0))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.BlindingPoint(blindingEphemeralKey0), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(0))),
       // The sender includes the correct encrypted recipient data in each blinded node's payload.
-      TlvStream[BlindOnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
-      TlvStream[BlindOnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
     ).map(tlvs => PaymentOnionCodecs.blindTlvPerHopPayloadCodec.encode(tlvs).require.bytes)
 
     val senderSessionKey = PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")

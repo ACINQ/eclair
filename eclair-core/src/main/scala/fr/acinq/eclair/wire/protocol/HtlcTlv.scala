@@ -30,10 +30,10 @@ import scodec.codecs._
 
 sealed trait UpdateAddHtlcTlv extends Tlv
 
-/** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
-case class BlindingPoint(publicKey: PublicKey) extends UpdateAddHtlcTlv
-
 object UpdateAddHtlcTlv {
+  /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
+  case class BlindingPoint(publicKey: PublicKey) extends UpdateAddHtlcTlv
+
   private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
 
   val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint).typecase(UInt64(0), blindingPoint))

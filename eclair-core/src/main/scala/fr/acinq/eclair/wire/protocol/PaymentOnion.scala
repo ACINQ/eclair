@@ -123,16 +123,13 @@ Notes:
 /** Tlv types used inside a payment onion. */
 sealed trait OnionPaymentPayloadTlv extends Tlv
 
-/** Tlv types used inside a blinded payment onion. */
-sealed trait BlindOnionPaymentPayloadTlv extends Tlv
-
 object OnionPaymentPayloadTlv {
 
   /** Amount to forward to the next node. */
-  case class AmountToForward(amount: MilliSatoshi) extends OnionPaymentPayloadTlv with BlindOnionPaymentPayloadTlv
+  case class AmountToForward(amount: MilliSatoshi) extends OnionPaymentPayloadTlv
 
   /** CLTV value to use for the HTLC offered to the next node. */
-  case class OutgoingCltv(cltv: CltvExpiry) extends OnionPaymentPayloadTlv with BlindOnionPaymentPayloadTlv
+  case class OutgoingCltv(cltv: CltvExpiry) extends OnionPaymentPayloadTlv
 
   /** Id of the channel to use to forward a payment to the next node. */
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends OnionPaymentPayloadTlv
@@ -177,10 +174,10 @@ object OnionPaymentPayloadTlv {
    * route. This data cannot be decrypted or modified by the sender and usually contains information to locate the next
    * node without revealing it to the sender.
    */
-  case class EncryptedRecipientData(data: ByteVector) extends BlindOnionPaymentPayloadTlv
+  case class EncryptedRecipientData(data: ByteVector) extends OnionPaymentPayloadTlv
 
   /** Blinding ephemeral public key for the introduction node of a blinded route. */
-  case class BlindingPoint(publicKey: PublicKey) extends BlindOnionPaymentPayloadTlv
+  case class BlindingPoint(publicKey: PublicKey) extends OnionPaymentPayloadTlv
 }
 
 object PaymentOnion {
@@ -249,19 +246,19 @@ object PaymentOnion {
       ChannelRelayTlvPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountToForward), OnionPaymentPayloadTlv.OutgoingCltv(outgoingCltv), OnionPaymentPayloadTlv.OutgoingChannelId(outgoingChannelId)))
   }
 
-  case class BlindTlvPayload(records: TlvStream[BlindOnionPaymentPayloadTlv]) extends ChannelRelayPayload {
+  case class BlindTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends ChannelRelayPayload {
     val encryptedRecipientData: ByteVector = records.get[EncryptedRecipientData].get.data
     val blinding_opt: Option[PublicKey] = records.get[BlindingPoint].map(_.publicKey)
   }
 
-  case class FinalBlindPayload(records: TlvStream[BlindOnionPaymentPayloadTlv]) extends FinalPayload {
+  case class FinalBlindPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload {
     override val amount: MilliSatoshi = records.get[AmountToForward].get.amount
     override val expiry: CltvExpiry = records.get[OutgoingCltv].get.cltv
     val encryptedRecipientData: ByteVector = records.get[EncryptedRecipientData].get.data
     val blinding_opt: Option[PublicKey] = records.get[BlindingPoint].map(_.publicKey)
   }
 
-  case class ChannelBlindRelayTlvData(records: TlvStream[BlindOnionPaymentPayloadTlv],
+  case class ChannelBlindRelayTlvData(records: TlvStream[OnionPaymentPayloadTlv],
                                       relay_data: BlindedRouteData.PaymentRelayData,
                                       incomingAmount: MilliSatoshi,
                                       incomingCltv: CltvExpiry) extends ChannelRelayData {
@@ -401,13 +398,13 @@ object PaymentOnionCodecs {
 
   val tlvPerHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete
 
-  private val blindOnionTlvCodec = discriminated[BlindOnionPaymentPayloadTlv].by(varint)
+  private val blindOnionTlvCodec = discriminated[OnionPaymentPayloadTlv].by(varint)
     .typecase(UInt64(2), amountToForward)
     .typecase(UInt64(4), outgoingCltv)
     .typecase(UInt64(10), encryptedRecipientData)
     .typecase(UInt64(12), blindingPoint)
 
-  val blindTlvPerHopPayloadCodec: Codec[TlvStream[BlindOnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[BlindOnionPaymentPayloadTlv](blindOnionTlvCodec).complete
+  val blindTlvPerHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](blindOnionTlvCodec).complete
 
   private val legacyRelayPerHopPayloadCodec: Codec[RelayLegacyPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
