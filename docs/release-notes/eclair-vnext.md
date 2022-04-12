@@ -9,6 +9,7 @@
 ### API changes
 
 - `channelbalances` Retrieves information about the balances of all local channels. (#2196)
+- `stop` Stops eclair. Please note that the recommended way of stopping eclair is simply to kill its process (#2233)
 
 ### Miscellaneous improvements and bug fixes
 
