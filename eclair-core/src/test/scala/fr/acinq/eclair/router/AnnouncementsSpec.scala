@@ -23,7 +23,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate.ChannelFlags
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.nodeAnnouncementCodec
-import fr.acinq.eclair.wire.protocol.{Color, NodeAddress}
+import fr.acinq.eclair.wire.protocol.NodeAddress
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -80,18 +80,46 @@ class AnnouncementsSpec extends AnyFunSuite {
 
   test("sort node announcement addresses") {
     val addresses = List(
+      NodeAddress.fromParts("acinq.co", 9735).get,
       NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get,
       NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:200", 9735).get,
       NodeAddress.fromParts("140.82.121.4", 9735).get,
-      NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get,
     )
     val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, addresses, Alice.nodeParams.features.nodeAnnouncementFeatures())
     assert(checkSig(ann))
     assert(ann.addresses === List(
       NodeAddress.fromParts("140.82.121.4", 9735).get,
       NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:200", 9735).get,
-      NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get,
       NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get,
+      NodeAddress.fromParts("acinq.co", 9735).get,
+    ))
+  }
+
+  test("filter invalid and deprecated node announcement addresses") {
+    val addresses = List(
+      NodeAddress.fromParts("140.82.121.5", 9735).get,
+      NodeAddress.fromParts("140.82.121.4", 0).get, // ignore IPv4 with port 0
+      NodeAddress.fromParts("140.82.121.4", 9735).get, // more than one IPv4 is OK
+      NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:201", 9735).get,
+      NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:200", 9735).get, // more than one IPv6 is OK
+      NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:200", 0).get, // ignore IPv6 with port 0
+      NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get, // deprecate Torv2 addresses
+      NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 0).get, // port zero for Tor is OK
+      NodeAddress.fromParts("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion", 9735).get, // more than one Tor is OK
+      NodeAddress.fromParts("acinq.co", 0).get, // ignore DNS hostname with port 0
+      NodeAddress.fromParts("acinq.co", 9735).get,
+      NodeAddress.fromParts("acinq.fr", 9735).get, // ignore more than one DNS hostnames
+    )
+    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, addresses, Alice.nodeParams.features.nodeAnnouncementFeatures())
+    assert(checkSig(ann))
+    assert(ann.validAddresses === List(
+      NodeAddress.fromParts("140.82.121.5", 9735).get,
+      NodeAddress.fromParts("140.82.121.4", 9735).get,
+      NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:201", 9735).get,
+      NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:200", 9735).get,
+      NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 0).get,
+      NodeAddress.fromParts("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion", 9735).get,
+      NodeAddress.fromParts("acinq.co", 9735).get
     ))
   }
 

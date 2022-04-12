@@ -38,6 +38,12 @@ Expired incoming invoices that are unpaid will be searched for and purged from t
 * `eclair.purge-expired-invoices.enabled = true
 * `eclair.purge-expired-invoices.interval = 24 hours`
 
+#### Public IP addresses can be DNS host names, but not Tor v2 addresses
+
+You can now specify a DNS host name as one of your `server.public-ips` addresses (see PR [#911](https://github.com/lightning/bolts/pull/911)). Note: you can not specify more than one DNS host name.
+
+Tor v2 addresses are no longer supported as a `server.public-ips` address and will be ignored in gossip messages (see PR [#940](https://github.com/lightning/bolts/pull/940]).
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key 7A73FE77DE2C4027. Note that you can get it:

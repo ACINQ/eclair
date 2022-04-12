@@ -126,12 +126,15 @@ object CommonCodecs {
 
   def base32(size: Int): Codec[String] = bytes(size).xmap(b => new Base32().encodeAsString(b.toArray).toLowerCase, a => ByteVector(new Base32().decode(a.toUpperCase())))
 
+  val punycode: Codec[String] = variableSizeBytes(uint8, ascii)
+
   val nodeaddress: Codec[NodeAddress] =
     discriminated[NodeAddress].by(uint8)
       .typecase(1, (ipv4address :: uint16).as[IPv4])
       .typecase(2, (ipv6address :: uint16).as[IPv6])
       .typecase(3, (base32(10) :: uint16).as[Tor2])
       .typecase(4, (base32(35) :: uint16).as[Tor3])
+      .typecase( 5, (punycode :: uint16).as[DnsHostname])
 
   // this one is a bit different from most other codecs: the first 'len' element is *not* the number of items
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this

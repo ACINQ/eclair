@@ -237,6 +237,11 @@ object Socks5ProxyParams {
       case _: IPv6 if proxyParams.useForIPv6 => Some(proxyParams.address)
       case _: Tor2 if proxyParams.useForTor => Some(proxyParams.address)
       case _: Tor3 if proxyParams.useForTor => Some(proxyParams.address)
+      case _: DnsHostname => InetAddress.getByName(address.host) match {
+        case _: Inet4Address if proxyParams.useForIPv4 => Some(proxyParams.address)
+        case _: Inet6Address if proxyParams.useForIPv6 => Some(proxyParams.address)
+        case _ => None
+      }
       case _ => None
     }
 

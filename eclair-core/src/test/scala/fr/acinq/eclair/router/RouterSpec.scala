@@ -737,4 +737,49 @@ class RouterSpec extends BaseRouterSpec {
     }
   }
 
+  test("properly announce valid new nodes announcements and ignore invalid ones") { fixture =>
+    import fixture._
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
+    system.eventStream.subscribe(eventListener.ref, classOf[Rebroadcast])
+    val peerConnection = TestProbe()
+
+    {
+      // continue to rebroadcast node updates with deprecated Torv2 addresses
+      val torv2Address = List(NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get)
+      val node_c_torv2 = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), torv2Address, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 1)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c_torv2))
+      peerConnection.expectMsg(TransportHandler.ReadAck(node_c_torv2))
+      peerConnection.expectMsg(GossipDecision.Accepted(node_c_torv2))
+      eventListener.expectMsg(NodeUpdated(node_c_torv2))
+      router ! Router.TickBroadcast
+      val rebroadcast = eventListener.expectMsgType[Rebroadcast]
+      assert(rebroadcast.nodes.contains(node_c_torv2))
+    }
+
+    {
+      // rebroadcast node updates with a single DNS hostname addresses
+      val hostname = List(NodeAddress.fromParts("acinq.co", 9735).get)
+      val node_c_hostname = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), hostname, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 10)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c_hostname))
+      peerConnection.expectMsg(TransportHandler.ReadAck(node_c_hostname))
+      peerConnection.expectMsg(GossipDecision.Accepted(node_c_hostname))
+      eventListener.expectMsg(NodeUpdated(node_c_hostname))
+      router ! Router.TickBroadcast
+      val rebroadcast = eventListener.expectMsgType[Rebroadcast]
+      assert(rebroadcast.nodes.contains(node_c_hostname))
+    }
+
+    {
+      // do NOT rebroadcast node updates with more than one DNS hostname addresses
+      val multiHostnames = List(NodeAddress.fromParts("acinq.co", 9735).get, NodeAddress.fromParts("acinq.fr", 9735).get)
+      val node_c_noForward = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), multiHostnames, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 20)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c_noForward))
+      peerConnection.expectMsg(TransportHandler.ReadAck(node_c_noForward))
+      peerConnection.expectMsg(GossipDecision.Accepted(node_c_noForward))
+      eventListener.expectMsg(NodeUpdated(node_c_noForward))
+      router ! Router.TickBroadcast
+      eventListener.expectNoMessage(100 millis)
+    }
+  }
 }

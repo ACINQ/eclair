@@ -136,6 +136,20 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     mockServer.close()
   }
 
+  test("return connection failure for a peer with an invalid dns host name") { f =>
+    import f._
+
+    // this actor listens to connection requests and creates connections
+    system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
+
+    val invalidDnsHostname_opt = NodeAddress.fromParts("eclair.invalid", 9735).toOption
+
+    val probe = TestProbe()
+    probe.send(peer, Peer.Init(Set.empty))
+    probe.send(peer, Peer.Connect(remoteNodeId, invalidDnsHostname_opt, probe.ref, isPersistent = true))
+    probe.expectMsgType[PeerConnection.ConnectionResult.ConnectionFailed]
+  }
+
   test("successfully reconnect to peer at startup when there are existing channels", Tag("auto_reconnect")) { f =>
     import f._
 

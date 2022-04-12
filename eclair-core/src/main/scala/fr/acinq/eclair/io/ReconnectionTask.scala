@@ -211,7 +211,7 @@ object ReconnectionTask {
   }
 
   def getPeerAddressFromDb(nodeParams: NodeParams, remoteNodeId: PublicKey): Option[NodeAddress] = {
-    val nodeAddresses = nodeParams.db.peers.getPeer(remoteNodeId).toSeq ++ nodeParams.db.network.getNode(remoteNodeId).toSeq.flatMap(_.addresses)
+    val nodeAddresses = nodeParams.db.peers.getPeer(remoteNodeId).toSeq ++ nodeParams.db.network.getNode(remoteNodeId).toList.flatMap(_.validAddresses)
     selectNodeAddress(nodeParams, nodeAddresses)
   }
 

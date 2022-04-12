@@ -70,11 +70,13 @@ object Announcements {
 
   def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: Features[NodeFeature], timestamp: TimestampSecond = TimestampSecond.now()): NodeAnnouncement = {
     require(alias.length <= 32)
+    // sort addresses by ascending address descriptor type; do not reorder addresses within the same descriptor type
     val sortedAddresses = nodeAddresses.map {
       case address@(_: IPv4) => (1, address)
       case address@(_: IPv6) => (2, address)
       case address@(_: Tor2) => (3, address)
       case address@(_: Tor3) => (4, address)
+      case address@(_: DnsHostname) => (5, address)
     }.sortBy(_._1).map(_._2)
     val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features.unscoped(), sortedAddresses, TlvStream.empty)
     val sig = Crypto.sign(witness, nodeSecret)
@@ -87,6 +89,17 @@ object Announcements {
       features = features.unscoped(),
       addresses = sortedAddresses
     )
+  }
+
+  case class AddressException(message: String) extends IllegalArgumentException(message)
+
+  def validateAddresses(addresses: List[NodeAddress]): Option[AddressException] = {
+    if (addresses.count(_.isInstanceOf[DnsHostname]) > 1)
+      Some(AddressException(s"Invalid server.public-ip addresses: can not have more than one DNS host name."))
+    else addresses.collectFirst {
+      case address if address.isInstanceOf[Tor2] => AddressException(s"invalid server.public-ip address `$address`: Tor v2 is deprecated.")
+      case address if address.port == 0 && !address.isInstanceOf[Tor3] => AddressException(s"invalid server.public-ip address `$address`: A non-Tor address can not use port 0.")
+    }
   }
 
   /**

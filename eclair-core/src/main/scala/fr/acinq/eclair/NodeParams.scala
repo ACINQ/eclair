@@ -32,8 +32,8 @@ import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
-import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
+import fr.acinq.eclair.router.{Announcements, PathFindingExperimentConf}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import grizzled.slf4j.Logging
@@ -297,6 +297,11 @@ object NodeParams extends Logging {
       require(features.hasFeature(Features.ChannelType), s"${Features.ChannelType.rfcName} must be enabled")
     }
 
+    def validateAddresses(addresses: List[NodeAddress]): Unit = {
+      val addressesError = Announcements.validateAddresses(addresses)
+      require(addressesError.isEmpty, addressesError.map(_.message))
+    }
+
     val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
     val features = Features.fromConfiguration(config.getConfig("features"))
     validateFeatures(features)
@@ -327,6 +332,8 @@ object NodeParams extends Logging {
       .asScala
       .toList
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ publicTorAddress_opt
+
+    validateAddresses(addresses)
 
     val feeTargets = FeeTargets(
       fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
