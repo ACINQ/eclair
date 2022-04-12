@@ -63,11 +63,18 @@ object RouteBlindingEncryptedDataTlv {
 }
 
 object BlindedRouteData {
+
   import RouteBlindingEncryptedDataTlv._
 
-  sealed trait Data
+  sealed trait Data {
+    val records: TlvStream[RouteBlindingEncryptedDataTlv]
+  }
+
   sealed trait MessageData extends Data
-  sealed trait PaymentData extends Data
+
+  sealed trait PaymentData extends Data {
+    val paymentConstraints_opt: Option[PaymentConstraints] = records.get[PaymentConstraints]
+  }
 
   case class MessageRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends MessageData {
     val nextNodeId: PublicKey = records.get[OutgoingNodeId].get.nodeId
@@ -83,27 +90,11 @@ object BlindedRouteData {
     def amountToForward(amountReceived: MilliSatoshi): MilliSatoshi =
       MilliSatoshi(((amountReceived - paymentRelay.feeBase).toLong.toDouble / (1.0 + paymentRelay.feeProportionalMillionths.toDouble / 1e-6)).ceil.toLong)
 
-    def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv + paymentRelay.cltvExpiryDelta
-
-    def isValidPayment(amount: MilliSatoshi, cltvExpiry: CltvExpiry, features: Features[Feature]): Boolean = {
-      records.get[PaymentConstraints].forall(constraints =>
-        amount >= constraints.minAmount &&
-          cltvExpiry <= constraints.maxCltvExpiry &&
-          Features.areCompatible(features, constraints.allowedFeatures)
-      )
-    }
+    def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - paymentRelay.cltvExpiryDelta
   }
 
   case class FinalRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends MessageData with PaymentData {
     val pathId_opt: Option[ByteVector] = records.get[PathId].map(_.data)
-
-    def isValidPayment(amount: MilliSatoshi, cltvExpiry: CltvExpiry, features: Features[Feature]): Boolean = {
-      records.get[PaymentConstraints].forall(constraints =>
-        amount >= constraints.minAmount &&
-          cltvExpiry <= constraints.maxCltvExpiry &&
-          Features.areCompatible(features, constraints.allowedFeatures)
-      )
-    }
   }
 }
 

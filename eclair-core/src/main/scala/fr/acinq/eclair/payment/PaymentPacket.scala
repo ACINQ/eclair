@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractShared
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, UInt64, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -92,17 +92,17 @@ object IncomingPaymentPacket {
       case Right(DecodedOnionPacket(payload: PaymentOnion.BlindTlvPayload, next)) =>
         add.blinding_opt.orElse(payload.blinding_opt) match {
           case Some(blindingKey) => RouteBlindingEncryptedDataCodecs.decode[BlindedRouteData.PaymentRelayData](privateKey, blindingKey, payload.encryptedRecipientData, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec) match {
-            case Success((relayNext: BlindedRouteData.PaymentRelayData, nextBlindingKey)) =>
+            case Success((relayNext: BlindedRouteData.PaymentRelayData, nextBlindingKey)) if isValidBlindPayment(relayNext, add.amountMsat, add.cltvExpiry, Features.empty) =>
               // TODO: If we build routes with several copies of our node at the end to hide the true length of the
               // route, then we should add some code here to continue decrypting onions until we reach the final packet.
               Right(ChannelRelayPacket(add, PaymentOnion.ChannelBlindRelayTlvData(payload.records, relayNext, add.amountMsat, add.cltvExpiry), next, Some(nextBlindingKey)))
-            case Failure(_) => Left(InvalidOnionPayload(UInt64(0), 0))
+            case _ => Left(InvalidOnionPayload(UInt64(0), 0))
           }
           case None => Left(InvalidOnionPayload(UInt64(12), 0))
         }
       case Right(DecodedOnionPacket(payload: PaymentOnion.FinalBlindPayload, _)) =>
         RouteBlindingEncryptedDataCodecs.decode[BlindedRouteData.FinalRecipientData](privateKey, add.blinding_opt.get, payload.encryptedRecipientData, RouteBlindingEncryptedDataCodecs.finalRecipientDataCodec) match {
-          case Success((finalData: BlindedRouteData.FinalRecipientData, _)) if finalData.isValidPayment(add.amountMsat, add.cltvExpiry, Features.empty) =>
+          case Success((finalData: BlindedRouteData.FinalRecipientData, _)) if isValidBlindPayment(finalData, add.amountMsat, add.cltvExpiry, Features.empty) =>
             Left(InvalidOnionPayload(UInt64(0), 0)) // Receiving through blinded routes is not supported yet
           case _ => Left(InvalidOnionPayload(UInt64(0), 0))
         }
@@ -112,12 +112,20 @@ object IncomingPaymentPacket {
           case Left(failure) => Left(failure)
           case Right(DecodedOnionPacket(innerPayload: PaymentOnion.NodeRelayPayload, next)) => validateNodeRelay(add, payload, innerPayload, next)
           case Right(DecodedOnionPacket(innerPayload: PaymentOnion.FinalTlvPayload, _)) => validateFinal(add, payload, innerPayload)
-          case  Right(DecodedOnionPacket(_: PaymentOnion.FinalBlindPayload, _)) =>
+          case Right(DecodedOnionPacket(_: PaymentOnion.FinalBlindPayload, _)) =>
             Left(InvalidOnionPayload(UInt64(0), 0)) // Receiving through blinded routes is not supported yet
         }
         case None => validateFinal(add, payload)
       }
     }
+  }
+
+  private def isValidBlindPayment(data: BlindedRouteData.PaymentData, amount: MilliSatoshi, cltvExpiry: CltvExpiry, features: Features[Feature]): Boolean = {
+    data.paymentConstraints_opt.forall(constraints =>
+      amount >= constraints.minAmount &&
+        cltvExpiry <= constraints.maxCltvExpiry &&
+        Features.areCompatible(features, constraints.allowedFeatures)
+    )
   }
 
   private def validateFinal(add: UpdateAddHtlc, payload: PaymentOnion.FinalTlvPayload): Either[FailureMessage, IncomingPaymentPacket] = {

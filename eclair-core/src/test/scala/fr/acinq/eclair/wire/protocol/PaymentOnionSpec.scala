@@ -99,6 +99,20 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode variable-length (tlv) relay per-hop blinded payload") {
+    val expected = TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
+    val bin = hex"2d 0a080123456789abcdef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"
+      channelRelayPerHopPayloadCodec.decode(bin.bits).require.value match {
+        case decoded: BlindTlvPayload =>
+          assert(decoded === BlindTlvPayload(expected))
+          assert(decoded.encryptedRecipientData === hex"0123456789abcdef")
+          assert(decoded.blinding_opt === Some(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
+        case _ => fail()
+      }
+      val encoded = channelRelayPerHopPayloadCodec.encode(BlindTlvPayload(expected)).require.bytes
+      assert(encoded === bin)
+  }
+
   test("encode/decode variable-length (tlv) node relay per-hop payload") {
     val nodeId = PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")
     val expected = TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), OutgoingNodeId(nodeId))
