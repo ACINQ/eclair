@@ -62,5 +62,13 @@ trait Node {
     }
   }
 
-  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ audit
+  val stop: Route = postRequest("stop") { implicit t =>
+    formFields("exitCode".as[Int].?) { exitCode_opt =>
+      val exitCode = exitCode_opt.getOrElse(0)
+      eclairApi.stop(exitCode)
+      complete("ok")
+    }
+  }
+
+  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ audit ~ stop
 }

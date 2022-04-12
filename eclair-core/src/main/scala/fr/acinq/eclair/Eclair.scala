@@ -159,6 +159,8 @@ trait Eclair {
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 
   def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
+
+  def stop(exitCode: Int): Future[Unit]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -558,5 +560,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         }
       case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, failureMessage = Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}"), response = None))
     }
+  }
+
+  override def stop(exitCode: Int): Future[Unit] = {
+    // README: do not make this smarter or more complex !
+    // eclair can simply and cleanly be stopped by killing its process without fear of losing data, payments, ... and it should remain this way.
+    logger.info(s"stopping eclair with exit code $exitCode")
+    sys.exit(exitCode)
+    Future.successful(())
   }
 }
