@@ -160,7 +160,7 @@ trait Eclair {
 
   def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 
-  def stop(exitCode: Int): Future[Unit]
+  def stop(): Future[Unit]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -562,11 +562,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def stop(exitCode: Int): Future[Unit] = {
+  override def stop(): Future[Unit] = {
     // README: do not make this smarter or more complex !
     // eclair can simply and cleanly be stopped by killing its process without fear of losing data, payments, ... and it should remain this way.
-    logger.info(s"stopping eclair with exit code $exitCode")
-    sys.exit(exitCode)
+    logger.info("stopping eclair")
+    sys.exit(0)
     Future.successful(())
   }
 }

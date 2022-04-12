@@ -1188,7 +1188,6 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("stop eclair") {
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.stop(0) returns Future.successful(())
 
     Post("/stop") ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
