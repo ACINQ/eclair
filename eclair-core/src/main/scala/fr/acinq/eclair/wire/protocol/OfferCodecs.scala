@@ -16,21 +16,17 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.Bech32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.Offers._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tu32, tu64overflow}
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64}
-import scodec.bits.ByteVector
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, TimestampSecond, UInt64}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-
-import scala.util.Try
 
 object OfferCodecs {
   private val chains: Codec[Chains] = variableSizeBytesLong(varintoverflow, list(bytes32)).xmap[Seq[ByteVector32]](_.toSeq, _.toList).as[Chains]
@@ -136,14 +132,14 @@ object OfferCodecs {
   })
 
   private val paymentInfo: Codec[PaymentInfo] = (("fee_base_msat" | millisatoshi32) ::
-      ("fee_proportional_millionths" | tu32) ::
-      ("cltv_expiry_delta" | cltvExpiryDelta)).as[PaymentInfo]
+    ("fee_proportional_millionths" | tu32) ::
+    ("cltv_expiry_delta" | cltvExpiryDelta)).as[PaymentInfo]
 
   private val paymentPathsInfo: Codec[PaymentPathsInfo] = variableSizeBytesLong(varintoverflow, list(paymentInfo)).xmap[Seq[PaymentInfo]](_.toSeq, _.toList).as[PaymentPathsInfo]
 
   private val paymentConstraints: Codec[PaymentConstraints] = (("max_cltv_expiry" | cltvExpiry) ::
-      ("htlc_minimum_msat" | millisatoshi) ::
-      ("allowed_features" | bytes.xmap[Features[Feature]](Features(_), _.toByteVector))).as[PaymentConstraints]
+    ("htlc_minimum_msat" | millisatoshi) ::
+    ("allowed_features" | bytes.xmap[Features[Feature]](Features(_), _.toByteVector))).as[PaymentConstraints]
 
   private val paymentPathsConstraints: Codec[PaymentPathsConstraints] = variableSizeBytesLong(varintoverflow, list(paymentConstraints)).xmap[Seq[PaymentConstraints]](_.toSeq, _.toList).as[PaymentPathsConstraints]
 
@@ -169,6 +165,7 @@ object OfferCodecs {
     .typecase(UInt64(8), amount)
     .typecase(UInt64(10), description)
     .typecase(UInt64(12), features)
+    // TODO: the spec for payment paths is not final, adjust codecs if changes are made to he spec.
     .typecase(UInt64(16), paths)
     .typecase(UInt64(18), paymentPathsInfo)
     .typecase(UInt64(19), paymentPathsConstraints)
