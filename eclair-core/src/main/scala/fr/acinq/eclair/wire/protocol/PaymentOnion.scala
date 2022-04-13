@@ -199,19 +199,8 @@ object PaymentOnion {
    *        /                        \                        \                                    \
    * RelayLegacyPayload     ChannelRelayTlvPayload     NodeRelayPayload                      FinalTlvPayload
    *
-   * We also introduce additional traits to separate payloads based on their encoding (PerHopPayloadFormat) and on the
-   * type of onion packet they can be used with (PacketType).
+   * We also introduce additional traits to separate payloads based on the type of onion packet they can be used with (PacketType).
    */
-
-  sealed trait PerHopPayloadFormat
-
-  /** Legacy fixed-size 65-bytes onion payload. */
-  sealed trait LegacyFormat extends PerHopPayloadFormat
-
-  /** Variable-length onion payload with optional additional tlv records. */
-  sealed trait TlvFormat extends PerHopPayloadFormat {
-    def records: TlvStream[OnionPaymentPayloadTlv]
-  }
 
   /** Payment onion packet type. */
   sealed trait PacketType
@@ -229,7 +218,7 @@ object PaymentOnion {
   sealed trait PerHopPayload
 
   /** Per-hop payload for an intermediate node. */
-  sealed trait RelayPayload extends PerHopPayload with PerHopPayloadFormat {
+  sealed trait RelayPayload extends PerHopPayload {
     /** Amount to forward to the next node. */
     val amountToForward: MilliSatoshi
     /** CLTV value to use for the HTLC offered to the next node. */
@@ -242,7 +231,7 @@ object PaymentOnion {
   }
 
   /** Per-hop payload for a final node. */
-  sealed trait FinalPayload extends PerHopPayload with PerHopPayloadFormat with TrampolinePacket with PaymentPacket {
+  sealed trait FinalPayload extends PerHopPayload with TrampolinePacket with PaymentPacket {
     val amount: MilliSatoshi
     val expiry: CltvExpiry
     val paymentSecret: ByteVector32
@@ -251,9 +240,9 @@ object PaymentOnion {
     val paymentMetadata: Option[ByteVector]
   }
 
-  case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends ChannelRelayPayload with LegacyFormat
+  case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends ChannelRelayPayload
 
-  case class ChannelRelayTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends ChannelRelayPayload with TlvFormat {
+  case class ChannelRelayTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends ChannelRelayPayload {
     override val amountToForward = records.get[AmountToForward].get.amount
     override val outgoingCltv = records.get[OutgoingCltv].get.cltv
     override val outgoingChannelId = records.get[OutgoingChannelId].get.shortChannelId
@@ -264,7 +253,7 @@ object PaymentOnion {
       ChannelRelayTlvPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountToForward), OnionPaymentPayloadTlv.OutgoingCltv(outgoingCltv), OnionPaymentPayloadTlv.OutgoingChannelId(outgoingChannelId)))
   }
 
-  case class NodeRelayPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends RelayPayload with TlvFormat with TrampolinePacket {
+  case class NodeRelayPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends RelayPayload with TrampolinePacket {
     val amountToForward = records.get[AmountToForward].get.amount
     val outgoingCltv = records.get[OutgoingCltv].get.cltv
     val outgoingNodeId = records.get[OutgoingNodeId].get.nodeId
@@ -279,7 +268,7 @@ object PaymentOnion {
     val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
   }
 
-  case class FinalTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload with TlvFormat {
+  case class FinalTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload {
     override val amount = records.get[AmountToForward].get.amount
     override val expiry = records.get[OutgoingCltv].get.cltv
     override val paymentSecret = records.get[PaymentData].get.secret
