@@ -500,17 +500,17 @@ object Peer {
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, fundingAmount: Satoshi): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
-      nodeParams.channelKeyManager.newFundingKeyPath(isFunder), // we make sure that funder and fundee key path end differently
+      nodeParams.channelKeyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key paths end differently
       dustLimit = nodeParams.channelConf.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.channelConf.maxHtlcValueInFlightMsat,
       channelReserve = (fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.channelConf.htlcMinimum,
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
-      isFunder = isFunder,
+      isInitiator = isInitiator,
       defaultFinalScriptPubKey = defaultFinalScriptPubkey,
       walletStaticPaymentBasepoint = walletStaticPaymentBasepoint,
       initFeatures = initFeatures)

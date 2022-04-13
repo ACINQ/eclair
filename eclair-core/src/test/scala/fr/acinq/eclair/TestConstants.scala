@@ -205,7 +205,7 @@ object TestConstants {
       nodeParams.features.initFeatures(),
       Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
-      isFunder = true,
+      isInitiator = true,
       fundingSatoshis
     ).copy(
       channelReserve = 10000 sat // Bob will need to keep that much satoshis as direct payment
@@ -343,8 +343,9 @@ object TestConstants {
       nodeParams.features.initFeatures(),
       Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
-      isFunder = false,
-      fundingSatoshis).copy(
+      isInitiator = false,
+      fundingSatoshis
+    ).copy(
       channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
     )
   }

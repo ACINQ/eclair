@@ -439,10 +439,10 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends PersistentChannelData {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
-  require(!commitments.localParams.isFunder || closingTxProposed.forall(_.nonEmpty), "funder must have at least one closing signature for every negotiation attempt because it initiates the closing")
+  require(!commitments.localParams.isInitiator || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
-                              fundingTx: Option[Transaction], // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
+                              fundingTx: Option[Transaction], // this will be non-empty if we are the initiator and we got in closing while waiting for our own tx to be published
                               waitingSince: BlockHeight, // how long since we initiated the closing
                               mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[ClosingTx] = Nil,
@@ -470,7 +470,7 @@ case class LocalParams(nodeId: PublicKey,
                        htlcMinimum: MilliSatoshi,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
-                       isFunder: Boolean,
+                       isInitiator: Boolean,
                        defaultFinalScriptPubKey: ByteVector,
                        walletStaticPaymentBasepoint: Option[PublicKey],
                        initFeatures: Features[InitFeature])

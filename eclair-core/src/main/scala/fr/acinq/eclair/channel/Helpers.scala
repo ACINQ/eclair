@@ -290,13 +290,13 @@ object Helpers {
      * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
      */
     def makeFirstCommitTxs(keyManager: ChannelKeyManager, channelConfig: ChannelConfig, channelFeatures: ChannelFeatures, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
-      val toLocalMsat = if (localParams.isFunder) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
-      val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toMilliSatoshi - pushMsat
+      val toLocalMsat = if (localParams.isInitiator) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
+      val toRemoteMsat = if (localParams.isInitiator) pushMsat else fundingAmount.toMilliSatoshi - pushMsat
 
       val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], initialFeeratePerKw, toLocal = toLocalMsat, toRemote = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], initialFeeratePerKw, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
-      if (!localParams.isFunder) {
+      if (!localParams.isInitiator) {
         // they are funder, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
@@ -522,7 +522,7 @@ object Helpers {
         // this is just to estimate the weight, it depends on size of the pubkey scripts
         val actualLocalScript = if (channelFeatures.hasFeature(Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else localScriptPubkey
         val actualRemoteScript = if (channelFeatures.hasFeature(Features.UpfrontShutdownScript)) remoteParams.shutdownScript.getOrElse(remoteScriptPubkey) else remoteScriptPubkey
-        val dummyClosingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
+        val dummyClosingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isInitiator, Satoshi(0), Satoshi(0), localCommit.spec)
         val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
         log.info(s"using feerates=$feerates for initial closing tx")
         feerates.computeFees(closingWeight)
@@ -561,7 +561,7 @@ object Helpers {
         require(isValidFinalScriptPubkey(actualRemoteScript, allowAnySegwit), "invalid remoteScriptPubkey")
         log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, Commitments.specs2String(commitments))
         val dustLimit = localParams.dustLimit.max(remoteParams.dustLimit)
-        val closingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isFunder, dustLimit, closingFees.preferred, localCommit.spec)
+        val closingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isInitiator, dustLimit, closingFees.preferred, localCommit.spec)
         val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
         val closingSigned = ClosingSigned(channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
         log.info(s"signed closing txid=${closingTx.tx.txid} with closing fee=${closingSigned.feeSatoshis}")
@@ -626,10 +626,10 @@ object Helpers {
     }
 
     /** Compute the fee paid by a commitment transaction. */
-    def commitTxFee(commitInput: InputInfo, commitTx: Transaction, isFunder: Boolean): Satoshi = {
+    def commitTxFee(commitInput: InputInfo, commitTx: Transaction, isInitiator: Boolean): Satoshi = {
       require(commitTx.txIn.size == 1, "transaction must have only one input")
       require(commitTx.txIn.exists(txIn => txIn.outPoint == commitInput.outPoint), "transaction must spend the funding output")
-      if (isFunder) commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum else 0 sat
+      if (isInitiator) commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum else 0 sat
     }
 
     object LocalClose {
@@ -835,7 +835,7 @@ object Helpers {
         val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
         val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitments.remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
         val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
-        val outputs = makeCommitTxOutputs(!commitments.localParams.isFunder, commitments.remoteParams.dustLimit, remoteRevocationPubkey, commitments.localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, commitments.remoteParams.fundingPubKey, localFundingPubkey, remoteCommit.spec, commitments.commitmentFormat)
+        val outputs = makeCommitTxOutputs(!commitments.localParams.isInitiator, commitments.remoteParams.dustLimit, remoteRevocationPubkey, commitments.localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, commitments.remoteParams.fundingPubKey, localFundingPubkey, remoteCommit.spec, commitments.commitmentFormat)
         // we need to use a rather high fee for htlc-claim because we compete with the counterparty
         val feeratePerKwHtlc = feeEstimator.getFeeratePerKw(target = 2)
 
@@ -901,7 +901,7 @@ object Helpers {
         val obscuredTxNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
         val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
         // this tx has been published by remote, so we need to invert local/remote params
-        val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
+        val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isInitiator, remoteParams.paymentBasepoint, localPaymentPoint)
         require(txNumber <= 0xffffffffffffL, "txNumber must be lesser than 48 bits long")
         log.warning(s"a revoked commit has been published with txnumber=$txNumber")
         // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
@@ -1005,7 +1005,7 @@ object Helpers {
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
           val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
           // this tx has been published by remote, so we need to invert local/remote params
-          val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
+          val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isInitiator, remoteParams.paymentBasepoint, localPaymentPoint)
           // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
           remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber)
             .map(d => PrivateKey(d))

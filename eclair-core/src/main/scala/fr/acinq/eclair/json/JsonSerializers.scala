@@ -398,7 +398,7 @@ object ChannelEventSerializer extends MinimalSerializer({
   case e: ChannelCreated => JObject(
     JField("type", JString("channel-opened")),
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
-    JField("isFunder", JBool(e.isFunder)),
+    JField("isInitiator", JBool(e.isInitiator)),
     JField("temporaryChannelId", JString(e.temporaryChannelId.toHex)),
     JField("initialFeeratePerKw", JLong(e.initialFeeratePerKw.toLong)),
     JField("fundingTxFeeratePerKw", e.fundingTxFeeratePerKw.map(f => JLong(f.toLong)).getOrElse(JNothing))

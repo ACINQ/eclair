@@ -111,7 +111,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
         case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, Some(commitments: Commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
           val event = ChannelEvent.EventType.Created
-          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isFunder, !commitments.announceChannel, event))
+          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isInitiator, !commitments.announceChannel, event))
           channelsDb.updateChannelMeta(channelId, event)
         case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
         case ChannelStateChanged(_, channelId, _, _, OFFLINE, SYNCING, _) =>
@@ -124,7 +124,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
     case e: ChannelClosed =>
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
       val event = ChannelEvent.EventType.Closed(e.closingType)
-      auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
+      auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isInitiator, !e.commitments.announceChannel, event))
       channelsDb.updateChannelMeta(e.channelId, event)
 
     case u: ChannelUpdateParametersChanged =>
@@ -152,7 +152,7 @@ object DbEventHandler {
   def props(nodeParams: NodeParams): Props = Props(new DbEventHandler(nodeParams))
 
   // @formatter:off
-  case class ChannelEvent(channelId: ByteVector32, remoteNodeId: PublicKey, capacity: Satoshi, isFunder: Boolean, isPrivate: Boolean, event: ChannelEvent.EventType)
+  case class ChannelEvent(channelId: ByteVector32, remoteNodeId: PublicKey, capacity: Satoshi, isInitiator: Boolean, isPrivate: Boolean, event: ChannelEvent.EventType)
   object ChannelEvent {
     sealed trait EventType { def label: String }
     object EventType {

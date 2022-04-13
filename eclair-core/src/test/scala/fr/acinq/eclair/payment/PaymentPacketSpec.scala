@@ -368,7 +368,7 @@ object PaymentPacketSpec {
   }
 
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat): Commitments = {
-    val params = LocalParams(null, null, null, null, null, null, null, 0, isFunder = true, null, None, null)
+    val params = LocalParams(null, null, null, null, null, null, null, 0, isInitiator = true, null, None, null)
     val remoteParams = RemoteParams(randomKey().publicKey, null, null, null, null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null, None)
     val commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(testCapacity, Nil), Nil)
     val channelFlags = ChannelFlags.Private
