@@ -73,7 +73,14 @@ object Offers {
 
   case class QuantityMax(max: Long) extends OfferTlv
 
-  case class NodeId(publicKey: PublicKey) extends OfferTlv with InvoiceTlv
+  case class NodeId(xonly: ByteVector32) extends OfferTlv with InvoiceTlv {
+    val nodeId1: PublicKey = PublicKey(2 +: xonly)
+    val nodeId2: PublicKey = PublicKey(3 +: xonly)
+  }
+
+  object NodeId {
+    def apply(publicKey: PublicKey): NodeId = NodeId(xOnlyPublicKey(publicKey))
+  }
 
   case class SendInvoice() extends OfferTlv with InvoiceTlv
 
@@ -146,7 +153,7 @@ object Offers {
     val quantityMin: Option[Long] = records.get[QuantityMin].map(_.min)
     val quantityMax: Option[Long] = records.get[QuantityMax].map(_.max)
 
-    val nodeIdXOnly: ByteVector32 = xOnlyPublicKey(records.get[NodeId].get.publicKey)
+    val nodeIdXOnly: ByteVector32 = records.get[NodeId].get.xonly
 
     val sendInvoice: Boolean = records.get[SendInvoice].nonEmpty
 

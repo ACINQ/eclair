@@ -36,7 +36,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   def signInvoice(invoice: Bolt12Invoice, key: PrivateKey): Bolt12Invoice = {
     val tlvs = Offers.removeSignature(invoice.records)
     val signature = signSchnorr(Bolt12Invoice.signatureTag("signature"), rootHash(tlvs, invoiceTlvCodec), key)
-    val signedInvoice = Bolt12Invoice(tlvs.copy(records = tlvs.records ++ Seq(Signature(signature))))
+    val signedInvoice = Bolt12Invoice(tlvs.copy(records = tlvs.records ++ Seq(Signature(signature))), None)
     assert(signedInvoice.checkSignature())
     signedInvoice
   }
@@ -51,16 +51,16 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(!invoice.checkRefundSignature())
     assert(Bolt12Invoice.fromString(invoice.toString).get.toString === invoice.toString)
     // changing signature makes check fail
-    val withInvalidSignature = Bolt12Invoice(TlvStream(invoice.records.records.map { case Signature(_) => Signature(randomBytes64()) case x => x }, invoice.records.unknown))
+    val withInvalidSignature = Bolt12Invoice(TlvStream(invoice.records.records.map { case Signature(_) => Signature(randomBytes64()) case x => x }, invoice.records.unknown), None)
     assert(!withInvalidSignature.checkSignature())
     assert(!withInvalidSignature.isValidFor(offer, request))
     assert(!withInvalidSignature.checkRefundSignature())
     // changing fields makes the signature invalid
-    val withModifiedUnknownTlv = Bolt12Invoice(invoice.records.copy(unknown = Seq(GenericTlv(UInt64(7), hex"ade4"))))
+    val withModifiedUnknownTlv = Bolt12Invoice(invoice.records.copy(unknown = Seq(GenericTlv(UInt64(7), hex"ade4"))), None)
     assert(!withModifiedUnknownTlv.checkSignature())
     assert(!withModifiedUnknownTlv.isValidFor(offer, request))
     assert(!withModifiedUnknownTlv.checkRefundSignature())
-    val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map { case Amount(amount) => Amount(amount + 100.msat) case x => x }, invoice.records.unknown))
+    val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map { case Amount(amount) => Amount(amount + 100.msat) case x => x }, invoice.records.unknown), None)
     assert(!withModifiedAmount.checkSignature())
     assert(!withModifiedAmount.isValidFor(offer, request))
     assert(!withModifiedAmount.checkRefundSignature())
@@ -74,22 +74,22 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(invoice.isValidFor(offer, request))
     assert(!invoice.isValidFor(Offer(None, "test offer", randomKey().publicKey, Features.empty, chain), request))
     // amount must match the offer
-    val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case Amount(_) => Amount(9000 msat) case x => x }.toSeq)), nodeKey)
+    val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case Amount(_) => Amount(9000 msat) case x => x }.toSeq), None), nodeKey)
     assert(!withOtherAmount.isValidFor(offer, request))
     // description must match the offer, may have appended info
-    val withOtherDescription = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case Description(_) => Description("other description") case x => x }.toSeq)), nodeKey)
+    val withOtherDescription = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case Description(_) => Description("other description") case x => x }.toSeq), None), nodeKey)
     assert(!withOtherDescription.isValidFor(offer, request))
-    val withExtendedDescription = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case Description(_) => Description("test offer + more") case x => x }.toSeq)), nodeKey)
+    val withExtendedDescription = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case Description(_) => Description("test offer + more") case x => x }.toSeq), None), nodeKey)
     assert(withExtendedDescription.isValidFor(offer, request))
     // nodeId must match the offer
     val otherNodeKey = randomKey()
-    val withOtherNodeId = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case NodeId(_) => NodeId(otherNodeKey.publicKey) case x => x }.toSeq)), otherNodeKey)
+    val withOtherNodeId = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case NodeId(_) => NodeId(otherNodeKey.publicKey) case x => x }.toSeq), None), otherNodeKey)
     assert(!withOtherNodeId.isValidFor(offer, request))
     // offerId must match the offer
-    val withOtherOfferId = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferId(_) => OfferId(randomBytes32()) case x => x }.toSeq)), nodeKey)
+    val withOtherOfferId = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferId(_) => OfferId(randomBytes32()) case x => x }.toSeq), None), nodeKey)
     assert(!withOtherOfferId.isValidFor(offer, request))
     // issuer must match the offer
-    val withOtherIssuer = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records ++ Seq(Issuer("spongebob")))), nodeKey)
+    val withOtherIssuer = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records ++ Seq(Issuer("spongebob"))), None), nodeKey)
     assert(!withOtherIssuer.isValidFor(offer, request))
   }
 
@@ -100,17 +100,17 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(request.quantity_opt === None) // when paying for a single item, the quantity field must not be present
     val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional))
     assert(invoice.isValidFor(offer, request))
-    val withInvalidFeatures = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case FeaturesTlv(_) => FeaturesTlv(Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Mandatory)) case x => x }.toSeq)), nodeKey)
+    val withInvalidFeatures = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case FeaturesTlv(_) => FeaturesTlv(Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Mandatory)) case x => x }.toSeq), None), nodeKey)
     assert(!withInvalidFeatures.isValidFor(offer, request))
-    val withAmountTooBig = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case Amount(_) => Amount(20000 msat) case x => x }.toSeq)), nodeKey)
+    val withAmountTooBig = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case Amount(_) => Amount(20000 msat) case x => x }.toSeq), None), nodeKey)
     assert(!withAmountTooBig.isValidFor(offer, request))
-    val withQuantity = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.toSeq :+ Quantity(2))), nodeKey)
+    val withQuantity = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.toSeq :+ Quantity(2)), None), nodeKey)
     assert(!withQuantity.isValidFor(offer, request))
-    val withOtherPayerKey = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case PayerKey(_) => PayerKey(randomBytes32()) case x => x }.toSeq)), nodeKey)
+    val withOtherPayerKey = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case PayerKey(_) => PayerKey(randomBytes32()) case x => x }.toSeq), None), nodeKey)
     assert(!withOtherPayerKey.isValidFor(offer, request))
-    val withPayerNote = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.toSeq :+ PayerNote("I am Batman"))), nodeKey)
+    val withPayerNote = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.toSeq :+ PayerNote("I am Batman")), None), nodeKey)
     assert(!withPayerNote.isValidFor(offer, request))
-    val withPayerInfo = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.toSeq :+ PayerInfo(hex"010203040506"))), nodeKey)
+    val withPayerInfo = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.toSeq :+ PayerInfo(hex"010203040506")), None), nodeKey)
     assert(!withPayerInfo.isValidFor(offer, request))
     // Invoice request with more details about the payer.
     val requestWithPayerDetails = {
@@ -128,10 +128,10 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val withPayerDetails = Bolt12Invoice(offer, requestWithPayerDetails, randomBytes32(), nodeKey, Features.empty)
     assert(withPayerDetails.isValidFor(offer, requestWithPayerDetails))
     assert(!withPayerDetails.isValidFor(offer, request))
-    val withOtherPayerInfo = signInvoice(Bolt12Invoice(TlvStream(withPayerDetails.records.records.map { case PayerInfo(_) => PayerInfo(hex"deadbeef") case x => x }.toSeq)), nodeKey)
+    val withOtherPayerInfo = signInvoice(Bolt12Invoice(TlvStream(withPayerDetails.records.records.map { case PayerInfo(_) => PayerInfo(hex"deadbeef") case x => x }.toSeq), None), nodeKey)
     assert(!withOtherPayerInfo.isValidFor(offer, requestWithPayerDetails))
     assert(!withOtherPayerInfo.isValidFor(offer, request))
-    val withOtherPayerNote = signInvoice(Bolt12Invoice(TlvStream(withPayerDetails.records.records.map { case PayerNote(_) => PayerNote("Or am I Bruce Wayne?") case x => x }.toSeq)), nodeKey)
+    val withOtherPayerNote = signInvoice(Bolt12Invoice(TlvStream(withPayerDetails.records.records.map { case PayerNote(_) => PayerNote("Or am I Bruce Wayne?") case x => x }.toSeq), None), nodeKey)
     assert(!withOtherPayerNote.isValidFor(offer, requestWithPayerDetails))
     assert(!withOtherPayerNote.isValidFor(offer, request))
   }
@@ -143,10 +143,10 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, Features.empty)
     assert(!invoice.isExpired())
     assert(invoice.isValidFor(offer, request))
-    val expiredInvoice1 = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case CreatedAt(_) => CreatedAt(0 unixsec) case x => x })), nodeKey)
+    val expiredInvoice1 = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case CreatedAt(_) => CreatedAt(0 unixsec) case x => x }), None), nodeKey)
     assert(expiredInvoice1.isExpired())
     assert(!expiredInvoice1.isValidFor(offer, request)) // when an invoice is expired, we mark it as invalid as well
-    val expiredInvoice2 = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case CreatedAt(_) => CreatedAt(TimestampSecond.now() - 2000) case x => x } ++ Seq(RelativeExpiry(1800)))), nodeKey)
+    val expiredInvoice2 = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case CreatedAt(_) => CreatedAt(TimestampSecond.now() - 2000) case x => x } ++ Seq(RelativeExpiry(1800))), None), nodeKey)
     assert(expiredInvoice2.isExpired())
     assert(!expiredInvoice2.isValidFor(offer, request)) // when an invoice is expired, we mark it as invalid as well
   }
@@ -168,7 +168,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PayerKey(payerKey.publicKey)
       )
       val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
-      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)))
+      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), None)
     }
     assert(invoiceImplicitBtc.isValidFor(offerBtc, requestBtc))
     val invoiceExplicitBtc = {
@@ -183,7 +183,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PayerKey(payerKey.publicKey)
       )
       val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
-      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)))
+      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), None)
     }
     assert(invoiceExplicitBtc.isValidFor(offerBtc, requestBtc))
     val invoiceOtherChain = {
@@ -198,7 +198,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PayerKey(payerKey.publicKey)
       )
       val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
-      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)))
+      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), None)
     }
     assert(!invoiceOtherChain.isValidFor(offerBtc, requestBtc))
     val offerOtherChains = Offer(TlvStream(Seq(Chains(Seq(chain1, chain2)), Amount(amount), Description("testnets offer"), NodeId(nodeKey.publicKey))))
@@ -215,7 +215,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PayerKey(payerKey.publicKey)
       )
       val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
-      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)))
+      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), None)
     }
     assert(invoiceOtherChains.isValidFor(offerOtherChains, requestOtherChains))
     val invoiceInvalidOtherChain = {
@@ -230,10 +230,10 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PayerKey(payerKey.publicKey)
       )
       val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
-      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)))
+      Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), None)
     }
     assert(!invoiceInvalidOtherChain.isValidFor(offerOtherChains, requestOtherChains))
-    val invoiceMissingChain = signInvoice(Bolt12Invoice(TlvStream(invoiceOtherChains.records.records.filter { case Chain(_) => false case _ => true })), nodeKey)
+    val invoiceMissingChain = signInvoice(Bolt12Invoice(TlvStream(invoiceOtherChains.records.records.filter { case Chain(_) => false case _ => true }), None), nodeKey)
     assert(!invoiceMissingChain.isValidFor(offerOtherChains, requestOtherChains))
   }
 
@@ -323,7 +323,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
       ReplaceInvoice(replaceInvoice)
     ), Seq(GenericTlv(UInt64(311), hex"010203"), GenericTlv(UInt64(313), hex"")))
     val signature = signSchnorr(Bolt12Invoice.signatureTag("signature"), rootHash(tlvs, invoiceTlvCodec), nodeKey)
-    val invoice = Bolt12Invoice(tlvs.copy(records = tlvs.records ++ Seq(Signature(signature))))
+    val invoice = Bolt12Invoice(tlvs.copy(records = tlvs.records ++ Seq(Signature(signature))), None)
     assert(invoice.toString === "lni1qvsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqyyz9ut9uduhtztjgpxm06394g5qkw7v79g4czw6zxsl3lnrsvljj0qzqrq83yqzscd9h8vmmfvdjjqamfw35zqmtpdeujqenfv4kxgucvqgqsq9qgv93kjmn39e3k783qc3nnudswp67znrydjtv7ta56c9cpc0nmjmv7rszs568gqdz3w77zqqfeycsgl2kawxcl0zckye09kpsmn54c3zgsztw845uxymh24g4zw9s45ef8p3yjwmfqw35x2grtd9hxw2qyv2sqd032ypge282v20ysgq6lpv5nmjwlrs88jeepxsc2upa970snfnfnxff5ztqzpcgzuqsq0vcpgpcyqqzpy02klq9svqqgavadc6y5tmmqzvsv484ku5nw43vumxuflvsrsgr345pnuh6zq6pz2cy8wra8vujs23y5yhd4gwslns3m7qm9023hc8cyq6knwqxzve9r5kpufq3szuhn9f437cj05az5kqnsl9wefhfnwzenf5z68qh5jj48rmku97u0gzdm2wlkuwrylpvqfttdtw972cwdteal6qfhqvqsyqlaqyusq")
     val Success(codedDecoded) = Bolt12Invoice.fromString(invoice.toString)
     assert(codedDecoded.chain === chain)

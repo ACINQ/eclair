@@ -53,9 +53,7 @@ object OfferCodecs {
 
   private val quantityMax: Codec[QuantityMax] = variableSizeBytesLong(varintoverflow, tu64overflow).as[QuantityMax]
 
-  // Only the x component of the key is serialized. We arbitrarily add hex"02" to get a valid key.
-  // When using this key, we need to try both the version starting with hex"02" and the one starting with hex"03".
-  private val nodeId: Codec[NodeId] = variableSizeBytesLong(varintoverflow, bytes32).xmap[PublicKey](b32 => PublicKey(2.toByte +: b32), xOnlyPublicKey).as[NodeId]
+  private val nodeId: Codec[NodeId] = variableSizeBytesLong(varintoverflow, bytes32).as[NodeId]
 
   private val sendInvoice: Codec[SendInvoice] = variableSizeBytesLong(varintoverflow, provide(SendInvoice()))
 
@@ -200,10 +198,10 @@ object OfferCodecs {
     } else if (tlvs.get[Signature].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(240)))
     } else {
-      Attempt.successful(Bolt12Invoice(tlvs))
+      Attempt.successful(Bolt12Invoice(tlvs, None))
     }
   }, {
-    case Bolt12Invoice(tlvs) => tlvs
+    case Bolt12Invoice(tlvs, _) => tlvs
   })
 
   val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)

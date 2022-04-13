@@ -35,7 +35,7 @@ import scala.util.Try
  * Lightning Bolt 12 invoice
  * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
  */
-case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
+case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[PublicKey]) extends Invoice {
 
   import Bolt12Invoice._
 
@@ -50,7 +50,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
 
-  override val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
+  override val nodeId: Crypto.PublicKey = nodeId_opt.getOrElse(records.get[NodeId].get.nodeId1)
 
   override val paymentHash: ByteVector32 = records.get[PaymentHash].get.hash
 
@@ -130,8 +130,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
     verifySchnorr(signatureTag("signature"), rootHash(Offers.removeSignature(records), invoiceTlvCodec), signature, Offers.xOnlyPublicKey(nodeId))
   }
 
-  def withNodeId(id: PublicKey): Bolt12Invoice =
-    Bolt12Invoice(TlvStream(records.records.map { case NodeId(_) => NodeId(id) case x => x }, records.unknown))
+  def withNodeId(nodeId: PublicKey): Bolt12Invoice = Bolt12Invoice(records, Some(nodeId))
 }
 
 object Bolt12Invoice {
@@ -167,7 +166,7 @@ object Bolt12Invoice {
       Some(FeaturesTlv(features.unscoped()))
     ).flatten
     val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
-    Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)))
+    Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), Some(nodeKey.publicKey))
   }
 
   def signatureTag(fieldName: String): String = "lightning" + "invoice" + fieldName
