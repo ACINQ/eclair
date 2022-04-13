@@ -62,5 +62,9 @@ trait Node {
     }
   }
 
-  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ audit
+  val stop: Route = postRequest("stop") { implicit t =>
+    complete(eclairApi.stop())
+  }
+
+  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ audit ~ stop
 }

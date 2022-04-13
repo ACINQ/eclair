@@ -1185,6 +1185,20 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
+  test("stop eclair") {
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+    eclair.stop() returns Future.successful(())
+
+    Post("/stop") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.stop) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+      }
+  }
+
   private def matchTestJson(apiName: String, response: String) = {
     val resource = getClass.getResourceAsStream(s"/api/$apiName")
     val expectedResponse = Try(Source.fromInputStream(resource).mkString).getOrElse {
