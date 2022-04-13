@@ -19,6 +19,8 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
+import fr.acinq.eclair.payment.Bolt12Invoice
+import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceErrorCodec, invoiceRequestCodec}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
 import scodec.bits.ByteVector
 
@@ -39,6 +41,24 @@ object OnionMessagePayloadTlv {
    * The sender must provide some encrypted data for each intermediate node which lets them locate the next node.
    */
   case class EncryptedData(data: ByteVector) extends OnionMessagePayloadTlv
+
+  /**
+   * In order to pay a Bolt 12 offer, we must send an onion message to request an invoice corresponding to that offer.
+   * The creator of the offer will send us an invoice back through our blinded reply path.
+   */
+  case class InvoiceRequest(request: Offers.InvoiceRequest) extends OnionMessagePayloadTlv
+
+  /**
+   * When receiving an invoice request, we must send an onion message back containing an invoice corresponding to the
+   * requested offer (if it was an offer we published).
+   */
+  case class Invoice(invoice: Bolt12Invoice) extends OnionMessagePayloadTlv
+
+  /**
+   * This message may be used when we receive an invalid invoice or invoice request.
+   * It contains information helping senders figure out why their message was invalid.
+   */
+  case class InvoiceError(error: Offers.InvoiceError) extends OnionMessagePayloadTlv
 
 }
 
@@ -62,6 +82,9 @@ object MessageOnion {
   case class FinalPayload(records: TlvStream[OnionMessagePayloadTlv]) extends PerHopPayload {
     val replyPath: Option[OnionMessagePayloadTlv.ReplyPath] = records.get[OnionMessagePayloadTlv.ReplyPath]
     val encryptedData: ByteVector = records.get[OnionMessagePayloadTlv.EncryptedData].get.data
+    val invoiceRequest: Option[OnionMessagePayloadTlv.InvoiceRequest] = records.get[OnionMessagePayloadTlv.InvoiceRequest]
+    val invoice: Option[OnionMessagePayloadTlv.Invoice] = records.get[OnionMessagePayloadTlv.Invoice]
+    val invoiceError: Option[OnionMessagePayloadTlv.InvoiceError] = records.get[OnionMessagePayloadTlv.InvoiceError]
   }
 
   /** Content of the encrypted data of a final node's per-hop payload. */
@@ -90,6 +113,10 @@ object MessageOnionCodecs {
   private val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
     .typecase(UInt64(2), replyPathCodec)
     .typecase(UInt64(4), encryptedDataCodec)
+    .typecase(UInt64(64), variableSizeBytesLong(varintoverflow, invoiceRequestCodec.as[InvoiceRequest]))
+    .typecase(UInt64(66), variableSizeBytesLong(varintoverflow, invoiceCodec.as[Invoice]))
+    .typecase(UInt64(68), variableSizeBytesLong(varintoverflow, invoiceErrorCodec.as[InvoiceError]))
+
 
   val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 

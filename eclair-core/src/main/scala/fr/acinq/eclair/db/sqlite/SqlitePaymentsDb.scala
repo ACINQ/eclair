@@ -23,7 +23,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PaymentsDb.{decodeFailures, decodeRoute, encodeFailures, encodeRoute}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, Invoice, PaymentSent}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
@@ -178,7 +178,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       MilliSatoshi(rs.getLong("recipient_amount_msat")),
       PublicKey(rs.getByteVector("recipient_node_id")),
       TimestampMilli(rs.getLong("created_at")),
-      rs.getStringNullable("payment_request").map(Invoice.fromString),
+      rs.getStringNullable("payment_request").map(Invoice.fromString(_).get),
       status
     )
   }
@@ -256,7 +256,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val invoice = rs.getString("payment_request")
     IncomingPayment(
-      Bolt11Invoice.fromString(invoice),
+      Bolt11Invoice.fromString(invoice).get,
       rs.getByteVector32("payment_preimage"),
       rs.getString("payment_type"),
       TimestampMilli(rs.getLong("created_at")),

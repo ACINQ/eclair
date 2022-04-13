@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
@@ -30,7 +30,7 @@ import scala.util.{Failure, Success, Try}
 
 /**
  * Lightning Bolt 11 invoice
- * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
+ * see https://github.com/lightning/bolts/blob/master/11-payment-encoding.md
  *
  * @param prefix     currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
  * @param amount_opt amount to pay (empty string means no amount is specified)
@@ -46,8 +46,11 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   amount_opt.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: Bolt11Invoice.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case Bolt11Invoice.Description(_) | Bolt11Invoice.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
-  private val featuresErr = Features.validateFeatureGraph(features)
-  require(featuresErr.isEmpty, featuresErr.map(_.message))
+
+  {
+    val featuresErr = Features.validateFeatureGraph(features)
+    require(featuresErr.isEmpty, featuresErr.map(_.message))
+  }
   if (features.hasFeature(Features.PaymentSecret)) {
     require(tags.collect { case _: Bolt11Invoice.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
   }
@@ -508,13 +511,13 @@ object Bolt11Invoice {
   // TODO: could be optimized by preallocating the resulting buffer
   def string2Bits(data: String): BitVector = data.map(charToint5).foldLeft(BitVector.empty)(_ ++ _)
 
-  val eight2fiveCodec: Codec[List[Byte]] = list(ubyte(5))
+  val eight2fiveCodec: Codec[List[java.lang.Byte]] = list(ubyte(5).xmap[java.lang.Byte](b => b, b => b))
 
   /**
    * @param input bech32-encoded invoice
    * @return a Bolt11 invoice
    */
-  def fromString(input: String): Bolt11Invoice = {
+  def fromString(input: String): Try[Bolt11Invoice] = Try {
     // used only for data validation
     Bech32.decode(input, false)
     val lowercaseInput = input.toLowerCase

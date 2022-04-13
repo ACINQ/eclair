@@ -104,7 +104,7 @@ object TlvCodecs {
   /** Length-prefixed truncated uint16 (1 to 3 bytes unsigned integer). */
   val ltu16: Codec[Int] = variableSizeBytes(uint8, tu16)
 
-  private def validateGenericTlv(g: GenericTlv): Attempt[GenericTlv] = {
+  private def validateUnknownTlv(g: GenericTlv): Attempt[GenericTlv] = {
     if (g.tag < TLV_TYPE_HIGH_RANGE && g.tag.toBigInt % 2 == 0) {
       Attempt.Failure(Err("unknown even tlv type"))
     } else {
@@ -112,7 +112,9 @@ object TlvCodecs {
     }
   }
 
-  val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(validateGenericTlv, validateGenericTlv)
+  val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
+
+  private val unknownTlv = genericTlv.exmap(validateUnknownTlv, validateUnknownTlv)
 
   private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: Either[GenericTlv, T]): UInt64 = record match {
     case Left(generic) => generic.tag
@@ -140,7 +142,7 @@ object TlvCodecs {
    * @param codec codec used for the tlv records contained in the stream.
    * @tparam T stream namespace.
    */
-  def tlvStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64]): Codec[TlvStream[T]] = list(discriminatorFallback(genericTlv, codec)).exmap(
+  def tlvStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64]): Codec[TlvStream[T]] = list(discriminatorFallback(unknownTlv, codec)).exmap(
     records => validateStream(codec, records),
     (stream: TlvStream[T]) => {
       val records = (stream.records.map(Right(_)) ++ stream.unknown.map(Left(_))).toList

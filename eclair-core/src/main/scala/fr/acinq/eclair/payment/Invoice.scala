@@ -22,6 +22,7 @@ import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi,
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
+import scala.util.Try
 
 trait Invoice {
   val amount_opt: Option[MilliSatoshi]
@@ -52,7 +53,11 @@ trait Invoice {
 }
 
 object Invoice {
-  def fromString(input: String): Invoice = {
-    Bolt11Invoice.fromString(input)
+  def fromString(input: String): Try[Invoice] = {
+    if (input.toLowerCase.startsWith("lni")) {
+      Bolt12Invoice.fromString(input)
+    } else {
+      Bolt11Invoice.fromString(input)
+    }
   }
 }
