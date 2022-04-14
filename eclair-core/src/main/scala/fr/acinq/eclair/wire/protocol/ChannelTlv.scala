@@ -50,13 +50,6 @@ object ChannelTlv {
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
   )
 
-  case class DualFundedChannelFlagsTlv(announceChannel: Boolean) extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
-
-  val dualFundedChannelFlagsCodec: Codec[DualFundedChannelFlagsTlv] = variableSizeBytesLong(varintoverflow, bytes).xmap(
-    b => DualFundedChannelFlagsTlv(b.lastOption.exists(v => (v % 2) == 1)),
-    tlv => if (tlv.announceChannel) ByteVector(1.toByte) else ByteVector(0.toByte)
-  )
-
 }
 
 object OpenChannelTlv {
@@ -87,7 +80,6 @@ object OpenDualFundedChannelTlv {
   val openTlvCodec: Codec[TlvStream[OpenDualFundedChannelTlv]] = tlvStream(discriminated[OpenDualFundedChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
-    .typecase(UInt64(2), dualFundedChannelFlagsCodec)
   )
 
 }
@@ -99,7 +91,6 @@ object AcceptDualFundedChannelTlv {
   val acceptTlvCodec: Codec[TlvStream[AcceptDualFundedChannelTlv]] = tlvStream(discriminated[AcceptDualFundedChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
-    .typecase(UInt64(2), dualFundedChannelFlagsCodec)
   )
 
 }

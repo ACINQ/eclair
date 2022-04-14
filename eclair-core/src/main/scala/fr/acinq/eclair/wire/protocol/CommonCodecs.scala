@@ -115,6 +115,11 @@ object CommonCodecs {
 
   val channelflags: Codec[ChannelFlags] = (ignore(7) dropLeft bool).as[ChannelFlags]
 
+  val extendedChannelFlags: Codec[ChannelFlags] = variableSizeBytesLong(varintoverflow, bytes).xmap(
+    bin => ChannelFlags(bin.lastOption.exists(_ % 2 == 1)),
+    flags => if (flags.announceChannel) ByteVector(1) else ByteVector(0)
+  )
+
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 
   val ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => Attempt.fromTry(Try(Inet6Address.getByAddress(null, b.toArray, null))), a => Attempt.fromTry(Try(ByteVector(a.getAddress))))

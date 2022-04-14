@@ -115,6 +115,7 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
+      ("channelFlags" | extendedChannelFlags) ::
       ("tlvStream" | OpenDualFundedChannelTlv.openTlvCodec)).as[OpenDualFundedChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
@@ -149,6 +150,7 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
+      ("channelFlags" | extendedChannelFlags) ::
       ("tlvStream" | AcceptDualFundedChannelTlv.acceptTlvCodec)).as[AcceptDualFundedChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
