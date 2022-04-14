@@ -51,7 +51,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     assert(channelVersionCodec.encode(ChannelVersion.ANCHOR_OUTPUTS) === Attempt.successful(hex"00000007".bits))
   }
 
-  test("encode/decode localparams") {
+  test("encode/decode local params") {
     def roundtrip(localParams: LocalParams, codec: Codec[LocalParams]) = {
       val encoded = codec.encode(localParams).require
       val decoded = codec.decode(encoded).require
@@ -63,7 +63,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      requestedChannelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
@@ -78,12 +78,12 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     roundtrip(o, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
   }
 
-  test("encode/decode remoteparams") {
+  test("encode/decode remote params") {
     val o = RemoteParams(
       nodeId = randomKey().publicKey,
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      requestedChannelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
@@ -98,7 +98,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     val decoded = remoteParamsCodec.decodeValue(encoded).require
     assert(o === decoded)
 
-    // Backwards-compatibility: decode remoteparams with global features.
+    // Backwards-compatibility: decode remote params with global features.
     val withGlobalFeatures = hex"03c70c3b813815a8b79f41622b6f2c343fa24d94fb35fa7110bbb3d4d59cd9612e0000000059844cbc000000001b1524ea000000001503cbac000000006b75d3272e38777e029fa4e94066163024177311de7ba1befec2e48b473c387bbcee1484bf276a54460215e3dfb8e6f262222c5f343f5e38c5c9a43d2594c7f06dd7ac1a4326c665dd050347aba4d56d7007a7dcf03594423dccba9ed700d11e665d261594e1154203df31020d457ee336ba6eeb328d00f1b8bd8bfefb8a4dcd5af6db4c438b7ec5106c7edc0380df17e1beb0f238e51a39122ac4c6fb57f3c4f5b7bc9432f991b1ef4a8af3570002020000018a"
     val withGlobalFeaturesDecoded = remoteParamsCodec.decode(withGlobalFeatures.bits).require.value
     assert(withGlobalFeaturesDecoded.initFeatures.toByteVector === hex"028a")
