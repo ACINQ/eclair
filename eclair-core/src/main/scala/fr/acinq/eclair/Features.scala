@@ -213,6 +213,11 @@ object Features {
     val mandatory = 26
   }
 
+  case object DualFunding extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_dual_fund"
+    val mandatory = 28
+  }
+
   case object OnionMessages extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_onion_messages"
     val mandatory = 38
@@ -258,6 +263,7 @@ object Features {
     AnchorOutputs,
     AnchorOutputsZeroFeeHtlcTx,
     ShutdownAnySegwit,
+    DualFunding,
     OnionMessages,
     ChannelType,
     PaymentMetadata,
@@ -272,6 +278,7 @@ object Features {
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
     AnchorOutputs -> (StaticRemoteKey :: Nil),
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
+    DualFunding -> (AnchorOutputsZeroFeeHtlcTx :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil)
   )

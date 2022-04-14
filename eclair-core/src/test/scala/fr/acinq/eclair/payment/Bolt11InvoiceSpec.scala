@@ -480,7 +480,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
       Features(bin"     000001000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
       Features(bin"     000100000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      Features(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
+      Features(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       Features(bin"00001000000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false)
     )
 

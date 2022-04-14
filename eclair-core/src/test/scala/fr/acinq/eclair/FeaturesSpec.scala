@@ -62,39 +62,54 @@ class FeaturesSpec extends AnyFunSuite {
 
   test("features dependencies") {
     val testCases = Map(
-      bin"                        " -> true,
-      bin"                00000000" -> true,
-      bin"                01011000" -> true,
+      bin"                                " -> true,
+      bin"                        00000000" -> true,
+      bin"                        01011000" -> true,
       // gossip_queries_ex depend on gossip_queries
-      bin"000000000000100000000000" -> false,
-      bin"000000000000010000000000" -> false,
-      bin"000000000000100010000000" -> true,
-      bin"000000000000100001000000" -> true,
+      bin"        000000000000100000000000" -> false,
+      bin"        000000000000010000000000" -> false,
+      bin"        000000000000100010000000" -> true,
+      bin"        000000000000100001000000" -> true,
       // payment_secret depends on var_onion_optin
-      bin"000000001000000000000000" -> false,
-      bin"000000000100000000000000" -> false,
-      bin"000000000100001000000000" -> true,
+      bin"        000000001000000000000000" -> false,
+      bin"        000000000100000000000000" -> false,
+      bin"        000000000100001000000000" -> true,
       // basic_mpp depends on payment_secret
-      bin"000000100000000000000000" -> false,
-      bin"000000010000000000000000" -> false,
-      bin"000000101000000100000000" -> true,
-      bin"000000011000000100000000" -> true,
-      bin"000000011000001000000000" -> true,
-      bin"000000100100000100000000" -> true,
+      bin"        000000100000000000000000" -> false,
+      bin"        000000010000000000000000" -> false,
+      bin"        000000101000000100000000" -> true,
+      bin"        000000011000000100000000" -> true,
+      bin"        000000011000001000000000" -> true,
+      bin"        000000100100000100000000" -> true,
       // option_anchor_outputs depends on option_static_remotekey
-      bin"001000000000000000000000" -> false,
-      bin"000100000000000000000000" -> false,
-      bin"001000000010000000000000" -> true,
-      bin"001000000001000000000000" -> true,
-      bin"000100000010000000000000" -> true,
-      bin"000100000001000000000000" -> true,
+      bin"        001000000000000000000000" -> false,
+      bin"        000100000000000000000000" -> false,
+      bin"        001000000010000000000000" -> true,
+      bin"        001000000001000000000000" -> true,
+      bin"        000100000010000000000000" -> true,
+      bin"        000100000001000000000000" -> true,
       // option_anchors_zero_fee_htlc_tx depends on option_static_remotekey
-      bin"100000000000000000000000" -> false,
-      bin"010000000000000000000000" -> false,
-      bin"100000000010000000000000" -> true,
-      bin"100000000001000000000000" -> true,
-      bin"010000000010000000000000" -> true,
-      bin"010000000001000000000000" -> true,
+      bin"        100000000000000000000000" -> false,
+      bin"        010000000000000000000000" -> false,
+      bin"        100000000010000000000000" -> true,
+      bin"        100000000001000000000000" -> true,
+      bin"        010000000010000000000000" -> true,
+      bin"        010000000001000000000000" -> true,
+      // option_dual_fund depends on option_anchors_zero_fee_htlc_tx, which itself depends on option_static_remotekey
+      bin"00100000000000000000000000000000" -> false,
+      bin"00010000000000000000000000000000" -> false,
+      bin"00100000100000000000000000000000" -> false,
+      bin"00100000010000000000000000000000" -> false,
+      bin"00010000100000000000000000000000" -> false,
+      bin"00010000010000000000000000000000" -> false,
+      bin"00100000100000000010000000000000" -> true,
+      bin"00100000100000000001000000000000" -> true,
+      bin"00100000010000000010000000000000" -> true,
+      bin"00100000010000000001000000000000" -> true,
+      bin"00010000100000000010000000000000" -> true,
+      bin"00010000100000000001000000000000" -> true,
+      bin"00010000010000000010000000000000" -> true,
+      bin"00010000010000000001000000000000" -> true,
     )
 
     for ((testCase, valid) <- testCases) {
@@ -236,7 +251,7 @@ class FeaturesSpec extends AnyFunSuite {
       hex"0100" -> Features(VariableLengthOnion -> Mandatory),
       hex"028a8a" -> Features(DataLossProtect -> Optional, InitialRoutingSync -> Optional, ChannelRangeQueries -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueriesExtended -> Optional, PaymentSecret -> Optional, BasicMultiPartPayment -> Optional),
       hex"09004200" -> Features(Map(VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, ShutdownAnySegwit -> Optional), Set(UnknownFeature(24))),
-      hex"52000000" -> Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
+      hex"80010080000000000000000000000000000000000000" -> Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(151), UnknownFeature(160), UnknownFeature(175)))
     )
 
     for ((bin, features) <- testCases) {

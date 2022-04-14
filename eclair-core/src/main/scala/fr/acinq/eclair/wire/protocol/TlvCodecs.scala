@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{minimalvalue, uint64, varint, varintoverflow}
 import fr.acinq.eclair.{MilliSatoshi, UInt64}
@@ -76,6 +77,9 @@ object TlvCodecs {
    * This codec can be safely used for values < `2^63` and will fail otherwise.
    */
   val tmillisatoshi: Codec[MilliSatoshi] = tu64overflow.xmap(l => MilliSatoshi(l), m => m.toLong)
+
+  /** Truncated satoshi (0 to 8 bytes unsigned). */
+  val tsatoshi: Codec[Satoshi] = tu64overflow.xmap(l => Satoshi(l), s => s.toLong)
 
   /** Truncated uint32 (0 to 4 bytes unsigned integer). */
   val tu32: Codec[Long] = tu64.exmap({
