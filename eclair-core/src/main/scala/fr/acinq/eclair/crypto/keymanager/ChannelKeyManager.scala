@@ -52,12 +52,12 @@ trait ChannelKeyManager {
   }
 
   /**
-   * @param isFunder true if we're funding this channel
+   * @param isInitiator true if we initiated the channel open
    * @return a partial key path for a new funding public key. This key path will be extended:
    *         - with a specific "chain" prefix
    *         - with a specific "funding pubkey" suffix
    */
-  def newFundingKeyPath(isFunder: Boolean): DeterministicWallet.KeyPath
+  def newFundingKeyPath(isInitiator: Boolean): DeterministicWallet.KeyPath
 
   /**
    * @param tx               input transaction

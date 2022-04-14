@@ -530,7 +530,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     bob ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
-    sender.expectMsgType[RES_FAILURE[CMD_UPDATE_FEE, FundeeCannotSendUpdateFee]]
+    sender.expectMsgType[RES_FAILURE[CMD_UPDATE_FEE, NonInitiatorCannotSendUpdateFee]]
     assert(initialState == bob.stateData)
   }
 

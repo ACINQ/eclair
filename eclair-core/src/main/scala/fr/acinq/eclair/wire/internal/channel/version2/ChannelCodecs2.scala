@@ -60,7 +60,7 @@ private[channel] object ChannelCodecs2 {
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
-        ("isFunder" | bool8) ::
+        ("isInitiator" | bool8) ::
         ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams]

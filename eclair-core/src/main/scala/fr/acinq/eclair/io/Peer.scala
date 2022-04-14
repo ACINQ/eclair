@@ -147,7 +147,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           val channelConfig = ChannelConfig.standard
           // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
           val channelType = c.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures))
-          val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, funder = true, c.fundingSatoshis, origin_opt = Some(sender()))
+          val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, isInitiator = true, c.fundingSatoshis, origin_opt = Some(sender()))
           c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
           val temporaryChannelId = randomBytes32()
           val channelFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingSatoshis, None)
@@ -174,7 +174,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
             }
             chosenChannelType match {
               case Right(channelType) =>
-                val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
+                val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, isInitiator = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
                 val temporaryChannelId = msg.temporaryChannelId
                 log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
                 channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
@@ -356,14 +356,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       s(e)
   }
 
-  def createNewChannel(nodeParams: NodeParams, initFeatures: Features[InitFeature], channelType: SupportedChannelType, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
+  def createNewChannel(nodeParams: NodeParams, initFeatures: Features[InitFeature], channelType: SupportedChannelType, isInitiator: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val (finalScript, walletStaticPaymentBasepoint) = if (channelType.paysDirectlyToWallet) {
       val walletKey = Helpers.getWalletPaymentBasepoint(wallet)(ExecutionContext.Implicits.global)
       (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
     } else {
       (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)(ExecutionContext.Implicits.global), None)
     }
-    val localParams = makeChannelParams(nodeParams, initFeatures, finalScript, walletStaticPaymentBasepoint, funder, fundingAmount)
+    val localParams = makeChannelParams(nodeParams, initFeatures, finalScript, walletStaticPaymentBasepoint, isInitiator, fundingAmount)
     val channel = spawnChannel(origin_opt)
     (channel, localParams)
   }
@@ -500,17 +500,17 @@ object Peer {
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, fundingAmount: Satoshi): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
-      nodeParams.channelKeyManager.newFundingKeyPath(isFunder), // we make sure that funder and fundee key path end differently
+      nodeParams.channelKeyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key paths end differently
       dustLimit = nodeParams.channelConf.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.channelConf.maxHtlcValueInFlightMsat,
       channelReserve = (fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.channelConf.htlcMinimum,
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
-      isFunder = isFunder,
+      isInitiator = isInitiator,
       defaultFinalScriptPubKey = defaultFinalScriptPubkey,
       walletStaticPaymentBasepoint = walletStaticPaymentBasepoint,
       initFeatures = initFeatures)

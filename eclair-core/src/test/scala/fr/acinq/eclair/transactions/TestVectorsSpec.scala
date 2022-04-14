@@ -124,7 +124,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
   val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey)
 
-  val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, isFunder = true, Local.payment_basepoint, Remote.payment_basepoint)
+  val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, isInitiator = true, Local.payment_basepoint, Remote.payment_basepoint)
   assert(obscured_tx_number === (0x2bb038521914L ^ 42L))
 
   logger.info(s"local_payment_basepoint: ${Local.payment_basepoint}")
@@ -185,7 +185,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"local_feerate_per_kw: ${spec.commitTxFeerate}")
 
     val outputs = Transactions.makeCommitTxOutputs(
-      localIsFunder = true,
+      localIsInitiator = true,
       localDustLimit = Local.dustLimit,
       localRevocationPubkey = Local.revocation_pubkey,
       toLocalDelay = Local.toSelfDelay,
@@ -204,7 +204,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         commitTxNumber = Local.commitTxNumber,
         localPaymentBasePoint = Local.payment_basepoint,
         remotePaymentBasePoint = Remote.payment_basepoint,
-        localIsFunder = true,
+        localIsInitiator = true,
         outputs = outputs)
       val local_sig = Transactions.sign(tx, Local.funding_privkey, TxOwner.Local, commitmentFormat)
       logger.info(s"# local_signature = ${Scripts.der(local_sig).dropRight(1).toHex}")
@@ -227,7 +227,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       }
     })
 
-    assert(Transactions.getCommitTxNumber(commitTx.tx, isFunder = true, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
+    assert(Transactions.getCommitTxNumber(commitTx.tx, isInitiator = true, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
     Transaction.correctlySpends(commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     logger.info(s"output commit_tx: ${commitTx.tx}")
 

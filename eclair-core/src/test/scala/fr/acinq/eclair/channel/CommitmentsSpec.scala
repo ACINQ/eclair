@@ -381,8 +381,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   // See https://github.com/lightningnetwork/lightning-rfc/issues/728
   test("funder keeps additional reserve to avoid channel being stuck") { f =>
-    val isFunder = true
-    val c = CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isFunder)
+    val isInitiator = true
+    val c = CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isInitiator)
     val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
     val Right((c1, _)) = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
     assert(c1.availableBalanceForSend === 0.msat)
@@ -396,8 +396,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("can send availableForSend") { f =>
-    for (isFunder <- Seq(true, false)) {
-      val c = CommitmentsSpec.makeCommitments(702000000 msat, 52000000 msat, FeeratePerKw(2679 sat), 546 sat, isFunder)
+    for (isInitiator <- Seq(true, false)) {
+      val c = CommitmentsSpec.makeCommitments(702000000 msat, 52000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
       val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
       val result = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
       assert(result.isRight, result)
@@ -405,8 +405,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("can receive availableForReceive") { f =>
-    for (isFunder <- Seq(true, false)) {
-      val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isFunder)
+    for (isInitiator <- Seq(true, false)) {
+      val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
       val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
       receiveAdd(c, add, feeConfNoMismatch)
     }
@@ -414,17 +414,17 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("should always be able to send availableForSend", Tag("fuzzy")) { f =>
     val maxPendingHtlcAmount = 1000000.msat
-    case class FuzzTest(isFunder: Boolean, pendingHtlcs: Int, feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
+    case class FuzzTest(isInitiator: Boolean, pendingHtlcs: Int, feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
     for (_ <- 1 to 100) {
       val t = FuzzTest(
-        isFunder = Random.nextInt(2) == 0,
+        isInitiator = Random.nextInt(2) == 0,
         pendingHtlcs = Random.nextInt(10),
         feeRatePerKw = FeeratePerKw(Random.nextInt(10000).max(1).sat),
         dustLimit = Random.nextInt(1000).sat,
         // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
         toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
         toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
-      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isFunder)
+      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
@@ -442,17 +442,17 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("should always be able to receive availableForReceive", Tag("fuzzy")) { f =>
     val maxPendingHtlcAmount = 1000000.msat
-    case class FuzzTest(isFunder: Boolean, pendingHtlcs: Int, feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
+    case class FuzzTest(isInitiator: Boolean, pendingHtlcs: Int, feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
     for (_ <- 1 to 100) {
       val t = FuzzTest(
-        isFunder = Random.nextInt(2) == 0,
+        isInitiator = Random.nextInt(2) == 0,
         pendingHtlcs = Random.nextInt(10),
         feeRatePerKw = FeeratePerKw(Random.nextInt(10000).max(1).sat),
         dustLimit = Random.nextInt(1000).sat,
         // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
         toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
         toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
-      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isFunder)
+      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
@@ -479,8 +479,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
 object CommitmentsSpec {
 
-  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments = {
-    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, None, Features.empty)
+  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isInitiator: Boolean = true, announceChannel: Boolean = true): Commitments = {
+    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, None, Features.empty)
     val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
     Commitments(
@@ -503,7 +503,7 @@ object CommitmentsSpec {
   }
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments = {
-    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, None, Features.empty)
+    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, None, Features.empty)
     val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
     Commitments(

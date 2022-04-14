@@ -72,8 +72,8 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
 
   private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
 
-  override def newFundingKeyPath(isFunder: Boolean): KeyPath = {
-    val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
+  override def newFundingKeyPath(isInitiator: Boolean): KeyPath = {
+    val last = DeterministicWallet.hardened(if (isInitiator) 1 else 0)
 
     def next(): Long = randomLong() & 0xFFFFFFFFL
 

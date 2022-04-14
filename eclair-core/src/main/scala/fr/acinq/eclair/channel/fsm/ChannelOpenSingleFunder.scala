@@ -77,7 +77,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       Helpers.validateParamsFundee(nodeParams, channelType, localParams.initFeatures, open, remoteNodeId, remoteInit.features) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
-          context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
+          context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
           val minimumDepth = Helpers.minDepthForFunding(nodeParams.channelConf, open.fundingSatoshis)
@@ -351,7 +351,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
         case Success(_) =>
           log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
           blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-          if (!d.commitments.localParams.isFunder) context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
+          if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
           context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, fundingTx))
           val channelKeyPath = keyManager.keyPath(d.commitments.localParams, commitments.channelConfig)
           val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)

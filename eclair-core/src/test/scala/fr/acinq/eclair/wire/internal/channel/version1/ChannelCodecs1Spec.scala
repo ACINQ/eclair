@@ -69,7 +69,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey)),
       walletStaticPaymentBasepoint = None,
-      isFunder = Random.nextBoolean(),
+      isInitiator = Random.nextBoolean(),
       initFeatures = Features(randomBytes(256)).initFeatures())
     val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32()).publicKey))
 

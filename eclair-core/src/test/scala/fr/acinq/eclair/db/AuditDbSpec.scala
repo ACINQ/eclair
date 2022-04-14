@@ -76,7 +76,7 @@ class AuditDbSpec extends AnyFunSuite {
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil)
       val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = TimestampMilli.now() + 10.minutes)
       val e6 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 42000 msat, randomKey().publicKey, pp6 :: Nil)
-      val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, 456123000 sat, isFunder = true, isPrivate = false, ChannelEvent.EventType.Closed(MutualClose(null)))
+      val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, 456123000 sat, isInitiator = true, isPrivate = false, ChannelEvent.EventType.Closed(MutualClose(null)))
       val e8 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, LocalError(new RuntimeException("oops")), isFatal = true)
       val e9 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, RemoteError(Error(randomBytes32(), "remote oops")), isFatal = true)
       val e10 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(20000 msat, randomBytes32()), PaymentRelayed.Part(22000 msat, randomBytes32())), Seq(PaymentRelayed.Part(10000 msat, randomBytes32()), PaymentRelayed.Part(12000 msat, randomBytes32()), PaymentRelayed.Part(15000 msat, randomBytes32())), randomKey().publicKey, 30000 msat)
