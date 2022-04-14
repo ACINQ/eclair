@@ -275,10 +275,10 @@ object Transactions {
    * down to Satoshi.
    */
   def commitTxTotalCostMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
-    // The funder pays the on-chain fee by deducing it from its main output.
+    // The channel initiator pays the on-chain fee by deducing it from its main output.
     val txFee = commitTxFeeMsat(dustLimit, spec, commitmentFormat)
-    // When using anchor outputs, the funder pays for *both* anchors all the time, even if only one anchor is present.
-    // This is not technically a fee (it doesn't go to miners) but it also has to be deduced from the funder's main output.
+    // When using anchor outputs, the channel initiator pays for *both* anchors all the time, even if only one anchor is present.
+    // This is not technically a fee (it doesn't go to miners) but it also has to be deduced from the channel initiator's main output.
     val anchorsCost = commitmentFormat match {
       case DefaultCommitmentFormat => Satoshi(0)
       case _: AnchorOutputsCommitmentFormat => AnchorOutputsCommitmentFormat.anchorAmount * 2

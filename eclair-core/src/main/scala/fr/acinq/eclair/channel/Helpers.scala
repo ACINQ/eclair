@@ -297,7 +297,7 @@ object Helpers {
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], initialFeeratePerKw, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
       if (!localParams.isInitiator) {
-        // they are funder, therefore they pay the fee: we need to make sure they can afford it!
+        // they initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
         val missing = toRemoteMsat.truncateToSatoshi - localParams.channelReserve - fees

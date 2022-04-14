@@ -120,7 +120,7 @@ object Channel {
   // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
   val MAX_TO_SELF_DELAY: CltvExpiryDelta = CltvExpiryDelta(2016)
 
-  // as a fundee, we will wait that many blocks for the funding tx to confirm (funder will rely on the funding tx being double-spent)
+  // as a non-initiator, we will wait that many blocks for the funding tx to confirm (initiator will rely on the funding tx being double-spent)
   val FUNDING_TIMEOUT_FUNDEE = 2016
 
   // pruning occurs if no new update has been received in two weeks (BOLT 7)
@@ -595,11 +595,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
               // there are no pending signed changes, let's go directly to NEGOTIATING
               if (d.commitments.localParams.isInitiator) {
-                // we are funder, need to initiate the negotiation by sending the first closing_signed
+                // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
                 val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdownScript, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, d.closingFeerates)
                 goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending sendList :+ closingSigned
               } else {
-                // we are fundee, will wait for their closing_signed
+                // we are not the channel initiator, will wait for their closing_signed
                 goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending sendList
               }
             } else {
@@ -835,11 +835,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
             if (d.commitments.localParams.isInitiator) {
-              // we are funder, need to initiate the negotiation by sending the first closing_signed
+              // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
               val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, closingFeerates)
               goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending revocation :: closingSigned :: Nil
             } else {
-              // we are fundee, will wait for their closing_signed
+              // we are not the channel initiator, will wait for their closing_signed
               goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending revocation
             }
           } else {
@@ -875,11 +875,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
             log.debug("switching to NEGOTIATING spec:\n{}", Commitments.specs2String(commitments1))
             if (d.commitments.localParams.isInitiator) {
-              // we are funder, need to initiate the negotiation by sending the first closing_signed
+              // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
               val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, closingFeerates)
               goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending closingSigned
             } else {
-              // we are fundee, will wait for their closing_signed
+              // we are not the channel initiator, will wait for their closing_signed
               goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing()
             }
           } else {
@@ -954,7 +954,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           } else {
             c.feeRange_opt match {
               case Some(ClosingSignedTlv.FeeRange(minFee, maxFee)) if !d.commitments.localParams.isInitiator =>
-                // if we are fundee and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
+                // if we are not the channel initiator and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
                 // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
                 val localClosingFees = Closing.MutualClose.firstClosingFee(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
                 if (maxFee < localClosingFees.min) {
@@ -982,7 +982,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               case _ =>
                 val lastLocalClosingFee_opt = lastLocalClosingSigned_opt.map(_.localClosingSigned.feeSatoshis)
                 val (closingTx, closingSigned) = {
-                  // if we are fundee and we were waiting for them to send their first closing_signed, we don't have a lastLocalClosingFee, so we compute a firstClosingFee
+                  // if we are not the channel initiator and we were waiting for them to send their first closing_signed, we don't have a lastLocalClosingFee, so we compute a firstClosingFee
                   val localClosingFees = Closing.MutualClose.firstClosingFee(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
                   val nextPreferredFee = Closing.MutualClose.nextClosingFee(lastLocalClosingFee_opt.getOrElse(localClosingFees.preferred), remoteClosingFee)
                   Closing.MutualClose.makeClosingTx(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, localClosingFees.copy(preferred = nextPreferredFee))
@@ -1309,7 +1309,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       val minDepth = if (d.commitments.localParams.isInitiator) {
         nodeParams.channelConf.minDepthBlocks
       } else {
-        // when we're fundee we scale the min_depth confirmations depending on the funding amount
+        // when we're not the channel initiator we scale the min_depth confirmations depending on the funding amount
         Helpers.minDepthForFunding(nodeParams.channelConf, d.commitments.commitInput.txOut.amount)
       }
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
@@ -1427,7 +1427,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(_: ChannelReestablish, d: DATA_NEGOTIATING) =>
       // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-      // negotiation restarts from the beginning, and is initialized by the funder
+      // negotiation restarts from the beginning, and is initialized by the channel initiator
       // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
       if (d.commitments.localParams.isInitiator) {
         // we could use the last closing_signed we sent, but network fees may have changed while we were offline so it is better to restart from scratch

@@ -2050,7 +2050,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val c = CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
     bob ! c
-    sender.expectMsg(RES_FAILURE(c, FundeeCannotSendUpdateFee(channelId(bob))))
+    sender.expectMsg(RES_FAILURE(c, NonInitiatorCannotSendUpdateFee(channelId(bob))))
     assert(initialState == bob.stateData)
   }
 
