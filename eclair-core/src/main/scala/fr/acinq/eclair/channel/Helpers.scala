@@ -17,10 +17,10 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
@@ -254,8 +254,8 @@ object Helpers {
     }
     val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi
     // NB: this is an approximation (we don't take network fees into account)
-    val result = toRemoteSatoshis > commitments.remoteParams.channelReserve
-    log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.remoteParams.channelReserve} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
+    val result = toRemoteSatoshis > commitments.localChannelReserve
+    log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.localChannelReserve} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
     result
   }
 
@@ -300,9 +300,9 @@ object Helpers {
         // they initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
-        val missing = toRemoteMsat.truncateToSatoshi - localParams.channelReserve - fees
+        val missing = toRemoteMsat.truncateToSatoshi - localParams.requestedChannelReserve - fees
         if (missing < Satoshi(0)) {
-          return Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.channelReserve, fees = fees))
+          return Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.requestedChannelReserve, fees = fees))
         }
       }
 

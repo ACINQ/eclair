@@ -87,7 +87,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimit,
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-            channelReserveSatoshis = localParams.channelReserve,
+            channelReserveSatoshis = localParams.requestedChannelReserve,
             minimumDepth = minimumDepth,
             htlcMinimumMsat = localParams.htlcMinimum,
             toSelfDelay = localParams.toSelfDelay,
@@ -106,7 +106,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
-            channelReserve = open.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
+            requestedChannelReserve = open.channelReserveSatoshis, // our peer requires us to always have at least that much satoshis in our balance
             htlcMinimum = open.htlcMinimumMsat,
             toSelfDelay = open.toSelfDelay,
             maxAcceptedHtlcs = open.maxAcceptedHtlcs,
@@ -139,7 +139,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             nodeId = remoteNodeId,
             dustLimit = accept.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-            channelReserve = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
+            requestedChannelReserve = accept.channelReserveSatoshis, // our peer requires us to always have at least that much satoshis in our balance
             htlcMinimum = accept.htlcMinimumMsat,
             toSelfDelay = accept.toSelfDelay,
             maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
