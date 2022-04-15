@@ -62,6 +62,7 @@ object IncomingPaymentPacket {
         perHopPayloadCodec(p.isLastPacket).decode(payload.bits) match {
           case Attempt.Successful(DecodeResult(perHopPayload, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
           case Attempt.Failure(e: OnionRoutingCodecs.MissingRequiredTlv) => Left(e.failureMessage)
+          case Attempt.Failure(e: OnionRoutingCodecs.ForbiddenTlv) => Left(e.failureMessage)
           // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
           // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
           case Attempt.Failure(_) => Left(InvalidOnionPayload(UInt64(0), 0))
@@ -81,51 +82,74 @@ object IncomingPaymentPacket {
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
   def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPaymentPacket] = {
-    (add.blinding_opt match {
-      case Some(blinding) =>
-        val decryptionKey = Sphinx.RouteBlinding.derivePrivateKey(privateKey, blinding)
-        decryptOnion(add.paymentHash, decryptionKey, add.onionRoutingPacket, PaymentOnionCodecs.blindOnionPerHopPayloadCodec)
-      case None => decryptOnion(add.paymentHash, privateKey, add.onionRoutingPacket, PaymentOnionCodecs.paymentOnionPerHopPayloadCodec)
-    }) match {
+    // We first derive the decryption key used to peel the onion.
+    val outerOnionDecryptionKey = add.blinding_opt match {
+      case Some(blinding) => Sphinx.RouteBlinding.derivePrivateKey(privateKey, blinding)
+      case None => privateKey
+    }
+    decryptOnion(add.paymentHash, outerOnionDecryptionKey, add.onionRoutingPacket, PaymentOnionCodecs.paymentOnionPerHopPayloadCodec) match {
       case Left(failure) => Left(failure)
-      case Right(DecodedOnionPacket(payload: PaymentOnion.ChannelRelayTlvPayload, next)) => Right(ChannelRelayPacket(add, payload, next, None))
-      case Right(DecodedOnionPacket(payload: PaymentOnion.BlindTlvPayload, next)) =>
-        add.blinding_opt.orElse(payload.blinding_opt) match {
-          case Some(blindingKey) => RouteBlindingEncryptedDataCodecs.decode[BlindedRouteData.PaymentRelayData](privateKey, blindingKey, payload.encryptedRecipientData, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec) match {
-            case Success((relayNext: BlindedRouteData.PaymentRelayData, nextBlindingKey)) if isValidBlindPayment(relayNext, add.amountMsat, add.cltvExpiry, Features.empty) =>
-              // TODO: If we build routes with several copies of our node at the end to hide the true length of the
-              // route, then we should add some code here to continue decrypting onions until we reach the final packet.
-              Right(ChannelRelayPacket(add, PaymentOnion.ChannelBlindRelayTlvData(payload.records, relayNext, add.amountMsat, add.cltvExpiry), next, Some(nextBlindingKey)))
-            case _ => Left(InvalidOnionPayload(UInt64(0), 0))
-          }
-          case None => Left(InvalidOnionPayload(UInt64(12), 0))
+      case Right(DecodedOnionPacket(payload: PaymentOnion.ChannelRelayPayload, next)) =>
+        payload match {
+          case payload: PaymentOnion.BlindedChannelRelayPayload =>
+            payload.blinding_opt.orElse(add.blinding_opt) match {
+              case Some(blinding) =>
+                RouteBlindingEncryptedDataCodecs.decode(privateKey, blinding, payload.encryptedRecipientData, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec) match {
+                  case Failure(_) =>
+                    // There are two possibilities in this case:
+                    //  - the blinding point is invalid: the sender or the previous node is buggy or malicious
+                    //  - the encrypted data is invalid: the recipient is buggy or malicious
+                    // TODO: return an unparseable error
+                    Left(InvalidOnionPayload(UInt64(12), 0))
+                  case Success((relayData, nextBlinding)) =>
+                    if (isValidBlindedPayment(relayData, add.amountMsat, add.cltvExpiry, Features.empty)) {
+                      // TODO: If we build routes with several copies of our node at the end to hide the true length of the
+                      // route, then we should add some code here to continue decrypting onions until we reach the final packet.
+                      Right(ChannelRelayPacket(add, PaymentOnion.BlindedChannelRelayData(relayData, add.amountMsat, add.cltvExpiry), next, Some(nextBlinding)))
+                    } else {
+                      // The sender is buggy or malicious, probably trying to probe the blinded route.
+                      // TODO: return an unparseable error
+                      Left(InvalidOnionPayload(UInt64(12), 0))
+                    }
+                }
+              case None =>
+                // The sender is trying to use route blinding, but we didn't receive the blinding point used to derive
+                // the decryption key. The sender or the previous peer is buggy or malicious.
+                // TODO: return an unparseable error
+                Left(InvalidOnionPayload(UInt64(12), 0))
+            }
+          // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
+          case payload: PaymentOnion.RelayLegacyPayload => Right(ChannelRelayPacket(add, payload, next, None))
+          case payload: PaymentOnion.ChannelRelayTlvPayload => Right(ChannelRelayPacket(add, payload, next, None))
         }
-      case Right(DecodedOnionPacket(payload: PaymentOnion.FinalBlindPayload, _)) =>
-        RouteBlindingEncryptedDataCodecs.decode[BlindedRouteData.FinalRecipientData](privateKey, add.blinding_opt.get, payload.encryptedRecipientData, RouteBlindingEncryptedDataCodecs.finalRecipientDataCodec) match {
-          case Success((finalData: BlindedRouteData.FinalRecipientData, _)) if isValidBlindPayment(finalData, add.amountMsat, add.cltvExpiry, Features.empty) =>
-            Left(InvalidOnionPayload(UInt64(0), 0)) // Receiving through blinded routes is not supported yet
-          case _ => Left(InvalidOnionPayload(UInt64(0), 0))
+      case Right(DecodedOnionPacket(payload: PaymentOnion.FinalPayload, _)) =>
+        payload match {
+          case payload: PaymentOnion.FinalTlvPayload =>
+            // We check if the payment is using trampoline: if it is, we may not be the final recipient.
+            payload.records.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
+              case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) =>
+                // NB: when we enable blinded trampoline routes, we will need to check if the outer onion contains a blinding
+                // point and use it to derive the decryption key for the blinded trampoline onion.
+                decryptOnion(add.paymentHash, privateKey, trampolinePacket, PaymentOnionCodecs.trampolineOnionPerHopPayloadCodec) match {
+                  case Left(failure) => Left(failure)
+                  case Right(DecodedOnionPacket(innerPayload: PaymentOnion.NodeRelayPayload, next)) => validateNodeRelay(add, payload, innerPayload, next)
+                  case Right(DecodedOnionPacket(innerPayload: PaymentOnion.FinalTlvPayload, _)) => validateFinal(add, payload, innerPayload)
+                  case Right(DecodedOnionPacket(_: PaymentOnion.BlindedFinalPayload, _)) => Left(InvalidOnionPayload(UInt64(12), 0)) // trampoline blinded routes are not supported yet
+                }
+              case None => validateFinal(add, payload)
+            }
+          case _: PaymentOnion.BlindedFinalPayload =>
+            // TODO: receiving through blinded routes is not supported yet.
+            Left(InvalidOnionPayload(UInt64(12), 0))
         }
-      case Right(DecodedOnionPacket(payload: PaymentOnion.RelayLegacyPayload, next)) => Right(ChannelRelayPacket(add, payload, next, None))
-      case Right(DecodedOnionPacket(payload: PaymentOnion.FinalTlvPayload, _)) => payload.records.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
-        case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) => decryptOnion(add.paymentHash, privateKey, trampolinePacket, PaymentOnionCodecs.trampolineOnionPerHopPayloadCodec) match {
-          case Left(failure) => Left(failure)
-          case Right(DecodedOnionPacket(innerPayload: PaymentOnion.NodeRelayPayload, next)) => validateNodeRelay(add, payload, innerPayload, next)
-          case Right(DecodedOnionPacket(innerPayload: PaymentOnion.FinalTlvPayload, _)) => validateFinal(add, payload, innerPayload)
-          case Right(DecodedOnionPacket(_: PaymentOnion.FinalBlindPayload, _)) =>
-            Left(InvalidOnionPayload(UInt64(0), 0)) // Receiving through blinded routes is not supported yet
-        }
-        case None => validateFinal(add, payload)
-      }
     }
   }
 
-  private def isValidBlindPayment(data: BlindedRouteData.PaymentData, amount: MilliSatoshi, cltvExpiry: CltvExpiry, features: Features[Feature]): Boolean = {
-    data.paymentConstraints_opt.forall(constraints =>
-      amount >= constraints.minAmount &&
-        cltvExpiry <= constraints.maxCltvExpiry &&
-        Features.areCompatible(features, constraints.allowedFeatures)
-    )
+  private def isValidBlindedPayment(data: BlindedRouteData.PaymentData, amount: MilliSatoshi, cltvExpiry: CltvExpiry, features: Features[Feature]): Boolean = {
+    val amountOk = amount >= data.paymentConstraints.minAmount
+    val expiryOk = cltvExpiry <= data.paymentConstraints.maxCltvExpiry
+    val featuresOk = Features.areCompatible(features, data.paymentConstraints.allowedFeatures)
+    amountOk && expiryOk && featuresOk
   }
 
   private def validateFinal(add: UpdateAddHtlc, payload: PaymentOnion.FinalTlvPayload): Either[FailureMessage, IncomingPaymentPacket] = {

@@ -2,8 +2,8 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire.protocol.BlindedRouteData.{FinalRecipientData, MessageRelayData, PaymentRelayData}
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.{finalRecipientDataCodec, messageRelayDataCodec, paymentRelayDataCodec}
+import fr.acinq.eclair.wire.protocol.BlindedRouteData.{MessageRecipientData, MessageRelayData, PaymentRecipientData, PaymentRelayData}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.{messageRecipientDataCodec, messageRelayDataCodec, paymentRecipientDataCodec, paymentRelayDataCodec}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -20,10 +20,10 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
       hex"011900000000000000000000000000000000000000000000000000 02080000000000000231 0a0a00000384000000c8007b 3b00 fdffff0206c1" -> PaymentRelayData(TlvStream(Seq(Padding(hex"00000000000000000000000000000000000000000000000000"), OutgoingChannelId(ShortChannelId(561)), PaymentRelay(900 msat, 200, CltvExpiryDelta(123))), Seq(GenericTlv(UInt64(59), hex""), GenericTlv(UInt64(65535), hex"06c1")))),
       hex"02080000000000000451 0a0a00000000000003e8002a 0c0c000c0a830000000000002710" -> PaymentRelayData(TlvStream(OutgoingChannelId(ShortChannelId(1105)), PaymentRelay(0 msat, 1000, CltvExpiryDelta(42)), PaymentConstraints(CltvExpiry(789123), 10000 msat, Features.empty))),
       hex"01080000000000000000 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145" -> MessageRelayData(TlvStream(Padding(hex"0000000000000000"), OutgoingNodeId(PublicKey(hex"02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145")))),
-      hex"0109000000000000000000 06204242424242424242424242424242424242424242424242424242424242424242" -> FinalRecipientData(TlvStream(Padding(hex"000000000000000000"), PathId(hex"4242424242424242424242424242424242424242424242424242424242424242"))),
+      hex"0109000000000000000000 06204242424242424242424242424242424242424242424242424242424242424242" -> MessageRecipientData(TlvStream(Padding(hex"000000000000000000"), PathId(hex"4242424242424242424242424242424242424242424242424242424242424242"))),
       hex"0421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991" -> MessageRelayData(TlvStream(OutgoingNodeId(PublicKey(hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")))),
       hex"042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145" -> MessageRelayData(TlvStream(OutgoingNodeId(PublicKey(hex"02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145")))),
-      hex"010f000000000000000000000000000000 061000112233445566778899aabbccddeeff" -> FinalRecipientData(TlvStream(Padding(hex"000000000000000000000000000000"), PathId(hex"00112233445566778899aabbccddeeff"))),
+      hex"010f000000000000000000000000000000 061000112233445566778899aabbccddeeff" -> MessageRecipientData(TlvStream(Padding(hex"000000000000000000000000000000"), PathId(hex"00112233445566778899aabbccddeeff"))),
       hex"0121000000000000000000000000000000000000000000000000000000000000000000 04210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c" -> MessageRelayData(TlvStream(Padding(hex"000000000000000000000000000000000000000000000000000000000000000000"), OutgoingNodeId(PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")))),
       hex"0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007 0821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f" -> MessageRelayData(TlvStream(OutgoingNodeId(PublicKey(hex"027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")), NextBlinding(PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))),
     )
@@ -38,8 +38,9 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
     for ((encoded, data) <- payloads) {
       data match {
         case data: MessageRelayData => testEncoding(encoded, data, messageRelayDataCodec)
+        case data: MessageRecipientData => testEncoding(encoded, data, messageRecipientDataCodec)
         case data: PaymentRelayData => testEncoding(encoded, data, paymentRelayDataCodec)
-        case data: FinalRecipientData => testEncoding(encoded, data, finalRecipientDataCodec)
+        case data: PaymentRecipientData => testEncoding(encoded, data, paymentRecipientDataCodec)
       }
     }
   }
@@ -51,7 +52,7 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
       (PaymentRelayData(TlvStream(Padding(hex"000000"), OutgoingChannelId(ShortChannelId(561)), PaymentRelay(1000 msat, 300, CltvExpiryDelta(222)))), hex"0103000000 02080000000000000231 0a0a000003e80000012c00de"),
       (MessageRelayData(TlvStream(OutgoingNodeId(PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")))), hex"0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"),
       (MessageRelayData(TlvStream(OutgoingNodeId(PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")), NextBlinding(PublicKey(hex"027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461")))), hex"0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486 0821027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461"),
-      (FinalRecipientData(TlvStream(PathId(hex"0101010101010101010101010101010101010101010101010101010101010101"))), hex"06200101010101010101010101010101010101010101010101010101010101010101"),
+      (MessageRecipientData(TlvStream(PathId(hex"0101010101010101010101010101010101010101010101010101010101010101"))), hex"06200101010101010101010101010101010101010101010101010101010101010101"),
       (PaymentRelayData(TlvStream(Seq(OutgoingChannelId(ShortChannelId(42)), PaymentRelay(900 msat, 200, CltvExpiryDelta(123))), Seq(GenericTlv(UInt64(65535), hex"06c1")))), hex"0208000000000000002a 0a0a00000384000000c8007b fdffff0206c1"),
     )
 
@@ -60,7 +61,7 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
     val Success((decryptedPayload0, blinding1)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(0), blinding0, blindedRoute.encryptedPayloads(0), paymentRelayDataCodec)
     val Success((decryptedPayload1, blinding2)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(1), blinding1, blindedRoute.encryptedPayloads(1), messageRelayDataCodec)
     val Success((decryptedPayload2, blinding3)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(2), blinding2, blindedRoute.encryptedPayloads(2), messageRelayDataCodec)
-    val Success((decryptedPayload3, blinding4)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(3), blinding3, blindedRoute.encryptedPayloads(3), finalRecipientDataCodec)
+    val Success((decryptedPayload3, blinding4)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(3), blinding3, blindedRoute.encryptedPayloads(3), messageRecipientDataCodec)
     val Success((decryptedPayload4, _)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(4), blinding4, blindedRoute.encryptedPayloads(4), paymentRelayDataCodec)
     assert(Seq(decryptedPayload0, decryptedPayload1, decryptedPayload2, decryptedPayload3, decryptedPayload4) === payloads.map(_._1))
   }

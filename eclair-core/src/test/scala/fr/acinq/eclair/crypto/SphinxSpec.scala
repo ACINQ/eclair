@@ -538,7 +538,7 @@ class SphinxSpec extends AnyFunSuite {
       // The sender includes the correct encrypted recipient data in each blinded node's payload.
       TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
       TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
-    ).map(tlvs => PaymentOnionCodecs.blindTlvPerHopPayloadCodec.encode(tlvs).require.bytes)
+    ).map(tlvs => PaymentOnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes)
 
     val senderSessionKey = PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val Success(PacketAndSecrets(onion, sharedSecrets)) = create(senderSessionKey, 1300, nodeIds, payloads, associatedData)
@@ -552,7 +552,7 @@ class SphinxSpec extends AnyFunSuite {
     // It can decrypt the onion as usual, but the payload doesn't contain a shortChannelId or a nodeId to forward to.
     // However it contains a blinding point and encrypted data, which it can decrypt to discover the next node.
     val Right(DecryptedPacket(payload2, nextPacket2, sharedSecret2)) = peel(privKeys(2), associatedData, nextPacket1)
-    val tlvs2 = PaymentOnionCodecs.blindTlvPerHopPayloadCodec.decode(payload2.bits).require.value
+    val tlvs2 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload2.bits).require.value
     assert(tlvs2.get[OnionPaymentPayloadTlv.BlindingPoint].map(_.publicKey) === Some(blindingEphemeralKey0))
     assert(tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
     val Success((recipientData2, blindingEphemeralKey1)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(2), blindingEphemeralKey0, tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec)
@@ -564,7 +564,7 @@ class SphinxSpec extends AnyFunSuite {
     // The payload doesn't contain a shortChannelId or a nodeId to forward to, but the encrypted data does.
     val blindedPrivKey3 = RouteBlinding.derivePrivateKey(privKeys(3), blindingEphemeralKey1)
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = peel(blindedPrivKey3, associatedData, nextPacket2)
-    val tlvs3 = PaymentOnionCodecs.blindTlvPerHopPayloadCodec.decode(payload3.bits).require.value
+    val tlvs3 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload3.bits).require.value
     assert(tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
     val Success((recipientData3, blindingEphemeralKey2)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(3), blindingEphemeralKey1, tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec)
     assert(recipientData3.outgoingChannelId === ShortChannelId(2434))
@@ -574,9 +574,9 @@ class SphinxSpec extends AnyFunSuite {
     // derive the private key corresponding to its blinded node ID and decrypt the onion.
     val blindedPrivKey4 = RouteBlinding.derivePrivateKey(privKeys(4), blindingEphemeralKey2)
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = peel(blindedPrivKey4, associatedData, nextPacket3)
-    val tlvs4 = PaymentOnionCodecs.blindTlvPerHopPayloadCodec.decode(payload4.bits).require.value
+    val tlvs4 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
     assert(tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientData4, _)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data, RouteBlindingEncryptedDataCodecs.finalRecipientDataCodec)
+    val Success((recipientData4, _)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data, RouteBlindingEncryptedDataCodecs.paymentRecipientDataCodec)
     assert(recipientData4.pathId_opt === associatedData.map(_.bytes))
 
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)

@@ -102,15 +102,15 @@ class PaymentOnionSpec extends AnyFunSuite {
   test("encode/decode variable-length (tlv) relay per-hop blinded payload") {
     val expected = TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
     val bin = hex"2d 0a080123456789abcdef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"
-      channelRelayPerHopPayloadCodec.decode(bin.bits).require.value match {
-        case decoded: BlindTlvPayload =>
-          assert(decoded === BlindTlvPayload(expected))
-          assert(decoded.encryptedRecipientData === hex"0123456789abcdef")
-          assert(decoded.blinding_opt === Some(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
-        case _ => fail()
-      }
-      val encoded = channelRelayPerHopPayloadCodec.encode(BlindTlvPayload(expected)).require.bytes
-      assert(encoded === bin)
+    channelRelayPerHopPayloadCodec.decode(bin.bits).require.value match {
+      case decoded: BlindedChannelRelayPayload =>
+        assert(decoded === BlindedChannelRelayPayload(expected))
+        assert(decoded.encryptedRecipientData === hex"0123456789abcdef")
+        assert(decoded.blinding_opt === Some(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
+      case _ => fail()
+    }
+    val encoded = channelRelayPerHopPayloadCodec.encode(BlindedChannelRelayPayload(expected)).require.bytes
+    assert(encoded === bin)
   }
 
   test("encode/decode variable-length (tlv) node relay per-hop payload") {
@@ -119,7 +119,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     val bin = hex"2e 02020231 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"
 
     val decoded = nodeRelayPerHopPayloadCodec.decode(bin.bits).require.value
-    assert(decoded === NodeRelayPayload(expected, None))
+    assert(decoded === NodeRelayPayload(expected))
     assert(decoded.amountToForward === 561.msat)
     assert(decoded.totalAmount === 561.msat)
     assert(decoded.outgoingCltv === CltvExpiry(42))
@@ -128,7 +128,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(decoded.invoiceFeatures === None)
     assert(decoded.invoiceRoutingInfo === None)
 
-    val encoded = nodeRelayPerHopPayloadCodec.encode(NodeRelayPayload(expected, None)).require.bytes
+    val encoded = nodeRelayPerHopPayloadCodec.encode(NodeRelayPayload(expected)).require.bytes
     assert(encoded === bin)
   }
 
@@ -144,7 +144,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     val bin = hex"fa 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 fe00010231010a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619 fe000102339b01036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e200000000000000010000000a00000064009002025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce148600000000000000020000001400000096000c02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee00000000000000030000001e000000c80018"
 
     val decoded = nodeRelayPerHopPayloadCodec.decode(bin.bits).require.value
-    assert(decoded === NodeRelayPayload(expected, None))
+    assert(decoded === NodeRelayPayload(expected))
     assert(decoded.amountToForward === 561.msat)
     assert(decoded.totalAmount === 1105.msat)
     assert(decoded.paymentSecret === Some(ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")))
@@ -153,7 +153,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(decoded.invoiceFeatures === Some(features))
     assert(decoded.invoiceRoutingInfo === Some(routingHints))
 
-    val encoded = nodeRelayPerHopPayloadCodec.encode(NodeRelayPayload(expected, None)).require.bytes
+    val encoded = nodeRelayPerHopPayloadCodec.encode(NodeRelayPayload(expected)).require.bytes
     assert(encoded === bin)
   }
 
@@ -175,7 +175,7 @@ class PaymentOnionSpec extends AnyFunSuite {
           assert(decoded === FinalTlvPayload(expected))
           assert(decoded.amount === 561.msat)
           assert(decoded.expiry === CltvExpiry(42))
-        case _: FinalBlindPayload => fail()
+        case _: BlindedFinalPayload => fail()
       }
 
       val encoded = finalPerHopPayloadCodec.encode(FinalTlvPayload(expected)).require.bytes
@@ -199,7 +199,7 @@ class PaymentOnionSpec extends AnyFunSuite {
         assert(multiPart.expiry === CltvExpiry(42))
         assert(multiPart.totalAmount === 1105.msat)
         assert(multiPart.paymentSecret === ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
-      case _: FinalBlindPayload => fail()
+      case _: BlindedFinalPayload => fail()
     }
 
     finalPerHopPayloadCodec.decode(hex"29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619".bits).require.value match {
@@ -208,7 +208,7 @@ class PaymentOnionSpec extends AnyFunSuite {
         assert(multiPartNoTotalAmount.expiry === CltvExpiry(42))
         assert(multiPartNoTotalAmount.totalAmount === 561.msat)
         assert(multiPartNoTotalAmount.paymentSecret === ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
-      case _: FinalBlindPayload => fail()
+      case _: BlindedFinalPayload => fail()
     }
   }
 

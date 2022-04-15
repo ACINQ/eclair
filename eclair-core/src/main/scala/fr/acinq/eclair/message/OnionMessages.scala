@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair.message
 
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
-import fr.acinq.eclair.wire.protocol.BlindedRouteData.{FinalRecipientData, MessageRelayData}
+import fr.acinq.eclair.wire.protocol.BlindedRouteData.{MessageRecipientData, MessageRelayData}
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, RelayPayload}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
@@ -39,9 +38,11 @@ object OnionMessages {
 
   case class IntermediateNode(nodeId: PublicKey, padding: Option[ByteVector] = None)
 
+  // @formatter:off
   sealed trait Destination
   case class BlindedPath(route: Sphinx.RouteBlinding.BlindedRoute) extends Destination
   case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None) extends Destination
+  // @formatter:on
 
   def buildRoute(blindingSecret: PrivateKey,
                  intermediateNodes: Seq[IntermediateNode],
@@ -62,7 +63,7 @@ object OnionMessages {
     destination match {
       case Recipient(nodeId, pathId, padding) =>
         val tlvs = padding.map(Padding(_) :: Nil).getOrElse(Nil) ++ pathId.map(PathId(_) :: Nil).getOrElse(Nil)
-        val lastPayload = RouteBlindingEncryptedDataCodecs.finalRecipientDataCodec.encode(FinalRecipientData(TlvStream(tlvs))).require.bytes
+        val lastPayload = RouteBlindingEncryptedDataCodecs.messageRecipientDataCodec.encode(MessageRecipientData(TlvStream(tlvs))).require.bytes
         Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload)
       case BlindedPath(route) =>
         if (intermediateNodes.isEmpty) {
@@ -147,7 +148,7 @@ object OnionMessages {
           case Attempt.Successful(DecodeResult(finalPayload: FinalPayload, _)) =>
             Sphinx.RouteBlinding.decryptPayload(privateKey, msg.blindingKey, finalPayload.encryptedData) match {
               case Success((decrypted, _)) =>
-                RouteBlindingEncryptedDataCodecs.finalRecipientDataCodec.decode(decrypted.bits) match {
+                RouteBlindingEncryptedDataCodecs.messageRecipientDataCodec.decode(decrypted.bits) match {
                   case Attempt.Successful(DecodeResult(messageToSelf, _)) => ReceiveMessage(finalPayload, messageToSelf.pathId_opt)
                   case Attempt.Failure(err) => DropMessage(CannotDecodeBlindedPayload(err.message))
                 }

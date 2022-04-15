@@ -22,11 +22,11 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.message.OnionMessages._
 import fr.acinq.eclair.randomKey
-import fr.acinq.eclair.wire.protocol.BlindedRouteData.{FinalRecipientData, MessageRelayData}
+import fr.acinq.eclair.wire.protocol.BlindedRouteData.{MessageRecipientData, MessageRelayData}
 import fr.acinq.eclair.wire.protocol.MessageOnion.RelayPayload
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.relayPerHopPayloadCodec
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.{finalRecipientDataCodec, messageRelayDataCodec}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.{messageRecipientDataCodec, messageRelayDataCodec}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
 import fr.acinq.eclair.wire.protocol.{OnionMessage, TlvStream}
 import org.scalatest.funsuite.AnyFunSuite
@@ -78,8 +78,8 @@ class OnionMessagesSpec extends AnyFunSuite {
     val messageForCarol = MessageRelayData(TlvStream(Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), OutgoingNodeId(dave.publicKey)))
     val encodedForCarol = messageRelayDataCodec.encode(messageForCarol).require.bytes
     assert(encodedForCarol == hex"012300000000000000000000000000000000000000000000000000000000000000000000000421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")
-    val messageForDave = FinalRecipientData(TlvStream(PathId(hex"01234567")))
-    val encodedForDave = finalRecipientDataCodec.encode(messageForDave).require.bytes
+    val messageForDave = MessageRecipientData(TlvStream(PathId(hex"01234567")))
+    val encodedForDave = messageRecipientDataCodec.encode(messageForDave).require.bytes
     assert(encodedForDave == hex"060401234567")
 
     // Building blinded path Carol -> Dave
