@@ -86,3 +86,15 @@ object Invoice {
     }
   }
 }
+
+case class DummyInvoice(amount_opt: Option[MilliSatoshi],
+                        createdAt: TimestampSecond,
+                        nodeId: PublicKey,
+                        paymentHash: ByteVector32,
+                        paymentSecret: Option[ByteVector32],
+                        paymentMetadata: Option[ByteVector],
+                        description: Either[String, ByteVector32],
+                        extraEdges: Seq[Invoice.ExtraEdge],
+                        relativeExpiry: FiniteDuration,
+                        minFinalCltvExpiryDelta: CltvExpiryDelta,
+                        features: Features[InvoiceFeature]) extends Invoice

@@ -38,7 +38,7 @@ object NodeRelayer {
   // @formatter:off
   sealed trait Command
   case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
-  case class RelayComplete(childHandler: ActorRef[NodeRelay.Command], paymentHash: ByteVector32, paymentSecret: ByteVector32) extends Command
+  case class RelayComplete(childHandler: ActorRef[NodeRelay.Command], paymentHash: ByteVector32, paymentSecret: Option[ByteVector32]) extends Command
   private[relay] case class GetPendingPayments(replyTo: akka.actor.ActorRef) extends Command
   // @formatter:on
 
@@ -48,7 +48,7 @@ object NodeRelayer {
     case _: GetPendingPayments => Logs.mdc()
   }
 
-  case class PaymentKey(paymentHash: ByteVector32, paymentSecret: ByteVector32)
+  case class PaymentKey(paymentHash: ByteVector32, paymentSecret: Option[ByteVector32])
 
   /**
    * @param children a map of pending payments. We must index by both payment hash and payment secret because we may

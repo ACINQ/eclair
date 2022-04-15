@@ -180,13 +180,13 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(multiPart.amount == 561.msat)
     assert(multiPart.expiry == CltvExpiry(42))
     assert(multiPart.totalAmount == 1105.msat)
-    assert(multiPart.paymentSecret == ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+    assert(multiPart.paymentSecret contains ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
 
     val multiPartNoTotalAmount = finalPerHopPayloadCodec.decode(hex"29 02020231 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619".bits).require.value
     assert(multiPartNoTotalAmount.amount == 561.msat)
     assert(multiPartNoTotalAmount.expiry == CltvExpiry(42))
     assert(multiPartNoTotalAmount.totalAmount == 561.msat)
-    assert(multiPartNoTotalAmount.paymentSecret == ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+    assert(multiPartNoTotalAmount.paymentSecret contains ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
   }
 
   test("decode variable-length (tlv) relay per-hop payload missing information") {

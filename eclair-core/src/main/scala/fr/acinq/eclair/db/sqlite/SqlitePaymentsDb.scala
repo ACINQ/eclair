@@ -231,7 +231,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def addIncomingPayment(invoice: Bolt11Invoice, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Sqlite) {
+  override def addIncomingPayment(invoice: Invoice, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, invoice.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)

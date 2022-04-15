@@ -98,6 +98,7 @@ class OffersIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(Nil, Right(invoiceRequestReplyPath), None, encodedInvoice)
 
     val response = probe.expectMsgType[PayOfferResponse](1 minute)
+    println(response)
     assert(response.preimage contains preimage.toHex)
   }
 }

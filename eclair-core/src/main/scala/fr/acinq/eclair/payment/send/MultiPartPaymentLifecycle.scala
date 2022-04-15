@@ -319,7 +319,7 @@ object MultiPartPaymentLifecycle {
    * @param userCustomTlvs  when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
    */
   case class SendMultiPartPayment(replyTo: ActorRef,
-                                  paymentSecret: ByteVector32,
+                                  paymentSecret: Option[ByteVector32],
                                   targetNodeId: PublicKey,
                                   totalAmount: MilliSatoshi,
                                   targetExpiry: CltvExpiry,
