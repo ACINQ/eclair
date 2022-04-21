@@ -264,6 +264,17 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
+  def listAllOutgoingPayments(): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-timestamp") {
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments")) { statement =>
+      val rs = statement.executeQuery()
+      var q: Queue[OutgoingPayment] = Queue()
+      while (rs.next()) {
+        q = q :+ parseOutgoingPayment(rs)
+      }
+      q
+    }
+  }
+
   override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming") {
     using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, pr.paymentHash.toArray)
@@ -322,6 +333,17 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
+      val rs = statement.executeQuery()
+      var q: Queue[IncomingPayment] = Queue()
+      while (rs.next()) {
+        q = q :+ parseIncomingPayment(rs)
+      }
+      q
+    }
+  }
+
+  def listAllIncomingPayments(): Seq[IncomingPayment] = withMetrics("payments/list-incoming") {
+    using(sqlite.prepareStatement("SELECT * FROM received_payments")) { statement =>
       val rs = statement.executeQuery()
       var q: Queue[IncomingPayment] = Queue()
       while (rs.next()) {
