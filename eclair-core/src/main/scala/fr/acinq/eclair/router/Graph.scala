@@ -315,7 +315,9 @@ object Graph {
 
         // Every edge is weighted by channel capacity, larger channels add less weight
         val edgeMaxCapacity = edge.capacity.toMilliSatoshi
-        val capFactor = 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
+        val capFactor =
+          if (edge.balance_opt.isDefined) 0 // If we know the balance of the channel we treat it as if it had the maximum capacity.
+          else 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
 
         // Every edge is weighted by its cltv-delta value, normalized
         val cltvFactor = normalize(edge.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
