@@ -1884,6 +1884,28 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       assert(findMultiPartRoute(g, a, b, amount, 101_000 msat, Set.empty, Set.empty, Set.empty, Nil, routeParams = routeParams, currentBlockHeight = BlockHeight(400000)).isSuccess)
     }
   }
+
+  test("small local edge with liquidity is better than big remote edge") {
+    // A === B === C -- D
+    //  \_________/
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat, balance_opt = Some(10000000 msat)),
+      makeEdge(2L, b, c, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
+      makeEdge(3L, a, c, 100 msat, 100, minHtlc = 1000 msat, capacity = 100 sat, balance_opt = Some(100000 msat)),
+      makeEdge(4L, c, d, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
+    ))
+
+    val wr = WeightRatios(
+      baseFactor = 0,
+      cltvDeltaFactor = 0,
+      ageFactor = 0,
+      capacityFactor = 1,
+      hopCost = RelayFees(500 msat, 200),
+    )
+    val Success(routes) = findRoute(g, a, d, 50000 msat, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Left(wr), includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
+    val route :: Nil = routes
+    assert(route2Ids(route) === 3 :: 4 :: Nil)
+  }
 }
 
 object RouteCalculationSpec {
