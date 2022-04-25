@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -196,7 +196,7 @@ final case class CMD_GET_CHANNEL_INFO(replyTo: ActorRef)extends HasReplyToComman
 /** response to [[Command]] requests */
 sealed trait CommandResponse[+C <: Command]
 sealed trait CommandSuccess[+C <: Command] extends CommandResponse[C]
-sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: Throwable }
+sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: T }
 
 /** generic responses */
 final case class RES_SUCCESS[+C <: Command](cmd: C, channelId: ByteVector32) extends CommandSuccess[C]
@@ -466,14 +466,16 @@ case class LocalParams(nodeId: PublicKey,
                        fundingKeyPath: DeterministicWallet.KeyPath,
                        dustLimit: Satoshi,
                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                       requestedChannelReserve: Satoshi,
+                       requestedChannelReserve_opt: Option[Satoshi],
                        htlcMinimum: MilliSatoshi,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
                        isInitiator: Boolean,
                        defaultFinalScriptPubKey: ByteVector,
                        walletStaticPaymentBasepoint: Option[PublicKey],
-                       initFeatures: Features[InitFeature])
+                       initFeatures: Features[InitFeature]) {
+  val requestedChannelReserve: Satoshi = requestedChannelReserve_opt.getOrElse(0 sat)
+}
 
 /**
  * @param initFeatures see [[LocalParams.initFeatures]]
@@ -481,7 +483,7 @@ case class LocalParams(nodeId: PublicKey,
 case class RemoteParams(nodeId: PublicKey,
                         dustLimit: Satoshi,
                         maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                        requestedChannelReserve: Satoshi,
+                        requestedChannelReserve_opt: Option[Satoshi],
                         htlcMinimum: MilliSatoshi,
                         toSelfDelay: CltvExpiryDelta,
                         maxAcceptedHtlcs: Int,
@@ -491,7 +493,9 @@ case class RemoteParams(nodeId: PublicKey,
                         delayedPaymentBasepoint: PublicKey,
                         htlcBasepoint: PublicKey,
                         initFeatures: Features[InitFeature],
-                        shutdownScript: Option[ByteVector])
+                        shutdownScript: Option[ByteVector]) {
+  val requestedChannelReserve: Satoshi = requestedChannelReserve_opt.getOrElse(0 sat)
+}
 
 case class ChannelFlags(announceChannel: Boolean) {
   override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"

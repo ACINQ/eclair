@@ -106,7 +106,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
-            requestedChannelReserve = open.channelReserveSatoshis, // our peer requires us to always have at least that much satoshis in our balance
+            requestedChannelReserve_opt = Some(open.channelReserveSatoshis), // our peer requires us to always have at least that much satoshis in our balance
             htlcMinimum = open.htlcMinimumMsat,
             toSelfDelay = open.toSelfDelay,
             maxAcceptedHtlcs = open.maxAcceptedHtlcs,
@@ -139,7 +139,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             nodeId = remoteNodeId,
             dustLimit = accept.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-            requestedChannelReserve = accept.channelReserveSatoshis, // our peer requires us to always have at least that much satoshis in our balance
+            requestedChannelReserve_opt = Some(accept.channelReserveSatoshis), // our peer requires us to always have at least that much satoshis in our balance
             htlcMinimum = accept.htlcMinimumMsat,
             toSelfDelay = accept.toSelfDelay,
             maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
