@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 10
+  val CURRENT_VERSION = 11
 }
 
 class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
@@ -102,6 +102,14 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("DROP TABLE audit.network_fees")
       }
 
+      def migration1011(statement: Statement): Unit = {
+        statement.executeUpdate("ALTER TABLE audit.path_finding_metrics ADD COLUMN payment_hash TEXT NOT NULL")
+        statement.executeUpdate("ALTER TABLE audit.path_finding_metrics ADD COLUMN routing_hint_node_id TEXT NOT NULL")
+        statement.executeUpdate("CREATE INDEX metrics_hash_idx ON audit.path_finding_metrics(payment_hash)")
+        statement.executeUpdate("CREATE INDEX metrics_hint_idx ON audit.path_finding_metrics(routing_hint_node_id)")
+        statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
@@ -112,7 +120,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL, payment_hash TEXT NOT NULL, routing_hint_node_id TEXT NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
 
@@ -132,9 +140,12 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON audit.path_finding_metrics(timestamp)")
           statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON audit.path_finding_metrics(is_mpp)")
           statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
+          statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
+          statement.executeUpdate("CREATE INDEX metrics_hash_idx ON audit.path_finding_metrics(payment_hash)")
+          statement.executeUpdate("CREATE INDEX metrics_hint_idx ON audit.path_finding_metrics(routing_hint_node_id)")
           statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
           statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
-        case Some(v@(4 | 5 | 6 | 7 | 8 | 9)) =>
+        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
@@ -153,6 +164,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           }
           if (v < 10) {
             migration910(statement)
+          }
+          if (v < 11) {
+          migration1011(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -305,7 +319,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def addPathFindingExperimentMetrics(m: PathFindingExperimentMetrics): Unit = withMetrics("audit/add-experiment-metrics", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.path_finding_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO audit.path_finding_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setLong(1, m.amount.toLong)
         statement.setLong(2, m.fees.toLong)
         statement.setString(3, m.status)
@@ -314,6 +328,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setBoolean(6, m.isMultiPart)
         statement.setString(7, m.experimentName)
         statement.setString(8, m.recipientNodeId.value.toHex)
+        statement.setString(9, m.paymentHash.toHex)
+        statement.setString(10, m.routingHint.map(_.value.toHex).getOrElse(""))
         statement.executeUpdate()
       }
     }

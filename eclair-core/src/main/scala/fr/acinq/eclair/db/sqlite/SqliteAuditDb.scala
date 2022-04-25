@@ -34,7 +34,7 @@ import java.util.UUID
 
 object SqliteAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 8
+  val CURRENT_VERSION = 9
 }
 
 class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
@@ -110,6 +110,14 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("DROP TABLE network_fees")
     }
 
+    def migration89(statement: Statement): Unit = {
+      statement.executeUpdate("ALTER TABLE path_finding_metrics ADD COLUMN payment_hash BLOB NOT NULL")
+      statement.executeUpdate("ALTER TABLE path_finding_metrics ADD COLUMN routing_hint_node_id BLOB NOT NULL")
+      statement.executeUpdate("CREATE INDEX metrics_hash_idx ON path_finding_metrics(payment_hash)")
+      statement.executeUpdate("CREATE INDEX metrics_hint_idx ON path_finding_metrics(routing_hint_node_id)")
+      statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON path_finding_metrics(recipient_node_id)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -119,7 +127,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL, payment_hash BLOB NOT NULL, routing_hint_node_id BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
 
@@ -138,9 +146,12 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON path_finding_metrics(timestamp)")
         statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON path_finding_metrics(is_mpp)")
         statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
+        statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON path_finding_metrics(recipient_node_id)")
+        statement.executeUpdate("CREATE INDEX metrics_hash_idx ON path_finding_metrics(payment_hash)")
+        statement.executeUpdate("CREATE INDEX metrics_hint_idx ON path_finding_metrics(routing_hint_node_id)")
         statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
-      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7)) =>
+      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -162,6 +173,9 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         }
         if (v < 8) {
           migration78(statement)
+        }
+        if (v < 9) {
+          migration89(statement)
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -297,7 +311,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def addPathFindingExperimentMetrics(m: PathFindingExperimentMetrics): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO path_finding_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO path_finding_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setLong(1, m.amount.toLong)
       statement.setLong(2, m.fees.toLong)
       statement.setString(3, m.status)
@@ -306,6 +320,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setBoolean(6, m.isMultiPart)
       statement.setString(7, m.experimentName)
       statement.setBytes(8, m.recipientNodeId.value.toArray)
+      statement.setBytes(9, m.paymentHash.toArray)
+      statement.setBytes(10, m.routingHint.map(_.value.toArray).getOrElse(Array.empty))
       statement.executeUpdate()
     }
   }

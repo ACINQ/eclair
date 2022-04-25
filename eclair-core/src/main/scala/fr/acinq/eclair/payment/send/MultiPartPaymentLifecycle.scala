@@ -264,7 +264,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
           }
           paymentSent.feesPaid + localFees
       }
-      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId))
+      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId, cfg.invoice.flatMap(_.routingInfo.headOption.flatMap(_.headOption.map(_.nodeId)))))
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
