@@ -1889,7 +1889,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     // A === B === C -- D
     //  \_________/
     val g = DirectedGraph(List(
-      makeEdge(1L, a, b, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
+      makeEdge(1L, a, b, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat, balance_opt = Some(10000000 msat)),
       makeEdge(2L, b, c, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
       makeEdge(3L, a, c, 100 msat, 100, minHtlc = 1000 msat, capacity = 100 sat, balance_opt = Some(100000 msat)),
       makeEdge(4L, c, d, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
