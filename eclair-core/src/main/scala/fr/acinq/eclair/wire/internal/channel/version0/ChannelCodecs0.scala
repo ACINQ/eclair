@@ -51,10 +51,9 @@ private[channel] object ChannelCodecs0 {
         ("chaincode" | bytes32) ::
         ("depth" | uint16) ::
         ("path" | keyPathCodec) ::
-        ("parent" | int64)).xmap(
-      { case a :: b :: c :: d :: e :: HNil => ExtendedPrivateKey(a, b, c, d, e) },
-      { exp: ExtendedPrivateKey => exp.secretkeybytes :: exp.chaincode :: exp.depth :: exp.path :: exp.parent :: HNil }
-    ).decodeOnly
+        ("parent" | int64))
+      .map { case a :: b :: c :: d :: e :: HNil => ExtendedPrivateKey(a, b, c, d, e) }
+      .decodeOnly
 
     val channelVersionCodec: Codec[ChannelTypes0.ChannelVersion] = discriminatorWithDefault[ChannelTypes0.ChannelVersion](
       discriminator = discriminated[ChannelTypes0.ChannelVersion].by(byte)
