@@ -70,17 +70,12 @@ private[channel] object ChannelCodecs3 {
       (cf: ChannelFeatures) => Features(cf.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector // we encode features as mandatory, by convention
     )
 
-    private def channelReserveCodec(channelFeatures: ChannelFeatures): Codec[Option[Satoshi]] = satoshi.xmap(
-      sats => if (channelFeatures.hasFeature(Features.DualFunding)) None else Some(sats),
-      sats_opt => if (channelFeatures.hasFeature(Features.DualFunding)) Satoshi(0) else sats_opt.getOrElse(Satoshi(0))
-    )
-
     def localParamsCodec(channelFeatures: ChannelFeatures): Codec[LocalParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
-        ("channelReserve" | channelReserveCodec(channelFeatures)) ::
+        ("channelReserve" | conditional(!channelFeatures.hasFeature(Features.DualFunding), satoshi)) ::
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
@@ -93,7 +88,7 @@ private[channel] object ChannelCodecs3 {
       ("nodeId" | publicKey) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
-        ("channelReserve" | channelReserveCodec(channelFeatures)) ::
+        ("channelReserve" | conditional(!channelFeatures.hasFeature(Features.DualFunding), satoshi)) ::
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
