@@ -269,6 +269,7 @@ object ChannelCodecs extends Logging {
       ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
       ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+      ("customRemoteCommitPublished" | provide(Map.empty[RemoteCommit, RemoteCommitPublished])) ::
       ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 

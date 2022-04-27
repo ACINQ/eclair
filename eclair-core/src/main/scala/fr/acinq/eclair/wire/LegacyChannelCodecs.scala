@@ -335,6 +335,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
+      ("customRemoteCommitPublished" | provide(Map.empty[RemoteCommit, RemoteCommitPublished])) ::
       ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING].decodeOnly
 
@@ -347,6 +348,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
+      ("customRemoteCommitPublished" | provide(Map.empty[RemoteCommit, RemoteCommitPublished])) ::
       ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING].decodeOnly
 
