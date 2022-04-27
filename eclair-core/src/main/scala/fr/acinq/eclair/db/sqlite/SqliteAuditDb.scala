@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TimestampMilli}
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 
 import java.sql.{Connection, Statement}
 import java.util.UUID
@@ -115,8 +116,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
 
     def migration89(statement: Statement): Unit = {
-      statement.executeUpdate("ALTER TABLE path_finding_metrics ADD COLUMN payment_hash BLOB NOT NULL")
-      statement.executeUpdate("ALTER TABLE path_finding_metrics ADD COLUMN routing_hint_node_ids TEXT NOT NULL")
+      statement.executeUpdate("ALTER TABLE path_finding_metrics ADD COLUMN payment_hash BLOB")
+      statement.executeUpdate("ALTER TABLE path_finding_metrics ADD COLUMN routing_hint_node_ids BLOB")
       statement.executeUpdate("CREATE INDEX metrics_hash_idx ON path_finding_metrics(payment_hash)")
       statement.executeUpdate("CREATE INDEX metrics_hint_idx ON path_finding_metrics(routing_hint_node_ids)")
       statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON path_finding_metrics(recipient_node_id)")
@@ -131,7 +132,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL, payment_hash BLOB NOT NULL, routing_hint_node_ids TEXT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL, payment_hash BLOB NOT NULL, routing_hint_node_ids BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
 
@@ -325,7 +326,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setString(7, m.experimentName)
       statement.setBytes(8, m.recipientNodeId.value.toArray)
       statement.setBytes(9, m.paymentHash.toArray)
-      statement.setString(10, Serialization.write(m.routingHints.map(_.value.toHex)))
+      statement.setBytes(10, ByteVector.concat(m.routingHints.map(_.value)).toArray)
       statement.executeUpdate()
     }
   }

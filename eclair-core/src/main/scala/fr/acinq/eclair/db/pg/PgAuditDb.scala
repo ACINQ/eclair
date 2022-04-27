@@ -107,11 +107,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
 
       def migration1011(statement: Statement): Unit = {
-        statement.executeUpdate("ALTER TABLE audit.path_finding_metrics ADD COLUMN payment_hash TEXT NOT NULL")
-        statement.executeUpdate("ALTER TABLE audit.path_finding_metrics ADD COLUMN routing_hint_node_ids JSONB NOT NULL")
+        statement.executeUpdate("ALTER TABLE audit.path_finding_metrics ADD COLUMN payment_hash TEXT")
+        statement.executeUpdate("ALTER TABLE audit.path_finding_metrics ADD COLUMN routing_hint_node_ids JSONB")
         statement.executeUpdate("CREATE INDEX metrics_hash_idx ON audit.path_finding_metrics(payment_hash)")
-        statement.executeUpdate("CREATE INDEX metrics_hint_idx ON audit.path_finding_metrics(routing_hint_node_ids)")
         statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
+        statement.executeUpdate("CREATE INDEX metrics_hint_idx ON audit.path_finding_metrics(routing_hint_node_ids)")
       }
 
       getVersion(statement, DB_NAME) match {
