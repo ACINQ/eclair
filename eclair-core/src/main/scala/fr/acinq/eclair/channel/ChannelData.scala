@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -47,6 +47,7 @@ import java.util.UUID
  */
 sealed trait ChannelState
 case object WAIT_FOR_INIT_INTERNAL extends ChannelState
+// Single-funder channel opening:
 case object WAIT_FOR_OPEN_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_CHANNEL extends ChannelState
 case object WAIT_FOR_FUNDING_INTERNAL extends ChannelState
@@ -54,6 +55,11 @@ case object WAIT_FOR_FUNDING_CREATED extends ChannelState
 case object WAIT_FOR_FUNDING_SIGNED extends ChannelState
 case object WAIT_FOR_FUNDING_CONFIRMED extends ChannelState
 case object WAIT_FOR_FUNDING_LOCKED extends ChannelState
+// Dual-funded channel opening:
+case object WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL extends ChannelState
+case object WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_INTERNAL extends ChannelState
+// Channel opened:
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
 case object NEGOTIATING extends ChannelState
@@ -75,23 +81,27 @@ case object ERR_INFORMATION_LEAK extends ChannelState
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
-                             fundingAmount: Satoshi,
-                             pushAmount: MilliSatoshi,
-                             commitTxFeerate: FeeratePerKw,
-                             fundingTxFeerate: FeeratePerKw,
-                             localParams: LocalParams,
-                             remote: ActorRef,
-                             remoteInit: Init,
-                             channelFlags: ChannelFlags,
-                             channelConfig: ChannelConfig,
-                             channelType: SupportedChannelType)
-case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
-                             localParams: LocalParams,
-                             remote: ActorRef,
-                             remoteInit: Init,
-                             channelConfig: ChannelConfig,
-                             channelType: SupportedChannelType)
+case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
+                                        fundingAmount: Satoshi,
+                                        dualFunded: Boolean,
+                                        commitTxFeerate: FeeratePerKw,
+                                        fundingTxFeerate: FeeratePerKw,
+                                        pushAmount_opt: Option[MilliSatoshi],
+                                        localParams: LocalParams,
+                                        remote: ActorRef,
+                                        remoteInit: Init,
+                                        channelFlags: ChannelFlags,
+                                        channelConfig: ChannelConfig,
+                                        channelType: SupportedChannelType)
+case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
+                                            fundingContribution_opt: Option[Satoshi],
+                                            dualFunded: Boolean,
+                                            localParams: LocalParams,
+                                            remote: ActorRef,
+                                            remoteInit: Init,
+                                            channelConfig: ChannelConfig,
+                                            channelType: SupportedChannelType)
+
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
@@ -376,10 +386,10 @@ sealed trait PersistentChannelData extends ChannelData {
   def commitments: Commitments
 }
 
-final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends TransientChannelData {
+final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = initFundee.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends TransientChannelData {
+final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel) extends TransientChannelData {
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32,
@@ -425,6 +435,18 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  deferred: Option[FundingLocked],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends PersistentChannelData
+
+final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
+  val channelId: ByteVector32 = init.temporaryChannelId
+}
+final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenDualFundedChannel) extends TransientChannelData {
+  val channelId: ByteVector32 = lastSent.temporaryChannelId
+}
+final case class DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL(channelId: ByteVector32,
+                                                     localParams: LocalParams,
+                                                     remoteParams: RemoteParams,
+                                                     channelFeatures: ChannelFeatures) extends TransientChannelData
+
 final case class DATA_NORMAL(commitments: Commitments,
                              shortChannelId: ShortChannelId,
                              buried: Boolean,

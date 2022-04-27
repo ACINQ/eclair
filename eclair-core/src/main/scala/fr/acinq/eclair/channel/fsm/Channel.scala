@@ -164,6 +164,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   extends FSM[ChannelState, ChannelData]
     with FSMDiagnosticActorLogging[ChannelState, ChannelData]
     with ChannelOpenSingleFunder
+    with ChannelOpenDualFunded
     with CommonHandlers
     with FundingHandlers
     with ErrorHandlers {
@@ -208,43 +209,77 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, commitTxFeerate, fundingTxFeerate, localParams, remote, remoteInit, channelFlags, channelConfig, channelType), Nothing) =>
-      context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = true, temporaryChannelId, commitTxFeerate, Some(fundingTxFeerate)))
-      activeConnection = remote
-      txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
-      val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-      val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-      // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
-      // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-      val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
-      val open = OpenChannel(nodeParams.chainHash,
-        temporaryChannelId = temporaryChannelId,
-        fundingSatoshis = fundingSatoshis,
-        pushMsat = pushMsat,
-        dustLimitSatoshis = localParams.dustLimit,
-        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-        channelReserveSatoshis = localParams.requestedChannelReserve,
-        htlcMinimumMsat = localParams.htlcMinimum,
-        feeratePerKw = commitTxFeerate,
-        toSelfDelay = localParams.toSelfDelay,
-        maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = fundingPubKey,
-        revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-        paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
-        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-        htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
-        firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
-        channelFlags = channelFlags,
-        tlvStream = TlvStream(
-          ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
-          ChannelTlv.ChannelTypeTlv(channelType)
-        ))
-      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
+    case Event(input: INPUT_INIT_CHANNEL_INITIATOR, Nothing) =>
+      context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = true, input.temporaryChannelId, input.commitTxFeerate, Some(input.fundingTxFeerate)))
+      activeConnection = input.remote
+      txPublisher ! SetChannelId(remoteNodeId, input.temporaryChannelId)
+      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
+      val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
+      if (input.dualFunded) {
+        val tlvs: TlvStream[OpenDualFundedChannelTlv] = if (Features.canUseFeature(input.localParams.initFeatures, input.remoteInit.features, Features.UpfrontShutdownScript)) {
+          TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(input.localParams.defaultFinalScriptPubKey), ChannelTlv.ChannelTypeTlv(input.channelType))
+        } else {
+          TlvStream(ChannelTlv.ChannelTypeTlv(input.channelType))
+        }
+        val open = OpenDualFundedChannel(
+          chainHash = nodeParams.chainHash,
+          temporaryChannelId = input.temporaryChannelId,
+          fundingFeerate = input.fundingTxFeerate,
+          commitmentFeerate = input.commitTxFeerate,
+          fundingAmount = input.fundingAmount,
+          dustLimit = input.localParams.dustLimit,
+          maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
+          htlcMinimum = input.localParams.htlcMinimum,
+          toSelfDelay = input.localParams.toSelfDelay,
+          maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
+          lockTime = nodeParams.currentBlockHeight.toLong,
+          fundingPubkey = fundingPubKey,
+          revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
+          paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
+          delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
+          htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+          firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+          channelFlags = input.channelFlags,
+          tlvStream = tlvs)
+        goto(WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) using DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(input, open) sending open
+      } else {
+        // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
+        // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+        val localShutdownScript = if (Features.canUseFeature(input.localParams.initFeatures, input.remoteInit.features, Features.UpfrontShutdownScript)) input.localParams.defaultFinalScriptPubKey else ByteVector.empty
+        val open = OpenChannel(
+          chainHash = nodeParams.chainHash,
+          temporaryChannelId = input.temporaryChannelId,
+          fundingSatoshis = input.fundingAmount,
+          pushMsat = input.pushAmount_opt.getOrElse(0 msat),
+          dustLimitSatoshis = input.localParams.dustLimit,
+          maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
+          channelReserveSatoshis = input.localParams.requestedChannelReserve,
+          htlcMinimumMsat = input.localParams.htlcMinimum,
+          feeratePerKw = input.commitTxFeerate,
+          toSelfDelay = input.localParams.toSelfDelay,
+          maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
+          fundingPubkey = fundingPubKey,
+          revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
+          paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
+          delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
+          htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+          firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+          channelFlags = input.channelFlags,
+          tlvStream = TlvStream(
+            ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
+            ChannelTlv.ChannelTypeTlv(input.channelType)
+          ))
+        goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(input, open) sending open
+      }
 
-    case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _, _), Nothing) if !localParams.isInitiator =>
-      activeConnection = remote
-      txPublisher ! SetChannelId(remoteNodeId, inputFundee.temporaryChannelId)
-      goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
+    case Event(input: INPUT_INIT_CHANNEL_NON_INITIATOR, Nothing) if !input.localParams.isInitiator =>
+      activeConnection = input.remote
+      txPublisher ! SetChannelId(remoteNodeId, input.temporaryChannelId)
+      if (input.dualFunded) {
+        goto(WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL) using DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(input)
+      } else {
+        goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(input)
+      }
 
     case Event(INPUT_RESTORED(data), _) =>
       log.debug("restoring channel")

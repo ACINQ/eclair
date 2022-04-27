@@ -184,11 +184,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
     (appKit.switchboard ? Peer.OpenChannel(
       remoteNodeId = nodeId,
-      fundingSatoshis = fundingAmount,
-      pushMsat = pushAmount_opt.getOrElse(0 msat),
+      fundingAmount = fundingAmount,
       channelType_opt = channelType_opt,
-      fundingTxFeeratePerKw_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
-      channelFlags = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
+      pushAmount_opt = pushAmount_opt,
+      fundingTxFeerate_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
+      channelFlags_opt = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
       timeout_opt = Some(openTimeout))).mapTo[ChannelOpenResponse]
   }
 
