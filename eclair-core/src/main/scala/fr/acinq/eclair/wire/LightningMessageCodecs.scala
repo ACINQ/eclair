@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.scala.Satoshi
+import fr.acinq.eclair.channel.CustomRemoteSig
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.{Features, KamonExt, wire}
@@ -64,6 +65,13 @@ object LightningMessageCodecs {
 
   // we have limited space for backup, largest message is commit_sig with 30 htlcs in each direction: 65535B - (32B + 64B + 2*30*64B) = 61599B ~= 60000B
   val channeldataoptional: Codec[Option[ByteVector]] = choice(optional(magic, limitedSizeBytes(60000, variableSizeBytesLong(varintoverflow, bytes))), provide(Option.empty[ByteVector]))
+
+  // TODO: same hack as above, we use a carefully chosen magic to ensure compatibility with TLV encoding
+  val magicCustomSig: Codec[Boolean] = recover(constant(hex"fe 47010001"))
+  private val customRemoteSigCodec: Codec[CustomRemoteSig] = (
+    ("feeratePerKw" | uint32) ::
+      ("signature" | bytes64)).as[CustomRemoteSig]
+  val customremotesigs: Codec[Option[List[CustomRemoteSig]]] = choice(optional(magicCustomSig, variableSizeBytesLong(varintoverflow, listOfN(uint8, customRemoteSigCodec))), provide(Option.empty[List[CustomRemoteSig]]))
 
   val channelReestablishCodec: Codec[ChannelReestablish] = (
     ("channelId" | bytes32) ::
@@ -120,7 +128,8 @@ object LightningMessageCodecs {
   val fundingSignedCodec: Codec[FundingSigned] = (
     ("channelId" | bytes32) ::
       ("signature" | bytes64) ::
-      ("channelData" | channeldataoptional)).as[FundingSigned]
+      ("channelData" | channeldataoptional) ::
+      ("customRemoteSigs" | customremotesigs)).as[FundingSigned]
 
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("channelId" | bytes32) ::
@@ -165,7 +174,8 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("signature" | bytes64) ::
       ("htlcSignatures" | listofsignatures) ::
-      ("channelData" | channeldataoptional)).as[CommitSig]
+      ("channelData" | channeldataoptional) ::
+      ("customRemoteSigs" | customremotesigs)).as[CommitSig]
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | bytes32) ::
