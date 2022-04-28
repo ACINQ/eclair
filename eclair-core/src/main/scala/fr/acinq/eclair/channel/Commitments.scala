@@ -30,6 +30,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{MilliSatoshi, _}
 import scodec.bits.ByteVector
 
+import scala.collection.Seq
 import scala.util.{Failure, Success, Try}
 
 // @formatter:off
@@ -465,6 +466,22 @@ object Commitments {
 
   def revocationHash(seed: ByteVector32, index: Long): ByteVector32 = Crypto.sha256(revocationPreimage(seed, index))
 
+  /** /!\ WARNING : never remove a feerate from the list, because we will only try thosecan only add more */
+  val customRemoteSigsFeerates: Seq[Long] = List(1 sat, 2 sat, 5 sat, 10 sat).map(satPerByte => feerateByte2Kw(satPerByte.toLong))
+
+  def computeCustomRemoteSigs(commitments: Commitments, keyManager: KeyManager, remoteCommitIndex: Long, spec: CommitmentSpec, remotePerCommitmentPoint: PublicKey): Seq[CustomRemoteSig] = {
+    import commitments._
+    if (spec.htlcs.isEmpty) { // TODO: we could use htlcTxs.isEmpty to ignore trimmed htlcs
+
+      for (customFeerate <- customRemoteSigsFeerates) yield {
+        val customSpec = spec.copy(feeratePerKw = customFeerate)
+        val (customRemoteCommitTx, _, _) = makeRemoteTxs(keyManager, channelVersion, remoteCommitIndex, localParams, remoteParams, commitInput, remotePerCommitmentPoint, customSpec)
+        val customSig = keyManager.sign(customRemoteCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
+        CustomRemoteSig(customFeerate, customSig)
+      }
+    } else Nil
+  }
+
   def sendCommit(commitments: Commitments, keyManager: KeyManager)(implicit log: LoggingAdapter): Try[(Commitments, CommitSig)] = {
     import commitments._
     commitments.remoteNextCommitInfo match {
@@ -484,11 +501,14 @@ object Commitments {
         log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.collect(outgoing).map(_.id).mkString(","), spec.htlcs.collect(incoming).map(_.id).mkString(","), remoteCommitTx.tx)
         Metrics.recordHtlcsInFlight(spec, remoteCommit.spec)
 
+        val customRemoteSigs = computeCustomRemoteSigs(commitments, keyManager, remoteCommit.index + 1, spec, remoteNextPerCommitmentPoint)
+
         // don't sign if they don't get paid
         val commitSig = CommitSig(
           channelId = commitments.channelId,
           signature = sig,
-          htlcSignatures = htlcSigs.toList
+          htlcSignatures = htlcSigs.toList,
+          customRemoteSigs = Some(customRemoteSigs.toList)
         )
 
         val commitments1 = commitments.copy(
