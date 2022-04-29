@@ -269,6 +269,9 @@ object ChannelCodecs extends Logging {
       ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
       ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+      // We don't persist the custom remote commit and will forget everything about it on restart, but that's not an
+      // issue because we will re-create it automatically because we will watch the funding output being spent. And
+      // we don't have anything to claim on our side anyway, thanks to static_remotekey.
       ("customRemoteCommitPublished" | provide(Map.empty[RemoteCommit, RemoteCommitPublished])) ::
       ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]

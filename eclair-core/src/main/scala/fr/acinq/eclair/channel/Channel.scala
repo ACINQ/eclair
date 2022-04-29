@@ -234,7 +234,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               closing.localCommitPublished.foreach(doPublish)
               closing.remoteCommitPublished.foreach(doPublish)
               closing.nextRemoteCommitPublished.foreach(doPublish)
-              closing.customRemoteCommitPublished.values.foreach(doPublish)
+              closing.customRemoteCommitPublished.values.foreach(doPublish) // here for consistency, won't be used since we are not persisting the customRemoteCommitPublished field
               closing.revokedCommitPublished.foreach(doPublish)
               closing.futureRemoteCommitPublished.foreach(doPublish)
 
@@ -2229,7 +2229,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   def handleRemoteSpentCustom(commitTx: Transaction, d: HasCommitments, customRemoteCommit: RemoteCommit) = {
-    log.warning(s"they published a custom commitment with feerate={} sat/kw ({} sat/B), uin txid=${commitTx.txid}", customRemoteCommit.spec.feeratePerKw, feerateKw2Byte(customRemoteCommit.spec.feeratePerKw))
+    log.warning(s"they published a custom commitment with feerate={} sat/kw ({} sat/byte) in txid=${commitTx.txid}", customRemoteCommit.spec.feeratePerKw, feerateKw2Byte(customRemoteCommit.spec.feeratePerKw))
     require(commitTx.txid == customRemoteCommit.txid, "txid mismatch")
 
     val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, customRemoteCommit, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
