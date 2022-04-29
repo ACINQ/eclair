@@ -466,7 +466,7 @@ object Commitments {
 
   def revocationHash(seed: ByteVector32, index: Long): ByteVector32 = Crypto.sha256(revocationPreimage(seed, index))
 
-  /** /!\ WARNING : never remove a feerate from the list, because we will only try thosecan only add more */
+  /** /!\ WARNING : never remove a feerate from the list, we can only add more, otherwise we will not be able to detect when our peer broadcasts the commit tx at the removed feerate. */
   val customRemoteSigsFeerates: Seq[Long] = List(1 sat, 2 sat, 5 sat, 10 sat).map(satPerByte => feerateByte2Kw(satPerByte.toLong))
 
   def computeCustomRemoteSigs(commitments: Commitments, keyManager: KeyManager, remoteCommitIndex: Long, spec: CommitmentSpec, remotePerCommitmentPoint: PublicKey): Seq[CustomRemoteSig] = {
