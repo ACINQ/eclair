@@ -92,32 +92,37 @@ object IncomingPaymentPacket {
       case Right(DecodedOnionPacket(payload: PaymentOnion.ChannelRelayPayload, next)) =>
         payload match {
           case payload: PaymentOnion.BlindedChannelRelayPayload =>
-            payload.blinding_opt.orElse(add.blinding_opt) match {
-              case Some(blinding) =>
-                RouteBlindingEncryptedDataCodecs.decode(privateKey, blinding, payload.encryptedRecipientData, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec) match {
-                  case Failure(_) =>
-                    // There are two possibilities in this case:
-                    //  - the blinding point is invalid: the sender or the previous node is buggy or malicious
-                    //  - the encrypted data is invalid: the recipient is buggy or malicious
-                    // TODO: return an unparseable error
-                    Left(InvalidOnionPayload(UInt64(12), 0))
-                  case Success((relayData, nextBlinding)) =>
-                    if (isValidBlindedPayment(relayData, add.amountMsat, add.cltvExpiry, Features.empty)) {
-                      // TODO: If we build routes with several copies of our node at the end to hide the true length of the
-                      // route, then we should add some code here to continue decrypting onions until we reach the final packet.
-                      Right(ChannelRelayPacket(add, PaymentOnion.BlindedChannelRelayData(relayData, add.amountMsat, add.cltvExpiry), next, Some(nextBlinding)))
-                    } else {
-                      // The sender is buggy or malicious, probably trying to probe the blinded route.
+            if (add.blinding_opt.isDefined && payload.blinding_opt.isDefined) {
+              Left(InvalidOnionPayload(UInt64(12), 0))
+            } else {
+              add.blinding_opt.orElse(payload.blinding_opt) match {
+                case Some(blinding) =>
+                  RouteBlindingEncryptedDataCodecs.decode(privateKey, blinding, payload.encryptedRecipientData, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec) match {
+                    case Failure(_) =>
+                      // There are two possibilities in this case:
+                      //  - the blinding point is invalid: the sender or the previous node is buggy or malicious
+                      //  - the encrypted data is invalid: the recipient is buggy or malicious
                       // TODO: return an unparseable error
                       Left(InvalidOnionPayload(UInt64(12), 0))
-                    }
-                }
-              case None =>
-                // The sender is trying to use route blinding, but we didn't receive the blinding point used to derive
-                // the decryption key. The sender or the previous peer is buggy or malicious.
-                // TODO: return an unparseable error
-                Left(InvalidOnionPayload(UInt64(12), 0))
+                    case Success((relayData, nextBlinding)) =>
+                      if (isValidBlindedPayment(relayData, add.amountMsat, add.cltvExpiry, Features.empty)) {
+                        // TODO: If we build routes with several copies of our node at the end to hide the true length of the
+                        // route, then we should add some code here to continue decrypting onions until we reach the final packet.
+                        Right(ChannelRelayPacket(add, PaymentOnion.BlindedChannelRelayData(relayData, add.amountMsat, add.cltvExpiry), next, Some(nextBlinding)))
+                      } else {
+                        // The sender is buggy or malicious, probably trying to probe the blinded route.
+                        // TODO: return an unparseable error
+                        Left(InvalidOnionPayload(UInt64(12), 0))
+                      }
+                  }
+                case None =>
+                  // The sender is trying to use route blinding, but we didn't receive the blinding point used to derive
+                  // the decryption key. The sender or the previous peer is buggy or malicious.
+                  // TODO: return an unparseable error
+                  Left(InvalidOnionPayload(UInt64(12), 0))
+              }
             }
+          case _ if add.blinding_opt.isDefined => Left(InvalidOnionPayload(UInt64(12), 0))
           // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
           case payload: PaymentOnion.RelayLegacyPayload => Right(ChannelRelayPacket(add, payload, next, None))
           case payload: PaymentOnion.ChannelRelayTlvPayload => Right(ChannelRelayPacket(add, payload, next, None))

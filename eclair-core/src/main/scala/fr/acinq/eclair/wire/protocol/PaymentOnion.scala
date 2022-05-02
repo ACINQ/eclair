@@ -424,7 +424,7 @@ object PaymentOnionCodecs {
       case Some(_) => Attempt.successful(BlindedChannelRelayPayload(tlvs))
       case None if tlvs.get[AmountToForward].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(2)))
       case None if tlvs.get[OutgoingCltv].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-      case None if tlvs.get[OutgoingNodeId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(6)))
+      case None if tlvs.get[OutgoingChannelId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(6)))
       case None => Attempt.successful(ChannelRelayTlvPayload(tlvs))
     }
     case Right(legacy) => Attempt.successful(legacy)

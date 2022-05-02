@@ -16,8 +16,8 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
 
   test("decode route blinding data (reference test vector)") {
     val payloads = Map[ByteVector, BlindedRouteData.Data](
-      hex"0208000000000000002a 0a0a000003e80000012c00de 3903123456" -> PaymentRelayData(TlvStream(Seq(OutgoingChannelId(ShortChannelId(42)), PaymentRelay(1000 msat, 300, CltvExpiryDelta(222))), Seq(GenericTlv(UInt64(57), hex"123456")))),
-      hex"011900000000000000000000000000000000000000000000000000 02080000000000000231 0a0a00000384000000c8007b 3b00 fdffff0206c1" -> PaymentRelayData(TlvStream(Seq(Padding(hex"00000000000000000000000000000000000000000000000000"), OutgoingChannelId(ShortChannelId(561)), PaymentRelay(900 msat, 200, CltvExpiryDelta(123))), Seq(GenericTlv(UInt64(59), hex""), GenericTlv(UInt64(65535), hex"06c1")))),
+      hex"0208000000000000002a 0a0a000003e80000012c00de 0c0c000badf8000000000007a120 3903123456" -> PaymentRelayData(TlvStream(Seq(OutgoingChannelId(ShortChannelId(42)), PaymentRelay(1000 msat, 300, CltvExpiryDelta(222)), PaymentConstraints(CltvExpiry(765432), 500000 msat, Features.empty)), Seq(GenericTlv(UInt64(57), hex"123456")))),
+      hex"011900000000000000000000000000000000000000000000000000 02080000000000000231 0a0a00000384000000c8007b 0c0c000badf9000000000098999e 3b00 fdffff0206c1" -> PaymentRelayData(TlvStream(Seq(Padding(hex"00000000000000000000000000000000000000000000000000"), OutgoingChannelId(ShortChannelId(561)), PaymentRelay(900 msat, 200, CltvExpiryDelta(123)), PaymentConstraints(CltvExpiry(765433), 10000798 msat, Features.empty)), Seq(GenericTlv(UInt64(59), hex""), GenericTlv(UInt64(65535), hex"06c1")))),
       hex"02080000000000000451 0a0a00000000000003e8002a 0c0c000c0a830000000000002710" -> PaymentRelayData(TlvStream(OutgoingChannelId(ShortChannelId(1105)), PaymentRelay(0 msat, 1000, CltvExpiryDelta(42)), PaymentConstraints(CltvExpiry(789123), 10000 msat, Features.empty))),
       hex"01080000000000000000 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145" -> MessageRelayData(TlvStream(Padding(hex"0000000000000000"), OutgoingNodeId(PublicKey(hex"02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145")))),
       hex"0109000000000000000000 06204242424242424242424242424242424242424242424242424242424242424242" -> MessageRecipientData(TlvStream(Padding(hex"000000000000000000"), PathId(hex"4242424242424242424242424242424242424242424242424242424242424242"))),
@@ -49,11 +49,11 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
     val sessionKey = randomKey()
     val nodePrivKeys = Seq(randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
     val payloads = Seq[(BlindedRouteData.Data, ByteVector)](
-      (PaymentRelayData(TlvStream(Padding(hex"000000"), OutgoingChannelId(ShortChannelId(561)), PaymentRelay(1000 msat, 300, CltvExpiryDelta(222)))), hex"0103000000 02080000000000000231 0a0a000003e80000012c00de"),
+      (PaymentRelayData(TlvStream(Padding(hex"000000"), OutgoingChannelId(ShortChannelId(561)), PaymentRelay(1000 msat, 300, CltvExpiryDelta(222)), PaymentConstraints(CltvExpiry(734582), 60000074 msat, Features.empty))), hex"0103000000 02080000000000000231 0a0a000003e80000012c00de 0c0c000b3576000000000393874a"),
       (MessageRelayData(TlvStream(OutgoingNodeId(PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")))), hex"0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"),
       (MessageRelayData(TlvStream(OutgoingNodeId(PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")), NextBlinding(PublicKey(hex"027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461")))), hex"0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486 0821027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461"),
       (MessageRecipientData(TlvStream(PathId(hex"0101010101010101010101010101010101010101010101010101010101010101"))), hex"06200101010101010101010101010101010101010101010101010101010101010101"),
-      (PaymentRelayData(TlvStream(Seq(OutgoingChannelId(ShortChannelId(42)), PaymentRelay(900 msat, 200, CltvExpiryDelta(123))), Seq(GenericTlv(UInt64(65535), hex"06c1")))), hex"0208000000000000002a 0a0a00000384000000c8007b fdffff0206c1"),
+      (PaymentRelayData(TlvStream(Seq(OutgoingChannelId(ShortChannelId(42)), PaymentRelay(900 msat, 200, CltvExpiryDelta(123)), PaymentConstraints(CltvExpiry(734576), 756001234 msat, Features.empty)), Seq(GenericTlv(UInt64(65535), hex"06c1")))), hex"0208000000000000002a 0a0a00000384000000c8007b 0c0c000b3570000000002d0fa9d2 fdffff0206c1"),
     )
 
     val blindedRoute = Sphinx.RouteBlinding.create(sessionKey, nodePrivKeys.map(_.publicKey), payloads.map(_._2))
@@ -68,19 +68,18 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
 
   test("decode invalid encrypted route blinding data for payments") {
     val testCases = Seq(
-      hex"0a0a00000000000003e8002a", // missing channel id
-      hex"02080000000000000231", // missing payment relay data
-      hex"02080000000000000231 0a0a00000000000003e8002a ff", // additional trailing bytes after tlv stream
-      hex"01040000 02080000000000000231 0a0a00000000000003e8002a", // invalid padding tlv
-      hex"02080000000000000231 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145 0a0a00000000000003e8002a", // next node id is not valid for payments
-      hex"02080000000000000231 0a0a00000000000003e8002a 0c20025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce14", // invalid next blinding length
-      hex"0a0a00000000000003e8002a 02080000000000000231 0103000000", // invalid tlv stream ordering
-      hex"02080000000000000231 0a0a00000000000003e8002a 10080000000000000231", // unknown even tlv field
+      hex"0a0a00000000000003e8002a 0c0c000b3570000000002d0fa9d2", // missing channel id
+      hex"02080000000000000231 0c0c000b3570000000002d0fa9d2", // missing payment relay data
+      hex"02080000000000000231 0a0a00000000000003e8002a 0c0c000b3570000000002d0fa9d2 ff", // additional trailing bytes after tlv stream
+      hex"01040000 02080000000000000231 0a0a00000000000003e8002a 0c0c000b3570000000002d0fa9d2", // invalid padding tlv
+      hex"02080000000000000231 0a0a00000000000003e8002a 0820025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce14 0c0c000b3570000000002d0fa9d2", // invalid next blinding length
+      hex"0a0a00000000000003e8002a 02080000000000000231 0103000000 0c0c000b3570000000002d0fa9d2", // invalid tlv stream ordering
+      hex"02080000000000000231 0a0a00000000000003e8002a 0c0c000b3570000000002d0fa9d2 10080000000000000231", // unknown even tlv field
     )
 
     for (testCase <- testCases) {
       val nodePrivKeys = Seq(randomKey(), randomKey())
-      val payloads = Seq(hex"02080000000000000231 0a0a00000000000003e8002a", testCase)
+      val payloads = Seq(hex"02080000000000000231 0a0a00000000000003e8002a 0c0c000b3570000000002d0fa9d2", testCase)
       val blindingPrivKey = randomKey()
       val blindedRoute = Sphinx.RouteBlinding.create(blindingPrivKey, nodePrivKeys.map(_.publicKey), payloads)
       // The payload for the first node is valid.
@@ -100,8 +99,7 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
       hex"", // missing next node id
       hex"042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145 ff", // additional trailing bytes after tlv stream
       hex"01040000 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145", // invalid padding tlv
-      hex"02080000000000000231 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145", // channel id is not valid for payments
-      hex"042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145 0c20025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce14", // invalid next blinding length
+      hex"042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145 0820025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce14", // invalid next blinding length
       hex"042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145 0103000000", // invalid tlv stream ordering
       hex"042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145 10080000000000000231", // unknown even tlv field
     )
