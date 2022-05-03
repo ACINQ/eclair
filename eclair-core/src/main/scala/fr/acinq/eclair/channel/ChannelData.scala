@@ -20,10 +20,11 @@ import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.InteractiveTx.{InteractiveTxParams, InteractiveTxSession}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, InteractiveTxMessage, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -59,6 +60,8 @@ case object WAIT_FOR_FUNDING_LOCKED extends ChannelState
 case object WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_INTERNAL extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_CREATED extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_SIGNED extends ChannelState
 // Channel opened:
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
@@ -445,7 +448,32 @@ final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANN
 final case class DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL(channelId: ByteVector32,
                                                      localParams: LocalParams,
                                                      remoteParams: RemoteParams,
-                                                     channelFeatures: ChannelFeatures) extends TransientChannelData
+                                                     fundingParams: InteractiveTxParams,
+                                                     commitTxFeerate: FeeratePerKw,
+                                                     remoteFirstPerCommitmentPoint: PublicKey,
+                                                     channelFlags: ChannelFlags,
+                                                     channelConfig: ChannelConfig,
+                                                     channelFeatures: ChannelFeatures,
+                                                     remoteMessage: Option[InteractiveTxMessage]) extends TransientChannelData
+final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
+                                                    localParams: LocalParams,
+                                                    remoteParams: RemoteParams,
+                                                    fundingParams: InteractiveTxParams,
+                                                    txSession: InteractiveTxSession,
+                                                    commitTxFeerate: FeeratePerKw,
+                                                    remoteFirstPerCommitmentPoint: PublicKey,
+                                                    channelFlags: ChannelFlags,
+                                                    channelConfig: ChannelConfig,
+                                                    channelFeatures: ChannelFeatures) extends TransientChannelData
+final case class DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelId: ByteVector32,
+                                                   localParams: LocalParams,
+                                                   remoteParams: RemoteParams,
+                                                   fundingParams: InteractiveTxParams,
+                                                   commitTxFeerate: FeeratePerKw,
+                                                   remoteFirstPerCommitmentPoint: PublicKey,
+                                                   channelFlags: ChannelFlags,
+                                                   channelConfig: ChannelConfig,
+                                                   channelFeatures: ChannelFeatures) extends TransientChannelData
 
 final case class DATA_NORMAL(commitments: Commitments,
                              shortChannelId: ShortChannelId,

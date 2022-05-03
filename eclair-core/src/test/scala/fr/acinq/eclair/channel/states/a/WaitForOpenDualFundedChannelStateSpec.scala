@@ -77,8 +77,8 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     assert(channelIdAssigned.temporaryChannelId === ByteVector32.Zeroes)
     assert(channelIdAssigned.channelId === Helpers.computeChannelId(open, accept))
 
-    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_INTERNAL)
-    val channelFeatures = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL].channelFeatures
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
+    val channelFeatures = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CREATED].channelFeatures
     assert(channelFeatures.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
     assert(channelFeatures.hasFeature(Features.DualFunding))
   }

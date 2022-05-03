@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.ClosingTx
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, LightningMessage, OpenChannel}
 
 import java.sql.SQLException
 
@@ -63,6 +63,12 @@ trait ErrorHandlers extends CommonHandlers {
     val fee = if (isInitiator) closingTx.fee else 0.sat
     txPublisher ! PublishFinalTx(closingTx, fee, None)
     blockchain ! WatchTxConfirmed(self, closingTx.tx.txid, nodeParams.channelConf.minDepthBlocks)
+  }
+
+  def handleInteractiveTxError(sharedTx: Transaction, cause: Throwable, d: ChannelData, msg_opt: Option[LightningMessage]) = {
+    wallet.rollback(sharedTx)
+    channelOpenReplyToUser(Left(LocalError(cause)))
+    handleLocalError(cause, d, msg_opt)
   }
 
   def handleLocalError(cause: Throwable, d: ChannelData, msg: Option[Any]) = {

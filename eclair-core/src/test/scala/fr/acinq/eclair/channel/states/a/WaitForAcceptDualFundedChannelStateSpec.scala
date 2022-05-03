@@ -69,7 +69,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     assert(listener.expectMsgType[ChannelIdAssigned].channelId === Helpers.computeChannelId(open, accept))
 
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_INTERNAL)
-    val channelFeatures = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL].channelFeatures
+    val channelFeatures = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL].channelFeatures
     assert(channelFeatures.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
     assert(channelFeatures.hasFeature(Features.DualFunding))
     aliceOrigin.expectNoMessage()
