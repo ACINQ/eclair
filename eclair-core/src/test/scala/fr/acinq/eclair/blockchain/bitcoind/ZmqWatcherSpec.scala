@@ -22,6 +22,7 @@ import akka.actor.{ActorRef, Props, typed}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.eclair.TestUtils.realScid
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -108,8 +109,8 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
     val w1 = WatchFundingSpent(TestProbe().ref, txid, outputIndex, hints = Set.empty)
     val w2 = WatchFundingSpent(TestProbe().ref, txid, outputIndex, hints = Set.empty)
-    val w3 = WatchExternalChannelSpent(TestProbe().ref, txid, outputIndex, ShortChannelId(1))
-    val w4 = WatchExternalChannelSpent(TestProbe().ref, randomBytes32(), 5, ShortChannelId(1))
+    val w3 = WatchExternalChannelSpent(TestProbe().ref, txid, outputIndex, realScid(1))
+    val w4 = WatchExternalChannelSpent(TestProbe().ref, randomBytes32(), 5, realScid(1))
     val w5 = WatchFundingConfirmed(TestProbe().ref, txid, 3)
 
     // we test as if the collection was immutable
@@ -210,7 +211,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       val (tx1, tx2) = createUnspentTxChain(tx, priv)
 
       val listener = TestProbe()
-      watcher ! WatchExternalChannelSpent(listener.ref, tx.txid, outputIndex, ShortChannelId(5))
+      watcher ! WatchExternalChannelSpent(listener.ref, tx.txid, outputIndex, realScid(5))
       watcher ! WatchFundingSpent(listener.ref, tx.txid, outputIndex, Set.empty)
       listener.expectNoMessage(1 second)
 
@@ -221,7 +222,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.expectMsg(tx1.txid)
       // tx and tx1 aren't confirmed yet, but we trigger the WatchEventSpent when we see tx1 in the mempool.
       listener.expectMsgAllOf(
-        WatchExternalChannelSpentTriggered(ShortChannelId(5)),
+        WatchExternalChannelSpentTriggered(realScid(5)),
         WatchFundingSpentTriggered(tx1)
       )
       // Let's confirm tx and tx1: seeing tx1 in a block should trigger WatchEventSpent again, but not WatchEventSpentBasic
@@ -267,8 +268,8 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       listener.expectMsg(WatchOutputSpentTriggered(tx1))
       watcher ! StopWatching(listener.ref)
 
-      watcher ! WatchExternalChannelSpent(listener.ref, tx1.txid, 0, ShortChannelId(1))
-      listener.expectMsg(WatchExternalChannelSpentTriggered(ShortChannelId(1)))
+      watcher ! WatchExternalChannelSpent(listener.ref, tx1.txid, 0, realScid(1))
+      listener.expectMsg(WatchExternalChannelSpentTriggered(realScid(1)))
       watcher ! WatchFundingSpent(listener.ref, tx1.txid, 0, Set.empty)
       listener.expectMsg(WatchFundingSpentTriggered(tx2))
     })

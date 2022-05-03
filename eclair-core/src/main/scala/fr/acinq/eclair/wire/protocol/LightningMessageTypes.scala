@@ -20,9 +20,11 @@ import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, ScriptWitness, Transaction}
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
@@ -227,7 +229,9 @@ case class FundingSigned(channelId: ByteVector32,
 
 case class ChannelReady(channelId: ByteVector32,
                          nextPerCommitmentPoint: PublicKey,
-                         tlvStream: TlvStream[ChannelReadyTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
+                         tlvStream: TlvStream[ChannelReadyTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val alias_opt: Option[ShortChannelId] = tlvStream.get[ShortChannelIdTlv].map(_.alias)
+}
 
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector,
@@ -279,7 +283,7 @@ case class UpdateFee(channelId: ByteVector32,
                      tlvStream: TlvStream[UpdateFeeTlv] = TlvStream.empty) extends ChannelMessage with UpdateMessage with HasChannelId
 
 case class AnnouncementSignatures(channelId: ByteVector32,
-                                  shortChannelId: ShortChannelId,
+                                  shortChannelId: RealShortChannelId,
                                   nodeSignature: ByteVector64,
                                   bitcoinSignature: ByteVector64,
                                   tlvStream: TlvStream[AnnouncementSignaturesTlv] = TlvStream.empty) extends RoutingMessage with HasChannelId
@@ -290,7 +294,7 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                bitcoinSignature2: ByteVector64,
                                features: Features[Feature],
                                chainHash: ByteVector32,
-                               shortChannelId: ShortChannelId,
+                               shortChannelId: RealShortChannelId,
                                nodeId1: PublicKey,
                                nodeId2: PublicKey,
                                bitcoinKey1: PublicKey,
@@ -394,7 +398,7 @@ object EncodingType {
 }
 // @formatter:on
 
-case class EncodedShortChannelIds(encoding: EncodingType, array: List[ShortChannelId]) {
+case class EncodedShortChannelIds(encoding: EncodingType, array: List[RealShortChannelId]) {
   /** custom toString because it can get huge in logs */
   override def toString: String = s"EncodedShortChannelIds($encoding,${array.headOption.getOrElse("")}->${array.lastOption.getOrElse("")} size=${array.size})"
 }

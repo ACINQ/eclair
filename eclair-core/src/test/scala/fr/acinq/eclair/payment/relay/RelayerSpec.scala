@@ -78,7 +78,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(sender.expectMessageType[Relayer.OutgoingChannels].channels.isEmpty)
 
     // We publish a channel update, that should be picked up by the channel relayer
-    system.eventStream ! EventStream.Publish(LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc)))
+    system.eventStream ! EventStream.Publish(LocalChannelUpdate(null, channelId_bc, Some(channelUpdate_bc.shortChannelId.toReal), null, c, None, channelUpdate_bc, makeCommitments(channelId_bc)))
     eventually(PatienceConfiguration.Timeout(30 seconds), PatienceConfiguration.Interval(1 second)) {
       childActors.channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
       val channels = sender.expectMessageType[Relayer.OutgoingChannels].channels

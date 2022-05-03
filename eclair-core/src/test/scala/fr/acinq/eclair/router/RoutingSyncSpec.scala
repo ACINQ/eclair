@@ -22,6 +22,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestUtils.realScid
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
@@ -35,7 +36,7 @@ import fr.acinq.eclair.wire.protocol._
 import org.scalatest.ParallelTestExecution
 import org.scalatest.funsuite.AnyFunSuiteLike
 
-import scala.collection.immutable.{TreeMap, SortedSet}
+import scala.collection.immutable.{SortedSet, TreeMap}
 import scala.collection.mutable
 import scala.concurrent.duration._
 
@@ -45,11 +46,11 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   // this map will store private keys so that we can sign new announcements at will
   val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
-  val fakeRoutingInfo: TreeMap[ShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)] = RoutingSyncSpec
+  val fakeRoutingInfo: TreeMap[RealShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)] = RoutingSyncSpec
     .shortChannelIds
     .take(60)
-    .foldLeft(TreeMap.empty[ShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)]) {
-      case (m, shortChannelId) => m + (shortChannelId -> makeFakeRoutingInfo(pub2priv)(shortChannelId))
+    .foldLeft(TreeMap.empty[RealShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)]) {
+      case (m, shortChannelId) => m + (shortChannelId.toReal -> makeFakeRoutingInfo(pub2priv)(shortChannelId))
     }
 
   class YesWatcher extends Actor {
@@ -127,7 +128,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     SyncResult(rcrs, queries, channels, updates, nodes)
   }
 
-  def countUpdates(channels: Map[ShortChannelId, PublicChannel]): Int = channels.values.foldLeft(0) {
+  def countUpdates(channels: Map[RealShortChannelId, PublicChannel]): Int = channels.values.foldLeft(0) {
     case (count, pc) => count + pc.update_1_opt.map(_ => 1).getOrElse(0) + pc.update_2_opt.map(_ => 1).getOrElse(0)
   }
 
@@ -310,7 +311,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   test("sync progress") {
 
-    def req = QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42))), TlvStream.empty)
+    def req = QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(42))), TlvStream.empty)
 
     val nodeIdA = randomKey().publicKey
     val nodeIdB = randomKey().publicKey
@@ -349,7 +350,7 @@ object RoutingSyncSpec {
     val priv_funding2 = unused
     pub2priv += (priv1.publicKey -> priv1)
     pub2priv += (priv2.publicKey -> priv2)
-    val channelAnn_12 = channelAnnouncement(shortChannelId, priv1, priv2, priv_funding1, priv_funding2)
+    val channelAnn_12 = channelAnnouncement(shortChannelId.toReal, priv1, priv2, priv_funding1, priv_funding2)
     val channelUpdate_12 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv1, priv2.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), 0 msat, feeBaseMsat = 766000 msat, feeProportionalMillionths = 10, 500000000L msat, timestamp = timestamp)
     val channelUpdate_21 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, priv1.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), 0 msat, feeBaseMsat = 766000 msat, feeProportionalMillionths = 10, 500000000L msat, timestamp = timestamp)
     val nodeAnnouncement_1 = makeNodeAnnouncement(priv1, "a", Color(0, 0, 0), List(), TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures())

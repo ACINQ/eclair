@@ -23,6 +23,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Router._
@@ -110,7 +111,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipDropped(ann).increment()
                   d
-                case u: ChannelUpdate if d.channels.contains(u.shortChannelId) && d.channels(u.shortChannelId).getChannelUpdateSameSideAs(u).contains(u) =>
+                case u: ChannelUpdate if d.channels.get(u.shortChannelId.toReal).exists(_.getChannelUpdateSameSideAs(u).contains(u)) =>
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipDropped(ann).increment()
                   d
@@ -213,7 +214,7 @@ object FrontRouter {
   // @formatter:on
 
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[ShortChannelId, PublicChannel],
+                  channels: SortedMap[RealShortChannelId, PublicChannel],
                   processing: Map[AnnouncementMessage, Set[RemoteGossip]],
                   accepted: Map[AnnouncementMessage, Set[RemoteGossip]],
                   rebroadcast: Rebroadcast)
@@ -263,7 +264,7 @@ object FrontRouter {
 
       case ChannelsDiscovered(channels) =>
         log.debug("adding {} channels", channels.size)
-        val channels1 = channels.foldLeft(SortedMap.empty[ShortChannelId, PublicChannel]) {
+        val channels1 = channels.foldLeft(SortedMap.empty[RealShortChannelId, PublicChannel]) {
           case (channels, sc) => channels + (sc.ann.shortChannelId -> PublicChannel(sc.ann, ByteVector32.Zeroes, sc.capacity, sc.u1_opt, sc.u2_opt, None))
         }
         val d1 = d.copy(channels = d.channels ++ channels1)
@@ -280,7 +281,7 @@ object FrontRouter {
       case ChannelUpdatesReceived(updates) =>
         log.debug("adding/updating {} channel_updates", updates.size)
         val channels1 = updates.foldLeft(d.channels) {
-          case (channels, u) => channels.get(u.shortChannelId) match {
+          case (channels, u) => channels.get(u.shortChannelId.toReal) match {
             case Some(c) => channels + (c.ann.shortChannelId -> c.updateChannelUpdateSameSideAs(u))
             case None => channels
           }
@@ -309,7 +310,7 @@ object FrontRouter {
       case n: NodeAnnouncement => d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins))
       case c: ChannelAnnouncement => d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> origins))
       case u: ChannelUpdate =>
-        if (d.channels.contains(u.shortChannelId)) {
+        if (d.channels.contains(u.shortChannelId.toReal)) {
           d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins))
         } else {
           d.rebroadcast // private channel, we don't rebroadcast the channel_update

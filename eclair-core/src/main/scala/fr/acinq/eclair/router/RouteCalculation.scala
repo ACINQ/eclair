@@ -71,8 +71,8 @@ object RouteCalculation {
                   case _ => None
                 }
                 case Some(c: PrivateChannel) => currentNode match {
-                  case c.nodeId1 => Some(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
-                  case c.nodeId2 => Some(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+                  case c.nodeId1 => Some(ChannelDesc(c.localAlias, c.nodeId1, c.nodeId2))
+                  case c.nodeId2 => Some(ChannelDesc(c.localAlias, c.nodeId2, c.nodeId1))
                   case _ => None
                 }
                 case None => assistedChannels.get(shortChannelId).flatMap(c => currentNode match {

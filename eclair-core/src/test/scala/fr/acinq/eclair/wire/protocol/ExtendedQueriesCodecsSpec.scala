@@ -17,6 +17,8 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64}
+import fr.acinq.eclair.RealShortChannelId
+import fr.acinq.eclair.TestUtils.realScid
 import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
@@ -29,7 +31,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
   test("encode a list of short channel ids") {
     {
       // encode/decode with encoding 'uncompressed'
-      val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
+      val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676)))
       val encoded = encodedShortChannelIdsCodec.encode(ids).require
       val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
       assert(decoded == ids)
@@ -37,7 +39,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
     {
       // encode/decode with encoding 'zlib'
-      val ids = EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
+      val ids = EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(realScid(142), realScid(15465), realScid(4564676)))
       val encoded = encodedShortChannelIdsCodec.encode(ids).require
       val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
       assert(decoded == ids)
@@ -65,7 +67,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
   test("encode query_short_channel_ids (no optional data)") {
     val query_short_channel_id = QueryShortChannelIds(
       Block.RegtestGenesisBlock.blockId,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))),
       TlvStream.empty)
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
@@ -76,7 +78,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
   test("encode query_short_channel_ids (with optional data)") {
     val query_short_channel_id = QueryShortChannelIds(
       Block.RegtestGenesisBlock.blockId,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))),
       TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte))))
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
@@ -87,7 +89,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
   test("encode query_short_channel_ids (with optional data including unknown data)") {
     val query_short_channel_id = QueryShortChannelIds(
       Block.RegtestGenesisBlock.blockId,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))),
       TlvStream(
         QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte)) :: Nil,
         GenericTlv(UInt64(43), ByteVector.fromValidHex("deadbeef")) :: Nil
@@ -104,7 +106,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       Block.RegtestGenesisBlock.blockId,
       BlockHeight(1), 100,
       1.toByte,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))),
       None, None)
 
     val encoded = replyChannelRangeCodec.encode(replyChannelRange).require
@@ -117,7 +119,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       Block.RegtestGenesisBlock.blockId,
       BlockHeight(1), 100,
       1.toByte,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))),
       Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec)))),
       None)
 
@@ -131,7 +133,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       Block.RegtestGenesisBlock.blockId,
       BlockHeight(1), 100,
       1.toByte,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))),
       TlvStream(
         List(
           EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))),

@@ -160,7 +160,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     assert(decoded1.asInstanceOf[DATA_NORMAL].closingFeerates == None)
     val newBin = channelDataCodec.encode(decoded1).require.bytes
     // make sure that encoding used the new codec
-    assert(newBin.startsWith(hex"0007"))
+    assert(newBin.startsWith(hex"0009"))
     val decoded2 = channelDataCodec.decode(newBin.bits).require.value
     assert(decoded1 == decoded2)
   }

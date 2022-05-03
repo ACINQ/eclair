@@ -110,7 +110,9 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(listener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     awaitCond(alice.stateName == WAIT_FOR_CHANNEL_READY)
     alice2blockchain.expectMsgType[WatchFundingLost]
-    alice2bob.expectMsgType[ChannelReady]
+    val channelReady = alice2bob.expectMsgType[ChannelReady]
+    // we always send an alias
+    assert(channelReady.alias_opt.isDefined)
   }
 
   test("recv WatchFundingConfirmedTriggered (bad funding pubkey script)") { f =>

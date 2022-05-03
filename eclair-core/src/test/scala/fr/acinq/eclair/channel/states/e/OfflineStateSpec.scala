@@ -755,11 +755,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectNoMessage()
     bob2alice.expectNoMessage()
 
-    // funding tx gets 6 confirmations, channel is private so there is no announcement sigs
+    // funding tx gets 6 confirmations
     alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[ChannelUpdate]
+    // channel is private so there is no announcement sigs
+    // we use aliases so there is no need to resend a channel_update
 
     // we get disconnected again
     disconnect(alice, bob)

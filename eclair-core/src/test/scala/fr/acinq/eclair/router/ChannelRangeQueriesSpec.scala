@@ -17,6 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong}
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.QueryFlags
@@ -130,8 +131,8 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     assert(computeFlag(channels)(ef.shortChannelId, None, None, includeNodeAnnouncements = true) == (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
   }
 
-  def makeShortChannelIds(height: BlockHeight, count: Int): List[ShortChannelId] = {
-    val output = ArrayBuffer.empty[ShortChannelId]
+  def makeShortChannelIds(height: BlockHeight, count: Int): List[RealShortChannelId] = {
+    val output = ArrayBuffer.empty[RealShortChannelId]
     var txIndex = 0
     var outputIndex = 0
     while (output.size < count) {
@@ -141,7 +142,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       } else {
         outputIndex = outputIndex + 1
       }
-      output += ShortChannelId(height, txIndex, outputIndex)
+      output += ShortChannelId(height, txIndex, outputIndex).toReal
     }
     output.toList
   }
@@ -152,7 +153,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
 
   // check that chunks contain exactly the ids they were built from are are consistent i.e each chunk covers a range that immediately follows
   // the previous one even if there are gaps in block heights
-  def validate(ids: SortedSet[ShortChannelId], firstBlock: BlockHeight, numberOfBlocks: Long, chunks: List[ShortChannelIdsChunk]): Unit = {
+  def validate(ids: SortedSet[RealShortChannelId], firstBlock: BlockHeight, numberOfBlocks: Long, chunks: List[ShortChannelIdsChunk]): Unit = {
 
     @tailrec
     def noOverlap(chunks: List[ShortChannelIdsChunk]): Boolean = chunks match {
@@ -189,14 +190,14 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
 
   test("split short channel ids correctly (basic tests") {
 
-    def id(blockHeight: Int, txIndex: Int = 0, outputIndex: Int = 0) = ShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex)
+    def id(blockHeight: Int, txIndex: Int = 0, outputIndex: Int = 0) = ShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex).toReal
 
     // no ids to split
     {
       val ids = Nil
       val firstBlock = BlockHeight(10)
       val numberOfBlocks = 100
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, ids.size)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlock, numberOfBlocks, Nil) :: Nil)
     }
 
@@ -205,7 +206,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlock = BlockHeight(10)
       val numberOfBlocks = 100
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, ids.size)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlock, numberOfBlocks, Nil) :: Nil)
     }
 
@@ -214,7 +215,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlock = BlockHeight(1100)
       val numberOfBlocks = 100
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, ids.size)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlock, numberOfBlocks, Nil) :: Nil)
     }
 
@@ -223,7 +224,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlock = BlockHeight(900)
       val numberOfBlocks = 200
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, ids.size)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlock, numberOfBlocks, ids) :: Nil)
     }
 
@@ -233,7 +234,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = List(id(1000, 0), id(1000, 1), id(1000, 2), id(1000, 3), id(1000, 4), id(1000, 5))
       val firstBlock = BlockHeight(900)
       val numberOfBlocks = 200
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
       assert(chunks == ShortChannelIdsChunk(firstBlock, numberOfBlocks, ids) :: Nil)
     }
 
@@ -242,7 +243,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = List(id(1000), id(1005), id(1012), id(1013), id(1040), id(1050))
       val firstBlock = BlockHeight(900)
       val numberOfBlocks = 200
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
       assert(chunks == List(
         ShortChannelIdsChunk(firstBlock, 100 + 6, List(ids(0), ids(1))),
         ShortChannelIdsChunk(BlockHeight(1006), 8, List(ids(2), ids(3))),
@@ -255,7 +256,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = List(id(1000), id(1005), id(1012), id(1013), id(1040), id(1050))
       val firstBlock = BlockHeight(1001)
       val numberOfBlocks = 200
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
       assert(chunks == List(
         ShortChannelIdsChunk(firstBlock, 12, List(ids(1), ids(2))),
         ShortChannelIdsChunk(BlockHeight(1013), 1040 - 1013 + 1, List(ids(3), ids(4))),
@@ -268,7 +269,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlock = BlockHeight(900)
       val numberOfBlocks = 105
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
       assert(chunks == List(
         ShortChannelIdsChunk(firstBlock, 100 + 2, List(ids(0), ids(1))),
         ShortChannelIdsChunk(BlockHeight(1002), 2, List(ids(2), ids(3))),
@@ -281,7 +282,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlock = BlockHeight(1001)
       val numberOfBlocks = 4
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, 2)
       assert(chunks == List(
         ShortChannelIdsChunk(firstBlock, 2, List(ids(1), ids(2))),
         ShortChannelIdsChunk(BlockHeight(1003), 2, List(ids(3), ids(4)))
@@ -293,13 +294,13 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       val ids = makeShortChannelIds(BlockHeight(1000), 100)
       val firstBlock = BlockHeight(900)
       val numberOfBlocks = 200
-      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlock, numberOfBlocks, 10)
+      val chunks = split(SortedSet.empty[RealShortChannelId] ++ ids, firstBlock, numberOfBlocks, 10)
       assert(chunks == ShortChannelIdsChunk(firstBlock, numberOfBlocks, ids) :: Nil)
     }
   }
 
   test("split short channel ids correctly") {
-    val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(BlockHeight(42), 100) ++ makeShortChannelIds(BlockHeight(43), 70) ++ makeShortChannelIds(BlockHeight(44), 50) ++ makeShortChannelIds(BlockHeight(45), 30) ++ makeShortChannelIds(BlockHeight(50), 120)
+    val ids = SortedSet.empty[RealShortChannelId] ++ makeShortChannelIds(BlockHeight(42), 100) ++ makeShortChannelIds(BlockHeight(43), 70) ++ makeShortChannelIds(BlockHeight(44), 50) ++ makeShortChannelIds(BlockHeight(45), 30) ++ makeShortChannelIds(BlockHeight(50), 120)
     val firstBlock = BlockHeight(0)
     val numberOfBlocks = 1000
 
@@ -311,7 +312,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
   }
 
   test("split short channel ids correctly (comprehensive tests)") {
-    val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(BlockHeight(42), 100) ++ makeShortChannelIds(BlockHeight(43), 70) ++ makeShortChannelIds(BlockHeight(45), 50) ++ makeShortChannelIds(BlockHeight(47), 30) ++ makeShortChannelIds(BlockHeight(50), 120)
+    val ids = SortedSet.empty[RealShortChannelId] ++ makeShortChannelIds(BlockHeight(42), 100) ++ makeShortChannelIds(BlockHeight(43), 70) ++ makeShortChannelIds(BlockHeight(45), 50) ++ makeShortChannelIds(BlockHeight(47), 30) ++ makeShortChannelIds(BlockHeight(50), 120)
     for (firstBlock <- 0 to 60) {
       for (numberOfBlocks <- 1 to 60) {
         for (chunkSize <- 1 :: 2 :: 20 :: 50 :: 100 :: 1000 :: Nil) {
@@ -357,7 +358,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
   }
 
   test("encode maximum size reply_channel_range") {
-    val scids = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => ShortChannelId(i)).toList
+    val scids = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => ShortChannelId(i).toReal).toList
     val timestamps = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => Timestamps(i.unixsec, (i + 1).unixsec)).toList
     val checksums = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => Checksums(i, i + 1)).toList
     val reply = ReplyChannelRange(Block.RegtestGenesisBlock.hash, BlockHeight(0), 100, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, scids), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, timestamps)), Some(EncodedChecksums(checksums)))

@@ -57,4 +57,17 @@ class ShortChannelIdSpec extends AnyFunSuite {
     assert(Try(ShortChannelId("42000x27")).isFailure)
     assert(Try(ShortChannelId("42000x")).isFailure)
   }
+
+  test("scids key space") {
+
+    val alias = ShortChannelId.generateLocalAlias()
+    val realScid = alias.toReal
+    val scid = ShortChannelId(realScid.toLong)
+
+    val m = Map(alias -> "alias", realScid -> "real", scid -> "unknown")
+
+    // all scids are in the same key space
+    assert(m.size == 1)
+
+  }
 }

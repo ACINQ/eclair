@@ -64,7 +64,7 @@ class AnnouncementsBatchValidationSpec extends AnyFunSuite {
     bitcoinClient.validate(announcements(0)).pipeTo(sender.ref)
     sender.expectMsgType[ValidateResult].fundingTx.isRight
 
-    bitcoinClient.validate(announcements(1).copy(shortChannelId = ShortChannelId(Long.MaxValue))).pipeTo(sender.ref) // invalid block height
+    bitcoinClient.validate(announcements(1).copy(shortChannelId = ShortChannelId(Long.MaxValue).toReal)).pipeTo(sender.ref) // invalid block height
     sender.expectMsgType[ValidateResult].fundingTx.isRight
 
     bitcoinClient.validate(announcements(2).copy(shortChannelId = ShortChannelId(BlockHeight(500), 1000, 0))).pipeTo(sender.ref) // invalid tx index

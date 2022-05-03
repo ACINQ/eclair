@@ -194,7 +194,7 @@ object EclairInternalsSerializer {
     .typecase(31, lengthPrefixedNodeAnnouncementCodec.as[NodeUpdated])
     .typecase(32, publicKey.as[NodeLost])
     .typecase(33, iterable(singleChannelDiscoveredCodec).as[ChannelsDiscovered])
-    .typecase(34, shortchannelid.as[ChannelLost])
+    .typecase(34, realshortchannelid.as[ChannelLost])
     .typecase(35, iterable(lengthPrefixedChannelUpdateCodec).as[ChannelUpdatesReceived])
     .typecase(36, double.as[SyncProgress])
     .typecase(40, lengthPrefixedAnnouncementCodec.as[GossipDecision.Accepted])

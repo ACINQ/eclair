@@ -20,6 +20,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -30,7 +31,7 @@ import fr.acinq.eclair.{BlockHeight, KamonExt, NodeParams, ShortChannelId, Times
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Random, Success}
 
 /**
  * Created by PM on 21/02/2016.
@@ -136,8 +137,8 @@ object ZmqWatcher {
   /** This event is sent when a [[WatchSpentBasic]] condition is met. */
   sealed trait WatchSpentBasicTriggered extends WatchTriggered
 
-  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: ByteVector32, outputIndex: Int, shortChannelId: ShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
-  case class WatchExternalChannelSpentTriggered(shortChannelId: ShortChannelId) extends WatchSpentBasicTriggered
+  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: ByteVector32, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
+  case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId) extends WatchSpentBasicTriggered
 
   case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: ByteVector32, outputIndex: Int, hints: Set[ByteVector32]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
@@ -235,6 +236,11 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
             case w: WatchOutputSpent => context.self ! TriggerEvent(w.replyTo, w, WatchOutputSpentTriggered(tx))
             case _: WatchConfirmed[_] => // nothing to do
             case _: WatchFundingLost => // nothing to do
+          }
+        watches
+          .collect {
+            case w: WatchFundingConfirmed if w.minDepth == 0 && w.txId == tx.txid =>
+              checkConfirmed(w)
           }
         Behaviors.same
 
@@ -406,13 +412,21 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
     client.getTxConfirmations(w.txId).flatMap {
       case Some(confirmations) if confirmations >= w.minDepth =>
         client.getTransaction(w.txId).flatMap { tx =>
-          client.getTransactionShortId(w.txId).map {
-            case (height, index) => w match {
-              case w: WatchFundingConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchFundingConfirmedTriggered(height, index, tx))
-              case w: WatchFundingDeeplyBuried => context.self ! TriggerEvent(w.replyTo, w, WatchFundingDeeplyBuriedTriggered(height, index, tx))
-              case w: WatchTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchTxConfirmedTriggered(height, index, tx))
-              case w: WatchParentTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchParentTxConfirmedTriggered(height, index, tx))
-            }
+          w match {
+            case w: WatchFundingConfirmed if confirmations == 0 && w.minDepth == 0 =>
+              // if the tx doesn't have confirmations but we don't require any, we reply with a fake block index
+              // otherwise, we get the real short id
+              context.self ! TriggerEvent(w.replyTo, w, WatchFundingConfirmedTriggered(BlockHeight(0), 0, tx))
+              Future.successful((): Unit)
+            case _ =>
+              client.getTransactionShortId(w.txId).map {
+                case (height, index) => w match {
+                  case w: WatchFundingConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchFundingConfirmedTriggered(height, index, tx))
+                  case w: WatchFundingDeeplyBuried => context.self ! TriggerEvent(w.replyTo, w, WatchFundingDeeplyBuriedTriggered(height, index, tx))
+                  case w: WatchTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchTxConfirmedTriggered(height, index, tx))
+                  case w: WatchParentTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchParentTxConfirmedTriggered(height, index, tx))
+                }
+              }
           }
         }
       case _ => Future.successful((): Unit)

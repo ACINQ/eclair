@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.eclair._
+import fr.acinq.eclair.{RealShortChannelId, _}
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.channel.fsm.Channel
@@ -63,22 +63,6 @@ object Helpers {
       case d: DATA_CLOSING => d.copy(commitments = commitments1)
       case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
     }
-  }
-
-  /**
-   * Returns the number of confirmations needed to safely handle the funding transaction,
-   * we make sure the cumulative block reward largely exceeds the channel size.
-   *
-   * @param fundingSatoshis funding amount of the channel
-   * @return number of confirmations needed
-   */
-  def minDepthForFunding(channelConf: ChannelConf, fundingSatoshis: Satoshi): Long = fundingSatoshis match {
-    case funding if funding <= Channel.MAX_FUNDING => channelConf.minDepthBlocks
-    case funding =>
-      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
-      val scalingFactor = 15
-      val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
-      channelConf.minDepthBlocks.max(blocksToReachFunding)
   }
 
   def extractShutdownScript(channelId: ByteVector32, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
@@ -202,6 +186,43 @@ object Helpers {
   }
 
   /**
+   * The short channel id used in channel_update depends on multiple factors:
+   * - is the channel public or private?
+   * - do we have a real scid?
+   * - do we have a remote alias?
+   *
+   * {{{
+   *  - received remote_alias from peer
+   *    - public :
+   *      - before 6 blocks : use remote_alias
+   *      - after 6 blocks : use real scid
+   *    - private : use remote_alias
+   *  - no remote_alias from peer
+   *    - min_depth > 0 : use real scid (may change if reorg between min_depth and 6 conf)
+   *    - min_depth = 0 (zero-conf) : unsupported
+   * }}}
+   */
+  def scidForChannelUpdate(channelFlags: ChannelFlags, realShortChannelId_opt: Option[ShortChannelId], remoteAlias_opt: Option[ShortChannelId])(implicit log: DiagnosticLoggingAdapter): ShortChannelId = {
+    val scid_opt = if (channelFlags.announceChannel) {
+      // public channel: we prefer the real scid
+      realShortChannelId_opt.orElse(remoteAlias_opt)
+    } else {
+      // private channel: we prefer the remote alias
+      remoteAlias_opt.orElse(realShortChannelId_opt)
+    }
+    scid_opt.getOrElse {
+      // TODO A bit hacky!
+      // Our model requires a channel_update in DATA_NORMAL. But if we are in zero-conf and our peer
+      // does not send an alias, then we have neither a remote alias, nor a real scid. This should never happen, so
+      // we default to a ShortChannelId(0) which should never be used.
+      log.warning("no real scid and no alias!! this should never happen")
+      ShortChannelId(0)
+    }
+  }
+
+  def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.commitments.channelFlags, d.realShortChannelId_opt, d.remoteAlias_opt)
+
+  /**
    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by
    * other nodes.
    *
@@ -226,7 +247,7 @@ object Helpers {
     remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
   }
 
-  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: ShortChannelId): AnnouncementSignatures = {
+  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
     val features = Features.empty[Feature] // empty features for now
     val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
     val witness = Announcements.generateChannelAnnouncementWitness(
@@ -277,6 +298,39 @@ object Helpers {
   }
 
   object Funding {
+
+    /**
+     * As funder we trust ourselves to not double spend funding txs: we could always use a zero-confirmation watch,
+     * but we need a scid to send the initial channel_update and remote may not provide an alias (and we don't want to
+     * trust the real scid sent by remote in their channel_ready). So we always wait for one conf, except if the channel
+     * has the zero-conf feature (because presumably the peer will sends an alias in that case).
+     *
+     * @return
+     */
+    def minDepthFunder(channelFeatures: ChannelFeatures): Long = {
+      if (channelFeatures.hasFeature(Features.ZeroConf)) {
+        0
+      } else {
+        1
+      }
+    }
+
+    /**
+     * Returns the number of confirmations needed to safely handle the funding transaction,
+     * we make sure the cumulative block reward largely exceeds the channel size.
+     *
+     * @param fundingSatoshis funding amount of the channel
+     * @return number of confirmations needed
+     */
+    def minDepthFundee(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingSatoshis: Satoshi): Long = fundingSatoshis match {
+      case _ if channelFeatures.hasFeature(Features.ZeroConf) => 0 // zero-conf stay zero-conf, whatever the funding amount is
+      case funding if funding <= Channel.MAX_FUNDING => channelConf.minDepthBlocks
+      case funding =>
+        val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
+        val scalingFactor = 15
+        val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
+        channelConf.minDepthBlocks.max(blocksToReachFunding)
+    }
 
     def makeFundingInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)

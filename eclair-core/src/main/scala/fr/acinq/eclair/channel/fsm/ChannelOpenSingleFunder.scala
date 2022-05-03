@@ -31,8 +31,8 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelTlv, Error, FundingCreated, ChannelReady, FundingSigned, OpenChannel, TlvStream}
-import fr.acinq.eclair.{Features, ShortChannelId, ToMilliSatoshiConversion, randomKey, toLongId}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelReadyTlv, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
+import fr.acinq.eclair.{BlockHeight, Features, ShortChannelId, ToMilliSatoshiConversion, randomKey, toLongId}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
@@ -80,7 +80,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-          val minimumDepth = if (channelFeatures.hasFeature(Features.ZeroConf)) 0 else Helpers.minDepthForFunding(nodeParams.channelConf, open.fundingSatoshis)
+          val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, channelFeatures, open.fundingSatoshis)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
@@ -151,6 +151,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             initFeatures = remoteInit.features,
             shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
+          log.info("remote indicates they are going to use fundingMinDepth={}", accept.minimumDepth)
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
           wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeerate).pipeTo(self)
@@ -254,7 +255,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
               // NB: we don't send a ChannelSignatureSent for the first commit
               log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
               watchFundingTx(commitments)
-              val fundingMinDepth = Helpers.minDepthForFunding(nodeParams.channelConf, fundingAmount)
+              val fundingMinDepth = Funding.minDepthFundee(nodeParams.channelConf, commitments.channelFeatures, fundingAmount)
               blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, fundingMinDepth)
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
           }
@@ -294,7 +295,8 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
           watchFundingTx(commitments)
-          blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
+          val fundingMinDepth = Funding.minDepthFunder(commitments.channelFeatures)
+          blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, fundingMinDepth)
           log.info(s"committing txid=${fundingTx.txid}")
 
           // we will publish the funding tx only after the channel state has been written to disk because we want to
@@ -355,13 +357,28 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, fundingTx))
           val channelKeyPath = keyManager.keyPath(d.commitments.localParams, commitments.channelConfig)
           val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-          val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint)
           deferred.foreach(self ! _)
-          // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
+          // this is the real scid, it might change when the funding tx gets deeply buried (if there was a reorg in the meantime)
+          val realShortChannelId_opt = if (blockHeight == BlockHeight(0)) {
+            // If we are using zero-conf then the transaction may not have been confirmed yet, that's why the block
+            // height is zero. In some cases (e.g. we were down for some time) the tx may actually have confirmed, in
+            // that case we will have a real scid even if the channel is zero-conf
+            None
+          }
+          else {
+            Some(ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
+          }
+          // the alias will use in our channel_update message, the goal is to be able to use our channel
           // as soon as it reaches NORMAL state, and before it is announced on the network
-          // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
-          val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
-          goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments, shortChannelId, channelReady) storing() sending channelReady
+          val localAlias = ShortChannelId.generateLocalAlias()
+          // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
+          val channelReady = ChannelReady(
+            channelId = commitments.channelId,
+            nextPerCommitmentPoint = nextPerCommitmentPoint,
+            tlvStream = TlvStream(ChannelReadyTlv.ShortChannelIdTlv(localAlias))
+          )
+
+          goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments, realShortChannelId_opt = realShortChannelId_opt, localAlias = localAlias, channelReady) storing() sending channelReady
         case Failure(t) =>
           log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
           goto(CLOSED)
@@ -397,16 +414,20 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
   })
 
   when(WAIT_FOR_CHANNEL_READY)(handleExceptions {
-    case Event(ChannelReady(_, nextPerCommitmentPoint, _), d@DATA_WAIT_FOR_CHANNEL_READY(commitments, shortChannelId, _)) =>
+    case Event(channelReady: ChannelReady, d@DATA_WAIT_FOR_CHANNEL_READY(commitments, realShortChannelId_opt, localAlias, _)) =>
       // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
       blockchain ! WatchFundingDeeplyBuried(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
-      context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId, None))
+      context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, realShortChannelId_opt = realShortChannelId_opt, localAlias = localAlias, remoteAlias_opt = channelReady.alias_opt))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
-      val fees = getRelayFees(nodeParams, remoteNodeId, commitments)
-      val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.channelConf.expiryDelta, d.commitments.remoteParams.htlcMinimum, fees.feeBase, fees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
+      val remoteAlias_opt = channelReady.alias_opt
+      remoteAlias_opt.foreach(remoteAlias => log.info("received remoteAlias={}", remoteAlias))
+      val scidForChannelUpdate = Helpers.scidForChannelUpdate(commitments.channelFlags, realShortChannelId_opt, remoteAlias_opt)
+      log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
+      val relayFees = getRelayFees(nodeParams, remoteNodeId, commitments)
+      val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, nodeParams.channelConf.expiryDelta, d.commitments.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
-      goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None, None) storing()
+      goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)), realShortChannelId_opt = realShortChannelId_opt, buried = false, None, initialChannelUpdate, localAlias = localAlias, remoteAlias_opt = remoteAlias_opt, None, None, None) storing()
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_CHANNEL_READY) if d.commitments.announceChannel =>
       log.debug("received remote announcement signatures, delaying")

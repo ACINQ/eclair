@@ -845,7 +845,7 @@ class AuditDbSpec extends AnyFunSuite {
       val scid = ShortChannelId(123)
       val remoteNodeId = randomKey().publicKey
       val u = Announcements.makeChannelUpdate(randomBytes32(), randomKey(), remoteNodeId, scid, CltvExpiryDelta(56), 2000 msat, 1000 msat, 999, 1000000000 msat)
-      dbs.audit.addChannelUpdate(ChannelUpdateParametersChanged(null, channelId, scid, remoteNodeId, u))
+      dbs.audit.addChannelUpdate(ChannelUpdateParametersChanged(null, channelId, remoteNodeId, u))
     }
   }
 

@@ -46,7 +46,6 @@ object ChannelRelayer {
   private[payment] case class WrappedLocalChannelUpdate(localChannelUpdate: LocalChannelUpdate) extends Command
   private[payment] case class WrappedLocalChannelDown(localChannelDown: LocalChannelDown) extends Command
   private[payment] case class WrappedAvailableBalanceChanged(availableBalanceChanged: AvailableBalanceChanged) extends Command
-  private[payment] case class WrappedShortChannelIdAssigned(shortChannelIdAssigned: ShortChannelIdAssigned) extends Command
   // @formatter:on
 
   def mdc: Command => Map[String, String] = {
@@ -63,7 +62,6 @@ object ChannelRelayer {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelUpdate](WrappedLocalChannelUpdate))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelDown](WrappedLocalChannelDown))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[AvailableBalanceChanged](WrappedAvailableBalanceChanged))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ShortChannelIdAssigned](WrappedShortChannelIdAssigned))
       context.messageAdapter[IncomingPaymentPacket.ChannelRelayPacket](Relay)
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
         Behaviors.receiveMessage {
@@ -90,35 +88,33 @@ object ChannelRelayer {
             replyTo ! Relayer.OutgoingChannels(selected.toSeq)
             Behaviors.same
 
-          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
-            context.log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+          case WrappedLocalChannelUpdate(lcu@LocalChannelUpdate(_, channelId, _, localAlias, remoteNodeId, _, channelUpdate, commitments)) =>
+            context.log.debug(s"updating local channel info for channelId=$channelId localAlias=$localAlias remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
             val prevChannelUpdate = channels.get(channelId).map(_.channelUpdate)
             val channel = Relayer.OutgoingChannel(remoteNodeId, channelUpdate, prevChannelUpdate, commitments)
             val channels1 = channels + (channelId -> channel)
-            val scid2channels1 = scid2channels + (channelUpdate.shortChannelId -> channelId)
+            val mappings = lcu.scidsForRouting.map(_ -> channelId).toMap
+            context.log.debug("adding mappings={} to channelId={}", mappings.keys.mkString(","), channelId)
+            val scid2channels1 = scid2channels ++ mappings
             val node2channels1 = node2channels.addOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2channels1, node2channels1)
 
-          case WrappedLocalChannelDown(LocalChannelDown(_, channelId, shortChannelId, remoteNodeId)) =>
-            context.log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
+          case WrappedLocalChannelDown(LocalChannelDown(_, channelId, _, localAlias, remoteNodeId)) =>
+            context.log.debug(s"removed local channel info for channelId=$channelId localAlias=$localAlias")
             val channels1 = channels - channelId
-            val scid2Channels1 = scid2channels - shortChannelId
+            val scid2Channels1 = scid2channels - localAlias
             val node2channels1 = node2channels.subtractOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2Channels1, node2channels1)
 
-          case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, shortChannelId, commitments)) =>
+          case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, _, localAlias, commitments)) =>
             val channels1 = channels.get(channelId) match {
               case Some(c: Relayer.OutgoingChannel) =>
-                context.log.debug(s"available balance changed for channelId=$channelId shortChannelId=$shortChannelId availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
+                context.log.debug(s"available balance changed for channelId=$channelId localAlias=$localAlias availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
                 channels + (channelId -> c.copy(commitments = commitments))
               case None => channels // we only consider the balance if we have the channel_update
             }
             apply(nodeParams, register, channels1, scid2channels, node2channels)
 
-          case WrappedShortChannelIdAssigned(ShortChannelIdAssigned(_, channelId, shortChannelId, previousShortChannelId_opt)) =>
-            context.log.debug(s"added new mapping shortChannelId=$shortChannelId for channelId=$channelId")
-            val scid2channels1 = scid2channels + (shortChannelId -> channelId)
-            apply(nodeParams, register, channels, scid2channels1, node2channels)
         }
       }
     }

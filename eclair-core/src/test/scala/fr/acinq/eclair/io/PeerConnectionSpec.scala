@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair.TestUtils.realScid
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
@@ -333,7 +334,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(42000))),
       TlvStream.empty)
 
     // make sure that routing messages go through

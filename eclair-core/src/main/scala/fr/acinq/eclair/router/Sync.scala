@@ -20,6 +20,7 @@ import akka.actor.{ActorContext, ActorRef}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
@@ -69,13 +70,13 @@ object Sync {
     }
   }
 
-  def handleQueryChannelRange(channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
+  def handleQueryChannelRange(channels: SortedMap[RealShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender() ! TransportHandler.ReadAck(q)
     Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
     log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlock, q.numberOfBlocks, q.tlvStream)
     // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-    val shortChannelIds: SortedSet[ShortChannelId] = channels.keySet.filter(keep(q.firstBlock, q.numberOfBlocks, _))
+    val shortChannelIds: SortedSet[RealShortChannelId] = channels.keySet.filter(keep(q.firstBlock, q.numberOfBlocks, _))
     log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlock, q.numberOfBlocks)
     val chunks = split(shortChannelIds, q.firstBlock, q.numberOfBlocks, routerConf.channelRangeChunkSize)
     Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
@@ -107,7 +108,7 @@ object Sync {
         Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.shortChannelIds.array.size)
 
         @tailrec
-        def loop(ids: List[ShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
+        def loop(ids: List[RealShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
           ids match {
             case Nil => acc.reverse
             case head :: tail =>
@@ -158,7 +159,7 @@ object Sync {
     }
   }
 
-  def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[ShortChannelId, PublicChannel], origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
+  def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[RealShortChannelId, PublicChannel], origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender() ! TransportHandler.ReadAck(q)
 
@@ -251,8 +252,8 @@ object Sync {
     }
   }
 
-  def computeFlag(channels: SortedMap[ShortChannelId, PublicChannel])(
-    shortChannelId: ShortChannelId,
+  def computeFlag(channels: SortedMap[RealShortChannelId, PublicChannel])(
+    shortChannelId: RealShortChannelId,
     theirTimestamps_opt: Option[ReplyChannelRangeTlv.Timestamps],
     theirChecksums_opt: Option[ReplyChannelRangeTlv.Checksums],
     includeNodeAnnouncements: Boolean): Long = {
@@ -291,8 +292,8 @@ object Sync {
    *
    */
   def processChannelQuery(nodes: Map[PublicKey, NodeAnnouncement],
-                          channels: SortedMap[ShortChannelId, PublicChannel])(
-                           ids: List[ShortChannelId],
+                          channels: SortedMap[RealShortChannelId, PublicChannel])(
+                           ids: List[RealShortChannelId],
                            flags: List[Long],
                            onChannel: ChannelAnnouncement => Unit,
                            onUpdate: ChannelUpdate => Unit,
@@ -302,7 +303,7 @@ object Sync {
     // we loop over channel ids and query flag. We track node Ids for node announcement
     // we've already sent to avoid sending them multiple times, as requested by the BOLTs
     @tailrec
-    def loop(ids: List[ShortChannelId], flags: List[Long], numca: Int = 0, numcu: Int = 0, nodesSent: Set[PublicKey] = Set.empty[PublicKey]): (Int, Int, Int) = ids match {
+    def loop(ids: List[RealShortChannelId], flags: List[Long], numca: Int = 0, numcu: Int = 0, nodesSent: Set[PublicKey] = Set.empty[PublicKey]): (Int, Int, Int) = ids match {
       case Nil => (numca, numcu, nodesSent.size)
       case head :: tail if !channels.contains(head) =>
         log.warning("received query for shortChannelId={} that we don't have", head)
@@ -369,7 +370,7 @@ object Sync {
     }
   }
 
-  def getChannelDigestInfo(channels: SortedMap[ShortChannelId, PublicChannel])(shortChannelId: ShortChannelId): (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
+  def getChannelDigestInfo(channels: SortedMap[RealShortChannelId, PublicChannel])(shortChannelId: RealShortChannelId): (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
     val c = channels(shortChannelId)
     val timestamp1 = c.update_1_opt.map(_.timestamp).getOrElse(0L unixsec)
     val timestamp2 = c.update_2_opt.map(_.timestamp).getOrElse(0L unixsec)
@@ -390,7 +391,7 @@ object Sync {
     crc32c(data)
   }
 
-  case class ShortChannelIdsChunk(firstBlock: BlockHeight, numBlocks: Long, shortChannelIds: List[ShortChannelId]) {
+  case class ShortChannelIdsChunk(firstBlock: BlockHeight, numBlocks: Long, shortChannelIds: List[RealShortChannelId]) {
     /**
      * @param maximumSize maximum size of the short channel ids list
      * @return a chunk with at most `maximumSize` ids
@@ -419,7 +420,7 @@ object Sync {
    *                              returned chunks may still contain more than `channelRangeChunkSize` elements
    * @return a list of short channel id chunks
    */
-  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlock: BlockHeight, numberOfBlocks: Long, channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
+  def split(shortChannelIds: SortedSet[RealShortChannelId], firstBlock: BlockHeight, numberOfBlocks: Long, channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
     // see BOLT7: MUST encode a short_channel_id for every open channel it knows in blocks first_blocknum to first_blocknum plus number_of_blocks minus one
     val it = shortChannelIds.iterator.dropWhile(_.blockHeight < firstBlock).takeWhile(_.blockHeight < firstBlock + numberOfBlocks)
     if (it.isEmpty) {
@@ -429,7 +430,7 @@ object Sync {
       // ids that have the same block height must be grouped in the same chunk
       // chunk should contain `channelRangeChunkSize` ids
       @tailrec
-      def loop(currentChunk: List[ShortChannelId], acc: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = {
+      def loop(currentChunk: List[RealShortChannelId], acc: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = {
         if (it.hasNext) {
           val id = it.next()
           val currentHeight = currentChunk.head.blockHeight
@@ -481,7 +482,7 @@ object Sync {
    * @param channels        channels map
    * @return a ReplyChannelRange object
    */
-  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
+  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[RealShortChannelId, PublicChannel]): ReplyChannelRange = {
     val encoding = if (chunk.shortChannelIds.isEmpty) EncodingType.UNCOMPRESSED else defaultEncoding
     val (timestamps, checksums) = queryFlags_opt match {
       case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.c
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
@@ -25,7 +26,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -67,14 +68,14 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2blockchain.expectMsgType[WatchFundingSpent]
-      alice2blockchain.expectMsgType[WatchFundingConfirmed]
+      val aliceWatchFundingConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob2blockchain.expectMsgType[WatchFundingSpent]
-      bob2blockchain.expectMsgType[WatchFundingConfirmed]
+      val bobWatchFundingConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-      alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-      bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      alice ! fundingConfirmedEvent(aliceWatchFundingConfirmed, fundingTx)
+      bob ! fundingConfirmedEvent(bobWatchFundingConfirmed, fundingTx)
       alice2blockchain.expectMsgType[WatchFundingLost]
       bob2blockchain.expectMsgType[WatchFundingLost]
       alice2bob.expectMsgType[ChannelReady]
@@ -86,13 +87,64 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
 
   test("recv ChannelReady") { f =>
     import f._
-    bob2alice.expectMsgType[ChannelReady]
+    // we have a real scid at this stage, because this isn't a zero-conf channel
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.nonEmpty)
+    val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
-    awaitCond(alice.stateName == NORMAL)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    // we have a real scid, but this is a private channel so alice uses bob's alias
+    assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
+    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    bob2alice.expectNoMessage(200 millis)
+    awaitCond(alice.stateName == NORMAL)
+  }
+
+  test("recv ChannelReady (no alias)") { f =>
+    import f._
+    // we have a real scid at this stage, because this isn't a zero-conf channel
+    val realScid = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.get
+    val channelReady = bob2alice.expectMsgType[ChannelReady]
+    val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
+    bob2alice.forward(alice, channelReadyNoAlias)
+    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    // this is a private channel but bob didn't send an alias so we use the real scid
+    assert(initialChannelUpdate.shortChannelId == realScid)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     bob2alice.expectNoMessage(200 millis)
+    awaitCond(alice.stateName == NORMAL)
+  }
+
+  test("recv ChannelReady (zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+    import f._
+    // zero-conf channel: we don't have a real scid
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.isEmpty)
+    val channelReady = bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
+    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    // this is a private channel so alice uses bob's alias
+    assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
+    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    bob2alice.expectNoMessage(200 millis)
+    awaitCond(alice.stateName == NORMAL)
+  }
+
+  test("recv ChannelReady (zero-conf, no alias)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+    import f._
+    // zero-conf channel: we don't have a real scid
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.isEmpty)
+    val channelReady = bob2alice.expectMsgType[ChannelReady]
+    val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
+    bob2alice.forward(alice, channelReadyNoAlias)
+    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    // edge case: we have neither a real scid nor an alias, we use a fake scid
+    assert(initialChannelUpdate.shortChannelId === ShortChannelId(0))
+    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    bob2alice.expectNoMessage(200 millis)
+    awaitCond(alice.stateName == NORMAL)
   }
 
   test("recv WatchFundingSpentTriggered (remote commit)") { f =>

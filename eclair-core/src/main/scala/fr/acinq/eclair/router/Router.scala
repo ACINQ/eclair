@@ -335,7 +335,7 @@ object Router {
     }
     def apply(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2
-      if (u.channelFlags.isNode1) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
+      if (u.channelFlags.isNode1) ChannelDesc(pc.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.localAlias, pc.nodeId2, pc.nodeId1)
     }
   }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
@@ -356,7 +356,7 @@ object Router {
 
     val nodeId1: PublicKey = ann.nodeId1
     val nodeId2: PublicKey = ann.nodeId2
-    def shortChannelId: ShortChannelId = ann.shortChannelId
+    def shortChannelId: RealShortChannelId = ann.shortChannelId
     def channelId: ByteVector32 = toLongId(fundingTxid.reverse, outputIndex(ann.shortChannelId))
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (u.channelFlags.isNode1) update_1_opt else update_2_opt
@@ -372,7 +372,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(shortChannelId: ShortChannelId, channelId: ByteVector32, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
+  case class PrivateChannel(localAlias: LocalAlias, channelId: ByteVector32, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -392,9 +392,15 @@ object Router {
     /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
     def toIncomingExtraHop: Option[ExtraHop] = {
       // we want the incoming channel_update
-      val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
-      remoteUpdate_opt.map { remoteUpdate =>
-          ExtraHop(remoteNodeId, remoteUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
+      val (localUpdate_opt, remoteUpdate_opt) = if (localNodeId == nodeId1) (update_1_opt, update_2_opt) else (update_2_opt, update_1_opt)
+      (localUpdate_opt, remoteUpdate_opt) match {
+        case (Some(localUpdate), Some(remoteUpdate)) =>
+          // this is tricky: for incoming payments we need the *remote alias*, we can find it in the channel_update that we sent them
+          Some(ExtraHop(remoteNodeId, localUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta))
+        case (_, Some(remoteUpdate)) if remoteUpdate.shortChannelId != localAlias =>
+          // they are using a real scid (otherwise it would match our local alias, we can use it in the routing hint)
+          Some(ExtraHop(remoteNodeId, remoteUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta))
+        case _ => None
         }
     }
   }
@@ -626,7 +632,7 @@ object Router {
   case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[GossipOrigin]], updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
   // @formatter:on
 
-  case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
+  case class ShortChannelIdAndFlag(shortChannelId: RealShortChannelId, flag: Long)
 
   /**
    * @param remainingQueries remaining queries to send, the next one will be popped after we receive a [[ReplyShortChannelIdsEnd]]
@@ -637,19 +643,19 @@ object Router {
   }
 
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[ShortChannelId, PublicChannel],
+                  channels: SortedMap[RealShortChannelId, PublicChannel],
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[GossipOrigin]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
                   privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
-                  scid2PrivateChannels: Map[ShortChannelId, ByteVector32], // scid to channel_id, only to be used for private channels
+                  scid2PrivateChannels: Map[ShortChannelId, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  ) {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
-      channels.get(scid) match {
+      channels.get(scid.toReal) match {
         case Some(publicChannel) => Some(publicChannel)
         case None =>
           // maybe it's an alias or a real scid
@@ -658,6 +664,10 @@ object Router {
             case None => None
           }
       }
+    }
+
+    def resolve(channelId: ByteVector32, realScid_opt: Option[RealShortChannelId]): Option[KnownChannel] = {
+      privateChannels.get(channelId).orElse(realScid_opt.flatMap(channels.get))
     }
   }
 

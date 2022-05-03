@@ -39,7 +39,7 @@ trait Channel {
           case Some(str) if str == ChannelTypes.Standard.toString => (true, Some(ChannelTypes.Standard))
           case Some(str) if str == ChannelTypes.StaticRemoteKey.toString => (true, Some(ChannelTypes.StaticRemoteKey))
           case Some(str) if str == ChannelTypes.AnchorOutputs.toString => (true, Some(ChannelTypes.AnchorOutputs))
-          case Some(str) if str == ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString => (true, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = announceChannel_opt.contains(true), zeroConf = zeroConf))) // alias feature is incompatible with public channel
+          case Some(str) if str == "anchor_outputs_zero_fee_htlc_tx" => (true, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = announceChannel_opt.contains(true), zeroConf = zeroConf))) // alias feature is incompatible with public channel
           case Some(_) => (false, None)
           case None => (true, None)
         }

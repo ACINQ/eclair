@@ -159,8 +159,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(_.updated(Features.UpfrontShutdownScript, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ScidAlias, FeatureSupport.Optional).updated(Features.ZeroConf, FeatureSupport.Optional))
       .initFeatures()
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
@@ -170,8 +169,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(_.updated(Features.UpfrontShutdownScript, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ScidAlias, FeatureSupport.Optional).updated(Features.ZeroConf, FeatureSupport.Optional))
       .initFeatures()
 
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, channelFlags.announceChannel)
@@ -224,21 +222,24 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     bob2alice.forward(alice)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     alice2blockchain.expectMsgType[WatchFundingSpent]
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
+    val aliceWatchFundingConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     bob2blockchain.expectMsgType[WatchFundingSpent]
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
-
+    val bobWatchFundingConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
     eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    alice ! fundingConfirmedEvent(aliceWatchFundingConfirmed, fundingTx)
+    bob ! fundingConfirmedEvent(bobWatchFundingConfirmed, fundingTx)
     alice2blockchain.expectMsgType[WatchFundingLost]
     bob2blockchain.expectMsgType[WatchFundingLost]
     alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
+    // we don't forward the channel updates, in reality they would be processed by the router
+    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[ChannelUpdate]
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     eventually(assert(alice.stateName == NORMAL))
@@ -248,6 +249,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     fundingTx
+  }
+
+  /** This simulates the behavior of our watcher: it replies to zero-conf watches with a zero block height. */
+  def fundingConfirmedEvent(watch: WatchFundingConfirmed, fundingTx: Transaction) = if (watch.minDepth == 0) {
+    WatchFundingConfirmedTriggered(BlockHeight(0), 0, fundingTx)
+  } else {
+    WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
   }
 
   def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(replyTo, UUID.randomUUID())

@@ -18,9 +18,9 @@ package fr.acinq.eclair.channel.states.e
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, SatoshiLong, Script, Transaction}
-import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
@@ -3400,55 +3400,116 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(addSettled.htlc == htlc1)
   }
 
-  test("recv WatchFundingDeeplyBuriedTriggered", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv WatchFundingDeeplyBuriedTriggered (public channel)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    val realShortChannelId = alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get
+    // existing funding tx coordinates
+    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
+    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
-    // public channel: we don't send the channel_update directly to the peer
+    assert(annSigs.shortChannelId == realShortChannelId)
+    // alice updates her internal state
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.contains(annSigs.shortChannelId) && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    // public channel: we prefer the real scid alias and it hasn't changed, so we don't send a new channel_update
     alice2bob.expectNoMessage(1 second)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // we don't re-publish the same channel_update if there was no change
     channelUpdateListener.expectNoMessage(1 second)
   }
 
-  test("recv WatchFundingDeeplyBuriedTriggered (short channel id changed)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv WatchFundingDeeplyBuriedTriggered (public channel, zero-conf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400001), 22, null)
+    // in zero-conf channel we don't have a real short channel id when going to NORMAL state
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
+    // funding tx coordinates (unknown before)
+    val (blockHeight, txIndex) = (BlockHeight(400000), 42)
+    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
+    val realShortChannelId = ShortChannelId(blockHeight, txIndex, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
-    // public channel: we don't send the channel_update directly to the peer
-    alice2bob.expectNoMessage(1 second)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    assert(annSigs.shortChannelId == realShortChannelId)
+    // alice updates her internal state
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.contains(annSigs.shortChannelId) && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    // public channel: we prefer the real scid alias so we switched from remote alias to real scid : we send a new channel_update
+    val channelUpdate1 = alice2bob.expectMsgType[ChannelUpdate]
+    assert(channelUpdate1.shortChannelId == realShortChannelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate == channelUpdate1)
+    channelUpdateListener.expectNoMessage(1 second)
+  }
+
+  test("recv WatchFundingDeeplyBuriedTriggered (public channel, short channel id changed)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+    val realShortChannelId = alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get
+    // existing funding tx coordinates
+    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
+    // new funding tx coordinates (there was a reorg)
+    val (blockHeight1, txIndex1) = (blockHeight + 10, txIndex + 10)
+    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight1, txIndex1, null)
+    val newRealShortChannelId = ShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
+    val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
+    assert(annSigs.shortChannelId == newRealShortChannelId)
+    // update data with real short channel id
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.contains(newRealShortChannelId) && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    // public channel: we prefer the real scid alias and the real scid alias changed, so we send a new channel_update
+    val channelUpdate1 = alice2bob.expectMsgType[ChannelUpdate]
+    assert(channelUpdate1.shortChannelId == newRealShortChannelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate == channelUpdate1)
     channelUpdateListener.expectNoMessage(1 second)
   }
 
   test("recv WatchFundingDeeplyBuriedTriggered (private channel)") { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    // private channel: we send the channel_update directly to the peer
-    val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    val realShortChannelId = alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get
+    // existing funding tx coordinates
+    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
+    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
+    // update data with real short channel id
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.contains(realShortChannelId) && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    // private channel: we prefer the remote alias, so there is no change in the channel_update, and we don't send a new one
+    alice2bob.expectNoMessage()
+    // we don't re-publish the same channel_update if there was no change
+    channelUpdateListener.expectNoMessage(1 second)
+  }
+
+  test("recv WatchFundingDeeplyBuriedTriggered (private channel, zero-conf)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+    import f._
+    val realShortChannelId = alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get
+    // existing funding tx coordinates
+    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
+    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
+    // update data with real short channel id
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.contains(realShortChannelId) && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    // private channel: we prefer the remote alias, so there is no change in the channel_update, and we don't send a new one
+    alice2bob.expectNoMessage()
     // we don't re-publish the same channel_update if there was no change
     channelUpdateListener.expectNoMessage(1 second)
   }
 
   test("recv WatchFundingDeeplyBuriedTriggered (private channel, short channel id changed)") { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400001), 22, null)
-    // private channel: we send the channel_update directly to the peer
-    val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
-    // LocalChannelUpdate should not be published
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    val realShortChannelId = alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get
+    // existing funding tx coordinates
+    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
+    // new funding tx coordinates (there was a reorg)
+    val (blockHeight1, txIndex1) = (blockHeight + 10, txIndex + 10)
+    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight1, txIndex1, null)
+    val newRealShortChannelId = ShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
+    // update data with real short channel id
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.contains(newRealShortChannelId) && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    // private channel: we prefer the remote alias, so there is no change in the channel_update, and we don't send a new one
+    alice2bob.expectNoMessage()
+    // we don't re-publish the same channel_update if there was no change
     channelUpdateListener.expectNoMessage(1 second)
   }
 
   test("recv AnnouncementSignatures", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    val realShortChannelId = initialState.realShortChannelId_opt.get
+    // existing funding tx coordinates
+    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
+
+    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     import initialState.commitments.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
@@ -3456,7 +3517,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
     awaitCond({
       val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
-      normal.shortChannelId == annSigsA.shortChannelId && normal.buried && normal.channelAnnouncement.contains(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId
+      normal.realShortChannelId_opt.contains(annSigsA.shortChannelId) && normal.buried && normal.channelAnnouncement.contains(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId
     })
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt == Some(channelAnn))
   }
@@ -3464,9 +3525,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv AnnouncementSignatures (re-send)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42), 10, null)
+    val realShortChannelId = initialState.realShortChannelId_opt.get
+    // existing funding tx coordinates
+    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
+
+    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42), 10, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     import initialState.commitments.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
@@ -3527,9 +3592,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv INPUT_DISCONNECTED") { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    val update1a = alice2bob.expectMsgType[ChannelUpdate]
-    assert(update1a.channelFlags.isEnabled)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
 
     // actual test starts here
     alice ! INPUT_DISCONNECTED
@@ -3540,10 +3603,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv INPUT_DISCONNECTED (with pending unsigned htlcs)") { f =>
     import f._
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
     val sender = TestProbe()
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    val update1a = alice2bob.expectMsgType[ChannelUpdate]
-    assert(update1a.channelFlags.isEnabled)
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val (_, htlc2) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)

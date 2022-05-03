@@ -714,7 +714,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     //                     |                      | and b -> h has fees = 0
     //                     +---(5)--> g ---(6)--> h
     // and e --(4)--> f (we are a)
-    val channelId_bh = ShortChannelId(BlockHeight(420000), 100, 0)
+    val channelId_bh = ShortChannelId(BlockHeight(420000), 100, 0).toReal
     val chan_bh = channelAnnouncement(channelId_bh, priv_b, priv_h, priv_funding_b, priv_funding_h)
     val channelUpdate_bh = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, h, channelId_bh, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 0 msat, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000 msat)
     val channelUpdate_hb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_h, b, channelId_bh, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)

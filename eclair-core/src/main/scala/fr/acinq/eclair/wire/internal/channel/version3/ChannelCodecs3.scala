@@ -25,7 +25,7 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc,
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelFeature}
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, LocalAlias, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -323,9 +323,18 @@ private[channel] object ChannelCodecs3 {
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec))) ::
         ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
-    val DATA_WAIT_FOR_CHANNEL_READY_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
+    val DATA_WAIT_FOR_CHANNEL_READY_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
+        ("lastSent" | lengthDelimited(channelReadyCodec))).map {
+      case commitments :: shortChannelId :: lastSent :: HNil =>
+        DATA_WAIT_FOR_CHANNEL_READY(commitments, realShortChannelId_opt = Some(shortChannelId.toReal), localAlias = shortChannelId.toAlias, lastSent = lastSent)
+    }.decodeOnly
+
+    val DATA_WAIT_FOR_CHANNEL_READY_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
+      ("commitments" | commitmentsCodec) ::
+        ("realShortChannelId_opt" | optional(bool8, realshortchannelid)) ::
+        ("localAlias" | localalias) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
 
     val DATA_NORMAL_COMPAT_02_Codec: Codec[DATA_NORMAL] = (
@@ -336,14 +345,32 @@ private[channel] object ChannelCodecs3 {
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_NORMAL]
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
+      case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
+        DATA_NORMAL(commitments, realShortChannelId_opt = Some(shortChannelId.toReal), buried = buried, channelAnnouncement, channelUpdate, localAlias = shortChannelId.toAlias, remoteAlias_opt = None, localShutdown, remoteShutdown, closingFeerates)
+    }.decodeOnly
 
-    val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
+    val DATA_NORMAL_COMPAT_07_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
         ("buried" | bool8) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).map {
+      case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
+        DATA_NORMAL(commitments, realShortChannelId_opt = Some(shortChannelId.toReal), buried = buried, channelAnnouncement, channelUpdate, localAlias = shortChannelId.toAlias, remoteAlias_opt = None, localShutdown, remoteShutdown, closingFeerates)
+    }.decodeOnly
+
+    val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
+      ("commitments" | commitmentsCodec) ::
+        ("realShortChannelId_opt" | optional(bool8, realshortchannelid)) ::
+        ("buried" | bool8) ::
+        ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
+        ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("localAlias" | discriminated[LocalAlias].by(uint16).typecase(1, localalias)) :: // forward-compatible with listOfN(uint16, localalias) in case we want to store a list of local aliases later
+        ("remoteAlias" | optional(bool8, shortchannelid)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_NORMAL]
@@ -387,8 +414,9 @@ private[channel] object ChannelCodecs3 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x09, Codecs.DATA_NORMAL_Codec)
     .typecase(0x08, Codecs.DATA_SHUTDOWN_Codec)
-    .typecase(0x07, Codecs.DATA_NORMAL_Codec)
+    .typecase(0x07, Codecs.DATA_NORMAL_COMPAT_07_Codec)
     .typecase(0x06, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
     .typecase(0x05, Codecs.DATA_CLOSING_Codec)
     .typecase(0x04, Codecs.DATA_NEGOTIATING_Codec)

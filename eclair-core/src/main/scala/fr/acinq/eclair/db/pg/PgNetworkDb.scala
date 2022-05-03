@@ -18,6 +18,7 @@ package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.NetworkDb
@@ -199,11 +200,11 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     }
   }
 
-  override def listChannels(): SortedMap[ShortChannelId, PublicChannel] = withMetrics("network/list-channels", DbBackends.Postgres) {
+  override def listChannels(): SortedMap[RealShortChannelId, PublicChannel] = withMetrics("network/list-channels", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.createStatement()) { statement =>
         statement.executeQuery("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM network.public_channels")
-          .foldLeft(SortedMap.empty[ShortChannelId, PublicChannel]) { (m, rs) =>
+          .foldLeft(SortedMap.empty[RealShortChannelId, PublicChannel]) { (m, rs) =>
             val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
             val txId = ByteVector32.fromValidHex(rs.getString("txid"))
             val capacity = rs.getLong("capacity_sat")
@@ -236,7 +237,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     }
   }
 
-  override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = withMetrics("network/add-to-pruned", DbBackends.Postgres) {
+  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = withMetrics("network/add-to-pruned", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO network.pruned_channels VALUES (?) ON CONFLICT DO NOTHING")) {
         statement =>
@@ -249,7 +250,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     }
   }
 
-  override def removeFromPruned(shortChannelId: ShortChannelId): Unit = withMetrics("network/remove-from-pruned", DbBackends.Postgres) {
+  override def removeFromPruned(shortChannelId: RealShortChannelId): Unit = withMetrics("network/remove-from-pruned", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement(s"DELETE FROM network.pruned_channels WHERE short_channel_id=?")) {
         statement =>
