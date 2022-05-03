@@ -70,6 +70,11 @@ trait CommonHandlers {
       state
     }
 
+    def sending(msg_opt: Option[LightningMessage]): FSM.State[ChannelState, ChannelData] = {
+      msg_opt.foreach(msg => send(msg))
+      state
+    }
+
     /**
      * This method allows performing actions during the transition, e.g. after a call to [[MyState.storing]]. This is
      * particularly useful to publish transactions only after we are sure that the state has been persisted.

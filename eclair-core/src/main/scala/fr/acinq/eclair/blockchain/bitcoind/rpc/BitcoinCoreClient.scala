@@ -17,11 +17,11 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.{Bech32, Block}
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.bitcoin.{Bech32, Block}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
-import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.transactions.Transactions
@@ -186,6 +186,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     })
   }
 
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, lockUtxos))
+  }
+
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
     val partialFundingTx = Transaction(
       version = 2,
@@ -221,11 +225,12 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
 
   def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = signTransaction(tx, Nil)
 
+  def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = signTransaction(tx, Nil, allowIncomplete)
+
   def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
     rpcClient.invoke("signrawtransactionwithwallet", tx.toString(), previousTxs).map(json => {
       val JString(hex) = json \ "hex"
       val JBool(complete) = json \ "complete"
-      // TODO: remove allowIncomplete once https://github.com/bitcoin/bitcoin/issues/21151 is fixed
       if (!complete && !allowIncomplete) {
         val JArray(errors) = json \ "errors"
         val message = errors.map(error => {
@@ -439,10 +444,6 @@ object BitcoinCoreClient {
     }
   }
 
-  case class FundTransactionResponse(tx: Transaction, fee: Satoshi, changePosition: Option[Int]) {
-    val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
-  }
-
   case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
 
   object PreviousTx {
@@ -455,8 +456,6 @@ object BitcoinCoreClient {
       inputInfo.txOut.amount.toBtc.toBigDecimal
     )
   }
-
-  case class SignTransactionResponse(tx: Transaction, complete: Boolean)
 
   /**
    * Information about a transaction currently in the mempool.

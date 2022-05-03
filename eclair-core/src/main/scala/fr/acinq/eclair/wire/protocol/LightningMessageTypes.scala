@@ -38,6 +38,7 @@ sealed trait LightningMessage extends Serializable
 sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait InteractiveTxMessage extends LightningMessage
+sealed trait InteractiveTxConstructionMessage extends InteractiveTxMessage // <- not in the spec
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
 sealed trait AnnouncementMessage extends RoutingMessage // <- not in the spec
@@ -45,6 +46,7 @@ sealed trait HasTimestamp extends LightningMessage { def timestamp: TimestampSec
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: ByteVector32 } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32 } // <- not in the spec
+sealed trait HasSerialId extends LightningMessage { def serialId: UInt64 } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 // @formatter:on
@@ -85,24 +87,24 @@ case class TxAddInput(channelId: ByteVector32,
                       previousTx: Transaction,
                       previousTxOutput: Long,
                       sequence: Long,
-                      tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                      tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxAddOutput(channelId: ByteVector32,
                        serialId: UInt64,
                        amount: Satoshi,
                        pubkeyScript: ByteVector,
-                       tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                       tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxRemoveInput(channelId: ByteVector32,
                          serialId: UInt64,
-                         tlvStream: TlvStream[TxRemoveInputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                         tlvStream: TlvStream[TxRemoveInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxRemoveOutput(channelId: ByteVector32,
                           serialId: UInt64,
-                          tlvStream: TlvStream[TxRemoveOutputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                          tlvStream: TlvStream[TxRemoveOutputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxComplete(channelId: ByteVector32,
-                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId
 
 case class TxSignatures(channelId: ByteVector32,
                         txId: ByteVector32,
