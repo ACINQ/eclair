@@ -125,6 +125,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
         feeEstimator = new TestFeeEstimator,
+        spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
         defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw, DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)),
@@ -266,6 +267,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
         feeEstimator = new TestFeeEstimator,
+        spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
         defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw, DustTolerance(30_000 sat, closeOnUpdateFeeOverflow = true)),

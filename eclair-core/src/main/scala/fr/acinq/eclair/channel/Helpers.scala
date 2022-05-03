@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.crypto.Generators
@@ -668,7 +668,7 @@ object Helpers {
        * @param commitments our commitment data, which include payment preimages
        * @return a list of transactions (one per output of the commit tx that we can claim)
        */
-      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, currentBlockHeight: BlockHeight, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): LocalCommitPublished = {
+      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, currentBlockHeight: BlockHeight, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): LocalCommitPublished = {
         import commitments._
         require(localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
         val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
@@ -676,7 +676,7 @@ object Helpers {
         val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
         val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
         val localFundingPubKey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
-        val feeratePerKwDelayed = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
+        val feeratePerKwDelayed = onChainFeeConf.feeEstimator.getFeeratePerKw(onChainFeeConf.feeTargets.claimMainBlockTarget)
 
         // first we will claim our main output as soon as the delay is over
         val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
@@ -688,16 +688,21 @@ object Helpers {
 
         val htlcTxs: Map[OutPoint, Option[HtlcTx]] = claimHtlcOutputs(keyManager, commitments)
 
-        // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
-        val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
-        val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
-          withTxGenerationLog("local-anchor") {
-            Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
-          },
-          withTxGenerationLog("remote-anchor") {
-            Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
-          }
-        ).flatten
+        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (spendAnchors) {
+          // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
+          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + onChainFeeConf.feeTargets.commitmentWithoutHtlcsBlockTarget)
+          List(
+            withTxGenerationLog("local-anchor") {
+              Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
+            },
+            withTxGenerationLog("remote-anchor") {
+              Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
+            }
+          ).flatten
+        } else {
+          Nil
+        }
 
         LocalCommitPublished(
           commitTx = tx,
@@ -787,26 +792,31 @@ object Helpers {
        * @param tx           the remote commitment transaction that has just been published
        * @return a list of transactions (one per output of the commit tx that we can claim)
        */
-      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, currentBlockHeight: BlockHeight, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, currentBlockHeight: BlockHeight, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): RemoteCommitPublished = {
         require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
 
-        val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitments, remoteCommit, feeEstimator)
+        val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitments, remoteCommit, onChainFeeConf.feeEstimator)
 
-        // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
-        val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
-        val localFundingPubkey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
-        val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
-          withTxGenerationLog("local-anchor") {
-            Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, confirmCommitBefore)
-          },
-          withTxGenerationLog("remote-anchor") {
-            Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
-          }
-        ).flatten
+        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (spendAnchors) {
+          // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
+          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + onChainFeeConf.feeTargets.commitmentWithoutHtlcsBlockTarget)
+          val localFundingPubkey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
+          List(
+            withTxGenerationLog("local-anchor") {
+              Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, confirmCommitBefore)
+            },
+            withTxGenerationLog("remote-anchor") {
+              Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
+            }
+          ).flatten
+        } else {
+          Nil
+        }
 
         RemoteCommitPublished(
           commitTx = tx,
-          claimMainOutputTx = claimMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets),
+          claimMainOutputTx = claimMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, onChainFeeConf.feeEstimator, onChainFeeConf.feeTargets),
           claimHtlcTxs = htlcTxs,
           claimAnchorTxs = claimAnchorTxs,
           irrevocablySpent = Map.empty

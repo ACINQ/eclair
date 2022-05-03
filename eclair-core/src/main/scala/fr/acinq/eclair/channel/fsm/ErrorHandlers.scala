@@ -177,7 +177,7 @@ trait ErrorHandlers extends CommonHandlers {
       stay()
     } else {
       val commitTx = d.commitments.fullySignedLocalCommitTx(keyManager).tx
-      val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+      val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
       val nextData = d match {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
         case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))
@@ -222,7 +222,7 @@ trait ErrorHandlers extends CommonHandlers {
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isInitiator), "remote-commit"))
-    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, negotiating.closingTxProposed.flatten.map(_.unsignedTx), remoteCommitPublished = Some(remoteCommitPublished))
@@ -254,7 +254,7 @@ trait ErrorHandlers extends CommonHandlers {
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isInitiator), "next-remote-commit"))
-    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, negotiating.closingTxProposed.flatten.map(_.unsignedTx), nextRemoteCommitPublished = Some(remoteCommitPublished))
@@ -332,7 +332,7 @@ trait ErrorHandlers extends CommonHandlers {
 
     // let's try to spend our current local tx
     val commitTx = d.commitments.fullySignedLocalCommitTx(keyManager).tx
-    val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+    val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
 
     goto(ERR_INFORMATION_LEAK) calling doPublish(localCommitPublished, d.commitments) sending error
   }

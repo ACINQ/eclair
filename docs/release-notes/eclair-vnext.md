@@ -130,6 +130,19 @@ change the search interval with two new settings:
 - `eclair.purge-expired-invoices.enabled = true
 - `eclair.purge-expired-invoices.interval = 24 hours`
 
+#### Skip anchor CPFP for empty commitment
+
+When using anchor outputs and a channel force-closes without HTLCs in the commitment transaction, funds cannot be stolen by your counterparty.
+In that case eclair can skip spending the anchor output to save on-chain fees, even if the transaction doesn't confirm.
+This can be activated by setting the following value in your `eclair.conf`:
+
+```conf
+eclair.on-chain-fees.spend-anchor-without-htlcs = false
+```
+
+This is disabled by default, because there is still a risk of losing funds until bitcoin adds support for package relay.
+If the mempool becomes congested and the feerate is too low, the commitment transaction may never reach miners' mempools because it's below the minimum relay feerate.
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key 7A73FE77DE2C4027. Note that you can get it:

@@ -3300,7 +3300,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectNoMessage(1 second)
   }
 
-  test("recv Error (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  def testErrorAnchorOutputsWithHtlcs(f: FixtureParam): Unit = {
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, CltvExpiryDelta(20), alice, bob, alice2bob, bob2alice)
@@ -3343,7 +3343,16 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectNoMessage(1 second)
   }
 
-  test("recv Error (anchor outputs zero fee htlc txs without htlcs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv Error (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testErrorAnchorOutputsWithHtlcs(f)
+  }
+
+  test("recv Error (anchor outputs zero fee htlc txs, fee-bumping for commit txs without htlcs disabled)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs)) { f =>
+    // We should ignore the disable flag since there are htlcs in the commitment (funds at risk).
+    testErrorAnchorOutputsWithHtlcs(f)
+  }
+
+  def testErrorAnchorOutputsWithoutHtlcs(f: FixtureParam, commitFeeBumpDisabled: Boolean): Unit = {
     import f._
 
     // an error occurs and alice publishes her commit tx
@@ -3355,14 +3364,29 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     val currentBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
     val blockTargets = alice.underlyingActor.nodeParams.onChainFeeConf.feeTargets
-    val localAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
-    // When there are no pending HTLCs, there is no rush to get the commit tx confirmed
-    assert(localAnchor.txInfo.confirmBefore == currentBlockHeight + blockTargets.commitmentWithoutHtlcsBlockTarget)
-    val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid)
-    assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex == localAnchor.input.index)
-    alice2blockchain.expectNoMessage(1 second)
+    if (commitFeeBumpDisabled) {
+      val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === aliceCommitTx.txid)
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid)
+      alice2blockchain.expectNoMessage(1 second)
+    } else {
+      val localAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+      // When there are no pending HTLCs, there is no rush to get the commit tx confirmed
+      assert(localAnchor.txInfo.confirmBefore === currentBlockHeight + blockTargets.commitmentWithoutHtlcsBlockTarget)
+      val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === aliceCommitTx.txid)
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid)
+      assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === localAnchor.input.index)
+      alice2blockchain.expectNoMessage(1 second)
+    }
+  }
+
+  test("recv Error (anchor outputs zero fee htlc txs without htlcs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testErrorAnchorOutputsWithoutHtlcs(f, commitFeeBumpDisabled = false)
+  }
+
+  test("recv Error (anchor outputs zero fee htlc txs without htlcs, fee-bumping for commit txs without htlcs disabled)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs)) { f =>
+    testErrorAnchorOutputsWithoutHtlcs(f, commitFeeBumpDisabled = true)
   }
 
   test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.NoPushMsat)) { f =>
