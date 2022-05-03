@@ -377,6 +377,7 @@ object Helpers {
     sealed trait RemoteClose extends ClosingType { def remoteCommit: RemoteCommit; def remoteCommitPublished: RemoteCommitPublished }
     case class CurrentRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
     case class NextRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
+    case class CustomRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
     case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType
     case class RevokedClose(revokedCommitPublished: RevokedCommitPublished) extends ClosingType
     // @formatter:on
@@ -424,6 +425,9 @@ object Helpers {
           Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
         case _ if closing.nextRemoteCommitPublished.exists(isRemoteCommitConfirmed) =>
           Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
+        case _ if closing.customRemoteCommitPublished.values.exists(isRemoteCommitConfirmed) =>
+          val (customRemoteCommit, customRemoteCommitPublished) = closing.customRemoteCommitPublished.find(kv => isRemoteCommitConfirmed(kv._2)).get
+          Some(CustomRemoteClose(customRemoteCommit, customRemoteCommitPublished))
         case _ if closing.futureRemoteCommitPublished.exists(isRemoteCommitConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
         case _ if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
@@ -449,6 +453,9 @@ object Helpers {
         Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
         Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
+      case closing: DATA_CLOSING if closing.customRemoteCommitPublished.values.exists(Closing.isRemoteCommitDone) =>
+        val (customRemoteCommit, customRemoteCommitPublished) = closing.customRemoteCommitPublished.find(kv => Closing.isRemoteCommitDone(kv._2)).get
+        Some(CustomRemoteClose(customRemoteCommit, customRemoteCommitPublished))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone) =>
@@ -849,7 +856,7 @@ object Helpers {
      * Not doing that would result in us losing money, because the downstream node would pull money from one side, and
      * the upstream node would get refunded after a timeout.
      *
-     * @return   a set of pairs (add, preimage) if extraction was successful:
+     * @return a set of pairs (add, preimage) if extraction was successful:
      *           - add is the htlc in the downstream channel from which we extracted the preimage
      *           - preimage needs to be sent to the upstream channel
      */

@@ -69,6 +69,7 @@ object JsonSerializers {
   implicit val remoteCommitsReadWriter: ReadWriter[RemoteCommit] = macroRW
   implicit val commitSgReadWriter: ReadWriter[CommitSig] = macroRW
   implicit val waitingForRevocationReadWriter: ReadWriter[WaitingForRevocation] = macroRW
+  implicit val customRemoteSigReadWriter: ReadWriter[CustomRemoteSig] = macroRW
   implicit val localOriginReadWriter: ReadWriter[Origin.Local] = macroRW
   implicit val relayedOriginReadWriter: ReadWriter[Origin.Relayed] = macroRW
   implicit val paymentOriginReadWriter: ReadWriter[Origin] = ReadWriter.merge(localOriginReadWriter, relayedOriginReadWriter)

@@ -234,6 +234,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               closing.localCommitPublished.foreach(doPublish)
               closing.remoteCommitPublished.foreach(doPublish)
               closing.nextRemoteCommitPublished.foreach(doPublish)
+              closing.customRemoteCommitPublished.values.foreach(doPublish) // here for consistency, won't be used since we are not persisting the customRemoteCommitPublished field
               closing.revokedCommitPublished.foreach(doPublish)
               closing.futureRemoteCommitPublished.foreach(doPublish)
 
@@ -452,10 +453,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val channelId = toLongId(fundingTxHash, fundingTxOutputIndex)
           // watch the funding tx transaction
           val commitInput = localCommitTx.input
-          val fundingSigned = FundingSigned(
-            channelId = channelId,
-            signature = localSigOfRemoteTx
-          )
           val commitments = Commitments(channelVersion, localParams, remoteParams, channelFlags,
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
@@ -463,6 +460,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             originChannels = Map.empty,
             remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
             commitInput, ShaChain.init, channelId = channelId)
+          val customRemoteSigs = Commitments.computeCustomRemoteSigs(commitments, keyManager, 0, remoteSpec, remoteFirstPerCommitmentPoint)
+          val fundingSigned = FundingSigned(
+            channelId = channelId,
+            signature = localSigOfRemoteTx,
+            customRemoteSigs = Some(customRemoteSigs.toList)
+          )
           peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
@@ -484,7 +487,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
-    case Event(msg@FundingSigned(_, remoteSig, _), d@DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, channelFlags, channelVersion, fundingCreated)) =>
+    case Event(msg@FundingSigned(_, remoteSig, _, _), d@DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, channelFlags, channelVersion, fundingCreated)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
       val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey)
@@ -1275,6 +1278,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       } else if (d.nextRemoteCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay
+      } else if (d.customRemoteCommitPublished.values.exists(_.commitTx.txid == tx.txid)) {
+        // this is because WatchSpent watches never expire and we are notified multiple times
+        stay()
       } else if (d.futureRemoteCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay
@@ -1324,6 +1330,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         localCommitPublished = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx)),
         remoteCommitPublished = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
         nextRemoteCommitPublished = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
+        customRemoteCommitPublished = d.customRemoteCommitPublished.mapValues(Closing.updateRemoteCommitPublished(_, tx)),
         futureRemoteCommitPublished = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
         revokedCommitPublished = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
       )
@@ -2221,6 +2228,22 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSING) using nextData storing() calling (doPublish(remoteCommitPublished))
   }
 
+  def handleRemoteSpentCustom(commitTx: Transaction, d: HasCommitments, customRemoteCommit: RemoteCommit) = {
+    log.warning(s"they published a custom commitment with feerate={} sat/kw ({} sat/byte) in txid=${commitTx.txid}", customRemoteCommit.spec.feeratePerKw, feerateKw2Byte(customRemoteCommit.spec.feeratePerKw))
+    require(commitTx.txid == customRemoteCommit.txid, "txid mismatch")
+
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, customRemoteCommit, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+
+    val nextData = d match {
+      case closing: DATA_CLOSING => closing.copy(customRemoteCommitPublished = closing.customRemoteCommitPublished + (customRemoteCommit -> remoteCommitPublished))
+      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, negotiating.closingTxProposed.flatten.map(_.unsignedTx), customRemoteCommitPublished = Map(customRemoteCommit -> remoteCommitPublished))
+      case waitForFundingConfirmed: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_CLOSING(d.commitments, fundingTx = waitForFundingConfirmed.fundingTx, waitingSince = now, mutualCloseProposed = Nil, customRemoteCommitPublished = Map(customRemoteCommit -> remoteCommitPublished))
+      case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, mutualCloseProposed = Nil, customRemoteCommitPublished = Map(customRemoteCommit -> remoteCommitPublished))
+    }
+
+    goto(CLOSING) using nextData storing() calling (doPublish(remoteCommitPublished))
+  }
+
   def doPublish(remoteCommitPublished: RemoteCommitPublished): Unit = {
     import remoteCommitPublished._
 
@@ -2241,23 +2264,38 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
 
-    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
-      case Some(revokedCommitPublished) =>
-        log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
-        val exc = FundingTxSpent(d.channelId, tx)
-        val error = Error(d.channelId, exc.getMessage)
-
-        val nextData = d match {
-          case closing: DATA_CLOSING => closing.copy(revokedCommitPublished = closing.revokedCommitPublished :+ revokedCommitPublished)
-          case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, negotiating.closingTxProposed.flatten.map(_.unsignedTx), revokedCommitPublished = revokedCommitPublished :: Nil)
-          // NB: if there is a revoked commitment, we can't be in DATA_WAIT_FOR_FUNDING_CONFIRMED so we don't have the case where fundingTx is defined
-          case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, mutualCloseProposed = Nil, revokedCommitPublished = revokedCommitPublished :: Nil)
+    val customRemoteCommits: Seq[RemoteCommit] = (d.commitments.remoteCommit +: d.commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit))
+      .filter(_.spec.htlcs.isEmpty)
+      .flatMap { remoteCommit =>
+        for (customFeerate <- Commitments.customRemoteSigsFeerates) yield {
+          val customSpec = remoteCommit.spec.copy(feeratePerKw = customFeerate)
+          val (customRemoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, d.commitments.channelVersion, remoteCommit.index, d.commitments.localParams, d.commitments.remoteParams, d.commitments.commitInput, remoteCommit.remotePerCommitmentPoint, customSpec)
+          RemoteCommit(remoteCommit.index, customSpec, customRemoteCommitTx.tx.txid, remoteCommit.remotePerCommitmentPoint)
         }
-        goto(CLOSING) using nextData storing() calling (doPublish(revokedCommitPublished)) sending error
+      }
+
+    customRemoteCommits.find(_.txid == tx.txid) match {
+      case Some(customRemoteCommit) =>
+        handleRemoteSpentCustom(tx, d, customRemoteCommit)
       case None =>
-        // the published tx was neither their current commitment nor a revoked one
-        log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
-        goto(ERR_INFORMATION_LEAK)
+        Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
+          case Some(revokedCommitPublished) =>
+            log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
+            val exc = FundingTxSpent(d.channelId, tx)
+            val error = Error(d.channelId, exc.getMessage)
+
+            val nextData = d match {
+              case closing: DATA_CLOSING => closing.copy(revokedCommitPublished = closing.revokedCommitPublished :+ revokedCommitPublished)
+              case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, negotiating.closingTxProposed.flatten.map(_.unsignedTx), revokedCommitPublished = revokedCommitPublished :: Nil)
+              // NB: if there is a revoked commitment, we can't be in DATA_WAIT_FOR_FUNDING_CONFIRMED so we don't have the case where fundingTx is defined
+              case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, mutualCloseProposed = Nil, revokedCommitPublished = revokedCommitPublished :: Nil)
+            }
+            goto(CLOSING) using nextData storing() calling (doPublish(revokedCommitPublished)) sending error
+          case None =>
+            // the published tx was neither their current commitment nor a revoked one
+            log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
+            goto(ERR_INFORMATION_LEAK)
+        }
     }
   }
 

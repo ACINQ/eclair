@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel.states.h
 
 import java.util.UUID
-
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scala.Crypto.PrivateKey
@@ -40,6 +39,7 @@ import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.concurrent.duration._
+import scala.util.Random
 
 /**
  * Created by PM on 05/07/2016.
@@ -803,6 +803,52 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bobCommitTx.txOut.length === 4) // two main outputs + 2 HTLCs
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
     bobCommitTx
+  }
+
+  test("recv WatchTxConfirmedTriggered (custom remote commit)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (preimage, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc.id, preimage, bob, alice, bob2alice, alice2bob)
+
+    bob ! CMD_SIGN
+    val commit = bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.expectMsgType[CommitSig]
+
+    // pick a random custom remote sig and build a valid commitment tx for alice
+    val aliceCustomCommitTx = {
+      val customRemoteSig = commit.customRemoteSigs.get(Random.nextInt(commit.customRemoteSigs.get.size))
+      val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+      val keyManager = alice.underlyingActor.nodeParams.keyManager
+      import aliceData.commitments
+      val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index)
+      val customSpec = aliceData.commitments.localCommit.spec.copy(feeratePerKw = customRemoteSig.feeratePerKw)
+      val (customCommitTx, _, _) = Commitments.makeLocalTxs(alice.underlyingActor.nodeParams.keyManager, commitments.channelVersion, commitments.localCommit.index, commitments.localParams, commitments.remoteParams, commitments.commitInput, localPerCommitmentPoint, customSpec)
+      val localCustomSig = keyManager.sign(customCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
+      val signedCustomCommitTx = Transactions.addSigs(customCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, commitments.remoteParams.fundingPubKey, localCustomSig, customRemoteSig.signature)
+      assert(Transactions.checkSpendable(signedCustomCommitTx).isSuccess)
+      signedCustomCommitTx.tx
+    }
+
+    // actual test begins
+    bob ! WatchEventSpent(BITCOIN_FUNDING_SPENT, aliceCustomCommitTx)
+    val bobClaimMainTx = bob2blockchain.expectMsgType[PublishAsap].tx
+    Transaction.correctlySpends(bobClaimMainTx, Map(bobClaimMainTx.txIn.head.outPoint -> aliceCustomCommitTx.txOut(bobClaimMainTx.txIn.head.outPoint.index.toInt)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(aliceCustomCommitTx))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobClaimMainTx)) // claim-main
+    bob2blockchain.expectNoMsg()
+
+    awaitCond(bob.stateName == CLOSING)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].customRemoteCommitPublished.size == 1)
+
+    // actual test begins
+    bob ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCustomCommitTx), 0, 0, aliceCustomCommitTx)
+    bob ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobClaimMainTx), 0, 0, bobClaimMainTx)
+    awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv BITCOIN_TX_CONFIRMED (future remote commit)") { f =>

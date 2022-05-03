@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel.states.e
 
 import java.util.UUID
-
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
@@ -46,6 +45,7 @@ import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
 import scala.concurrent.duration._
+import scala.util.{Random, Try}
 
 /**
  * Created by PM on 05/07/2016.
@@ -2368,6 +2368,46 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.isDefined)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get.claimHtlcSuccessTxs.size == 0)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get.claimHtlcTimeoutTxs.size == 2)
+  }
+
+  test("recv BITCOIN_FUNDING_SPENT (their commit with custom remote sig)") { f =>
+    import f._
+    val (preimage, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc.id, preimage, bob, alice, bob2alice, alice2bob)
+
+    bob ! CMD_SIGN
+    val commit = bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.expectMsgType[CommitSig]
+
+    // pick a random custom remote sig and build a valid commitment tx for alice
+    val aliceCustomCommitTx = {
+      val customRemoteSig = commit.customRemoteSigs.get(Random.nextInt(commit.customRemoteSigs.get.size))
+      val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+      val keyManager = alice.underlyingActor.nodeParams.keyManager
+      import aliceData.commitments
+      val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index)
+      val customSpec = aliceData.commitments.localCommit.spec.copy(feeratePerKw = customRemoteSig.feeratePerKw)
+      val (customCommitTx, _, _) = Commitments.makeLocalTxs(alice.underlyingActor.nodeParams.keyManager, commitments.channelVersion, commitments.localCommit.index, commitments.localParams, commitments.remoteParams, commitments.commitInput, localPerCommitmentPoint, customSpec)
+      val localCustomSig = keyManager.sign(customCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
+      val signedCustomCommitTx = Transactions.addSigs(customCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, commitments.remoteParams.fundingPubKey, localCustomSig, customRemoteSig.signature)
+      assert(Transactions.checkSpendable(signedCustomCommitTx).isSuccess)
+      signedCustomCommitTx.tx
+    }
+
+    // actual test begins
+    bob ! WatchEventSpent(BITCOIN_FUNDING_SPENT, aliceCustomCommitTx)
+    val bobClaimMainTx = bob2blockchain.expectMsgType[PublishAsap].tx
+    Transaction.correctlySpends(bobClaimMainTx, Map(bobClaimMainTx.txIn.head.outPoint -> aliceCustomCommitTx.txOut(bobClaimMainTx.txIn.head.outPoint.index.toInt)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(aliceCustomCommitTx))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobClaimMainTx)) // claim-main
+    bob2blockchain.expectNoMsg()
+
+    awaitCond(bob.stateName == CLOSING)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].customRemoteCommitPublished.size == 1)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (revoked commit)") { f =>

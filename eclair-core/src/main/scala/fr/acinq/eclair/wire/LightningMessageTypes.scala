@@ -18,10 +18,10 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
-
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.channel.CustomRemoteSig
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64, _}
@@ -113,7 +113,8 @@ case class FundingCreated(temporaryChannelId: ByteVector32,
 
 case class FundingSigned(channelId: ByteVector32,
                          signature: ByteVector64,
-                         channelData: Option[ByteVector] = None) extends ChannelMessage with HasChannelId
+                         channelData: Option[ByteVector] = None,
+                         customRemoteSigs: Option[List[CustomRemoteSig]] = None) extends ChannelMessage with HasChannelId
 
 case class FundingLocked(channelId: ByteVector32,
                          nextPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
@@ -150,7 +151,8 @@ case class UpdateFailMalformedHtlc(channelId: ByteVector32,
 case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
                      htlcSignatures: List[ByteVector64],
-                     channelData: Option[ByteVector] = None) extends HtlcMessage with HasChannelId
+                     channelData: Option[ByteVector] = None,
+                     customRemoteSigs: Option[List[CustomRemoteSig]] = None) extends HtlcMessage with HasChannelId
 
 case class RevokeAndAck(channelId: ByteVector32,
                         perCommitmentSecret: PrivateKey,

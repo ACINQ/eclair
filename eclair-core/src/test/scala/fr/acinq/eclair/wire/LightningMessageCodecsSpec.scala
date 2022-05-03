@@ -17,10 +17,10 @@
 package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, InetAddress}
-
 import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scala.{Block, ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.CustomRemoteSig
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
@@ -469,6 +469,81 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val DecodeResult(oldp, remainder) = oldPayToOpenRequestCodec.decode(bits).require
     assert(oldp === OldPayToOpenRequest(p.chainHash, p.fundingSatoshis, p.amountMsat, p.payToOpenFee, p.paymentHash, p.expireAt, p.htlc_opt))
     assert(remainder.nonEmpty)
+  }
+
+  test("non-reg custom remote sigs") {
+    val testCases = Map(
+      FundingSigned(
+        channelId = ByteVector32(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"),
+        signature = ByteVector64(hex"05e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7"),
+        channelData = Some(hex"fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691"),
+        customRemoteSigs = Some(List(
+          CustomRemoteSig(feeratePerKw = 253, signature = ByteVector64(hex"c49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3")),
+          CustomRemoteSig(feeratePerKw = 500, signature = ByteVector64(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5")),
+          CustomRemoteSig(feeratePerKw = 750, signature = ByteVector64(hex"83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58"))
+        ))
+      ) -> hex"00232dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7fe4701000041fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691fe47010001cd03000000fdc49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3000001f42dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5000002ee83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58",
+      FundingSigned(
+        channelId = ByteVector32(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"),
+        signature = ByteVector64(hex"05e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7"),
+        channelData = None,
+        customRemoteSigs = Some(List(
+          CustomRemoteSig(feeratePerKw = 253, signature = ByteVector64(hex"c49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3")),
+          CustomRemoteSig(feeratePerKw = 500, signature = ByteVector64(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5")),
+          CustomRemoteSig(feeratePerKw = 750, signature = ByteVector64(hex"83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58"))
+        ))
+      ) -> hex"00232dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7fe47010001cd03000000fdc49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3000001f42dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5000002ee83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58",
+      FundingSigned(
+        channelId = ByteVector32(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"),
+        signature = ByteVector64(hex"05e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7"),
+        channelData = Some(hex"fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691"),
+        customRemoteSigs = None
+      ) -> hex"00232dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7fe4701000041fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691",
+      FundingSigned(
+        channelId = ByteVector32(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"),
+        signature = ByteVector64(hex"05e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7"),
+        channelData = Some(hex"fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691"),
+        customRemoteSigs = Some(Nil)
+      ) -> hex"00232dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7fe4701000041fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691fe470100010100",
+      CommitSig(
+        channelId = ByteVector32(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"),
+        signature = ByteVector64(hex"05e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7"),
+        htlcSignatures = Nil,
+        channelData = Some(hex"fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691"),
+        customRemoteSigs = Some(List(
+          CustomRemoteSig(feeratePerKw = 253, signature = ByteVector64(hex"c49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3")),
+          CustomRemoteSig(feeratePerKw = 500, signature = ByteVector64(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5")),
+          CustomRemoteSig(feeratePerKw = 750, signature = ByteVector64(hex"83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58"))
+        ))
+      ) -> hex"00842dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed70000fe4701000041fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691fe47010001cd03000000fdc49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3000001f42dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5000002ee83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58",
+      CommitSig(
+        channelId = ByteVector32(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"),
+        signature = ByteVector64(hex"05e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7"),
+        htlcSignatures = Nil,
+        channelData = None,
+        customRemoteSigs = Some(List(
+          CustomRemoteSig(feeratePerKw = 253, signature = ByteVector64(hex"c49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3")),
+          CustomRemoteSig(feeratePerKw = 500, signature = ByteVector64(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5")),
+          CustomRemoteSig(feeratePerKw = 750, signature = ByteVector64(hex"83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58"))
+        ))
+      ) -> hex"00842dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed70000fe47010001cd03000000fdc49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3000001f42dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5000002ee83a7a1a04141ac8ab2818f4a872ea86716ef9aac0852146bcdbc2cc49aecc985899a63513f41ed2502a321a4945689239d12bdab778c1a2e8bf7c3f19ec53b58",
+      CommitSig(
+        channelId = ByteVector32(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"),
+        signature = ByteVector64(hex"05e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7"),
+        htlcSignatures = Nil,
+        channelData = Some(hex"fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691"),
+        customRemoteSigs = None
+      ) -> hex"00842dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed70000fe4701000041fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691",
+      CommitSig(
+        channelId = ByteVector32(hex"2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db25"),
+        signature = ByteVector64(hex"05e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed7"),
+        htlcSignatures = Nil,
+        channelData = Some(hex"fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691"),
+        customRemoteSigs = Some(Nil)
+      ) -> hex"00842dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db2505e06d9a8fdfbb3625051ff2e3cdf82679cc2268beee6905941d6dd8a067cd62711e04b119a836aa0eebe07545172cefb228860fea6c797178453a319169bed70000fe4701000041fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c303a6680e79e30f050d4f32f1fb9d046cc6efb5ed4cc99eeedba6b2e89cbf838691fe470100010100"
+    )
+
+    testCases.foreach { case (obj, bin) => assert(lightningMessageCodec.encode(obj).require.bytes === bin) }
   }
 
 }
