@@ -19,10 +19,11 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
+import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
-import fr.acinq.bitcoin
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
+import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
@@ -655,25 +656,18 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
     // first let's create a tx
-    val address = "n2YKngjUp139nkjKvZGnfLRN6HzzYxJsje"
-    bitcoinrpcclient.invoke("createrawtransaction", Array.empty, Map(address -> 6)).pipeTo(sender.ref)
-    val JString(noinputTx1) = sender.expectMsgType[JString]
-    bitcoinrpcclient.invoke("fundrawtransaction", noinputTx1).pipeTo(sender.ref)
-    val json = sender.expectMsgType[JValue]
-    val JString(unsignedtx1) = json \ "hex"
-    bitcoinrpcclient.invoke("signrawtransactionwithwallet", unsignedtx1).pipeTo(sender.ref)
-    val JString(signedTx1) = sender.expectMsgType[JValue] \ "hex"
-    val tx1 = Transaction.read(signedTx1)
+    val noInputTx1 = Transaction(2, Nil, Seq(TxOut(500_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+    bitcoinClient.fundTransaction(noInputTx1, FundTransactionOptions(FeeratePerKw(2500 sat))).pipeTo(sender.ref)
+    val unsignedTx1 = sender.expectMsgType[FundTransactionResponse].tx
+    bitcoinClient.signTransaction(unsignedTx1).pipeTo(sender.ref)
+    val tx1 = sender.expectMsgType[SignTransactionResponse].tx
 
     // let's then generate another tx that double spends the first one
-    val inputs = tx1.txIn.map(txIn => Map("txid" -> txIn.outPoint.txid.toString, "vout" -> txIn.outPoint.index)).toArray
-    bitcoinrpcclient.invoke("createrawtransaction", inputs, Map(address -> tx1.txOut.map(_.amount).sum.toLong * 1.0 / 1e8)).pipeTo(sender.ref)
-    val JString(unsignedtx2) = sender.expectMsgType[JValue]
-    bitcoinrpcclient.invoke("signrawtransactionwithwallet", unsignedtx2).pipeTo(sender.ref)
-    val JString(signedTx2) = sender.expectMsgType[JValue] \ "hex"
-    val tx2 = Transaction.read(signedTx2)
+    val unsignedTx2 = tx1.copy(txOut = Seq(TxOut(tx1.txOut.map(_.amount).sum, Script.pay2wpkh(randomKey().publicKey))))
+    bitcoinClient.signTransaction(unsignedTx2).pipeTo(sender.ref)
+    val tx2 = sender.expectMsgType[SignTransactionResponse].tx
 
-    // tx1/tx2 haven't been published, so tx1 isn't double spent
+    // tx1/tx2 haven't been published, so tx1 isn't double-spent
     bitcoinClient.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(false)
     // let's publish tx2
@@ -682,10 +676,78 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // tx2 hasn't been confirmed so tx1 is still not considered double-spent
     bitcoinClient.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(false)
+    // tx2 isn't considered double-spent either
+    bitcoinClient.doubleSpent(tx2).pipeTo(sender.ref)
+    sender.expectMsg(false)
     // let's confirm tx2
     generateBlocks(1)
-    // this time tx1 has been double spent
+    // this time tx1 has been double-spent
     bitcoinClient.doubleSpent(tx1).pipeTo(sender.ref)
+    sender.expectMsg(true)
+    // and tx2 isn't considered double-spent since it's confirmed
+    bitcoinClient.doubleSpent(tx2).pipeTo(sender.ref)
+    sender.expectMsg(false)
+  }
+
+  test("detect if tx has been double-spent (with unconfirmed inputs)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val priv = randomKey()
+
+    // Let's create one confirmed and one unconfirmed utxo.
+    val (confirmedParentTx, unconfirmedParentTx) = {
+      val txs = Seq(400_000 sat, 500_000 sat).map(amount => {
+        val noInputTx = Transaction(2, Nil, Seq(TxOut(amount, Script.pay2wpkh(priv.publicKey))), 0)
+        bitcoinClient.fundTransaction(noInputTx, FundTransactionOptions(FeeratePerKw(2500 sat), lockUtxos = true)).pipeTo(sender.ref)
+        val unsignedTx = sender.expectMsgType[FundTransactionResponse].tx
+        bitcoinClient.signTransaction(unsignedTx).pipeTo(sender.ref)
+        sender.expectMsgType[SignTransactionResponse].tx
+      })
+      bitcoinClient.publishTransaction(txs.head).pipeTo(sender.ref)
+      sender.expectMsg(txs.head.txid)
+      generateBlocks(1)
+      bitcoinClient.publishTransaction(txs.last).pipeTo(sender.ref)
+      sender.expectMsg(txs.last.txid)
+      (txs.head, txs.last)
+    }
+
+    // Let's spend those unconfirmed utxos.
+    val childTx = createSpendManyP2WPKH(Seq(confirmedParentTx, unconfirmedParentTx), priv, priv.publicKey, 500 sat, 0, 0)
+    // The tx hasn't been published, so it isn't double-spent.
+    bitcoinClient.doubleSpent(childTx).pipeTo(sender.ref)
+    sender.expectMsg(false)
+    // We publish the tx and verify it isn't double-spent.
+    bitcoinClient.publishTransaction(childTx).pipeTo(sender.ref)
+    sender.expectMsg(childTx.txid)
+    bitcoinClient.doubleSpent(childTx).pipeTo(sender.ref)
+    sender.expectMsg(false)
+
+    // We double-spend the unconfirmed parent, which evicts our child transaction.
+    {
+      val previousAmountOut = unconfirmedParentTx.txOut.map(_.amount).sum
+      val unsignedTx = unconfirmedParentTx.copy(txOut = Seq(TxOut(previousAmountOut - 50_000.sat, Script.pay2wpkh(randomKey().publicKey))))
+      bitcoinClient.signTransaction(unsignedTx).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      bitcoinClient.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+    }
+
+    // We can't know whether the child transaction is double-spent or not, as its unconfirmed input is now unknown: it's
+    // not in the blockchain nor in the mempool. This unknown input may reappear in the future and the tx could then be
+    // published again.
+    bitcoinClient.doubleSpent(childTx).pipeTo(sender.ref)
+    sender.expectMsg(false)
+
+    // We double-spend the confirmed input.
+    val spendingTx = createSpendP2WPKH(confirmedParentTx, priv, priv.publicKey, 600 sat, 0, 0)
+    bitcoinClient.publishTransaction(spendingTx).pipeTo(sender.ref)
+    sender.expectMsg(spendingTx.txid)
+    // While the spending transaction is unconfirmed, we don't consider our transaction double-spent.
+    bitcoinClient.doubleSpent(childTx).pipeTo(sender.ref)
+    sender.expectMsg(false)
+    // Once the spending transaction confirms, we know that our transaction is double-spent.
+    generateBlocks(1)
+    bitcoinClient.doubleSpent(childTx).pipeTo(sender.ref)
     sender.expectMsg(true)
   }
 

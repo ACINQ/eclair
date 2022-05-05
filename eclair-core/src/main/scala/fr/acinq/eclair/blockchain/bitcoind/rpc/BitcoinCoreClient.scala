@@ -17,8 +17,8 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.{Bech32, Block}
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.bitcoin.{Bech32, Block}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
@@ -111,16 +111,29 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
             false // won't be reached
           case _ => false
         }
-      doublespent <- if (exists) {
-        // if the tx is in the blockchain, it can't have been double-spent
+      doubleSpent <- if (exists) {
+        // if the tx is in the blockchain or in the mempool, it can't have been double-spent
         Future.successful(false)
       } else {
-        // if the tx wasn't in the blockchain and one of its inputs has been spent, it is double-spent
-        // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
-        // the overriding transaction has been confirmed
-        Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
+        // There is an important limitation when using isTransactionOutputSpendable: if it returns false, it can mean a
+        // few different things:
+        //  - the input has been spent
+        //  - the input is coming from an unconfirmed transaction (in the mempool) but can be unspent
+        //  - the input is unknown (it may come from an unconfirmed transaction that we don't have in our mempool)
+        //
+        // The only way to make sure that our transaction has been double-spent is to find an input that is coming from
+        // a confirmed transaction and that is not spendable anymore. We want to ignore the mempool to only consider
+        // overriding transactions that have been confirmed.
+        //
+        // If our transaction only had unconfirmed inputs that have themselves been double-spent, we will never be able
+        // to consider it double-spent. With the information we have, these unknown inputs could eventually reappear and
+        // the transaction could be broadcast again.
+        Future.sequence(tx.txIn.map(txIn => getTxConfirmations(txIn.outPoint.txid).flatMap {
+          case Some(confirmations) if confirmations > 0 => isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false)
+          case _ => Future.successful(true)
+        })).map(_.exists(_ == false))
       }
-    } yield doublespent
+    } yield doubleSpent
 
   /**
    * Iterate over blocks to find the transaction that has spent a given output.
