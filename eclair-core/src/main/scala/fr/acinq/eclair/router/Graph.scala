@@ -65,7 +65,7 @@ object Graph {
    * @param failureCost     fee for a failed attempt
    * @param hopCost         virtual fee per hop (how much we're willing to pay to make the route one hop shorter)
    */
-  case class HeuristicsConstants(lockedFundsRisk: Double, failureCost: RelayFees, hopCost: RelayFees)
+  case class HeuristicsConstants(lockedFundsRisk: Double, failureCost: RelayFees, hopCost: RelayFees, useLogProbability: Boolean)
 
   case class WeightedNode(key: PublicKey, weight: RichWeight)
 
@@ -329,7 +329,6 @@ object Graph {
       case Right(heuristicsConstants) =>
         val hopCost = nodeFee(heuristicsConstants.hopCost, prev.amount)
         val totalHopsCost = prev.virtualFees + hopCost
-        val riskCost = totalAmount.toLong * totalCltv.toInt * heuristicsConstants.lockedFundsRisk
         // If the edge was added by the invoice, it is assumed that it can route the payment.
         // If we know the balance of the channel, then we will check separately that it can relay the payment.
         val successProbability = if (edge.update.chainHash == ByteVector32.Zeroes || edge.balance_opt.nonEmpty) 1.0 else 1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
@@ -338,8 +337,15 @@ object Graph {
         }
         val totalSuccessProbability = prev.successProbability * successProbability
         val failureCost = nodeFee(heuristicsConstants.failureCost, totalAmount)
-        val weight = totalFees.toLong + totalHopsCost.toLong + riskCost + failureCost.toLong / totalSuccessProbability
-        RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
+        if (heuristicsConstants.useLogProbability) {
+          val riskCost = totalAmount.toLong * cltv.toInt * heuristicsConstants.lockedFundsRisk
+          val weight = prev.weight + fee.toLong + hopCost.toLong + riskCost - failureCost.toLong * math.log(successProbability)
+          RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
+        } else {
+          val totalRiskCost = totalAmount.toLong * totalCltv.toInt * heuristicsConstants.lockedFundsRisk
+          val weight = totalFees.toLong + totalHopsCost.toLong + totalRiskCost + failureCost.toLong / totalSuccessProbability
+          RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
+        }
     }
   }
 

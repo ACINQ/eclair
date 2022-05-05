@@ -67,7 +67,8 @@ object EclairInternalsSerializer {
   val heuristicsConstantsCodec: Codec[HeuristicsConstants] = (
     ("lockedFundsRisk" | double) ::
       ("failureCost" | relayFeesCodec) ::
-      ("hopCost" | relayFeesCodec)).as[HeuristicsConstants]
+      ("hopCost" | relayFeesCodec) ::
+      ("useLogProbability" | bool(8))).as[HeuristicsConstants]
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::

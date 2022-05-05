@@ -1792,16 +1792,32 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, b, 400 msat, 500, capacity = (DEFAULT_AMOUNT_MSAT * 3).truncateToSatoshi),
     ))
 
-    val hc = HeuristicsConstants(
-      lockedFundsRisk = 0.0,
-      failureCost = RelayFees(1000 msat, 500),
-      hopCost = RelayFees(0 msat, 0),
-    )
-    val Success(routes) = findRoute(g, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
-    assert(routes.distinct.length == 1)
-    val route :: Nil = routes
-    assert(route2Ids(route) === 0 :: 2 :: 3 :: 4 :: Nil)
+    {
+      val hc = HeuristicsConstants(
+        lockedFundsRisk = 0.0,
+        failureCost = RelayFees(1000 msat, 500),
+        hopCost = RelayFees(0 msat, 0),
+        useLogProbability = false,
+      )
+      val Success(routes) = findRoute(g, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
+      assert(routes.distinct.length == 1)
+      val route :: Nil = routes
+      assert(route2Ids(route) === 0 :: 2 :: 3 :: 4 :: Nil)
 
+    }
+
+    {
+      val hc = HeuristicsConstants(
+        lockedFundsRisk = 0.0,
+        failureCost = RelayFees(10000 msat, 1000),
+        hopCost = RelayFees(0 msat, 0),
+        useLogProbability = true,
+      )
+      val Success(routes) = findRoute(g, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
+      assert(routes.distinct.length == 1)
+      val route :: Nil = routes
+      assert(route2Ids(route) === 0 :: 2 :: 3 :: 4 :: Nil)
+    }
   }
 
   test("no path that can get our funds stuck for too long") {
@@ -1822,6 +1838,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       lockedFundsRisk = 1e-7,
       failureCost = RelayFees(0 msat, 0),
       hopCost = RelayFees(0 msat, 0),
+      useLogProbability = true,
     )
     val Success(routes) = findRoute(g, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
     assert(routes.distinct.length == 1)
@@ -1841,6 +1858,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       lockedFundsRisk = 1e-7,
       failureCost = RelayFees(0 msat, 0),
       hopCost = RelayFees(0 msat, 0),
+      useLogProbability = true,
     )
     val Success(routes) = findRoute(g, a, c, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Right(hc)), currentBlockHeight = BlockHeight(400000))
     assert(routes.distinct.length == 1)
