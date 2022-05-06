@@ -62,6 +62,7 @@ case class InvalidCompleteInteractiveTx            (override val channelId: Byte
 case class TooManyInteractiveTxRounds              (override val channelId: ByteVector32) extends ChannelException(channelId, "too many messages exchanged during interactive tx construction")
 case class DualFundingAborted                      (override val channelId: ByteVector32) extends ChannelException(channelId, "dual funding aborted")
 case class UnexpectedFundingSignatures             (override val channelId: ByteVector32) extends ChannelException(channelId, "unexpected funding signatures (tx_signatures)")
+case class InvalidFundingFeerate                   (override val channelId: ByteVector32, targetFeerate: FeeratePerKw, actualFeerate: FeeratePerKw) extends ChannelException(channelId, s"invalid funding feerate: target=$targetFeerate actual=$actualFeerate")
 case class InvalidFundingSignature                 (override val channelId: ByteVector32, tx_opt: Option[Transaction]) extends ChannelException(channelId, s"invalid funding signature: tx=${tx_opt.map(_.toString()).getOrElse("n/a")}")
 case class InvalidRbfAttempt                       (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid rbf attempt")
 case class NoMoreHtlcsClosingInProgress            (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")

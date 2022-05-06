@@ -38,6 +38,12 @@ trait OnChainChannelFunder {
   /** Sign the wallet inputs of the provided transaction. */
   def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse]
 
+  /**
+   * Publish a transaction on the bitcoin network.
+   * This method must be idempotent: if the tx was already published, it must return a success.
+   */
+  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32]
+
   /** Create a fully signed channel funding transaction with the provided pubkeyScript. */
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
 

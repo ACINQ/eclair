@@ -166,7 +166,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     with ChannelOpenSingleFunder
     with ChannelOpenDualFunded
     with CommonHandlers
-    with FundingHandlers
+    with SingleFundingHandlers
     with ErrorHandlers {
 
   import Channel._

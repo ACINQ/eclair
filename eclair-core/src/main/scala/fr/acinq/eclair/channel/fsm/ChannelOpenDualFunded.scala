@@ -16,23 +16,29 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
+import akka.pattern.pipe
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmed
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.channel.InteractiveTx.InteractiveTxParams
+import fr.acinq.eclair.channel.InteractiveTx.{InteractiveTxParams, PartiallySignedSharedTransaction}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
-import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.TxOwner
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, MilliSatoshiLong}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, randomKey}
+
+import scala.util.{Failure, Success}
 
 /**
  * Created by t-bast on 19/04/2022.
  */
 
-trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
+trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   this: Channel =>
 
@@ -60,9 +66,10 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
                                          |<--------------------------------|
                                          |          tx_signatures          |
                                          |<--------------------------------|
+                                         |                                 | WAIT_FOR_DUAL_FUNDING_CONFIRMED
                                          |          tx_signatures          |
                                          |-------------------------------->|
-         WAIT_FOR_DUAL_FUNDING_CONFIRMED |                                 | WAIT_FOR_DUAL_FUNDING_CONFIRMED
+         WAIT_FOR_DUAL_FUNDING_CONFIRMED |                                 |
                                          |           tx_init_rbf           |
                                          |-------------------------------->|
                                          |           tx_ack_rbf            |
@@ -274,10 +281,10 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
                     Funding.makeFirstCommitTxs(keyManager, d.channelConfig, d.channelFeatures, d.channelId, d.localParams, d.remoteParams, d.fundingParams.localAmount, d.fundingParams.remoteAmount, 0 msat, d.commitTxFeerate, fundingTx.hash, fundingOutputIndex, d.remoteFirstPerCommitmentPoint) match {
                       case Left(cause) => handleInteractiveTxError(InteractiveTx.dummyLocalTx(d.txSession), cause, d, Some(msg))
                       case Right((_, localCommitTx, _, remoteCommitTx)) =>
-                        require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
+                        require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
                         val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(d.localParams.fundingKeyPath), TxOwner.Remote, d.channelFeatures.commitmentFormat)
                         val commitSig = CommitSig(d.channelId, localSigOfRemoteTx, Nil)
-                        val nextData = DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(d.channelId, d.localParams, d.remoteParams, d.fundingParams, d.commitTxFeerate, d.remoteFirstPerCommitmentPoint, d.channelFlags, d.channelConfig, d.channelFeatures)
+                        val nextData = DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(d.channelId, d.localParams, d.remoteParams, d.fundingParams, completeTx, fundingOutputIndex, d.commitTxFeerate, d.remoteFirstPerCommitmentPoint, d.channelFlags, d.channelConfig, d.channelFeatures, signingInProgress = false, None, None)
                         goto(WAIT_FOR_DUAL_FUNDING_SIGNED) using nextData sending Seq(outgoingMsg_opt, Some(commitSig)).flatten
                     }
                 }
@@ -313,6 +320,103 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
   })
 
   when(WAIT_FOR_DUAL_FUNDING_SIGNED)(handleExceptions {
+    case Event(commit: CommitSig, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      Funding.makeFirstCommitTxs(keyManager, d.channelConfig, d.channelFeatures, d.channelId, d.localParams, d.remoteParams, d.fundingParams.fundingAmount, 0 msat, d.commitTxFeerate, d.fundingTx.hash, d.fundingOutputIndex, d.remoteFirstPerCommitmentPoint) match {
+        case Left(cause) => handleInteractiveTxError(d.fundingTx, cause, d, Some(commit))
+        case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
+          val fundingPubKey = keyManager.fundingPublicKey(d.localParams.fundingKeyPath)
+          val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, d.channelFeatures.commitmentFormat)
+          val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, d.remoteParams.fundingPubKey, localSigOfLocalTx, commit.signature)
+          Transactions.checkSpendable(signedLocalCommitTx) match {
+            case Failure(_) => handleInteractiveTxError(d.fundingTx, InvalidCommitmentSignature(d.channelId, signedLocalCommitTx.tx), d, Some(commit))
+            case Success(_) =>
+              val commitments = Commitments(
+                d.channelId, d.channelConfig, d.channelFeatures,
+                d.localParams, d.remoteParams, d.channelFlags,
+                LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, commit.signature), htlcTxsAndRemoteSigs = Nil),
+                RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, d.remoteFirstPerCommitmentPoint),
+                LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+                localNextHtlcId = 0L, remoteNextHtlcId = 0L,
+                originChannels = Map.empty,
+                remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
+                localCommitTx.input,
+                ShaChain.init)
+              context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
+              // The peer with the lowest total of input amount must transmit its `tx_signatures` first.
+              if (d.fundingParams.localAmount <= d.fundingParams.remoteAmount) {
+                InteractiveTx.signTx(d.channelId, d.sharedTx, wallet).pipeTo(self)
+                stay() using d.copy(commitments_opt = Some(commitments), signingInProgress = true)
+              } else {
+                stay() using d.copy(commitments_opt = Some(commitments))
+              }
+          }
+      }
+
+    case Event(txSigs: TxSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      d.commitments_opt match {
+        case Some(_) if d.signingInProgress =>
+          stay() using d.copy(remoteSigs_opt = Some(txSigs))
+        case Some(_) =>
+          InteractiveTx.signTx(d.channelId, d.sharedTx, wallet).pipeTo(self)
+          stay() using d.copy(remoteSigs_opt = Some(txSigs), signingInProgress = true)
+        case None =>
+          log.error("received funding tx signatures before commitment signatures, aborting")
+          handleInteractiveTxError(d.fundingTx, ChannelFundingError(d.channelId), d, Some(txSigs))
+      }
+
+    case Event(partiallySignedTx: PartiallySignedSharedTransaction, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      val fundingMinDepth = Helpers.minDepthForFunding(nodeParams.channelConf, d.fundingParams.fundingAmount)
+      d.commitments_opt match {
+        case Some(commitments) => d.remoteSigs_opt match {
+          case Some(remoteSigs) => InteractiveTx.addRemoteSigs(d.fundingParams, partiallySignedTx, remoteSigs) match {
+            case Left(cause) => handleInteractiveTxError(d.fundingTx, cause, d, Some(remoteSigs))
+            case Right(signedTx) =>
+              log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, d.fundingTx.txid)
+              blockchain ! WatchFundingConfirmed(self, d.fundingTx.txid, fundingMinDepth)
+              // NB: we publish the funding tx only *after* the channel state has been written to disk because we want
+              // to make sure we first persist the commitment that returns back the funds to us in case of problem
+              val nextData = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, signedTx, Nil, nodeParams.currentBlockHeight, None)
+              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using nextData storing() sending partiallySignedTx.localSigs calling publishFundingTx(nextData)
+          }
+          case None =>
+            // We send our `tx_signatures` first, we must remember the channel even though we don't have the fully
+            // signed funding transaction yet. Our peer may publish the funding transaction without explicitly sending
+            // us their signatures.
+            blockchain ! WatchFundingConfirmed(self, d.fundingTx.txid, fundingMinDepth)
+            val nextData = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, partiallySignedTx, Nil, nodeParams.currentBlockHeight, None)
+            goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using nextData storing() sending partiallySignedTx.localSigs
+        }
+        case None =>
+          log.error("funding tx signed before commitment was signed, aborting")
+          handleInteractiveTxError(d.fundingTx, ChannelFundingError(d.channelId), d, None)
+      }
+
+    case Event(f: Status.Failure, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      log.error(f.cause, "could not sign dual-funded transaction: ")
+      handleInteractiveTxError(d.fundingTx, ChannelFundingError(d.channelId), d, None)
+
+    case Event(c: CloseCommand, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      wallet.rollback(d.fundingTx)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      handleFastClose(c, d.channelId)
+
+    case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      wallet.rollback(d.fundingTx)
+      channelOpenReplyToUser(Left(RemoteError(e)))
+      handleRemoteError(e, d)
+
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      wallet.rollback(d.fundingTx)
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      goto(CLOSED)
+
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      wallet.rollback(d.fundingTx)
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      goto(CLOSED)
+  })
+
+  when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {
     case Event(msg, d) => ???
   })
 

@@ -40,16 +40,18 @@ class DummyOnChainWallet extends OnChainWallet {
 
   override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = ???
+  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Future.successful(FundTransactionResponse(tx, 0 sat, None))
 
-  override def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = ???
+  override def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = Future.successful(SignTransactionResponse(tx, complete = true))
+
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = Future.successful(tx.txid)
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
     Future.successful(DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, amount))
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
-  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = ???
+  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("transaction not found"))
 
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback + tx
@@ -64,7 +66,7 @@ class NoOpOnChainWallet extends OnChainWallet {
 
   import DummyOnChainWallet._
 
-  var rolledback = Set.empty[Transaction]
+  var rolledback = Seq.empty[Transaction]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -76,6 +78,8 @@ class NoOpOnChainWallet extends OnChainWallet {
 
   override def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = Promise().future // will never be completed
 
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = Future.successful(tx.txid)
+
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = Promise().future // will never be completed
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
@@ -83,7 +87,7 @@ class NoOpOnChainWallet extends OnChainWallet {
   override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Promise().future // will never be completed
 
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
-    rolledback = rolledback + tx
+    rolledback = rolledback :+ tx
     Future.successful(true)
   }
 

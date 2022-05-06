@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.InteractiveTx._
 import fr.acinq.eclair.transactions.Scripts
@@ -304,6 +305,71 @@ class InteractiveTxSpec extends AnyFunSuiteLike {
     }
   }
 
+  test("validate remote signatures") {
+    val channelId = randomBytes32()
+    val params = InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 50_000 sat, createFundingScript(), 0, 660 sat, FeeratePerKw(5000 sat))
+    val initiatorKey = randomKey()
+    val nonInitiatorKey = randomKey()
+    val sharedTx = SharedTransaction(
+      localInputs = Seq(
+        TxAddInput(channelId, UInt64(0), Transaction(2, Nil, Seq(TxOut(120_000 sat, Script.pay2wpkh(initiatorKey.publicKey))), 0), 0, 0)
+      ),
+      remoteInputs = Seq(
+        RemoteTxAddInput(UInt64(1), OutPoint(randomBytes32(), 0), TxOut(40_000 sat, Script.pay2wpkh(nonInitiatorKey.publicKey)), 0),
+        RemoteTxAddInput(UInt64(3), OutPoint(randomBytes32(), 0), TxOut(20_000 sat, Script.pay2wpkh(nonInitiatorKey.publicKey)), 0),
+      ),
+      localOutputs = Seq(
+        TxAddOutput(channelId, UInt64(0), params.fundingAmount, params.fundingPubkeyScript),
+        TxAddOutput(channelId, UInt64(2), 15_000 sat, Script.write(Script.pay2wpkh(initiatorKey.publicKey))),
+      ),
+      remoteOutputs = Seq(
+        RemoteTxAddOutput(UInt64(1), 7_500 sat, Script.write(Script.pay2wpkh(nonInitiatorKey.publicKey))),
+      ),
+      0
+    )
+    val unsignedTx = sharedTx.buildUnsignedTx()
+    val initiatorSigs = Seq(
+      Script.witnessPay2wpkh(initiatorKey.publicKey, Transaction.signInput(unsignedTx, 0, Script.pay2pkh(initiatorKey.publicKey), SigHash.SIGHASH_ALL, 120_000 sat, SigVersion.SIGVERSION_WITNESS_V0, initiatorKey))
+    )
+    val nonInitiatorSigs = Seq(
+      Script.witnessPay2wpkh(nonInitiatorKey.publicKey, Transaction.signInput(unsignedTx, 1, Script.pay2pkh(nonInitiatorKey.publicKey), SigHash.SIGHASH_ALL, 40_000 sat, SigVersion.SIGVERSION_WITNESS_V0, nonInitiatorKey)),
+      Script.witnessPay2wpkh(nonInitiatorKey.publicKey, Transaction.signInput(unsignedTx, 2, Script.pay2pkh(nonInitiatorKey.publicKey), SigHash.SIGHASH_ALL, 20_000 sat, SigVersion.SIGVERSION_WITNESS_V0, nonInitiatorKey)),
+    )
+    // Valid signed transaction.
+    assert(InteractiveTx.addRemoteSigs(params, PartiallySignedSharedTransaction(sharedTx, TxSignatures(channelId, unsignedTx.txid, initiatorSigs)), TxSignatures(channelId, unsignedTx.txid, nonInitiatorSigs)).isRight)
+    // Invalid number of local signatures.
+    assert(InteractiveTx.addRemoteSigs(params, PartiallySignedSharedTransaction(sharedTx, TxSignatures(channelId, unsignedTx.txid, Nil)), TxSignatures(channelId, unsignedTx.txid, nonInitiatorSigs)) === Left(InvalidFundingSignature(channelId, Some(unsignedTx))))
+    // Invalid number of remote signatures.
+    assert(InteractiveTx.addRemoteSigs(params, PartiallySignedSharedTransaction(sharedTx, TxSignatures(channelId, unsignedTx.txid, initiatorSigs)), TxSignatures(channelId, unsignedTx.txid, nonInitiatorSigs.tail)) === Left(InvalidFundingSignature(channelId, Some(unsignedTx))))
+    // Invalid txid.
+    assert(InteractiveTx.addRemoteSigs(params, PartiallySignedSharedTransaction(sharedTx, TxSignatures(channelId, unsignedTx.txid, initiatorSigs)), TxSignatures(channelId, unsignedTx.hash, nonInitiatorSigs)) === Left(InvalidFundingSignature(channelId, Some(unsignedTx))))
+    // Invalid signatures.
+    assert(InteractiveTx.addRemoteSigs(params, PartiallySignedSharedTransaction(sharedTx, TxSignatures(channelId, unsignedTx.txid, initiatorSigs)), TxSignatures(channelId, unsignedTx.txid, nonInitiatorSigs.reverse)) === Left(InvalidFundingSignature(channelId, Some(unsignedTx))))
+  }
+
+  test("validate final feerate") {
+    val channelId = randomBytes32()
+    val params = InteractiveTxParams(channelId, isInitiator = true, 75_000 sat, 50_000 sat, createFundingScript(), 0, 660 sat, FeeratePerKw(5000 sat))
+    val initiatorKey = randomKey()
+    val nonInitiatorKey = randomKey()
+    val sharedTx = SharedTransaction(
+      localInputs = Seq(TxAddInput(channelId, UInt64(0), Transaction(2, Nil, Seq(TxOut(75_000 sat, Script.pay2wpkh(initiatorKey.publicKey))), 0), 0, 0)),
+      remoteInputs = Seq(RemoteTxAddInput(UInt64(1), OutPoint(randomBytes32(), 1), TxOut(50_000 sat, Script.pay2wpkh(nonInitiatorKey.publicKey)), 0)),
+      localOutputs = Seq(TxAddOutput(channelId, UInt64(0), params.fundingAmount, params.fundingPubkeyScript)),
+      remoteOutputs = Nil,
+      0
+    )
+    val unsignedTx = sharedTx.buildUnsignedTx()
+    val initiatorSigs = Seq(
+      Script.witnessPay2wpkh(initiatorKey.publicKey, Transaction.signInput(unsignedTx, 0, Script.pay2pkh(initiatorKey.publicKey), SigHash.SIGHASH_ALL, 75_000 sat, SigVersion.SIGVERSION_WITNESS_V0, initiatorKey))
+    )
+    val nonInitiatorSigs = Seq(
+      Script.witnessPay2wpkh(nonInitiatorKey.publicKey, Transaction.signInput(unsignedTx, 1, Script.pay2pkh(nonInitiatorKey.publicKey), SigHash.SIGHASH_ALL, 50_000 sat, SigVersion.SIGVERSION_WITNESS_V0, nonInitiatorKey)),
+    )
+    val Left(failure) = InteractiveTx.addRemoteSigs(params, PartiallySignedSharedTransaction(sharedTx, TxSignatures(channelId, unsignedTx.txid, initiatorSigs)), TxSignatures(channelId, unsignedTx.txid, nonInitiatorSigs))
+    assert(failure === InvalidFundingFeerate(channelId, params.targetFeerate, FeeratePerKw(0 sat)))
+  }
+
 }
 
 object InteractiveTxSpec {
@@ -325,13 +391,9 @@ object InteractiveTxSpec {
     TxOut(amount, createChangeScript())
   }
 
-  def computeFees(sharedTx: SharedTransaction): Satoshi = {
-    computeFees(sharedTx.localInputs ++ sharedTx.remoteInputs, sharedTx.localOutputs ++ sharedTx.remoteOutputs)
-  }
-
-  def computeFees(inputs: Seq[TxAddInput], outputs: Seq[TxAddOutput]): Satoshi = {
-    val amountIn = inputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
-    val amountOut = outputs.map(_.amount).sum
+  def computeFees(contributions: FundingContributions): Satoshi = {
+    val amountIn = contributions.inputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
+    val amountOut = contributions.outputs.map(_.amount).sum
     amountIn - amountOut
   }
 

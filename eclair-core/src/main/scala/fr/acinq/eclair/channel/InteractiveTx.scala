@@ -17,11 +17,18 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.blockchain.OnChainChannelFunder
+import fr.acinq.eclair.blockchain.OnChainWallet.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
+
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 27/04/2022.
@@ -74,14 +81,59 @@ object InteractiveTx {
   /** Inputs and outputs we contribute to the funding transaction. */
   case class FundingContributions(inputs: Seq[TxAddInput], outputs: Seq[TxAddOutput])
 
+  /** A lighter version of our peer's TxAddInput that avoids storing potentially large messages in our DB. */
+  case class RemoteTxAddInput(serialId: UInt64, outPoint: OutPoint, txOut: TxOut, sequence: Long)
+
+  object RemoteTxAddInput {
+    def apply(i: TxAddInput): RemoteTxAddInput = RemoteTxAddInput(i.serialId, toOutPoint(i), i.previousTx.txOut(i.previousTxOutput.toInt), i.sequence)
+  }
+
+  /** A lighter version of our peer's TxAddOutput that avoids storing potentially large messages in our DB. */
+  case class RemoteTxAddOutput(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector)
+
+  object RemoteTxAddOutput {
+    def apply(o: TxAddOutput): RemoteTxAddOutput = RemoteTxAddOutput(o.serialId, o.amount, o.pubkeyScript)
+  }
+
   /** Unsigned transaction created collaboratively. */
-  case class SharedTransaction(localInputs: Seq[TxAddInput], remoteInputs: Seq[TxAddInput], localOutputs: Seq[TxAddOutput], remoteOutputs: Seq[TxAddOutput], lockTime: Long) {
+  case class SharedTransaction(localInputs: Seq[TxAddInput], remoteInputs: Seq[RemoteTxAddInput], localOutputs: Seq[TxAddOutput], remoteOutputs: Seq[RemoteTxAddOutput], lockTime: Long) {
+    val localAmountIn: Satoshi = localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
+    val remoteAmountIn: Satoshi = remoteInputs.map(_.txOut.amount).sum
+    val totalAmountIn: Satoshi = localAmountIn + remoteAmountIn
+    val fees: Satoshi = totalAmountIn - localOutputs.map(_.amount).sum - remoteOutputs.map(_.amount).sum
+
     def buildUnsignedTx(): Transaction = {
-      val inputs = (localInputs ++ remoteInputs).sortBy(_.serialId).map(i => TxIn(toOutPoint(i), ByteVector.empty, i.sequence))
-      val outputs = (localOutputs ++ remoteOutputs).sortBy(_.serialId).map(o => TxOut(o.amount, o.pubkeyScript))
+      val localTxIn = localInputs.map(i => (i.serialId, TxIn(toOutPoint(i), ByteVector.empty, i.sequence)))
+      val remoteTxIn = remoteInputs.map(i => (i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence)))
+      val inputs = (localTxIn ++ remoteTxIn).sortBy(_._1).map(_._2)
+      val localTxOut = localOutputs.map(o => (o.serialId, TxOut(o.amount, o.pubkeyScript)))
+      val remoteTxOut = remoteOutputs.map(o => (o.serialId, TxOut(o.amount, o.pubkeyScript)))
+      val outputs = (localTxOut ++ remoteTxOut).sortBy(_._1).map(_._2)
       Transaction(2, inputs, outputs, lockTime)
     }
   }
+
+  // @formatter:off
+  sealed trait SignedSharedTransaction {
+    def tx: SharedTransaction
+  }
+  case class PartiallySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures) extends SignedSharedTransaction
+  case class FullySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures, remoteSigs: TxSignatures) extends SignedSharedTransaction {
+    val signedTx: Transaction = {
+      import tx._
+      require(localSigs.witnesses.length == localInputs.length, "the number of local signatures does not match the number of local inputs")
+      require(remoteSigs.witnesses.length == remoteInputs.length, "the number of remote signatures does not match the number of remote inputs")
+      val signedLocalInputs = localInputs.sortBy(_.serialId).zip(localSigs.witnesses).map { case (i, w) => (i.serialId, TxIn(toOutPoint(i), ByteVector.empty, i.sequence, w)) }
+      val signedRemoteInputs = remoteInputs.sortBy(_.serialId).zip(remoteSigs.witnesses).map { case (i, w) => (i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence, w)) }
+      val inputs = (signedLocalInputs ++ signedRemoteInputs).sortBy(_._1).map(_._2)
+      val localTxOut = localOutputs.map(o => (o.serialId, TxOut(o.amount, o.pubkeyScript)))
+      val remoteTxOut = remoteOutputs.map(o => (o.serialId, TxOut(o.amount, o.pubkeyScript)))
+      val outputs = (localTxOut ++ remoteTxOut).sortBy(_._1).map(_._2)
+      Transaction(2, inputs, outputs, lockTime)
+    }
+    val feerate: FeeratePerKw = Transactions.fee2rate(tx.fees, signedTx.weight())
+  }
+  // @formatter:on
 
   // We restrict the number of inputs / outputs that our peer can send us to ensure the protocol eventually ends.
   val MAX_INPUTS_OUTPUTS_RECEIVED = 4096
@@ -184,7 +236,7 @@ object InteractiveTx {
   }
 
   def validateTx(session: InteractiveTxSession, params: InteractiveTxParams)(implicit log: LoggingAdapter): Either[ChannelException, (SharedTransaction, Int)] = {
-    val sharedTx = SharedTransaction(session.localInputs, session.remoteInputs, session.localOutputs, session.remoteOutputs, params.lockTime)
+    val sharedTx = SharedTransaction(session.localInputs, session.remoteInputs.map(i => RemoteTxAddInput(i)), session.localOutputs, session.remoteOutputs.map(o => RemoteTxAddOutput(o)), params.lockTime)
     val tx = sharedTx.buildUnsignedTx()
 
     if (!session.isComplete) {
@@ -208,13 +260,10 @@ object InteractiveTx {
       return Left(InvalidCompleteInteractiveTx(params.channelId))
     }
 
-    // NB: we have previously verified that the inputs exist in the previous transactions.
-    val localAmountIn = sharedTx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
     val localAmountOut = sharedTx.localOutputs.filter(_.pubkeyScript != params.fundingPubkeyScript).map(_.amount).sum + params.localAmount
-    val remoteAmountIn = sharedTx.remoteInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
     val remoteAmountOut = sharedTx.remoteOutputs.filter(_.pubkeyScript != params.fundingPubkeyScript).map(_.amount).sum + params.remoteAmount
-    if (localAmountIn < localAmountOut || remoteAmountIn < remoteAmountOut) {
-      log.warning("invalid interactive tx: input amount is too small (localIn={}, localOut={}, remoteIn={}, remoteOut={})", localAmountIn, localAmountOut, remoteAmountIn, remoteAmountOut)
+    if (sharedTx.localAmountIn < localAmountOut || sharedTx.remoteAmountIn < remoteAmountOut) {
+      log.warning("invalid interactive tx: input amount is too small (localIn={}, localOut={}, remoteIn={}, remoteOut={})", sharedTx.localAmountIn, localAmountOut, sharedTx.remoteAmountIn, remoteAmountOut)
       return Left(InvalidCompleteInteractiveTx(params.channelId))
     }
 
@@ -227,13 +276,52 @@ object InteractiveTx {
     }
 
     val minimumFee = Transactions.weight2fee(params.targetFeerate, minimumWeight)
-    val fee = localAmountIn + remoteAmountIn - tx.txOut.map(_.amount).sum
-    if (fee < minimumFee) {
-      log.warning("invalid interactive tx: below the target feerate (target={}, actual={})", params.targetFeerate, Transactions.fee2rate(fee, minimumWeight))
+    if (sharedTx.fees < minimumFee) {
+      log.warning("invalid interactive tx: below the target feerate (target={}, actual={})", params.targetFeerate, Transactions.fee2rate(sharedTx.fees, minimumWeight))
       return Left(InvalidCompleteInteractiveTx(params.channelId))
     }
 
     Right(sharedTx, sharedOutputIndex)
+  }
+
+  def signTx(channelId: ByteVector32, unsignedTx: SharedTransaction, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Future[PartiallySignedSharedTransaction] = {
+    val tx = unsignedTx.buildUnsignedTx()
+    if (unsignedTx.localInputs.isEmpty) {
+      Future.successful(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(channelId, tx.txid, Nil)))
+    } else {
+      wallet.signTransaction(tx, allowIncomplete = true).map {
+        case SignTransactionResponse(signedTx, _) =>
+          val localOutpoints = unsignedTx.localInputs.map(toOutPoint).toSet
+          val sigs = signedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
+          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(channelId, tx.txid, sigs))
+      }
+    }
+  }
+
+  def addRemoteSigs(params: InteractiveTxParams, partiallySignedTx: PartiallySignedSharedTransaction, remoteSigs: TxSignatures): Either[ChannelException, FullySignedSharedTransaction] = {
+    if (partiallySignedTx.tx.localInputs.length != partiallySignedTx.localSigs.witnesses.length) {
+      return Left(InvalidFundingSignature(params.channelId, Some(partiallySignedTx.tx.buildUnsignedTx())))
+    }
+    if (partiallySignedTx.tx.remoteInputs.length != remoteSigs.witnesses.length) {
+      return Left(InvalidFundingSignature(params.channelId, Some(partiallySignedTx.tx.buildUnsignedTx())))
+    }
+    val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs)
+    if (remoteSigs.txId != txWithSigs.signedTx.txid) {
+      return Left(InvalidFundingSignature(params.channelId, Some(partiallySignedTx.tx.buildUnsignedTx())))
+    }
+    // We allow a 5% error margin since witness size prediction could be inaccurate.
+    if (params.localAmount > 0.sat && txWithSigs.feerate < params.targetFeerate * 0.95) {
+      return Left(InvalidFundingFeerate(params.channelId, params.targetFeerate, txWithSigs.feerate))
+    }
+    val previousOutputs = {
+      val localOutputs = txWithSigs.tx.localInputs.map(i => toOutPoint(i) -> i.previousTx.txOut(i.previousTxOutput.toInt)).toMap
+      val remoteOutputs = txWithSigs.tx.remoteInputs.map(i => i.outPoint -> i.txOut).toMap
+      localOutputs ++ remoteOutputs
+    }
+    Try(Transaction.correctlySpends(txWithSigs.signedTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+      case Failure(_) => Left(InvalidFundingSignature(params.channelId, Some(partiallySignedTx.tx.buildUnsignedTx()))) // NB: we don't send our signatures to our peer.
+      case Success(_) => Right(txWithSigs)
+    }
   }
 
   /** Return a dummy transaction containing all local contributions. */

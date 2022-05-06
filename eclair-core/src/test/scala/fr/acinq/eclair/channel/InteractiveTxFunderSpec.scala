@@ -26,9 +26,10 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, Utxo}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.InteractiveTx.{InteractiveTxParams, SharedTransaction, toOutPoint}
+import fr.acinq.eclair.channel.InteractiveTx._
 import fr.acinq.eclair.channel.InteractiveTxFunder.{Fund, FundingFailed, FundingSucceeded}
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.wire.protocol.TxSignatures
 import fr.acinq.eclair.{TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -96,20 +97,23 @@ class InteractiveTxFunderSpec extends TestKitBaseClass with BitcoindService with
     assert(nonInitiatorLocks === nonInitiatorContributions.inputs.map(toOutPoint).toSet)
 
     // The resulting transaction is valid and has the right feerate.
-    val sharedTx = SharedTransaction(initiatorContributions.inputs, nonInitiatorContributions.inputs, initiatorContributions.outputs, nonInitiatorContributions.outputs, initiatorParams.lockTime)
-    val unsignedTx = sharedTx.buildUnsignedTx()
-    initiatorWallet.signTransaction(unsignedTx, allowIncomplete = true).pipeTo(probe.ref)
-    val partiallySignedTx = probe.expectMsgType[SignTransactionResponse].tx
-    nonInitiatorWallet.signTransaction(partiallySignedTx).pipeTo(probe.ref)
-    val signedTx = probe.expectMsgType[SignTransactionResponse].tx
+    val sharedInitiatorTx = SharedTransaction(initiatorContributions.inputs, nonInitiatorContributions.inputs.map(i => RemoteTxAddInput(i)), initiatorContributions.outputs, nonInitiatorContributions.outputs.map(o => RemoteTxAddOutput(o)), initiatorParams.lockTime)
+    InteractiveTx.signTx(channelId, sharedInitiatorTx, initiatorWallet).pipeTo(probe.ref)
+    val initiatorSignedTx = probe.expectMsgType[PartiallySignedSharedTransaction]
+    val sharedNonInitiatorTx = SharedTransaction(nonInitiatorContributions.inputs, initiatorContributions.inputs.map(i => RemoteTxAddInput(i)), nonInitiatorContributions.outputs, initiatorContributions.outputs.map(o => RemoteTxAddOutput(o)), nonInitiatorParams.lockTime)
+    InteractiveTx.signTx(channelId, sharedNonInitiatorTx, nonInitiatorWallet).pipeTo(probe.ref)
+    val nonInitiatorSignedTx = probe.expectMsgType[PartiallySignedSharedTransaction]
+    val Right(initiatorTx) = InteractiveTx.addRemoteSigs(initiatorParams, initiatorSignedTx, nonInitiatorSignedTx.localSigs)
+    val Right(nonInitiatorTx) = InteractiveTx.addRemoteSigs(nonInitiatorParams, nonInitiatorSignedTx, initiatorSignedTx.localSigs)
+    assert(initiatorTx.signedTx === nonInitiatorTx.signedTx)
+    val signedTx = initiatorTx.signedTx
     assert(signedTx.lockTime === lockTime)
     initiatorWallet.publishTransaction(signedTx).pipeTo(probe.ref)
     probe.expectMsg(signedTx.txid)
     initiatorWallet.getMempoolTx(signedTx.txid).pipeTo(probe.ref)
     val mempoolTx = probe.expectMsgType[MempoolTx]
-    assert(mempoolTx.fees === computeFees(sharedTx))
-    val feerate = Transactions.fee2rate(mempoolTx.fees, signedTx.weight())
-    assert(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, s"unexpected feerate (target=$targetFeerate actual=$feerate)")
+    assert(mempoolTx.fees === sharedInitiatorTx.fees)
+    assert(targetFeerate <= initiatorTx.feerate && initiatorTx.feerate <= targetFeerate * 1.25, s"unexpected feerate (target=$targetFeerate actual=${initiatorTx.feerate})")
   }
 
   test("fund transaction without contributing (initiator)") {
@@ -129,12 +133,13 @@ class InteractiveTxFunderSpec extends TestKitBaseClass with BitcoindService with
     assert(fundingContributions.outputs.exists(o => o.pubkeyScript == params.fundingPubkeyScript && o.amount === params.fundingAmount))
 
     // But the initiator doesn't pay the funding amount, that will be the non-initiator's responsibility.
-    val initiatorFees = computeFees(fundingContributions.inputs, fundingContributions.outputs) + params.fundingAmount
+    val initiatorFees = computeFees(fundingContributions) + params.fundingAmount
     assert(initiatorFees > 0.sat)
-    val partialTx = SharedTransaction(fundingContributions.inputs, Nil, fundingContributions.outputs, Nil, params.lockTime).buildUnsignedTx()
-    wallet.signTransaction(partialTx, allowIncomplete = true).pipeTo(probe.ref)
-    val signedTx = probe.expectMsgType[SignTransactionResponse].tx
-    val feerate = Transactions.fee2rate(initiatorFees, signedTx.weight())
+    val partialTx = SharedTransaction(fundingContributions.inputs, Nil, fundingContributions.outputs, Nil, params.lockTime)
+    InteractiveTx.signTx(params.channelId, partialTx, wallet).pipeTo(probe.ref)
+    val partiallySignedTx = probe.expectMsgType[PartiallySignedSharedTransaction]
+    val initiatorTx = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, TxSignatures(params.channelId, partialTx.buildUnsignedTx().txid, Nil))
+    val feerate = Transactions.fee2rate(initiatorFees, initiatorTx.signedTx.weight())
     assert(params.targetFeerate <= feerate && feerate <= params.targetFeerate * 1.25, s"unexpected feerate (target=${params.targetFeerate} actual=$feerate)")
   }
 
@@ -167,7 +172,7 @@ class InteractiveTxFunderSpec extends TestKitBaseClass with BitcoindService with
     assert(contributions1.inputs.length === 2)
     assert(contributions1.outputs.length <= 2)
     assert(contributions1.outputs.exists(o => o.pubkeyScript == params1.fundingPubkeyScript && o.amount == params1.fundingAmount))
-    val fee1 = computeFees(contributions1.inputs, contributions1.outputs)
+    val fee1 = computeFees(contributions1)
 
     // We fund if a second time, re-using the same inputs and adding new ones if necessary.
     val feerate2 = FeeratePerKw(7500 sat)
@@ -177,7 +182,7 @@ class InteractiveTxFunderSpec extends TestKitBaseClass with BitcoindService with
     contributions1.inputs.foreach(i => assert(contributions2.inputs.contains(i)))
     assert(contributions2.outputs.length <= 2)
     assert(contributions2.outputs.exists(o => o.pubkeyScript == params1.fundingPubkeyScript && o.amount == params1.fundingAmount))
-    val fee2 = computeFees(contributions2.inputs, contributions2.outputs)
+    val fee2 = computeFees(contributions2)
     assert(fee2 > fee1)
   }
 
@@ -237,15 +242,15 @@ class InteractiveTxFunderSpec extends TestKitBaseClass with BitcoindService with
     }, max = 10 seconds, interval = 100 millis)
 
     val sharedTx = SharedTransaction(contributions.inputs, Nil, contributions.outputs, Nil, params.lockTime)
-    wallet.signTransaction(sharedTx.buildUnsignedTx()).pipeTo(probe.ref)
-    val signedTx = probe.expectMsgType[SignTransactionResponse].tx
-    wallet.publishTransaction(signedTx).pipeTo(probe.ref)
-    probe.expectMsg(signedTx.txid)
-    wallet.getMempoolTx(signedTx.txid).pipeTo(probe.ref)
+    InteractiveTx.signTx(params.channelId, sharedTx, wallet).pipeTo(probe.ref)
+    val partiallySignedTx = probe.expectMsgType[PartiallySignedSharedTransaction]
+    val Right(initiatorTx) = InteractiveTx.addRemoteSigs(params, partiallySignedTx, TxSignatures(params.channelId, sharedTx.buildUnsignedTx().txid, Nil))
+    wallet.publishTransaction(initiatorTx.signedTx).pipeTo(probe.ref)
+    probe.expectMsg(initiatorTx.signedTx.txid)
+    wallet.getMempoolTx(initiatorTx.signedTx.txid).pipeTo(probe.ref)
     val mempoolTx = probe.expectMsgType[MempoolTx]
-    assert(mempoolTx.fees === computeFees(sharedTx))
-    val feerate = Transactions.fee2rate(mempoolTx.fees, signedTx.weight())
-    assert(params.targetFeerate <= feerate && feerate <= params.targetFeerate * 1.25, s"unexpected feerate (target=${params.targetFeerate} actual=$feerate)")
+    assert(mempoolTx.fees === sharedTx.fees)
+    assert(params.targetFeerate <= initiatorTx.feerate && initiatorTx.feerate <= params.targetFeerate * 1.25, s"unexpected feerate (target=${params.targetFeerate} actual=${initiatorTx.feerate})")
   }
 
 }

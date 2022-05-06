@@ -45,7 +45,7 @@ import scala.util.{Failure, Success, Try}
 /**
  * This trait contains the state machine for the single-funder channel funding flow.
  */
-trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
+trait ChannelOpenSingleFunder extends SingleFundingHandlers with ErrorHandlers {
 
   this: Channel =>
 
@@ -296,24 +296,9 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           watchFundingTx(commitments)
           blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
           log.info(s"committing txid=${fundingTx.txid}")
-
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
-          def publishFundingTx(): Unit = {
-            wallet.commit(fundingTx).onComplete {
-              case Success(true) =>
-                context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
-                channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(channelId)))
-              case Success(false) =>
-                channelOpenReplyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
-                self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
-              case Failure(t) =>
-                channelOpenReplyToUser(Left(LocalError(t)))
-                log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
-            }
-          }
-
-          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx()
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(commitments, fundingTx, fundingTxFee)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>

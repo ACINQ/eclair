@@ -20,11 +20,11 @@ import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.InteractiveTx.{InteractiveTxParams, InteractiveTxSession}
+import fr.acinq.eclair.channel.InteractiveTx.{InteractiveTxParams, InteractiveTxSession, SharedTransaction, SignedSharedTransaction}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, InteractiveTxMessage, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, InteractiveTxMessage, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -62,6 +62,7 @@ case object WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_INTERNAL extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_CREATED extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_SIGNED extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_CONFIRMED extends ChannelState
 // Channel opened:
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
@@ -374,6 +375,9 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
   }
 }
 
+/** Once a dual funding tx has been signed, we must remember the associated commitments. */
+case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: Commitments)
+
 sealed trait ChannelData extends PossiblyHarmful {
   def channelId: ByteVector32
 }
@@ -469,11 +473,23 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelId: ByteVector32,
                                                    localParams: LocalParams,
                                                    remoteParams: RemoteParams,
                                                    fundingParams: InteractiveTxParams,
+                                                   sharedTx: SharedTransaction,
+                                                   fundingOutputIndex: Int,
                                                    commitTxFeerate: FeeratePerKw,
                                                    remoteFirstPerCommitmentPoint: PublicKey,
                                                    channelFlags: ChannelFlags,
                                                    channelConfig: ChannelConfig,
-                                                   channelFeatures: ChannelFeatures) extends TransientChannelData
+                                                   channelFeatures: ChannelFeatures,
+                                                   signingInProgress: Boolean,
+                                                   commitments_opt: Option[Commitments],
+                                                   remoteSigs_opt: Option[TxSignatures]) extends TransientChannelData {
+  val fundingTx: Transaction = sharedTx.buildUnsignedTx()
+}
+final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
+                                                      fundingTx: SignedSharedTransaction,
+                                                      previousFundingTxs: Seq[DualFundingTx],
+                                                      waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
+                                                      deferred: Option[FundingLocked]) extends PersistentChannelData
 
 final case class DATA_NORMAL(commitments: Commitments,
                              shortChannelId: ShortChannelId,
