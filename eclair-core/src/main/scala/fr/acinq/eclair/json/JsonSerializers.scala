@@ -36,7 +36,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Feature, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -149,6 +149,10 @@ object CltvExpirySerializer extends MinimalSerializer({
 
 object CltvExpiryDeltaSerializer extends MinimalSerializer({
   case x: CltvExpiryDelta => JInt(x.toInt)
+})
+
+object BlockHeightSerializer extends MinimalSerializer({
+  case h: BlockHeight => JLong(h.toLong)
 })
 
 object FeeratePerKwSerializer extends MinimalSerializer({
@@ -489,8 +493,15 @@ object CustomTypeHints {
       classOf[DATA_WAIT_FOR_FUNDING_INTERNAL],
       classOf[DATA_WAIT_FOR_FUNDING_CREATED],
       classOf[DATA_WAIT_FOR_FUNDING_SIGNED],
-      classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
       classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED],
+      classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
+      classOf[DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL],
+      classOf[DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL],
+      classOf[DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL],
+      classOf[DATA_WAIT_FOR_DUAL_FUNDING_CREATED],
+      classOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED],
+      classOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED],
+      classOf[DATA_WAIT_FOR_DUAL_FUNDING_LOCKED],
       classOf[DATA_NORMAL],
       classOf[DATA_SHUTDOWN],
       classOf[DATA_NEGOTIATING],
@@ -519,6 +530,7 @@ object JsonSerializers {
     BtcSerializer +
     SatoshiSerializer +
     MilliSatoshiSerializer +
+    BlockHeightSerializer +
     CltvExpirySerializer +
     CltvExpiryDeltaSerializer +
     FeeratePerKwSerializer +

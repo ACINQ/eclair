@@ -52,7 +52,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
 
-    val setup = init(aliceNodeParams, bobNodeParams, wallet = new NoOpOnChainWallet())
+    val setup = init(aliceNodeParams, bobNodeParams, wallet_opt = Some(new NoOpOnChainWallet()), test.tags)
 
     import setup._
     val channelConfig = ChannelConfig.standard
@@ -149,7 +149,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   }
 
   test("recv AcceptChannel (anchor outputs channel type without enabling the feature)") { _ =>
-    val setup = init(Alice.nodeParams, Bob.nodeParams, wallet = new NoOpOnChainWallet())
+    val setup = init(Alice.nodeParams, Bob.nodeParams, wallet_opt = Some(new NoOpOnChainWallet()))
     import setup._
 
     val channelConfig = ChannelConfig.standard

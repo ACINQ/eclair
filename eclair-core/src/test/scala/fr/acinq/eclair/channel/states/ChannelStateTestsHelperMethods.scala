@@ -20,14 +20,14 @@ import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong, Transaction}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ScriptFlags, SigHash, SigVersion}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, nonInitiatorFundingSatoshis}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, NoOpOnChainWallet, OnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -40,6 +40,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.{FixtureTestSuite, ParallelTestExecution}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -75,8 +76,6 @@ object ChannelStateTestsTags {
   val ChannelsPublic = "channels_public"
   /** If set, no amount will be pushed when opening a channel (by default we push a small amount). */
   val NoPushMsat = "no_push_msat"
-  /** If set, the non-initiator of a dual-funded channel will contribute some funds. */
-  val DualFundingContribution = "dual_funding_contribution"
   /** If set, max-htlc-value-in-flight will be set to the highest possible value for Alice and Bob. */
   val NoMaxHtlcValueInFlight = "no_max_htlc_value_in_flight"
   /** If set, max-htlc-value-in-flight will be set to a low value for Alice. */
@@ -110,7 +109,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: OnChainWallet = new DummyOnChainWallet(), tags: Set[String] = Set.empty): SetupFixture = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet_opt: Option[OnChainWallet] = None, tags: Set[String] = Set.empty): SetupFixture = {
     val aliceOrigin = TestProbe()
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
@@ -136,6 +135,10 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+    val wallet = wallet_opt match {
+      case Some(wallet) => wallet
+      case None => if (tags.contains(ChannelStateTestsTags.DualFunding)) new NoOpOnChainWallet() else new DummyOnChainWallet()
+    }
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
@@ -195,10 +198,10 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags)
     val channelFlags = ChannelFlags(announceChannel = tags.contains(ChannelStateTestsTags.ChannelsPublic))
     val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
-    val fundingAmount = TestConstants.fundingSatoshis
-    val pushMsat = if (tags.contains(ChannelStateTestsTags.NoPushMsat)) 0 msat else TestConstants.pushMsat
-    val nonInitiatorFundingAmount = if (tags.contains(ChannelStateTestsTags.DualFundingContribution)) Some(TestConstants.nonInitiatorFundingSatoshis) else None
     val dualFunded = tags.contains(ChannelStateTestsTags.DualFunding)
+    val fundingAmount = TestConstants.fundingSatoshis
+    val pushMsat = if (tags.contains(ChannelStateTestsTags.NoPushMsat) || dualFunded) 0 msat else TestConstants.pushMsat
+    val nonInitiatorFundingAmount = if (dualFunded) Some(TestConstants.nonInitiatorFundingSatoshis) else None
 
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
@@ -206,26 +209,155 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFundingAmount, dualFunded, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
-    alice2bob.expectMsgType[OpenChannel]
+    if (!dualFunded) {
+      alice2bob.expectMsgType[OpenChannel]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[AcceptChannel]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[FundingCreated]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingSigned]
+      bob2alice.forward(alice)
+      assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
+      assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+      alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      alice2blockchain.expectMsgType[WatchFundingLost]
+      bob2blockchain.expectMsgType[WatchFundingLost]
+      alice2bob.expectMsgType[FundingLocked]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingLocked]
+      bob2alice.forward(alice)
+      alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+      bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(bob.stateName == NORMAL)
+    } else {
+      alice2bob.expectMsgType[OpenDualFundedChannel]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[AcceptDualFundedChannel]
+      bob2alice.forward(alice)
+      assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      val (aliceWalletKey, bobWalletKey) = (randomKey(), randomKey())
+      val (aliceInputAmount, aliceChangeAmount) = (fundingAmount + 75_000.sat, 60_000.sat)
+      val (bobInputAmount, bobChangeAmount) = (nonInitiatorFundingSatoshis + 25_000.sat, 20_000.sat)
+      fundDualFundingChannel(alice, aliceWalletKey, aliceInputAmount, aliceChangeAmount, bob, bobWalletKey, bobInputAmount, bobChangeAmount, alice2bob, bob2alice)
+      signDualFundedChannel(alice, aliceWalletKey, aliceInputAmount, bob, bobWalletKey, bobInputAmount, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+      confirmDualFundedChannel(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    }
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(bobCommitments.availableBalanceForSend == (nonInitiatorFundingAmount.getOrElse(0 sat) + pushMsat - aliceCommitments.remoteChannelReserve).max(0 msat))
+    // x2 because alice and bob share the same relayer
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+  }
+
+  /** Fund a dual-funded channel with one input and one change output for each peer. */
+  def fundDualFundingChannel(alice: TestFSMRef[ChannelState, ChannelData, Channel],
+                             aliceWalletKey: PrivateKey,
+                             aliceInputAmount: Satoshi,
+                             aliceChangeAmount: Satoshi,
+                             bob: TestFSMRef[ChannelState, ChannelData, Channel],
+                             bobWalletKey: PrivateKey,
+                             bobInputAmount: Satoshi,
+                             bobChangeAmount: Satoshi,
+                             alice2bob: TestProbe,
+                             bob2alice: TestProbe): Unit = {
+    assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_INTERNAL)
+    assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_INTERNAL)
+
+    val fundingScript = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL].fundingParams.fundingPubkeyScript
+    val aliceFunding = InteractiveTxFunder.FundingSucceeded(InteractiveTx.FundingContributions(
+      Seq(TxAddInput(channelId(alice), UInt64(0), Transaction(2, Seq(TxIn(OutPoint(randomBytes32(), 2), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig.bytes))), Seq(TxOut(aliceInputAmount, Script.pay2wpkh(aliceWalletKey.publicKey))), 0), 0, 0)),
+      Seq(TxAddOutput(channelId(alice), UInt64(0), TestConstants.fundingSatoshis + TestConstants.nonInitiatorFundingSatoshis, fundingScript), TxAddOutput(channelId(alice), UInt64(2), aliceChangeAmount, Script.write(Script.pay2wpkh(randomKey().publicKey)))),
+    ))
+    alice ! aliceFunding
+
+    val bobFunding = InteractiveTxFunder.FundingSucceeded(InteractiveTx.FundingContributions(
+      Seq(TxAddInput(channelId(bob), UInt64(1), Transaction(2, Seq(TxIn(OutPoint(randomBytes32(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig.bytes))), Seq(TxOut(bobInputAmount, Script.pay2wpkh(bobWalletKey.publicKey))), 0), 0, 0)),
+      Seq(TxAddOutput(channelId(bob), UInt64(1), bobChangeAmount, Script.write(Script.pay2wpkh(randomKey().publicKey)))),
+    ))
+    bob ! bobFunding
+
+    // Alice and Bob go through the interactive tx construction.
+    alice2bob.expectMsgType[TxAddInput]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[AcceptChannel]
+    bob2alice.expectMsgType[TxAddInput]
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[FundingCreated]
+    alice2bob.expectMsgType[TxAddOutput]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[FundingSigned]
+    bob2alice.expectMsgType[TxAddOutput]
     bob2alice.forward(alice)
-    assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
-    alice2blockchain.expectMsgType[WatchFundingSpent]
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
-    bob2blockchain.expectMsgType[WatchFundingSpent]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-    alice2blockchain.expectMsgType[WatchFundingLost]
-    bob2blockchain.expectMsgType[WatchFundingLost]
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxComplete]
+    alice2bob.forward(bob)
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+  }
+
+  /** Both peers sign the dual-funding transaction. */
+  def signDualFundedChannel(alice: TestFSMRef[ChannelState, ChannelData, Channel],
+                            aliceWalletKey: PrivateKey,
+                            aliceInputAmount: Satoshi,
+                            bob: TestFSMRef[ChannelState, ChannelData, Channel],
+                            bobWalletKey: PrivateKey,
+                            bobInputAmount: Satoshi,
+                            alice2bob: TestProbe,
+                            bob2alice: TestProbe,
+                            alice2blockchain: TestProbe,
+                            bob2blockchain: TestProbe): Unit = {
+    assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+    assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+
+    val bobSharedTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].sharedTx
+    val bobSig = Transaction.signInput(bobSharedTx.buildUnsignedTx(), 1, Script.pay2pkh(bobWalletKey.publicKey), SigHash.SIGHASH_ALL, bobInputAmount, SigVersion.SIGVERSION_WITNESS_V0, bobWalletKey)
+    bob ! InteractiveTx.PartiallySignedSharedTransaction(bobSharedTx, TxSignatures(channelId(bob), bobSharedTx.buildUnsignedTx().txid, Seq(Script.witnessPay2wpkh(bobWalletKey.publicKey, bobSig))))
+    bob2alice.expectMsgType[TxSignatures]
+    bob2alice.forward(alice)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+
+    val aliceSharedTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].sharedTx
+    val aliceSig = Transaction.signInput(aliceSharedTx.buildUnsignedTx(), 0, Script.pay2pkh(aliceWalletKey.publicKey), SigHash.SIGHASH_ALL, aliceInputAmount, SigVersion.SIGVERSION_WITNESS_V0, aliceWalletKey)
+    alice ! InteractiveTx.PartiallySignedSharedTransaction(aliceSharedTx, TxSignatures(channelId(alice), aliceSharedTx.buildUnsignedTx().txid, Seq(Script.witnessPay2wpkh(aliceWalletKey.publicKey, aliceSig))))
+    alice2blockchain.expectMsgType[WatchFundingConfirmed] // alice publishes the funding tx
+    alice2bob.expectMsgType[TxSignatures]
+    alice2bob.forward(bob)
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    bob2blockchain.expectMsgType[WatchFundingConfirmed] // bob publishes the funding tx
+  }
+
+  def confirmDualFundedChannel(alice: TestFSMRef[ChannelState, ChannelData, Channel],
+                               bob: TestFSMRef[ChannelState, ChannelData, Channel],
+                               alice2bob: TestProbe,
+                               bob2alice: TestProbe,
+                               alice2blockchain: TestProbe,
+                               bob2blockchain: TestProbe): Unit = {
+    assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.tx.buildUnsignedTx()
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(TestConstants.defaultBlockHeight), 42, fundingTx)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId === fundingTx.txid)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(TestConstants.defaultBlockHeight), 42, fundingTx)
+    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId === fundingTx.txid)
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_LOCKED)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_LOCKED)
+
     alice2bob.expectMsgType[FundingLocked]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingLocked]
@@ -234,10 +366,6 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.requestedChannelReserve).max(0 msat))
-    // x2 because alice and bob share the same relayer
-    channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
   def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(replyTo, UUID.randomUUID())

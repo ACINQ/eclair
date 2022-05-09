@@ -202,6 +202,8 @@ object CheckBalance {
       .foldLeft(OffChainBalance()) {
         case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
         case (r, d: DATA_WAIT_FOR_FUNDING_LOCKED) => r.modify(_.waitForFundingLocked).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_LOCKED) => r.modify(_.waitForFundingLocked).using(updateMainBalance(d.commitments.localCommit))
         case (r, d: DATA_NORMAL) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
         case (r, d: DATA_SHUTDOWN) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
         case (r, d: DATA_NEGOTIATING) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.localCommit))

@@ -55,7 +55,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
 
-    val setup = init(aliceNodeParams, bobNodeParams)
+    val setup = init(aliceNodeParams, bobNodeParams, tags = test.tags)
 
     import setup._
     val channelConfig = ChannelConfig.standard

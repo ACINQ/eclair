@@ -63,6 +63,7 @@ case object WAIT_FOR_DUAL_FUNDING_INTERNAL extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_CREATED extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_SIGNED extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_CONFIRMED extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_LOCKED extends ChannelState
 // Channel opened:
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
@@ -487,9 +488,15 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelId: ByteVector32,
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       fundingTx: SignedSharedTransaction,
+                                                      fundingParams: InteractiveTxParams,
                                                       previousFundingTxs: Seq[DualFundingTx],
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
+                                                      lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       deferred: Option[FundingLocked]) extends PersistentChannelData
+final case class DATA_WAIT_FOR_DUAL_FUNDING_LOCKED(commitments: Commitments,
+                                                   shortChannelId: ShortChannelId,
+                                                   otherFundingTxs: Seq[DualFundingTx],
+                                                   lastSent: FundingLocked) extends PersistentChannelData
 
 final case class DATA_NORMAL(commitments: Commitments,
                              shortChannelId: ShortChannelId,

@@ -853,3 +853,23 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
   }
 
 }
+
+class DualFundingChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
+
+  override val commitmentFormat = Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+
+  test("start eclair nodes") {
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 29770, "eclair.api.port" -> 28106).asJava).withFallback(withDualFunding).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.server.port" -> 29771, "eclair.api.port" -> 28107).asJava).withFallback(withDualFunding).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.server.port" -> 29772, "eclair.api.port" -> 28108).asJava).withFallback(withDualFunding).withFallback(commonConfig))
+  }
+
+  test("connect nodes") {
+    connectNodes(ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
+  }
+
+  test("open channel C <-> F, send payments and close (dual funding)") {
+    testOpenPayClose(ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
+  }
+
+}

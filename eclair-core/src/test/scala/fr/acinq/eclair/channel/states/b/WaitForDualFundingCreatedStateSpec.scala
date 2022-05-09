@@ -41,7 +41,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
   override def withFixture(test: OneArgTest): Outcome = {
     val wallet = new NoOpOnChainWallet()
-    val setup = init(wallet = wallet)
+    val setup = init(wallet_opt = Some(wallet), tags = test.tags)
     import setup._
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)

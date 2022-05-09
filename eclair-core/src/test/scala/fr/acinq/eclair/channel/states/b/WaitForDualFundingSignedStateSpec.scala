@@ -18,23 +18,20 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Script, Transaction}
 import fr.acinq.bitcoin.{SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmed
-import fr.acinq.eclair.channel.InteractiveTx.{FundingContributions, PartiallySignedSharedTransaction}
-import fr.acinq.eclair.channel.InteractiveTxSpec.createChangeScript
+import fr.acinq.eclair.channel.InteractiveTx.PartiallySignedSharedTransaction
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.transactions.Transactions.{PlaceHolderPubKey, PlaceHolderSig}
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, CommitSig, Error, Init, OpenDualFundedChannel, TxAddInput, TxAddOutput, TxComplete, TxSignatures}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, CommitSig, Error, Init, OpenDualFundedChannel, TxSignatures}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
 
@@ -44,7 +41,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
 
   override def withFixture(test: OneArgTest): Outcome = {
     val wallet = new NoOpOnChainWallet()
-    val setup = init(wallet = wallet)
+    val setup = init(wallet_opt = Some(wallet), tags = test.tags)
     import setup._
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
@@ -62,49 +59,19 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
       alice2blockchain.expectMsgType[SetChannelId] // final channel id
       bob2blockchain.expectMsgType[SetChannelId] // final channel id
 
-      // Alice and Bob both contribute one input and one output.
-      val cid = channelId(bob)
       val privKey = randomKey()
-      val fundingScript = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL].fundingParams.fundingPubkeyScript
-      val aliceInputAmount = TestConstants.fundingSatoshis + 75_000.sat
-      val aliceFunding = InteractiveTxFunder.FundingSucceeded(FundingContributions(
-        Seq(TxAddInput(cid, UInt64(0), Transaction(2, Seq(TxIn(OutPoint(randomBytes32(), 2), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig.bytes))), Seq(TxOut(aliceInputAmount, Script.pay2wpkh(privKey.publicKey))), 0), 0, 0)),
-        Seq(TxAddOutput(cid, UInt64(0), TestConstants.fundingSatoshis + TestConstants.nonInitiatorFundingSatoshis, fundingScript), TxAddOutput(cid, UInt64(2), 60_000 sat, createChangeScript())),
-      ))
-      alice ! aliceFunding
-      val bobInputAmount = TestConstants.nonInitiatorFundingSatoshis + 25_000.sat
-      val bobFunding = InteractiveTxFunder.FundingSucceeded(FundingContributions(
-        Seq(TxAddInput(cid, UInt64(1), Transaction(2, Seq(TxIn(OutPoint(randomBytes32(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig.bytes))), Seq(TxOut(bobInputAmount, Script.pay2wpkh(privKey.publicKey))), 0), 0, 0)),
-        Seq(TxAddOutput(cid, UInt64(1), 20_000 sat, createChangeScript())),
-      ))
-      bob ! bobFunding
-
-      // Alice and Bob go through the interactive tx construction.
-      alice2bob.expectMsgType[TxAddInput]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[TxAddInput]
-      bob2alice.forward(alice)
-      alice2bob.expectMsgType[TxAddOutput]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[TxAddOutput]
-      bob2alice.forward(alice)
-      alice2bob.expectMsgType[TxAddOutput]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[TxComplete]
-      bob2alice.forward(alice)
-      alice2bob.expectMsgType[TxComplete]
-      alice2bob.forward(bob)
-      awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
-      awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+      val (aliceInputAmount, aliceChangeAmount) = (TestConstants.fundingSatoshis + 75_000.sat, 60_000.sat)
+      val (bobInputAmount, bobChangeAmount) = (TestConstants.nonInitiatorFundingSatoshis + 25_000.sat, 20_000.sat)
+      fundDualFundingChannel(alice, privKey, aliceInputAmount, aliceChangeAmount, bob, privKey, bobInputAmount, bobChangeAmount, alice2bob, bob2alice)
 
       val unsignedTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].fundingTx
       val aliceSigs = {
         val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(privKey.publicKey), SigHash.SIGHASH_ALL, aliceInputAmount, SigVersion.SIGVERSION_WITNESS_V0, privKey)
-        TxSignatures(cid, unsignedTx.txid, Seq(Script.witnessPay2wpkh(privKey.publicKey, sig)))
+        TxSignatures(channelId(alice), unsignedTx.txid, Seq(Script.witnessPay2wpkh(privKey.publicKey, sig)))
       }
       val bobSigs = {
         val sig = Transaction.signInput(unsignedTx, 1, Script.pay2pkh(privKey.publicKey), SigHash.SIGHASH_ALL, bobInputAmount, SigVersion.SIGVERSION_WITNESS_V0, privKey)
-        TxSignatures(cid, unsignedTx.txid, Seq(Script.witnessPay2wpkh(privKey.publicKey, sig)))
+        TxSignatures(channelId(bob), unsignedTx.txid, Seq(Script.witnessPay2wpkh(privKey.publicKey, sig)))
       }
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, aliceSigs, bobSigs, wallet)))
     }

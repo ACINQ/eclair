@@ -102,6 +102,11 @@ object InteractiveTx {
     val totalAmountIn: Satoshi = localAmountIn + remoteAmountIn
     val fees: Satoshi = totalAmountIn - localOutputs.map(_.amount).sum - remoteOutputs.map(_.amount).sum
 
+    def localFees(params: InteractiveTxParams): Satoshi = {
+      val localAmountOut = params.localAmount + localOutputs.filter(_.pubkeyScript != params.fundingPubkeyScript).map(_.amount).sum
+      localAmountIn - localAmountOut
+    }
+
     def buildUnsignedTx(): Transaction = {
       val localTxIn = localInputs.map(i => (i.serialId, TxIn(toOutPoint(i), ByteVector.empty, i.sequence)))
       val remoteTxIn = remoteInputs.map(i => (i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence)))
@@ -328,6 +333,13 @@ object InteractiveTx {
   def dummyLocalTx(session: InteractiveTxSession): Transaction = {
     val inputs = (session.localInputs ++ session.toSend.collect { case Left(addInput) => addInput }).map(i => TxIn(toOutPoint(i), ByteVector.empty, i.sequence))
     val outputs = (session.localOutputs ++ session.toSend.collect { case Right(addOutput) => addOutput }).map(o => TxOut(o.amount, o.pubkeyScript))
+    Transaction(2, inputs, outputs, 0)
+  }
+
+  /** Return a dummy transaction containing local contributions from every given transaction. */
+  def dummyLocalTx(sharedTxs: Seq[SharedTransaction]): Transaction = {
+    val inputs = sharedTxs.flatMap(_.localInputs).distinctBy(_.serialId).map(i => TxIn(toOutPoint(i), ByteVector.empty, i.sequence))
+    val outputs = sharedTxs.flatMap(_.localOutputs).distinctBy(_.serialId).map(o => TxOut(o.amount, o.pubkeyScript))
     Transaction(2, inputs, outputs, 0)
   }
 

@@ -74,6 +74,7 @@ case class ChannelUnavailable                      (override val channelId: Byte
 case class InvalidFinalScript                      (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid final script")
 case class MissingUpfrontShutdownScript            (override val channelId: ByteVector32) extends ChannelException(channelId, "missing upfront shutdown script")
 case class FundingTxTimedout                       (override val channelId: ByteVector32) extends ChannelException(channelId, "funding tx timed out")
+case class FundingTxDoubleSpent                    (override val channelId: ByteVector32) extends ChannelException(channelId, "funding tx double spent")
 case class FundingTxSpent                          (override val channelId: ByteVector32, spendingTx: Transaction) extends ChannelException(channelId, s"funding tx has been spent by txid=${spendingTx.txid}")
 case class HtlcsTimedoutDownstream                 (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs timed out downstream: ids=${htlcs.take(10).map(_.id).mkString(",")}") // we only display the first 10 ids
 case class HtlcsWillTimeoutUpstream                (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs that should be fulfilled are close to timing out upstream: ids=${htlcs.take(10).map(_.id).mkString}") // we only display the first 10 ids

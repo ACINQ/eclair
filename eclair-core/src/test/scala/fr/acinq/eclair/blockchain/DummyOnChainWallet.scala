@@ -67,6 +67,7 @@ class NoOpOnChainWallet extends OnChainWallet {
   import DummyOnChainWallet._
 
   var rolledback = Seq.empty[Transaction]
+  var doubleSpent = Set.empty[ByteVector32]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -91,7 +92,7 @@ class NoOpOnChainWallet extends OnChainWallet {
     Future.successful(true)
   }
 
-  override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
+  override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 
 }
 

@@ -338,7 +338,7 @@ private[channel] object ChannelCodecs3 {
     private val remoteTxAddOutputCodec: Codec[RemoteTxAddOutput] = (
       ("serialId" | uint64) ::
         ("amount" | satoshi) ::
-        ("scriptPubKey" | variableSizeBytes(uint16, bytes))).as[RemoteTxAddOutput]
+        ("scriptPubKey" | lengthDelimited(bytes))).as[RemoteTxAddOutput]
 
     private val sharedTransactionCodec: Codec[SharedTransaction] = (
       ("localInputs" | seqOfN(uint16, lengthDelimited(txAddInputCodec))) ::
@@ -364,12 +364,30 @@ private[channel] object ChannelCodecs3 {
       ("fundingTx" | signedSharedTransactionCodec) ::
         ("commitments" | commitmentsCodec)).as[DualFundingTx]
 
+    private val fundingParamsCodec: Codec[InteractiveTxParams] = (
+      ("channelId" | bytes32) ::
+        ("isInitiator" | bool8) ::
+        ("localAmount" | satoshi) ::
+        ("remoteAmount" | satoshi) ::
+        ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
+        ("lockTime" | uint32) ::
+        ("dustLimit" | satoshi) ::
+        ("targetFeerate" | feeratePerKw)).as[InteractiveTxParams]
+
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | signedSharedTransactionCodec) ::
+        ("fundingParams" | fundingParamsCodec) ::
         ("previousFundingTxs" | seqOfN(uint16, dualFundingTxCodec)) ::
         ("waitingSince" | blockHeight) ::
+        ("lastChecked" | blockHeight) ::
         ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_LOCKED] = (
+      ("commitments" | commitmentsCodec) ::
+        ("shortChannelId" | shortchannelid) ::
+        ("otherFundingTxs" | seqOfN(uint16, dualFundingTxCodec)) ::
+        ("lastSent" | lengthDelimited(fundingLockedCodec))).as[DATA_WAIT_FOR_DUAL_FUNDING_LOCKED]
 
     val DATA_NORMAL_COMPAT_02_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
@@ -430,6 +448,7 @@ private[channel] object ChannelCodecs3 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x0a, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_LOCKED_Codec)
     .typecase(0x09, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_Codec)
     .typecase(0x08, Codecs.DATA_SHUTDOWN_Codec)
     .typecase(0x07, Codecs.DATA_NORMAL_Codec)

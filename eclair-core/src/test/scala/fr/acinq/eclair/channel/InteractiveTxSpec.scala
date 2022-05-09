@@ -90,6 +90,8 @@ class InteractiveTxSpec extends AnyFunSuiteLike {
     assert(tx.txIn.length === 2)
     assert(tx.txOut.length === 1)
     assert(tx.txOut.head === TxOut(initiatorParams.fundingAmount, fundingScript))
+    assert(initiatorTx.localFees(initiatorParams) === 5000.sat)
+    assert(nonInitiatorTx.localFees(nonInitiatorParams) === 0.sat)
   }
 
   test("initiator and non-initiator") {
@@ -161,6 +163,8 @@ class InteractiveTxSpec extends AnyFunSuiteLike {
     assert(tx.txIn.length === 3)
     assert(tx.txOut.length === 3)
     assert(tx.txOut.head === TxOut(initiatorParams.fundingAmount, fundingScript))
+    assert(initiatorTx.localFees(initiatorParams) === 2500.sat)
+    assert(nonInitiatorTx.localFees(nonInitiatorParams) === 1000.sat)
   }
 
   test("invalid input") {

@@ -123,6 +123,10 @@ case class TxAbort(channelId: ByteVector32,
                    data: ByteVector,
                    tlvStream: TlvStream[TxAbortTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
 
+object TxAbort {
+  def apply(channelId: ByteVector32, msg: String): TxAbort = TxAbort(channelId, ByteVector.view(msg.getBytes(Charsets.US_ASCII)))
+}
+
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long,
