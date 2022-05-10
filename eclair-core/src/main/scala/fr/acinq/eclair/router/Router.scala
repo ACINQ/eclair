@@ -103,7 +103,17 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, scid2PrivateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    startWith(NORMAL, Data(
+      initNodes, initChannels,
+      Stash(Map.empty, Map.empty),
+      rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty),
+      awaiting = Map.empty,
+      privateChannels = Map.empty,
+      scid2PrivateChannels = Map.empty,
+      excludedChannels = Set.empty,
+      graph = graph,
+      balances = BalancesEstimates.baseline(graph, nodeParams.routerConf.balanceEstimateHalfLife),
+      sync = Map.empty))
   }
 
   when(NORMAL) {
@@ -251,6 +261,22 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
       stay() using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
 
+    case Event(RouteCouldRelay(route), d) =>
+      val (balances1, _) = route.hops.foldRight((d.balances, route.amount)) {
+        case (hop, (balances, amount)) =>
+          (balances.channelCouldSend(hop, amount), amount + hop.fee(amount))
+      }
+      stay() using d.copy(balances = balances1)
+
+    case Event(RouteDidRelay(route), d) =>
+      val (balances1, _) = route.hops.foldRight((d.balances, route.amount)) {
+        case (hop, (balances, amount)) =>
+          (balances.channelDidSend(hop, amount), amount + hop.fee(amount))
+      }
+      stay() using d.copy(balances = balances1)
+
+    case Event(ChannelCouldNotRelay(amount, hop), d) =>
+      stay() using d.copy(balances = d.balances.channelCouldNotSend(hop, amount))
   }
 
   initialize()
@@ -301,7 +327,8 @@ object Router {
                         encodingType: EncodingType,
                         channelRangeChunkSize: Int,
                         channelQueryChunkSize: Int,
-                        pathFindingExperimentConf: PathFindingExperimentConf) {
+                        pathFindingExperimentConf: PathFindingExperimentConf,
+                        balanceEstimateHalfLife: FiniteDuration) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
   }
@@ -427,8 +454,13 @@ object Router {
       override def htlcMinimum: MilliSatoshi = 0 msat
       override def htlcMaximum_opt: Option[MilliSatoshi] = Some(htlcMaximum)
     }
+    // @formatter:on
+
+    def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
+      a.cltvExpiryDelta == b.cltvExpiryDelta &&
+        a.relayFees == b.relayFees &&
+        (ignoreHtlcSize || (a.htlcMinimum == b.htlcMinimum && a.htlcMaximum_opt == b.htlcMaximum_opt))
   }
-  // @formatter:on
 
   /**
    * A directed hop between two connected nodes using a specific channel.
@@ -526,6 +558,10 @@ object Router {
 
     def printChannels(): String = hops.map(_.shortChannelId).mkString("->")
 
+    def stopAt(nodeId: PublicKey): Route = {
+      val amountAtStop = hops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
+      Route(amountAtStop, hops.takeWhile(_.nodeId != nodeId))
+    }
   }
 
   case class RouteResponse(routes: Seq[Route]) {
@@ -616,6 +652,7 @@ object Router {
                   scid2PrivateChannels: Map[ShortChannelId, ByteVector32], // scid to channel_id, only to be used for private channels
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedGraph,
+                  balances: BalancesEstimates,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  ) {
 
@@ -644,4 +681,13 @@ object Router {
   def isRelatedTo(c: ChannelAnnouncement, nodeId: PublicKey) = nodeId == c.nodeId1 || nodeId == c.nodeId2
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[PublicChannel]): Boolean = channels.exists(c => isRelatedTo(c.ann, nodeId))
+
+  /** We know that this route could relay because we have tried it but the payment was eventually cancelled */
+  case class RouteCouldRelay(route: Route)
+
+  /** We have relayed using this route. */
+  case class RouteDidRelay(route: Route)
+
+  /** We have tried to relay this amount from this channel and it failed. */
+  case class ChannelCouldNotRelay(amount: MilliSatoshi, hop: ChannelHop)
 }

@@ -102,6 +102,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       handleLocalFail(d, DisconnectedException, isFatal = false)
 
     case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
+      router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PartialPayment(id, d.c.finalPayload.amount, d.cmd.amount - d.c.finalPayload.amount, htlc.channelId, Some(cfg.fullRoute(d.route)))
       myStop(d.c, Right(cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil)))
@@ -166,13 +167,31 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
   private def handleRemoteFail(d: WaitingForComplete, fail: UpdateFailHtlc) = {
     import d._
-    (Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
+    ((Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
       case success@Success(e) =>
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(d.c.finalPayload.amount, Nil, e))).increment()
         success
       case failure@Failure(_) =>
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(d.c.finalPayload.amount, Nil))).increment()
         failure
+    }) match {
+      case res@Success(Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
+        // We have discovered some liquidity information with this payment: we update the router accordingly.
+        val stoppedRoute = d.route.stopAt(nodeId)
+        if (stoppedRoute.hops.length > 1) {
+          router ! Router.RouteCouldRelay(stoppedRoute)
+        }
+        failureMessage match {
+          case TemporaryChannelFailure(update) =>
+            d.route.hops.find(_.nodeId == nodeId) match {
+              case Some(failingHop) if ChannelRelayParams.areSame(failingHop.params, ChannelRelayParams.FromAnnouncement(update), true) =>
+                router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
+              case _ => // otherwise the relay parameters may have changed, so it's not necessarily a liquidity issue
+            }
+          case _ => // other errors should not be used for liquidity issues
+        }
+        res
+      case res => res
     }) match {
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
         // if destination node returns an error, we fail the payment immediately

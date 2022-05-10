@@ -195,7 +195,7 @@ object Validation {
     log.info("pruning shortChannelId={} (spent)", shortChannelId)
     db.removeChannel(shortChannelId) // NB: this also removes channel updates
     // we also need to remove updates from the graph
-    val graph1 = d.graph
+    val BalancesAndGraph(balances1, graph1) = BalancesAndGraph(d.balances, d.graph)
       .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
       .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
 
@@ -206,7 +206,7 @@ object Validation {
         db.removeNode(nodeId)
         ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, graph = graph1)
+    d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, graph = graph1, balances = balances1)
   }
 
   def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
@@ -285,8 +285,8 @@ object Validation {
           val origins1 = d.rebroadcast.updates(u) ++ origins
           // NB: we update the channels because the balances may have changed even if the channel_update is the same.
           val pc1 = pc.applyChannelUpdate(update)
-          val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
-          d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (pc.shortChannelId -> pc1), graph = graph1)
+          val BalancesAndGraph(balances1, graph1) = BalancesAndGraph(d.balances, d.graph).addEdge(GraphEdge(u, pc1))
+          d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (pc.shortChannelId -> pc1), graph = graph1, balances = balances1)
         } else if (StaleChannels.isStale(u)) {
           log.debug("ignoring {} (stale)", u)
           sendDecision(origins, GossipDecision.Stale(u))
@@ -298,8 +298,8 @@ object Validation {
             case Left(_) =>
               // NB: we update the graph because the balances may have changed even if the channel_update is the same.
               val pc1 = pc.applyChannelUpdate(update)
-              val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
-              d.copy(channels = d.channels + (pc.shortChannelId -> pc1), graph = graph1)
+              val BalancesAndGraph(balances1, graph1) = BalancesAndGraph(d.balances, d.graph).addEdge(GraphEdge(u, pc1))
+              d.copy(channels = d.channels + (pc.shortChannelId -> pc1), graph = graph1, balances = balances1)
             case Right(_) => d
           }
         } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
@@ -314,14 +314,14 @@ object Validation {
           db.updateChannel(u)
           // update the graph
           val pc1 = pc.applyChannelUpdate(update)
-          val graph1 = if (u.channelFlags.isEnabled) {
+          val BalancesAndGraph(balances1, graph1) = if (u.channelFlags.isEnabled) {
             update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-            d.graph.addEdge(GraphEdge(u, pc1))
+            BalancesAndGraph(d.balances, d.graph).addEdge(GraphEdge(u, pc1))
           } else {
             update.left.foreach(_ => log.info("removed local shortChannelId={} public={} from the network graph", u.shortChannelId, publicChannel))
-            d.graph.removeEdge(ChannelDesc(u, pc1.ann))
+            BalancesAndGraph(d.balances, d.graph).removeEdge(ChannelDesc(u, pc1.ann))
           }
-          d.copy(channels = d.channels + (pc.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+          d.copy(channels = d.channels + (pc.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1, balances = balances1)
         } else {
           log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
           sendDecision(origins, GossipDecision.Accepted(u))
@@ -329,9 +329,9 @@ object Validation {
           db.updateChannel(u)
           // we also need to update the graph
           val pc1 = pc.applyChannelUpdate(update)
-          val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
+          val BalancesAndGraph(balances1, graph1) = BalancesAndGraph(d.balances, d.graph).addEdge(GraphEdge(u, pc1))
           update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-          d.copy(channels = d.channels + (pc.shortChannelId -> pc1), privateChannels = d.privateChannels - pc1.channelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+          d.copy(channels = d.channels + (pc.shortChannelId -> pc1), privateChannels = d.privateChannels - pc1.channelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1, balances = balances1)
         }
       case Some(pc: PrivateChannel) =>
         val publicChannel = false
@@ -354,23 +354,23 @@ object Validation {
           ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
           // we also need to update the graph
           val pc1 = pc.applyChannelUpdate(update)
-          val graph1 = if (u.channelFlags.isEnabled) {
+          val BalancesAndGraph(balances1, graph1) = if (u.channelFlags.isEnabled) {
             update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
-            d.graph.addEdge(GraphEdge(u, pc1))
+            BalancesAndGraph(d.balances, d.graph).addEdge(GraphEdge(u, pc1))
           } else {
             update.left.foreach(_ => log.info("removed local channelId={} public={} from the network graph", pc.channelId, publicChannel))
-            d.graph.removeEdge(ChannelDesc(u, pc1))
+            BalancesAndGraph(d.balances, d.graph).removeEdge(ChannelDesc(u, pc1))
           }
-          d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graph = graph1)
+          d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graph = graph1, balances = balances1)
         } else {
           log.debug("added channel_update for channelId={} public={} flags={} {}", pc.channelId, publicChannel, u.channelFlags, u)
           sendDecision(origins, GossipDecision.Accepted(u))
           ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
           // we also need to update the graph
           val pc1 = pc.applyChannelUpdate(update)
-          val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
+          val BalancesAndGraph(balances1, graph1) = BalancesAndGraph(d.balances, d.graph).addEdge(GraphEdge(u, pc1))
           update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
-          d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graph = graph1)
+          d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graph = graph1, balances = balances1)
         }
       case None if d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId) =>
         // channel is currently being validated
@@ -467,38 +467,39 @@ object Validation {
       val desc1 = ChannelDesc(shortChannelId, localNodeId, remoteNodeId)
       val desc2 = ChannelDesc(shortChannelId, remoteNodeId, localNodeId)
       // we remove the corresponding updates from the graph
-      val graph1 = d.graph
+      val BalancesAndGraph(balances1, graph1) = BalancesAndGraph(d.balances, d.graph)
         .removeEdge(desc1)
         .removeEdge(desc2)
       // and we remove the channel and channel_update from our state
-      d.copy(privateChannels = d.privateChannels - channelId, graph = graph1)
+      d.copy(privateChannels = d.privateChannels - channelId, graph = graph1, balances = balances1)
     } else {
       d
     }
   }
 
   def handleAvailableBalanceChanged(d: Data, e: AvailableBalanceChanged)(implicit log: LoggingAdapter): Data = {
-    val (publicChannels1, graph1) = d.channels.get(e.shortChannelId) match {
+    val balancesAndGraph0 = BalancesAndGraph(d.balances, d.graph)
+    val (publicChannels1, balancesAndGraph1) = d.channels.get(e.shortChannelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("public channel balance updated: {}", pc1)
         val update_opt = if (e.commitments.localNodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
-        val graph1 = update_opt.map(u => d.graph.addEdge(GraphEdge(u, pc1))).getOrElse(d.graph)
-        (d.channels + (pc.ann.shortChannelId -> pc1), graph1)
+        val balancesAndGraph1 = update_opt.map(u => balancesAndGraph0.addEdge(GraphEdge(u, pc1))).getOrElse(balancesAndGraph0)
+        (d.channels + (pc.ann.shortChannelId -> pc1), balancesAndGraph1)
       case None =>
-        (d.channels, d.graph)
+        (d.channels, balancesAndGraph0)
     }
-    val (privateChannels1, graph2) = d.privateChannels.get(e.channelId) match {
+    val (privateChannels1, BalancesAndGraph(balances2, graph2)) = d.privateChannels.get(e.channelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("private channel balance updated: {}", pc1)
         val update_opt = if (e.commitments.localNodeId == pc1.nodeId1) pc1.update_1_opt else pc1.update_2_opt
-        val graph2 = update_opt.map(u => graph1.addEdge(GraphEdge(u, pc1))).getOrElse(graph1)
-        (d.privateChannels + (e.channelId -> pc1), graph2)
+        val balancesAndGraph2 = update_opt.map(u => balancesAndGraph1.addEdge(GraphEdge(u, pc1))).getOrElse(balancesAndGraph1)
+        (d.privateChannels + (e.channelId -> pc1), balancesAndGraph2)
       case None =>
-        (d.privateChannels, graph1)
+        (d.privateChannels, balancesAndGraph1)
     }
-    d.copy(channels = publicChannels1, privateChannels = privateChannels1, graph = graph2)
+    d.copy(channels = publicChannels1, privateChannels = privateChannels1, graph = graph2, balances = balances2)
   }
 
 }
