@@ -36,19 +36,79 @@ import scala.concurrent.duration.FiniteDuration
  */
 case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSecond, high: MilliSatoshi, highTimestamp: TimestampSecond, totalCapacity: Satoshi, halfLife: FiniteDuration) {
 
-  def otherSide: BalanceEstimate = BalanceEstimate(totalCapacity - high, highTimestamp, totalCapacity - low, lowTimestamp, totalCapacity, halfLife)
+  /* The goal of this class is to estimate the probability that a given edge can relay the amount that we plan to send
+   * through it. We model this probability with 3 pieces of linear functions.
+   *
+   * Without any information we use the following baseline (x is the amount we're sending and y the probability it can be relayed):
+   *
+   *   1 |****
+   *     |    ****
+   *     |        ****
+   *     |            ****
+   *     |                ****
+   *     |                    ****
+   *     |                        ****
+   *     |                            ****
+   *     |                                ****
+   *     |                                    ****
+   *     |                                        ****
+   *     |                                            ****
+   *   0 +------------------------------------------------****
+   *     0                                                capacity
+   *
+   * If we get the information that the edge can (or can't) relay a given amount (because we tried), then we get a lower
+   * bound (or upper bound) that we can use and our model becomes:
+   *
+   *   1 |***************
+   *     |              |*
+   *     |              | *
+   *     |              | *
+   *     |              |  *
+   *     |              |   *
+   *     |              |   *
+   *     |              |    *
+   *     |              |     *
+   *     |              |     *
+   *     |              |      *
+   *     |              |       *
+   *   0 +--------------|-------|***************************
+   *     0             low     high                      capacity
+   *
+   * However this lower bound (or upper bound) is only valid at the moment we got that information. If we wait, the
+   * information decays and we slowly go back towards our baseline:
+   *
+   *   1 |*****
+   *     |     *****
+   *     |          *****
+   *     |              |*
+   *     |              | *
+   *     |              |  *
+   *     |              |   *
+   *     |              |    *
+   *     |              |     *
+   *     |              |      *
+   *     |              |       **********
+   *     |              |       |         **********
+   *   0 +--------------|-------|-------------------**********
+   *     0             low     high                       capacity
+   */
 
-  /* When we probe an edge, we get certain information on its balance, we know for sure that it can relay at least X or
-   * at most Y. However after some time has passed, other payments may have changed the balance and we can't be so sure
-   * anymore.
-   * We model this decay with a half-life H: every H units of time, our confidence decreases by half and our estimated
+  /**
+   * We model the decay with a half-life H: every H units of time, our confidence decreases by half and our estimated
    * probability distribution gets closer to the baseline uniform distribution of balances between 0 and totalCapacity.
+   *
+   * @param amount                the amount that we knew we could send or not send at time t
+   * @param successProbabilityAtT probability that we could relay amount at time t (usually 0 or 1)
+   * @param t                     time at which we knew if we could or couldn't send amount
+   * @return                      the probability that we can send amount now
    */
   private def decay(amount: MilliSatoshi, successProbabilityAtT: Double, t: TimestampSecond): Double = {
     val decayRatio = 1 / math.pow(2, (TimestampSecond.now() - t) / halfLife)
     val baseline = 1 - amount.toLong.toDouble / toMilliSatoshi(totalCapacity).toLong.toDouble
     baseline * (1 - decayRatio) + successProbabilityAtT * decayRatio
   }
+
+  def otherSide: BalanceEstimate = BalanceEstimate(totalCapacity - high, highTimestamp, totalCapacity - low, lowTimestamp, totalCapacity, halfLife)
 
   def couldNotSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate =
     if (amount < high) {
@@ -79,12 +139,16 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
   def didSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate = {
     val newLow = (low - amount) max MilliSatoshi(0)
     val newHigh = (high - amount) max MilliSatoshi(0)
-    val pLow = decay(newLow, 1, lowTimestamp)
-    val pHigh = decay(newHigh, 0, highTimestamp)
-    if (???) {
-      copy(low = newLow, high = (totalCapacity - amount) max MilliSatoshi(0), highTimestamp = timestamp)
+    /* We could shift everything left by amount without changing the timestamps (a) but we may get more information by
+     * ignoring the old high (b) if if has decayed too much. We try both and choose the one that gives the lowest
+     * probability for high.
+     */
+    val a = copy(low = newLow, high = newHigh)
+    val b = copy(low = newLow, high = (totalCapacity - amount) max MilliSatoshi(0), highTimestamp = timestamp)
+    if (a.canSend(newHigh) < b.canSend(newHigh)) {
+      a
     } else {
-      copy(low = newLow, high = newHigh)
+      b
     }
   }
 
@@ -96,8 +160,8 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
    *
    * We estimate this probability with a piecewise linear function:
    * - probability that it can relay a payment of 0 is 1
-   * - probability that it can relay a payment of low is close to 1 if lowTimestamp is recent
-   * - probability that it can relay a payment of high is close to 0 if highTimestamp is recent
+   * - probability that it can relay a payment of low is decay(low, 1, lowTimestamp) which is close to 1 if lowTimestamp is recent
+   * - probability that it can relay a payment of high is decay(high, 0, highTimestamp) which is close to 0 if highTimestamp is recent
    * - probability that it can relay a payment of totalCapacity is 0
    */
   def canSend(amount: MilliSatoshi): Double = {

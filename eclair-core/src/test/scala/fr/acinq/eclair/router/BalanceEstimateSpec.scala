@@ -83,7 +83,10 @@ class BalanceEstimateSpec extends AnyFunSuite {
 
   test("can send balance info bounds") {
     val now = TimestampSecond.now()
-    val balance = BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100)).couldSend(24000 msat, now).couldNotSend(30000 msat, now)
+    val balance =
+      BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+        .couldSend(24000 msat, now)
+        .couldNotSend(30000 msat, now)
     assert(balance.canSend(0 msat) === 1.0 +- 0.001)
     assert(balance.canSend(1 msat) === 1.0 +- 0.001)
     assert(balance.canSend(23999 msat) === 1.0 +- 0.001)
@@ -99,7 +102,10 @@ class BalanceEstimateSpec extends AnyFunSuite {
 
   test("could and couldn't send at the same time") {
     val now = TimestampSecond.now()
-    val balance = BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100)).couldSend(26000 msat, now).couldNotSend(26000 msat, now)
+    val balance =
+      BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+        .couldSend(26000 msat, now)
+        .couldNotSend(26000 msat, now)
     assert(isValid(balance))
     assert(balance.canSend(0 msat) === 1.0 +- 0.001)
     assert(balance.canSend(1 msat) === 1.0 +- 0.001)
@@ -111,7 +117,10 @@ class BalanceEstimateSpec extends AnyFunSuite {
 
   test("couldn't and could send at the same time") {
     val now = TimestampSecond.now()
-    val balance = BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100)).couldNotSend(26000 msat, now).couldSend(26000 msat, now)
+    val balance =
+      BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+        .couldNotSend(26000 msat, now)
+        .couldSend(26000 msat, now)
     assert(isValid(balance))
     assert(balance.canSend(0 msat) === 1.0 +- 0.001)
     assert(balance.canSend(1 msat) === 1.0 +- 0.001)
@@ -123,11 +132,41 @@ class BalanceEstimateSpec extends AnyFunSuite {
 
   test("decay") {
     val longAgo = TimestampSecond.now() - 1.day
-    val balance = BalanceEstimate.noChannels(1 second).addChannel(Satoshi(100)).couldNotSend(32000 msat, longAgo).couldSend(28000 msat, longAgo)
+    val balance =
+      BalanceEstimate.noChannels(1 second).addChannel(Satoshi(100))
+        .couldNotSend(32000 msat, longAgo)
+        .couldSend(28000 msat, longAgo)
     assert(isValid(balance))
     assert(balance.canSend(1 msat) === 1.0 +- 0.01)
     assert(balance.canSend(33333 msat) === 0.666 +- 0.01)
     assert(balance.canSend(66666 msat) === 0.333 +- 0.01)
     assert(balance.canSend(99999 msat) === 0.0 +- 0.01)
+  }
+
+  test("sending shifts amounts") {
+    val now = TimestampSecond.now()
+    val balance =
+      BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+        .couldNotSend(80000 msat, now)
+        .couldSend(50000 msat, now)
+    assert(isValid(balance))
+    assert(balance.canSend(50000 msat) === 1.0 +- 0.001)
+    assert(balance.canSend(80000 msat) === 0.0 +- 0.001)
+    val balanceAfterSend = balance.didSend(20000 msat, now)
+    assert(isValid(balanceAfterSend))
+    assert(balanceAfterSend.canSend(30000 msat) === 1.0 +- 0.001)
+    assert(balanceAfterSend.canSend(60000 msat) === 0.0 +- 0.001)
+  }
+
+  test("sending after decay") {
+    val longAgo = TimestampSecond.now() - 1.day
+    val now = TimestampSecond.now()
+    val balance =
+      BalanceEstimate.noChannels(1 second).addChannel(Satoshi(100))
+        .couldNotSend(80000 msat, longAgo)
+        .couldSend(50000 msat, longAgo)
+        .didSend(40000 msat, now)
+    assert(isValid(balance))
+    assert(balance.canSend(60000 msat) === 0.0 +- 0.01)
   }
 }
