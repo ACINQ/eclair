@@ -146,12 +146,14 @@ object Validation {
         case Some(pc) =>
           // note: if the channel is graduating from private to public, the implementation (in the LocalChannelUpdate handler) guarantees that we will process a new channel_update
           // right after the channel_announcement, channel_updates will be moved from private to public at that time
+          val balances1 = d0.balances.addChannel(pc)
           val d1 = d0.copy(
             channels = d0.channels + (c.shortChannelId -> pc),
             privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
             rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet)), // we also add the newly validated channels to the rebroadcast queue
             stash = stash1,
-            awaiting = awaiting1)
+            awaiting = awaiting1,
+            balances = balances1)
           // we only reprocess updates and nodes if validation succeeded
           val d2 = reprocessUpdates.foldLeft(d1) {
             case (d, (u, origins)) => Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, origins)), wasStashed = true)
@@ -170,7 +172,8 @@ object Validation {
 
   def handleChannelSpent(d: Data, db: NetworkDb, shortChannelId: ShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val lostChannel = d.channels(shortChannelId).ann
+    val lostPublicChannel = d.channels(shortChannelId)
+    val lostChannel = lostPublicChannel.ann
     log.info("funding tx of channelId={} has been spent", shortChannelId)
     // we need to remove nodes that aren't tied to any channels anymore
     val channels1 = d.channels - lostChannel.shortChannelId
@@ -182,6 +185,7 @@ object Validation {
     val graph1 = d.graph
       .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
       .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
+    val balances1 = d.balances.removeChannel(lostPublicChannel)
 
     ctx.system.eventStream.publish(ChannelLost(shortChannelId))
     lostNodes.foreach {
@@ -190,7 +194,7 @@ object Validation {
         db.removeNode(nodeId)
         ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, graph = graph1)
+    d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, graph = graph1, balances = balances1)
   }
 
   def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
