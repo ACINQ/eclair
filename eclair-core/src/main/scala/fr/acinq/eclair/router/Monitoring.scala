@@ -66,6 +66,12 @@ object Monitoring {
       case _: GossipDecision.Accepted => GossipResult.withTag("result", "accepted")
       case rejected: GossipDecision.Rejected => GossipResult.withTag("result", "rejected").withTag("reason", getSimpleClassName(rejected))
     }
+
+    private val RelayProbabilityEstimate = Kamon.histogram("router.balance-estimates.remote-edge-relay", "Estimated probability (in percent) that the relay will be successful")
+
+    def remoteEdgeRelaySuccess(estimatedProbability: Double) = RelayProbabilityEstimate.withTag("success", (estimatedProbability * 100).toLong)
+
+    def remoteEdgeRelayFailure(estimatedProbability: Double) = RelayProbabilityEstimate.withTag("failure", (estimatedProbability * 100).toLong)
   }
 
   object Tags {

@@ -191,12 +191,14 @@ object BalanceEstimate {
 }
 
 case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstimate], defaultHalfLife: FiniteDuration) {
-  def get(edge: GraphEdge): BalanceEstimate =
-    if (LexicographicalOrdering.isLessThan(edge.desc.a.value, edge.desc.b.value)) {
-      balances.getOrElse((edge.desc.a, edge.desc.b), BalanceEstimate.baseline(edge.capacity, defaultHalfLife))
+  private def get(a: PublicKey, b: PublicKey): Option[BalanceEstimate] =
+    if (LexicographicalOrdering.isLessThan(a.value, b.value)) {
+      balances.get((a, b))
     } else {
-      balances.getOrElse((edge.desc.b, edge.desc.a), BalanceEstimate.baseline(edge.capacity, defaultHalfLife)).otherSide
+      balances.get((b, a)).map(_.otherSide)
     }
+
+  def get(edge: GraphEdge): BalanceEstimate = get(edge.desc.a, edge.desc.b).getOrElse(BalanceEstimate.baseline(edge.capacity, defaultHalfLife))
 
   def addChannel(channel: PublicChannel): BalancesEstimates =
     BalancesEstimates(
@@ -223,14 +225,29 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
       BalancesEstimates(balances.updatedWith((hop.nextNodeId, hop.nodeId))(_.map(b => x(b.otherSide, amount, TimestampSecond.now()).otherSide)), defaultHalfLife)
     }
 
-  def channelCouldSend(hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates =
+  def channelCouldSend(hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates = {
+    get(hop.nodeId, hop.nextNodeId).foreach { balance =>
+      val estimatedProbability = balance.canSend(amount)
+      Monitoring.Metrics.remoteEdgeRelaySuccess(estimatedProbability)
+    }
     channelXSend(_.couldSend(_, _), hop, amount)
+  }
 
-  def channelCouldNotSend(hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates =
+  def channelCouldNotSend(hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates = {
+    get(hop.nodeId, hop.nextNodeId).foreach { balance =>
+      val estimatedProbability = balance.canSend(amount)
+      Monitoring.Metrics.remoteEdgeRelayFailure(estimatedProbability)
+    }
     channelXSend(_.couldNotSend(_, _), hop, amount)
+  }
 
-  def channelDidSend(hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates =
+  def channelDidSend(hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates = {
+    get(hop.nodeId, hop.nextNodeId).foreach { balance =>
+      val estimatedProbability = balance.canSend(amount)
+      Monitoring.Metrics.remoteEdgeRelaySuccess(estimatedProbability)
+    }
     channelXSend(_.didSend(_, _), hop, amount)
+  }
 
 }
 
