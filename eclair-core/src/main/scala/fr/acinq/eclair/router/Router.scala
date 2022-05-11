@@ -304,7 +304,10 @@ object Router {
                         encodingType: EncodingType,
                         channelRangeChunkSize: Int,
                         channelQueryChunkSize: Int,
-                        pathFindingExperimentConf: PathFindingExperimentConf)
+                        pathFindingExperimentConf: PathFindingExperimentConf) {
+    require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
+    require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
+  }
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)

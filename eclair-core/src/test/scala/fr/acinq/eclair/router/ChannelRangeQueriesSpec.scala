@@ -22,7 +22,7 @@ import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.protocol.QueryShortChannelIdsTlv.QueryFlagType._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
-import fr.acinq.eclair.wire.protocol.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
+import fr.acinq.eclair.wire.protocol.{EncodedShortChannelIds, EncodingType, LightningMessageCodecs, ReplyChannelRange}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
@@ -356,6 +356,16 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     }
   }
 
+  test("encode maximum size reply_channel_range") {
+    val scids = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => ShortChannelId(i)).toList
+    val timestamps = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => Timestamps(i.unixsec, (i + 1).unixsec)).toList
+    val checksums = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => Checksums(i, i + 1)).toList
+    val reply = ReplyChannelRange(Block.RegtestGenesisBlock.hash, BlockHeight(0), 100, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, scids), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, timestamps)), Some(EncodedChecksums(checksums)))
+    val encoded = LightningMessageCodecs.lightningMessageCodec.encode(reply)
+    assert(encoded.isSuccessful)
+    assert(encoded.require.bytes.length <= 0xffff)
+  }
+
   test("do not encode empty lists as COMPRESSED_ZLIB") {
     {
       val reply = buildReplyChannelRange(ShortChannelIdsChunk(BlockHeight(0), 42, Nil), syncComplete = true, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_ALL)), SortedMap())
@@ -374,4 +384,5 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, BlockHeight(0), 42L, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, None))
     }
   }
+
 }

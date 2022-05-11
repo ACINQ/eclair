@@ -385,11 +385,6 @@ object NodeParams extends Logging {
       case "stop" => UnhandledExceptionStrategy.Stop
     }
 
-    val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
-      case "uncompressed" => EncodingType.UNCOMPRESSED
-      case "zlib" => EncodingType.COMPRESSED_ZLIB
-    }
-
     val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
       case "no-relay" => NoRelay
       case "channels-only" => RelayChannelsOnly
@@ -494,7 +489,7 @@ object NodeParams extends Logging {
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
-        encodingType = routerSyncEncodingType,
+        encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments"))

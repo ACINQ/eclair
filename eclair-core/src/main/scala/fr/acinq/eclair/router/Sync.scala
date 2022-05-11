@@ -38,9 +38,9 @@ object Sync {
   // maximum number of ids we can keep in a single chunk and still have an encoded reply that is smaller than 65Kb
   // please note that:
   // - this is based on the worst case scenario where peer want timestamps and checksums and the reply is not compressed
-  // - the maximum number of public channels in a single block so far is less than 300, and the maximum number of tx per block
-  // almost never exceeds 2800 so this is not a real limitation yet
-  val MAXIMUM_CHUNK_SIZE = 3200
+  // - the maximum number of public channels in a single block so far is less than 300, and the maximum number of tx per
+  //   block almost never exceeds 2800 so this should very rarely be limiting
+  val MAXIMUM_CHUNK_SIZE = 2700
 
   def handleSendChannelQuery(d: Data, s: SendChannelQuery)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
