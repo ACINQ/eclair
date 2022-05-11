@@ -24,6 +24,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
@@ -102,7 +103,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, resolveScid = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
   when(NORMAL) {
@@ -320,6 +321,8 @@ object Router {
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
   sealed trait KnownChannel {
     val capacity: Satoshi
+    val nodeId1: PublicKey
+    val nodeId2: PublicKey
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate]
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi]
@@ -331,6 +334,10 @@ object Router {
     update_1_opt.foreach(u => assert(u.channelFlags.isNode1))
     update_2_opt.foreach(u => assert(!u.channelFlags.isNode1))
 
+    val nodeId1: PublicKey = ann.nodeId1
+    val nodeId2: PublicKey = ann.nodeId2
+    def shortChannelId: ShortChannelId = ann.shortChannelId
+    def channelId: ByteVector32 = toLongId(fundingTxid.reverse, outputIndex(ann.shortChannelId))
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (u.channelFlags.isNode1) update_1_opt else update_2_opt
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (u.channelFlags.isNode1) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
@@ -345,7 +352,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
+  case class PrivateChannel(shortChannelId: ShortChannelId, channelId: ByteVector32, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -605,11 +612,26 @@ object Router {
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[GossipOrigin]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                  privateChannels: Map[ShortChannelId, PrivateChannel],
+                  privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
+                  resolveScid: Map[ShortChannelId, ByteVector32], // scid to channel_id
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedGraph,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
-                 )
+                 ) {
+
+    def resolve(scid: ShortChannelId): Option[KnownChannel] = {
+      // let's assume this is a real scid
+      channels.get(scid) match {
+        case Some(publicChannel) => Some(publicChannel)
+        case None =>
+          // maybe it's an alias or a real scid
+          resolveScid.get(scid).flatMap(privateChannels.get) match {
+            case Some(privateChannel) => Some(privateChannel)
+            case None => None
+          }
+      }
+    }
+  }
 
   // @formatter:off
   sealed trait State

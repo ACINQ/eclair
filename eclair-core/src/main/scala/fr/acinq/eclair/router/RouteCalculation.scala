@@ -66,18 +66,22 @@ object RouteCalculation {
         case PredefinedChannelRoute(targetNodeId, shortChannelIds) =>
           val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
             case ((currentNode, previousHops), shortChannelId) =>
-              val channelDesc_opt = d.channels.get(shortChannelId).flatMap(c => currentNode match {
-                case c.ann.nodeId1 => Some(ChannelDesc(shortChannelId, c.ann.nodeId1, c.ann.nodeId2))
-                case c.ann.nodeId2 => Some(ChannelDesc(shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
-                case _ => None
-              }).orElse(d.privateChannels.get(shortChannelId).flatMap(c => currentNode match {
-                case c.nodeId1 => Some(ChannelDesc(shortChannelId, c.nodeId1, c.nodeId2))
-                case c.nodeId2 => Some(ChannelDesc(shortChannelId, c.nodeId2, c.nodeId1))
-                case _ => None
-              })).orElse(assistedChannels.get(shortChannelId).flatMap(c => currentNode match {
-                case c.nodeId => Some(ChannelDesc(shortChannelId, c.nodeId, c.nextNodeId))
-                case _ => None
-              }))
+              val channelDesc_opt = d.resolve(shortChannelId) match {
+                case Some(c: PublicChannel) => currentNode match {
+                  case c.nodeId1 => Some(ChannelDesc(shortChannelId, c.nodeId1, c.nodeId2))
+                  case c.nodeId2 => Some(ChannelDesc(shortChannelId, c.nodeId2, c.nodeId1))
+                  case _ => None
+                }
+                case Some(c: PrivateChannel) => currentNode match {
+                  case c.nodeId1 => Some(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+                  case c.nodeId2 => Some(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+                  case _ => None
+                }
+                case None => assistedChannels.get(shortChannelId).flatMap(c => currentNode match {
+                  case c.nodeId => Some(ChannelDesc(shortChannelId, c.nodeId, c.nextNodeId))
+                  case _ => None
+                })
+              }
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
                 case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.params))
                 case None => (currentNode, previousHops)
