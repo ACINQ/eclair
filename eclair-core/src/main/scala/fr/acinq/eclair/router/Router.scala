@@ -318,16 +318,16 @@ object Router {
     }
   }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
-  sealed trait ChannelDetails {
+  sealed trait KnownChannel {
     val capacity: Satoshi
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate]
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi]
-    def updateChannelUpdateSameSideAs(u: ChannelUpdate): ChannelDetails
-    def updateBalances(commitments: AbstractCommitments): ChannelDetails
-    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): ChannelDetails
+    def updateChannelUpdateSameSideAs(u: ChannelUpdate): KnownChannel
+    def updateBalances(commitments: AbstractCommitments): KnownChannel
+    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): KnownChannel
   }
-  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends ChannelDetails {
+  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends KnownChannel {
     update_1_opt.foreach(u => assert(u.channelFlags.isNode1))
     update_2_opt.foreach(u => assert(!u.channelFlags.isNode1))
 
@@ -345,7 +345,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends ChannelDetails {
+  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
