@@ -329,9 +329,8 @@ object Graph {
       case Right(heuristicsConstants) =>
         val hopCost = nodeFee(heuristicsConstants.hopCost, prev.amount)
         val totalHopsCost = prev.virtualFees + hopCost
-        // If the edge was added by the invoice, it is assumed that it can route the payment.
         // If we know the balance of the channel, then we will check separately that it can relay the payment.
-        val successProbability = if (edge.source.isInstanceOf[ChannelSource.Hint] || edge.balance_opt.nonEmpty) 1.0 else 1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
+        val successProbability = if (edge.balance_opt.nonEmpty) 1.0 else 1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
         if (successProbability < 0) {
           throw NegativeProbability(edge, prev, heuristicsConstants)
         }
