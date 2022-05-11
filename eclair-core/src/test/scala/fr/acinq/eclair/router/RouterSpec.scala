@@ -451,24 +451,6 @@ class RouterSpec extends BaseRouterSpec {
     state.channels.foreach(c => assert(c.capacity === publicChannelCapacity))
   }
 
-  test("send local channels") { fixture =>
-    import fixture._
-    // We need a channel update from our private remote peer, otherwise we can't create invoice routing information.
-    val peerConnection = TestProbe()
-    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update_ga_private))
-    val sender = TestProbe()
-    sender.send(router, GetLocalChannels)
-    val localChannels = sender.expectMsgType[Seq[LocalChannel]]
-    assert(localChannels.size === 2)
-    assert(localChannels.map(_.remoteNodeId).toSet === Set(b, g))
-    assert(localChannels.exists(_.isPrivate)) // a ---> g
-    assert(localChannels.exists(!_.isPrivate)) // a ---> b
-    assert(localChannels.flatMap(_.toExtraHop).toSet === Set(
-      ExtraHop(b, channelId_ab, update_ba.feeBaseMsat, update_ba.feeProportionalMillionths, update_ba.cltvExpiryDelta),
-      ExtraHop(g, channelId_ag_private, update_ga_private.feeBaseMsat, update_ga_private.feeProportionalMillionths, update_ga_private.cltvExpiryDelta)
-    ))
-  }
-
   test("given a pre-defined nodes route add the proper channel updates") { fixture =>
     import fixture._
 

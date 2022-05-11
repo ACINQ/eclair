@@ -127,6 +127,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
           sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
+
+          
           sender.send(setup.router, Router.GetChannelUpdates)
           sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
         }, max = 60 seconds, interval = 1 second)
@@ -558,9 +560,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val start = TimestampMilli.now()
     val (sender, eventListener) = (TestProbe(), TestProbe())
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
-    sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
-    val channelUpdate_ba = sender.expectMsgType[Relayer.OutgoingChannels].channels.filter(c => c.nextNodeId == nodes("A").nodeParams.nodeId).head.channelUpdate
-    val routingHints = List(List(ExtraHop(nodes("B").nodeParams.nodeId, channelUpdate_ba.shortChannelId, channelUpdate_ba.feeBaseMsat, channelUpdate_ba.feeProportionalMillionths, channelUpdate_ba.cltvExpiryDelta)))
+
+    sender.send(nodes("A").router, Router.GetRouterData)
+    val routingHints = List(sender.expectMsgType[Router.Data].privateChannels.head._2.toExtraHop.toList)
 
     val amount = 3000000000L.msat
     sender.send(nodes("A").paymentHandler, ReceivePayment(Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
