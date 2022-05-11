@@ -193,7 +193,7 @@ class GraphSpec extends AnyFunSuite {
 
     assert(mutatedGraph2.edgesOf(a).size == 3) // A --> B , A --> B , A --> D
     assert(mutatedGraph2.getEdgesBetween(a, b).size === 2)
-    assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30.msat)
+    assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.source.relayFees.feeBase === 30.msat)
   }
 
   test("remove a vertex with incoming edges and check those edges are removed too") {

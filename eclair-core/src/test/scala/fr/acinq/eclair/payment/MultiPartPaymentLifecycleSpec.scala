@@ -317,7 +317,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val routingHint = ExtraHop(b, hop_be.lastUpdate.shortChannelId, hop_be.lastUpdate.feeBaseMsat, hop_be.lastUpdate.feeProportionalMillionths, hop_be.lastUpdate.cltvExpiryDelta)
+    val routingHint = ExtraHop(b, hop_be.shortChannelId, hop_be.source.relayFees.feeBase, hop_be.source.relayFees.feeProportionalMillionths, hop_be.source.cltvExpiryDelta)
     val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, assistedRoutes = List(List(routingHint)))
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].assistedRoutes.head.head === routingHint)
@@ -327,7 +327,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectNoMessage(100 millis)
 
     // B changed his fees and expiry after the invoice was issued.
-    val channelUpdate = hop_be.lastUpdate.copy(feeBaseMsat = 250 msat, feeProportionalMillionths = 150, cltvExpiryDelta = CltvExpiryDelta(24))
+    val channelUpdate = hop_be.source.asInstanceOf[ChannelSource.Announcement].channelUpdate.copy(feeBaseMsat = 250 msat, feeProportionalMillionths = 150, cltvExpiryDelta = CltvExpiryDelta(24))
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(finalAmount, channelUpdate))))))
     // We update the routing hints accordingly before requesting a new route.
@@ -338,7 +338,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val routingHint = ExtraHop(b, hop_be.lastUpdate.shortChannelId, hop_be.lastUpdate.feeBaseMsat, hop_be.lastUpdate.feeProportionalMillionths, hop_be.lastUpdate.cltvExpiryDelta)
+    val routingHint = ExtraHop(b, hop_be.shortChannelId, hop_be.source.relayFees.feeBase, hop_be.source.relayFees.feeProportionalMillionths, hop_be.source.cltvExpiryDelta)
     val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, assistedRoutes = List(List(routingHint)))
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].assistedRoutes.head.head === routingHint)
@@ -349,13 +349,14 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // B doesn't have enough liquidity on this channel.
     // NB: we need a channel update with a valid signature, otherwise we'll ignore the node instead of this specific channel.
-    val channelUpdate = Announcements.makeChannelUpdate(hop_be.lastUpdate.chainHash, priv_b, e, hop_be.lastUpdate.shortChannelId, hop_be.lastUpdate.cltvExpiryDelta, hop_be.lastUpdate.htlcMinimumMsat, hop_be.lastUpdate.feeBaseMsat, hop_be.lastUpdate.feeProportionalMillionths, hop_be.lastUpdate.htlcMaximumMsat.get)
+    val channelUpdateBE = hop_be.source.asInstanceOf[ChannelSource.Announcement].channelUpdate
+    val channelUpdateBE1 = Announcements.makeChannelUpdate(channelUpdateBE.chainHash, priv_b, e, channelUpdateBE.shortChannelId, channelUpdateBE.cltvExpiryDelta, channelUpdateBE.htlcMinimumMsat, channelUpdateBE.feeBaseMsat, channelUpdateBE.feeProportionalMillionths, channelUpdateBE.htlcMaximumMsat.get)
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
-    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, TemporaryChannelFailure(channelUpdate))))))
+    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, TemporaryChannelFailure(channelUpdateBE1))))))
     // We update the routing hints accordingly before requesting a new route and ignore the channel.
     val routeRequest = router.expectMsgType[RouteRequest]
     assert(routeRequest.assistedRoutes.head.head === routingHint)
-    assert(routeRequest.ignore.channels.map(_.shortChannelId) === Set(channelUpdate.shortChannelId))
+    assert(routeRequest.ignore.channels.map(_.shortChannelId) === Set(channelUpdateBE1.shortChannelId))
   }
 
   test("update routing hints") { _ =>
@@ -698,13 +699,13 @@ object MultiPartPaymentLifecycleSpec {
   val channelUpdate_ad = defaultChannelUpdate.copy(shortChannelId = channelId_ad)
   val channelUpdate_de = defaultChannelUpdate.copy(shortChannelId = channelId_de)
 
-  val hop_ab_1 = ChannelHop(a, b, channelUpdate_ab_1)
-  val hop_ab_2 = ChannelHop(a, b, channelUpdate_ab_2)
-  val hop_be = ChannelHop(b, e, channelUpdate_be)
-  val hop_ac_1 = ChannelHop(a, c, channelUpdate_ac_1)
-  val hop_ac_2 = ChannelHop(a, c, channelUpdate_ac_2)
-  val hop_ce = ChannelHop(c, e, channelUpdate_ce)
-  val hop_ad = ChannelHop(a, d, channelUpdate_ad)
-  val hop_de = ChannelHop(d, e, channelUpdate_de)
+  val hop_ab_1 = ChannelHop(channelUpdate_ab_1.shortChannelId, a, b, ChannelSource.Announcement(channelUpdate_ab_1))
+  val hop_ab_2 = ChannelHop(channelUpdate_ab_2.shortChannelId, a, b, ChannelSource.Announcement(channelUpdate_ab_2))
+  val hop_be = ChannelHop(channelUpdate_be.shortChannelId, b, e, ChannelSource.Announcement(channelUpdate_be))
+  val hop_ac_1 = ChannelHop(channelUpdate_ac_1.shortChannelId, a, c, ChannelSource.Announcement(channelUpdate_ac_1))
+  val hop_ac_2 = ChannelHop(channelUpdate_ac_2.shortChannelId, a, c, ChannelSource.Announcement(channelUpdate_ac_2))
+  val hop_ce = ChannelHop(channelUpdate_ce.shortChannelId, c, e, ChannelSource.Announcement(channelUpdate_ce))
+  val hop_ad = ChannelHop(channelUpdate_ad.shortChannelId, a, d, ChannelSource.Announcement(channelUpdate_ad))
+  val hop_de = ChannelHop(channelUpdate_de.shortChannelId, d, e, ChannelSource.Announcement(channelUpdate_de))
 
 }

@@ -31,12 +31,12 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelHop, Route}
+import fr.acinq.eclair.router.Router.{ChannelHop, ChannelSource, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Feature, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -290,8 +290,9 @@ object ColorSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHop])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops))
+private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelSource)
+private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHopJson])
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.source))))
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
@@ -303,7 +304,7 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
 })
 
 private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
-object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.lastUpdate.shortChannelId)))
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.shortChannelId)))
 // @formatter:on
 
 // @formatter:off
@@ -481,6 +482,11 @@ object CustomTypeHints {
     classOf[MessageReceivedJson] -> "onion-message-received"
   ))
 
+  val channelSources: CustomTypeHints = CustomTypeHints(Map(
+    classOf[ChannelSource.Announcement] -> "announcement",
+    classOf[ChannelSource.Hint] -> "hint"
+  ))
+
   val channelStates: ShortTypeHints = ShortTypeHints(
     List(
       classOf[Nothing],
@@ -508,6 +514,7 @@ object JsonSerializers {
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +
     CustomTypeHints.onionMessageEvent +
+    CustomTypeHints.channelSources +
     CustomTypeHints.channelStates +
     ByteVectorSerializer +
     ByteVector32Serializer +

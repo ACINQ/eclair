@@ -31,7 +31,10 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
@@ -307,7 +310,17 @@ object Router {
                         pathFindingExperimentConf: PathFindingExperimentConf)
 
   // @formatter:off
-  case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
+  case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
+  object ChannelDesc {
+    def apply(u: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc = {
+      // the least significant bit tells us if it is node1 or node2
+      if (u.channelFlags.isNode1) ChannelDesc(ann.shortChannelId, ann.nodeId1, ann.nodeId2) else ChannelDesc(ann.shortChannelId, ann.nodeId2, ann.nodeId1)
+    }
+    def apply(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
+      // the least significant bit tells us if it is node1 or node2
+      if (u.channelFlags.isNode1) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
+    }
+  }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
   sealed trait ChannelDetails {
     val capacity: Satoshi
@@ -374,7 +387,10 @@ object Router {
   }
   // @formatter:on
 
-  case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey, htlcMaximum: MilliSatoshi)
+  case class AssistedChannel(nextNodeId: PublicKey, source: ChannelSource.Hint) {
+    val nodeId: PublicKey = source.extraHop.nodeId
+    val shortChannelId: ShortChannelId = source.extraHop.shortChannelId
+  }
 
   trait Hop {
     /** @return the id of the start node. */
@@ -393,17 +409,52 @@ object Router {
     def cltvExpiryDelta: CltvExpiryDelta
   }
 
+  // @formatter:off
+  /** source of the channel routing parameters */
+  // TODO: rename this channel params or routing params or ???
+  sealed trait ChannelSource {
+    def cltvExpiryDelta: CltvExpiryDelta
+    def relayFees: Relayer.RelayFees
+    def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees, amount)
+    def htlcMinimum: MilliSatoshi
+    def htlcMaximum_opt: Option[MilliSatoshi]
+  }
+  object ChannelSource {
+    /** we learnt about this channel from a channel_update */
+    case class Announcement(channelUpdate: ChannelUpdate) extends ChannelSource {
+      lazy val cltvExpiryDelta: CltvExpiryDelta = channelUpdate.cltvExpiryDelta
+      lazy val relayFees: Relayer.RelayFees = RelayFees(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths)
+      lazy val htlcMinimum: MilliSatoshi = channelUpdate.htlcMinimumMsat
+      lazy val htlcMaximum_opt: Option[MilliSatoshi] = channelUpdate.htlcMaximumMsat
+    }
+    /** we learnt about this channel from hints in an invoice */
+    case class Hint(extraHop: Bolt11Invoice.ExtraHop, htlcMaximum: MilliSatoshi) extends ChannelSource {
+      lazy val cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
+      lazy val relayFees: Relayer.RelayFees = RelayFees(extraHop.feeBase, extraHop.feeProportionalMillionths)
+      lazy val htlcMinimum: MilliSatoshi = 0 msat
+      lazy val htlcMaximum_opt: Option[MilliSatoshi] = Some(htlcMaximum)
+    }
+
+    def areSame(source1: ChannelSource, source2: ChannelSource): Boolean =
+      source1.relayFees == source2.relayFees &&
+        source1.cltvExpiryDelta == source2.cltvExpiryDelta &&
+        source1.htlcMinimum == source2.htlcMinimum // TODO: not comparing htlcMax otherwise network/invoice sources may never match
+  }
+  // @formatter:on
+
   /**
    * A directed hop between two connected nodes using a specific channel.
    *
-   * @param nodeId     id of the start node.
-   * @param nextNodeId id of the end node.
-   * @param lastUpdate last update of the channel used for the hop.
+   * @param nodeId         id of the start node.
+   * @param nextNodeId     id of the end node.
+   * @param shortChannelId scid that will be used to build the payment onion.
+   * @param source         source for the channel parameters.
    */
-  case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
-    override lazy val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
-
-    override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate, amount)
+  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelSource) extends Hop {
+    // @formatter:off
+    override def cltvExpiryDelta: CltvExpiryDelta = source.cltvExpiryDelta
+    override def fee(amount: MilliSatoshi): MilliSatoshi = source.fee(amount)
+    // @formatter:on
   }
 
   /**
@@ -481,11 +532,11 @@ object Router {
     }
 
     /** This method retrieves the channel update that we used when we built the route. */
-    def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
+    def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.source).collect { case s: ChannelSource.Announcement => s.channelUpdate }
 
     def printNodes(): String = hops.map(_.nextNodeId).mkString("->")
 
-    def printChannels(): String = hops.map(_.lastUpdate.shortChannelId).mkString("->")
+    def printChannels(): String = hops.map(_.shortChannelId).mkString("->")
 
   }
 
@@ -586,16 +637,6 @@ object Router {
   case object TickBroadcast
   case object TickPruneStaleChannels
   // @formatter:on
-
-  def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
-    // the least significant bit tells us if it is node1 or node2
-    if (u.channelFlags.isNode1) ChannelDesc(u.shortChannelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.shortChannelId, channel.nodeId2, channel.nodeId1)
-  }
-
-  def getDesc(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
-    // the least significant bit tells us if it is node1 or node2
-    if (u.channelFlags.isNode1) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
-  }
 
   def isRelatedTo(c: ChannelAnnouncement, nodeId: PublicKey) = nodeId == c.nodeId1 || nodeId == c.nodeId2
 

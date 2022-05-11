@@ -78,7 +78,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
       OutgoingPaymentPacket.buildCommand(self, cfg.upstream, paymentHash, route.hops, c.finalPayload) match {
         case Success((cmd, sharedSecrets)) =>
-          register ! Register.ForwardShortId(self, route.hops.head.lastUpdate.shortChannelId, cmd)
+          register ! Register.ForwardShortId(self, route.hops.head.shortChannelId, cmd)
           goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(c, cmd, failures, sharedSecrets, ignore, route)
         case Failure(t) =>
           log.warning("cannot send outgoing payment: {}", t.getMessage)

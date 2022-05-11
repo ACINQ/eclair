@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, ScriptWitness, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
@@ -374,6 +375,8 @@ case class ChannelUpdate(signature: ByteVector64,
   def messageFlags: Byte = if (htlcMaximumMsat.isDefined) 1 else 0
 
   def toStringShort: String = s"cltvExpiryDelta=$cltvExpiryDelta,feeBase=$feeBaseMsat,feeProportionalMillionths=$feeProportionalMillionths"
+
+  def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBaseMsat, feeProportionalMillionths = feeProportionalMillionths)
 }
 
 object ChannelUpdate {

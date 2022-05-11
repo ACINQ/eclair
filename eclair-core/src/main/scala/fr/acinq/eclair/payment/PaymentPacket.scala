@@ -170,7 +170,7 @@ object OutgoingPaymentPacket {
     hops.reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PaymentOnion.PerHopPayload](finalPayload))) {
       case ((amount, expiry, payloads), hop) =>
         val payload = hop match {
-          case hop: ChannelHop => PaymentOnion.ChannelRelayTlvPayload(hop.lastUpdate.shortChannelId, amount, expiry)
+          case hop: ChannelHop => PaymentOnion.ChannelRelayTlvPayload(hop.shortChannelId, amount, expiry)
           case hop: NodeHop => PaymentOnion.createNodeRelayPayload(amount, expiry, hop.nextNodeId)
         }
         (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads)

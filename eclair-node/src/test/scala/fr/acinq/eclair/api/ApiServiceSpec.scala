@@ -46,7 +46,7 @@ import fr.acinq.eclair.payment.relay.Relayer.ChannelBalance
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.router.Router.PredefinedNodeRoute
+import fr.acinq.eclair.router.Router.{ChannelSource, PredefinedNodeRoute}
 import fr.acinq.eclair.wire.protocol._
 import org.json4s.{Formats, Serialization}
 import org.mockito.scalatest.IdiomaticMockito
@@ -1003,10 +1003,12 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       feeProportionalMillionths = 1,
       htlcMaximumMsat = None
     )
+    val mockChannelUpdate2 = mockChannelUpdate1.copy(shortChannelId = ShortChannelId(BlockHeight(1), 2, 4))
+    val mockChannelUpdate3 = mockChannelUpdate1.copy(shortChannelId = ShortChannelId(BlockHeight(1), 2, 5))
 
-    val mockHop1 = Router.ChannelHop(PublicKey.fromBin(ByteVector.fromValidHex("03007e67dc5a8fd2b2ef21cb310ab6359ddb51f3f86a8b79b8b1e23bc3a6ea150a")), PublicKey.fromBin(ByteVector.fromValidHex("026105f6cb4862810be989385d16f04b0f748f6f2a14040338b1a534d45b4be1c1")), mockChannelUpdate1)
-    val mockHop2 = Router.ChannelHop(mockHop1.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("038cfa2b5857843ee90cff91b06f692c0d8fe201921ee6387aee901d64f43699f0")), mockChannelUpdate1.copy(shortChannelId = ShortChannelId(BlockHeight(1), 2, 4)))
-    val mockHop3 = Router.ChannelHop(mockHop2.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("02be60276e294c6921240daae33a361d214d02578656df0e74c61a09c3196e51df")), mockChannelUpdate1.copy(shortChannelId = ShortChannelId(BlockHeight(1), 2, 5)))
+    val mockHop1 = Router.ChannelHop(mockChannelUpdate1.shortChannelId, PublicKey.fromBin(ByteVector.fromValidHex("03007e67dc5a8fd2b2ef21cb310ab6359ddb51f3f86a8b79b8b1e23bc3a6ea150a")), PublicKey.fromBin(ByteVector.fromValidHex("026105f6cb4862810be989385d16f04b0f748f6f2a14040338b1a534d45b4be1c1")), ChannelSource.Announcement(mockChannelUpdate1))
+    val mockHop2 = Router.ChannelHop(mockChannelUpdate2.shortChannelId, mockHop1.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("038cfa2b5857843ee90cff91b06f692c0d8fe201921ee6387aee901d64f43699f0")), ChannelSource.Announcement(mockChannelUpdate2))
+    val mockHop3 = Router.ChannelHop(mockChannelUpdate3.shortChannelId, mockHop2.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("02be60276e294c6921240daae33a361d214d02578656df0e74c61a09c3196e51df")), ChannelSource.Announcement(mockChannelUpdate3))
     val mockHops = Seq(mockHop1, mockHop2, mockHop3)
 
     val eclair = mock[Eclair]

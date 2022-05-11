@@ -19,9 +19,11 @@ package fr.acinq.eclair
 import akka.actor.ActorRef
 import akka.event.DiagnosticLoggingAdapter
 import akka.testkit.{TestActor, TestProbe}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.wire.protocol.LightningMessage
+import fr.acinq.eclair.router.Router.{ChannelHop, ChannelSource}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, LightningMessage}
 
 import java.io.File
 import java.net.ServerSocket

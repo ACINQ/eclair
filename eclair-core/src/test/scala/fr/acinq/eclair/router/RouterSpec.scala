@@ -29,11 +29,12 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
+import fr.acinq.eclair.router.Graph.RoutingHeuristics
 import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, DEFAULT_ROUTE_PARAMS}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, nodeFee, randomKey}
 import scodec.bits._
 
 import scala.concurrent.duration._
@@ -479,7 +480,7 @@ class RouterSpec extends BaseRouterSpec {
     // the route hasn't changed (nodes are the same)
     assert(response.routes.head.hops.map(_.nodeId) === preComputedRoute.nodes.dropRight(1))
     assert(response.routes.head.hops.map(_.nextNodeId) === preComputedRoute.nodes.drop(1))
-    assert(response.routes.head.hops.map(_.lastUpdate) === Seq(update_ab, update_bc, update_cd))
+    assert(response.routes.head.hops.map(_.source) === Seq(ChannelSource.Announcement(update_ab), ChannelSource.Announcement(update_bc), ChannelSource.Announcement(update_cd)))
   }
 
   test("given a pre-defined channels route add the proper channel updates") { fixture =>
@@ -493,7 +494,7 @@ class RouterSpec extends BaseRouterSpec {
     // the route hasn't changed (nodes are the same)
     assert(response.routes.head.hops.map(_.nodeId) === Seq(a, b, c))
     assert(response.routes.head.hops.map(_.nextNodeId) === Seq(b, c, d))
-    assert(response.routes.head.hops.map(_.lastUpdate) === Seq(update_ab, update_bc, update_cd))
+    assert(response.routes.head.hops.map(_.source) === Seq(ChannelSource.Announcement(update_ab), ChannelSource.Announcement(update_bc), ChannelSource.Announcement(update_cd)))
   }
 
   test("given a pre-defined private channels route add the proper channel updates") { fixture =>
@@ -506,7 +507,7 @@ class RouterSpec extends BaseRouterSpec {
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length === 1)
       val route = response.routes.head
-      assert(route.hops.map(_.lastUpdate) === Seq(update_ag_private))
+      assert(route.hops.map(_.source) === Seq(ChannelSource.Announcement(update_ag_private)))
       assert(route.hops.head.nodeId === a)
       assert(route.hops.head.nextNodeId === g)
     }
@@ -518,7 +519,7 @@ class RouterSpec extends BaseRouterSpec {
       val route = response.routes.head
       assert(route.hops.map(_.nodeId) === Seq(a, g))
       assert(route.hops.map(_.nextNodeId) === Seq(g, h))
-      assert(route.hops.map(_.lastUpdate) === Seq(update_ag_private, update_gh))
+      assert(route.hops.map(_.source) === Seq(ChannelSource.Announcement(update_ag_private), ChannelSource.Announcement(update_gh)))
     }
   }
 
@@ -530,32 +531,32 @@ class RouterSpec extends BaseRouterSpec {
     {
       val invoiceRoutingHint = ExtraHop(b, ShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
       val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(channelId_ab, invoiceRoutingHint.shortChannelId))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
+      val amount = 10_000.msat
+      // the amount affects the way we estimate the channel capacity of the hinted channel
+      assert(amount < RoutingHeuristics.CAPACITY_CHANNEL_LOW)
+      sender.send(router, FinalizeRoute(amount, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length === 1)
       val route = response.routes.head
       assert(route.hops.map(_.nodeId) === Seq(a, b))
       assert(route.hops.map(_.nextNodeId) === Seq(b, targetNodeId))
-      assert(route.hops.head.lastUpdate === update_ab)
-      assert(route.hops.last.lastUpdate.shortChannelId === invoiceRoutingHint.shortChannelId)
-      assert(route.hops.last.lastUpdate.feeBaseMsat === invoiceRoutingHint.feeBase)
-      assert(route.hops.last.lastUpdate.feeProportionalMillionths === invoiceRoutingHint.feeProportionalMillionths)
-      assert(route.hops.last.lastUpdate.cltvExpiryDelta === invoiceRoutingHint.cltvExpiryDelta)
+      assert(route.hops.head.source === ChannelSource.Announcement(update_ab))
+      assert(route.hops.last.source === ChannelSource.Hint(invoiceRoutingHint, RoutingHeuristics.CAPACITY_CHANNEL_LOW + nodeFee(invoiceRoutingHint.feeBase, invoiceRoutingHint.feeProportionalMillionths, RoutingHeuristics.CAPACITY_CHANNEL_LOW)))
     }
     {
       val invoiceRoutingHint = ExtraHop(h, ShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
       val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(channelId_ag_private, channelId_gh, invoiceRoutingHint.shortChannelId))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
+      val amount = RoutingHeuristics.CAPACITY_CHANNEL_LOW * 2
+      // the amount affects the way we estimate the channel capacity of the hinted channel
+      assert(amount > RoutingHeuristics.CAPACITY_CHANNEL_LOW)
+      sender.send(router, FinalizeRoute(amount, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length === 1)
       val route = response.routes.head
       assert(route.hops.map(_.nodeId) === Seq(a, g, h))
       assert(route.hops.map(_.nextNodeId) === Seq(g, h, targetNodeId))
-      assert(route.hops.map(_.lastUpdate).dropRight(1) === Seq(update_ag_private, update_gh))
-      assert(route.hops.last.lastUpdate.shortChannelId === invoiceRoutingHint.shortChannelId)
-      assert(route.hops.last.lastUpdate.feeBaseMsat === invoiceRoutingHint.feeBase)
-      assert(route.hops.last.lastUpdate.feeProportionalMillionths === invoiceRoutingHint.feeProportionalMillionths)
-      assert(route.hops.last.lastUpdate.cltvExpiryDelta === invoiceRoutingHint.cltvExpiryDelta)
+      assert(route.hops.map(_.source).dropRight(1) === Seq(ChannelSource.Announcement(update_ag_private), ChannelSource.Announcement(update_gh)))
+      assert(route.hops.last.source === ChannelSource.Hint(invoiceRoutingHint, amount + nodeFee(invoiceRoutingHint.feeBase, invoiceRoutingHint.feeProportionalMillionths, amount)))
     }
   }
 

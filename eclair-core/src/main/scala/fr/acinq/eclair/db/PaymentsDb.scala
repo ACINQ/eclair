@@ -199,7 +199,7 @@ case class HopSummary(nodeId: PublicKey, nextNodeId: PublicKey, shortChannelId: 
 object HopSummary {
   def apply(h: Hop): HopSummary = {
     val shortChannelId = h match {
-      case ChannelHop(_, _, channelUpdate) => Some(channelUpdate.shortChannelId)
+      case ch: ChannelHop => Some(ch.shortChannelId)
       case _: NodeHop => None
     }
     HopSummary(h.nodeId, h.nextNodeId, shortChannelId)

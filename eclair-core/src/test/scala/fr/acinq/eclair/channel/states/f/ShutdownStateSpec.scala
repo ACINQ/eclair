@@ -60,7 +60,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       val h1 = Crypto.sha256(r1)
       val amount1 = 300000000 msat
       val expiry1 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-      val cmd1 = OutgoingPaymentPacket.buildCommand(sender.ref, Upstream.Local(UUID.randomUUID), h1, ChannelHop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, PaymentOnion.createSinglePartPayload(amount1, expiry1, randomBytes32(), None)).get._1.copy(commit = false)
+      val cmd1 = OutgoingPaymentPacket.buildCommand(sender.ref, Upstream.Local(UUID.randomUUID), h1, ChannelHop(null, null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, PaymentOnion.createSinglePartPayload(amount1, expiry1, randomBytes32(), None)).get._1.copy(commit = false)
       alice ! cmd1
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -70,7 +70,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       val h2 = Crypto.sha256(r2)
       val amount2 = 200000000 msat
       val expiry2 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-      val cmd2 = OutgoingPaymentPacket.buildCommand(sender.ref, Upstream.Local(UUID.randomUUID), h2, ChannelHop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, PaymentOnion.createSinglePartPayload(amount2, expiry2, randomBytes32(), None)).get._1.copy(commit = false)
+      val cmd2 = OutgoingPaymentPacket.buildCommand(sender.ref, Upstream.Local(UUID.randomUUID), h2, ChannelHop(null, null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, PaymentOnion.createSinglePartPayload(amount2, expiry2, randomBytes32(), None)).get._1.copy(commit = false)
       alice ! cmd2
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
