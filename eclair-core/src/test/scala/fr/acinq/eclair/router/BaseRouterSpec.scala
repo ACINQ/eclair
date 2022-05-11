@@ -223,5 +223,5 @@ object BaseRouterSpec {
   }
 
   def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: ChannelUpdate): ChannelHop =
-    ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, ChannelSource.Announcement(channelUpdate))
+    ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, ChannelRelayParams.FromAnnouncement(channelUpdate))
 }

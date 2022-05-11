@@ -57,7 +57,7 @@ object RouteCalculation {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
-              val hops = selectedEdges.map(d => ChannelHop(d.desc.shortChannelId, d.desc.a, d.desc.b, d.source))
+              val hops = selectedEdges.map(d => ChannelHop(d.desc.shortChannelId, d.desc.a, d.desc.b, d.params))
               ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
@@ -79,7 +79,7 @@ object RouteCalculation {
                 case _ => None
               }))
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
-                case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.source))
+                case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.params))
                 case None => (currentNode, previousHops)
               }
           }
@@ -155,7 +155,7 @@ object RouteCalculation {
     extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
       case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
         val nextAmount = amount + nodeFee(extraHop.feeBase, extraHop.feeProportionalMillionths, amount)
-        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(nextNodeId, Router.ChannelSource.Hint(extraHop, nextAmount))))
+        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(nextNodeId, Router.ChannelRelayParams.FromHint(extraHop, nextAmount))))
     }._2
   }
 

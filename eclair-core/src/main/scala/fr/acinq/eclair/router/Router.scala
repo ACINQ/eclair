@@ -387,7 +387,7 @@ object Router {
   }
   // @formatter:on
 
-  case class AssistedChannel(nextNodeId: PublicKey, source: ChannelSource.Hint) {
+  case class AssistedChannel(nextNodeId: PublicKey, source: ChannelRelayParams.FromHint) {
     val nodeId: PublicKey = source.extraHop.nodeId
     val shortChannelId: ShortChannelId = source.extraHop.shortChannelId
   }
@@ -411,24 +411,24 @@ object Router {
 
   // @formatter:off
   /** source of the channel routing parameters */
-  // TODO: rename this channel params or routing params or ???
-  sealed trait ChannelSource {
+  sealed trait ChannelRelayParams {
     def cltvExpiryDelta: CltvExpiryDelta
     def relayFees: Relayer.RelayFees
     def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees, amount)
     def htlcMinimum: MilliSatoshi
     def htlcMaximum_opt: Option[MilliSatoshi]
   }
-  object ChannelSource {
+
+  object ChannelRelayParams {
     /** we learnt about this channel from a channel_update */
-    case class Announcement(channelUpdate: ChannelUpdate) extends ChannelSource {
+    case class FromAnnouncement(channelUpdate: ChannelUpdate) extends ChannelRelayParams {
       lazy val cltvExpiryDelta: CltvExpiryDelta = channelUpdate.cltvExpiryDelta
       lazy val relayFees: Relayer.RelayFees = RelayFees(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths)
       lazy val htlcMinimum: MilliSatoshi = channelUpdate.htlcMinimumMsat
       lazy val htlcMaximum_opt: Option[MilliSatoshi] = channelUpdate.htlcMaximumMsat
     }
     /** we learnt about this channel from hints in an invoice */
-    case class Hint(extraHop: Bolt11Invoice.ExtraHop, htlcMaximum: MilliSatoshi) extends ChannelSource {
+    case class FromHint(extraHop: Bolt11Invoice.ExtraHop, htlcMaximum: MilliSatoshi) extends ChannelRelayParams {
       lazy val cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
       lazy val relayFees: Relayer.RelayFees = RelayFees(extraHop.feeBase, extraHop.feeProportionalMillionths)
       lazy val htlcMinimum: MilliSatoshi = 0 msat
@@ -443,12 +443,12 @@ object Router {
    * @param nodeId         id of the start node.
    * @param nextNodeId     id of the end node.
    * @param shortChannelId scid that will be used to build the payment onion.
-   * @param source         source for the channel parameters.
+   * @param params         source for the channel parameters.
    */
-  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelSource) extends Hop {
+  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, params: ChannelRelayParams) extends Hop {
     // @formatter:off
-    override def cltvExpiryDelta: CltvExpiryDelta = source.cltvExpiryDelta
-    override def fee(amount: MilliSatoshi): MilliSatoshi = source.fee(amount)
+    override def cltvExpiryDelta: CltvExpiryDelta = params.cltvExpiryDelta
+    override def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
     // @formatter:on
   }
 
@@ -527,7 +527,7 @@ object Router {
     }
 
     /** This method retrieves the channel update that we used when we built the route. */
-    def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.source).collect { case s: ChannelSource.Announcement => s.channelUpdate }
+    def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.params).collect { case s: ChannelRelayParams.FromAnnouncement => s.channelUpdate }
 
     def printNodes(): String = hops.map(_.nextNodeId).mkString("->")
 

@@ -31,7 +31,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelHop, ChannelSource, Route}
+import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
@@ -290,9 +290,9 @@ object ColorSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelSource)
+private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams)
 private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHopJson])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.source))))
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))))
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
@@ -483,8 +483,8 @@ object CustomTypeHints {
   ))
 
   val channelSources: CustomTypeHints = CustomTypeHints(Map(
-    classOf[ChannelSource.Announcement] -> "announcement",
-    classOf[ChannelSource.Hint] -> "hint"
+    classOf[ChannelRelayParams.FromAnnouncement] -> "announcement",
+    classOf[ChannelRelayParams.FromHint] -> "hint"
   ))
 
   val channelStates: ShortTypeHints = ShortTypeHints(

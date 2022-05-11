@@ -248,8 +248,8 @@ object Graph {
           val neighbor = edge.desc.a
           if (current.weight.amount <= edge.capacity &&
             edge.balance_opt.forall(current.weight.amount <= _) &&
-            edge.source.htlcMaximum_opt.forall(current.weight.amount <= _) &&
-            current.weight.amount >= edge.source.htlcMinimum &&
+            edge.params.htlcMaximum_opt.forall(current.weight.amount <= _) &&
+            current.weight.amount >= edge.params.htlcMinimum &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor)) {
             // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
@@ -302,7 +302,7 @@ object Graph {
     val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
     val fee = totalAmount - prev.amount
     val totalFees = prev.fees + fee
-    val cltv = if (edge.desc.a == sender && !includeLocalChannelCost) CltvExpiryDelta(0) else edge.source.cltvExpiryDelta
+    val cltv = if (edge.desc.a == sender && !includeLocalChannelCost) CltvExpiryDelta(0) else edge.params.cltvExpiryDelta
     val totalCltv = prev.cltv + cltv
     weightRatios match {
       case Left(weightRatios) =>
@@ -320,7 +320,7 @@ object Graph {
           else 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
 
         // Every edge is weighted by its cltv-delta value, normalized
-        val cltvFactor = normalize(edge.source.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
+        val cltvFactor = normalize(edge.params.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
 
         // NB we're guaranteed to have weightRatios and factors > 0
         val factor = weightRatios.baseFactor + (cltvFactor * weightRatios.cltvDeltaFactor) + (ageFactor * weightRatios.ageFactor) + (capFactor * weightRatios.capacityFactor)
@@ -357,7 +357,7 @@ object Graph {
    * @return the new amount updated with the necessary fees for this edge
    */
   private def addEdgeFees(edge: GraphEdge, amountToForward: MilliSatoshi): MilliSatoshi = {
-    amountToForward + edge.source.fee(amountToForward)
+    amountToForward + edge.params.fee(amountToForward)
   }
 
   /** Validate that all edges along the path can relay the amount with fees. */
@@ -369,8 +369,8 @@ object Graph {
     case Some(edge) =>
       val canRelayAmount = amount <= edge.capacity &&
         edge.balance_opt.forall(amount <= _) &&
-        edge.source.htlcMaximum_opt.forall(amount <= _) &&
-        edge.source.htlcMinimum <= amount
+        edge.params.htlcMaximum_opt.forall(amount <= _) &&
+        edge.params.htlcMinimum <= amount
       if (canRelayAmount) validateReversePath(path.tail, addEdgeFees(edge, amount)) else false
   }
 
@@ -422,29 +422,29 @@ object Graph {
      * Representation of an edge of the graph
      *
      * @param desc        channel description
-     * @param source      source of the channel parameters: can be a channel_update or hints from an invoice
+     * @param params      source of the channel parameters: can be a channel_update or hints from an invoice
      * @param capacity    channel capacity
      * @param balance_opt (optional) available balance that can be sent through this edge
      */
-    case class GraphEdge private(desc: ChannelDesc, source: ChannelSource, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
+    case class GraphEdge private(desc: ChannelDesc, params: ChannelRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
 
       def this(u: ChannelUpdate, pc: PublicChannel) = this(
         desc = ChannelDesc(u, pc.ann),
-        source = ChannelSource.Announcement(u),
+        params = ChannelRelayParams.FromAnnouncement(u),
         capacity = pc.capacity,
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
       def this(u: ChannelUpdate, pc: PrivateChannel) = this(
         desc = ChannelDesc(u, pc),
-        source = ChannelSource.Announcement(u),
+        params = ChannelRelayParams.FromAnnouncement(u),
         capacity = pc.capacity,
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
       def this(ac: AssistedChannel) = this(
         desc = ChannelDesc(ac.shortChannelId, ac.nodeId, ac.nextNodeId),
-        source = ac.source,
+        params = ac.source,
         // Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount
         capacity = ac.source.htlcMaximum.truncateToSatoshi + 1.sat,
         // we assume channels provided as hints have enough balance to handle the payment
@@ -453,11 +453,11 @@ object Graph {
 
       def maxHtlcAmount(reservedCapacity: MilliSatoshi): MilliSatoshi = Seq(
         balance_opt.map(balance => balance - reservedCapacity),
-        source.htlcMaximum_opt,
+        params.htlcMaximum_opt,
         Some(capacity.toMilliSatoshi - reservedCapacity)
       ).flatten.min.max(0 msat)
 
-      def fee(amount: MilliSatoshi): MilliSatoshi = source.fee(amount)
+      def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
@@ -628,7 +628,7 @@ object Graph {
         new DirectedGraph(mutableMap.toMap)
       }
 
-      def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.source)
+      def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)
     }
 
   }
