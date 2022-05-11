@@ -423,7 +423,7 @@ object Graph {
      * Representation of an edge of the graph
      *
      * @param desc        channel description
-     * @param source      source of the channel parameters: can be a channel_update or hints from an invoice // TODO: should we do a class hierarchy instead: KnownEdge/AssistedEdge?
+     * @param source      source of the channel parameters: can be a channel_update or hints from an invoice
      * @param capacity    channel capacity
      * @param balance_opt (optional) available balance that can be sent through this edge
      */

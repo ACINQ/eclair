@@ -434,11 +434,6 @@ object Router {
       lazy val htlcMinimum: MilliSatoshi = 0 msat
       lazy val htlcMaximum_opt: Option[MilliSatoshi] = Some(htlcMaximum)
     }
-
-    def areSame(source1: ChannelSource, source2: ChannelSource): Boolean =
-      source1.relayFees == source2.relayFees &&
-        source1.cltvExpiryDelta == source2.cltvExpiryDelta &&
-        source1.htlcMinimum == source2.htlcMinimum // TODO: not comparing htlcMax otherwise network/invoice sources may never match
   }
   // @formatter:on
 
