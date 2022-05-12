@@ -47,7 +47,7 @@ object RouteCalculation {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
       val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.route.targetNodeId, fr.amount)).toMap
-      val extraEdges = assistedChannels.values.map(ac => new GraphEdge(ac)).toSet
+      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ac)).toSet
       val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       fr.route match {
@@ -107,7 +107,7 @@ object RouteCalculation {
       val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount))
         .filterNot { case (_, ac) => ac.nodeId == r.source } // we ignore routing hints for our own channels, we have more accurate information
         .toMap
-      val extraEdges = assistedChannels.values.map(ac => new GraphEdge(ac)).toSet
+      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ac)).toSet
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1

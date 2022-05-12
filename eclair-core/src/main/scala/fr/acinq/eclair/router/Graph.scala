@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, MilliBtc, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc, Satoshi, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -428,29 +428,6 @@ object Graph {
      */
     case class GraphEdge private(desc: ChannelDesc, params: ChannelRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
 
-      def this(u: ChannelUpdate, pc: PublicChannel) = this(
-        desc = ChannelDesc(u, pc.ann),
-        params = ChannelRelayParams.FromAnnouncement(u),
-        capacity = pc.capacity,
-        balance_opt = pc.getBalanceSameSideAs(u)
-      )
-
-      def this(u: ChannelUpdate, pc: PrivateChannel) = this(
-        desc = ChannelDesc(u, pc),
-        params = ChannelRelayParams.FromAnnouncement(u),
-        capacity = pc.capacity,
-        balance_opt = pc.getBalanceSameSideAs(u)
-      )
-
-      def this(ac: AssistedChannel) = this(
-        desc = ChannelDesc(ac.shortChannelId, ac.nodeId, ac.nextNodeId),
-        params = ac.params,
-        // Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount
-        capacity = ac.params.htlcMaximum.truncateToSatoshi + 1.sat,
-        // we assume channels provided as hints have enough balance to handle the payment
-        balance_opt = Some(ac.params.htlcMaximum)
-      )
-
       def maxHtlcAmount(reservedCapacity: MilliSatoshi): MilliSatoshi = Seq(
         balance_opt.map(balance => balance - reservedCapacity),
         params.htlcMaximum_opt,
@@ -458,6 +435,31 @@ object Graph {
       ).flatten.min.max(0 msat)
 
       def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
+    }
+
+    object GraphEdge {
+      def apply(u: ChannelUpdate, pc: PublicChannel): GraphEdge = GraphEdge(
+        desc = ChannelDesc(u, pc.ann),
+        params = ChannelRelayParams.FromAnnouncement(u),
+        capacity = pc.capacity,
+        balance_opt = pc.getBalanceSameSideAs(u)
+      )
+
+      def apply(u: ChannelUpdate, pc: PrivateChannel): GraphEdge = GraphEdge(
+        desc = ChannelDesc(u, pc),
+        params = ChannelRelayParams.FromAnnouncement(u),
+        capacity = pc.capacity,
+        balance_opt = pc.getBalanceSameSideAs(u)
+      )
+
+      def apply(ac: AssistedChannel): GraphEdge = GraphEdge(
+        desc = ChannelDesc(ac.shortChannelId, ac.nodeId, ac.nextNodeId),
+        params = ac.params,
+        // Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount
+        capacity = ac.params.htlcMaximum.truncateToSatoshi + 1.sat,
+        // we assume channels provided as hints have enough balance to handle the payment
+        balance_opt = Some(ac.params.htlcMaximum)
+      )
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
@@ -614,8 +616,8 @@ object Graph {
 
         // add all the vertices and edges in one go
         channels.values.foreach { channel =>
-          channel.update_1_opt.foreach(u1 => addToMap(new GraphEdge(u1, channel)))
-          channel.update_2_opt.foreach(u2 => addToMap(new GraphEdge(u2, channel)))
+          channel.update_1_opt.foreach(u1 => addToMap(GraphEdge(u1, channel)))
+          channel.update_2_opt.foreach(u2 => addToMap(GraphEdge(u2, channel)))
         }
 
         def addToMap(edge: GraphEdge): Unit = {
