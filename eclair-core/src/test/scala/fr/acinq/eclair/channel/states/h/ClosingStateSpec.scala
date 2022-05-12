@@ -45,7 +45,7 @@ import scala.concurrent.duration._
 
 class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, txListener: TestProbe, bobCommitTxs: List[CommitTxAndRemoteSig])
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, alice2relayer: TestProbe, bob2relayer: TestProbe, channelUpdateListener: TestProbe, txListener: TestProbe, bobCommitTxs: List[CommitTxAndRemoteSig])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -91,7 +91,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
         system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
         system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, Nil)))
+        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, alice2relayer, bob2relayer, channelUpdateListener, eventListener, Nil)))
       }
     } else {
       within(30 seconds) {
@@ -101,11 +101,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         val bobCommitTxs: List[CommitTxAndRemoteSig] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
           val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
           crossSign(alice, bob, alice2bob, bob2alice)
-          relayerB.expectMsgType[RelayForward]
+          bob2relayer.expectMsgType[RelayForward]
           val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig
           fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
           // alice forwards the fulfill upstream
-          relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Fulfill]]
+          alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Fulfill]]
           crossSign(bob, alice, bob2alice, alice2bob)
           // bob confirms that it has forwarded the fulfill to alice
           awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(htlc.channelId).isEmpty)
@@ -115,7 +115,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
         awaitCond(alice.stateName == NORMAL)
         awaitCond(bob.stateName == NORMAL)
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, bobCommitTxs)))
+        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, alice2relayer, bob2relayer, channelUpdateListener, eventListener, bobCommitTxs)))
       }
     }
   }
@@ -337,7 +337,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice sends an htlc to bob
     val (ra1, htlca1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    relayerB.expectMsgType[RelayForward]
+    bob2relayer.expectMsgType[RelayForward]
     localClose(alice, alice2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(initialState.localCommitPublished.isDefined)
@@ -348,14 +348,14 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // scenario 1: bob claims the htlc output from the commit tx using its preimage
     val claimHtlcSuccessFromCommitTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(randomBytes32(), 0), signatureScript = ByteVector.empty, sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx(Transactions.PlaceHolderSig, ra1, ByteVector.fill(130)(33))) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchOutputSpentTriggered(claimHtlcSuccessFromCommitTx)
-    val fulfill1 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFulfill]]
+    val fulfill1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFulfill]]
     assert(fulfill1.htlc === htlca1)
     assert(fulfill1.result.paymentPreimage === ra1)
 
     // scenario 2: bob claims the htlc output from his own commit tx using its preimage (let's assume both parties had published their commitment tx)
     val claimHtlcSuccessTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(randomBytes32(), 0), signatureScript = ByteVector.empty, sequence = 0, witness = Scripts.witnessHtlcSuccess(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, ra1, ByteVector.fill(130)(33), Transactions.DefaultCommitmentFormat)) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchOutputSpentTriggered(claimHtlcSuccessTx)
-    val fulfill2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFulfill]]
+    val fulfill2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFulfill]]
     assert(fulfill2.htlc === htlca1)
     assert(fulfill2.result.paymentPreimage === ra1)
 
@@ -391,13 +391,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == BlockHeight(42) + bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.toSelfDelay.toInt)
     assert(listener.expectMsgType[PaymentSettlingOnChain].paymentHash == htlca1.paymentHash)
     // htlcs below dust will never reach the chain, once the commit tx is confirmed we can consider them failed
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlca2)
-    relayerA.expectNoMessage(100 millis)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlca2)
+    alice2relayer.expectNoMessage(100 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(200), 0, closingState.claimMainDelayedOutputTx.get.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, htlcTimeoutTx)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.irrevocablySpent.values.toSet === Set(closingState.commitTx, closingState.claimMainDelayedOutputTx.get.tx, htlcTimeoutTx))
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlca1)
-    relayerA.expectNoMessage(100 millis)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlca1)
+    alice2relayer.expectNoMessage(100 millis)
 
     // We claim the htlc-delayed output now that the HTLC tx has been confirmed.
     val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx]
@@ -444,22 +444,22 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // if commit tx and htlc-timeout txs end up in the same block, we may receive the htlc-timeout confirmation before the commit tx confirmation
     alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, htlcTimeoutTxs(0))
-    val forwardedFail1 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(42), 1, closingState.commitTx)
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === dust)
-    relayerA.expectNoMessage(250 millis)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === dust)
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(200), 0, closingState.claimMainDelayedOutputTx.get.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(202), 0, htlcTimeoutTxs(1))
-    val forwardedFail2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(202), 1, htlcTimeoutTxs(2))
-    val forwardedFail3 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail3 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(203), 0, htlcTimeoutTxs(3))
-    val forwardedFail4 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    val forwardedFail4 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
     assert(Set(forwardedFail1, forwardedFail2, forwardedFail3, forwardedFail4) === Set(htlca1, htlca2, htlca3, htlca4))
-    relayerA.expectNoMessage(250 millis)
+    alice2relayer.expectNoMessage(250 millis)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length === 4)
     val claimHtlcDelayedTxs = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs
@@ -491,10 +491,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, aliceCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
+    alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(2 seconds)
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
   }
 
   test("recv WatchTxConfirmedTriggered (local commit with fulfill only signed by local)") { f =>
@@ -502,7 +502,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob sends an htlc
     val (r, htlc) = addHtlc(110000000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    relayerA.expectMsgType[RelayForward]
+    alice2relayer.expectMsgType[RelayForward]
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(aliceCommitTx.txOut.size === 3) // 2 main outputs + 1 htlc
 
@@ -546,10 +546,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, closingState.commitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
+    alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(2 seconds)
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
   }
 
   test("recv INPUT_RESTORED (local commit)") { f =>
@@ -620,7 +620,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, bobCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
+    alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(2 seconds)
   }
@@ -725,17 +725,17 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, bobCommitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(45), 0, closingState.claimMainOutputTx.get.tx)
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, claimHtlcTimeoutTxs(0))
-    val forwardedFail1 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(202), 0, claimHtlcTimeoutTxs(1))
-    val forwardedFail2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(203), 1, claimHtlcTimeoutTxs(2))
-    val forwardedFail3 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    val forwardedFail3 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
     assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) === Set(htlca1, htlca2, htlca3))
-    relayerA.expectNoMessage(250 millis)
+    alice2relayer.expectNoMessage(250 millis)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -756,7 +756,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
     val (r1, htlc1) = addHtlc(110000000 msat, CltvExpiryDelta(48), bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    relayerA.expectMsgType[RelayForward]
+    alice2relayer.expectMsgType[RelayForward]
 
     // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
     val (_, htlc2) = addHtlc(95000000 msat, CltvExpiryDelta(144), alice, bob, alice2bob, bob2alice)
@@ -791,13 +791,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, bobCommitTx)
     // The second htlc was not included in the commit tx published on-chain, so we can consider it failed
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlc2)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlc2)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, closingState.claimMainOutputTx.get.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, claimHtlcSuccessTx)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.irrevocablySpent.values.toSet === Set(bobCommitTx, closingState.claimMainOutputTx.get.tx, claimHtlcSuccessTx))
     awaitCond(alice.stateName == CLOSED)
     alice2blockchain.expectNoMessage(100 millis)
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
   }
 
   test("recv INPUT_RESTORED (remote commit)") { f =>
@@ -868,17 +868,17 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, bobCommitTx)
     assert(txListener.expectMsgType[TransactionConfirmed].tx === bobCommitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(45), 0, closingState.claimMainOutputTx.get.tx)
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, claimHtlcTimeoutTxs(0))
-    val forwardedFail1 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(202), 0, claimHtlcTimeoutTxs(1))
-    val forwardedFail2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(203), 1, claimHtlcTimeoutTxs(2))
-    val forwardedFail3 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    val forwardedFail3 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
     assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) === htlcs)
-    relayerA.expectNoMessage(250 millis)
+    alice2relayer.expectNoMessage(250 millis)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -888,17 +888,17 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, bobCommitTx)
     assert(closingState.claimMainOutputTx.isEmpty) // with static_remotekey we don't claim out main output
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, claimHtlcTimeoutTxs(0))
-    val forwardedFail1 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(202), 0, claimHtlcTimeoutTxs(1))
-    val forwardedFail2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(203), 1, claimHtlcTimeoutTxs(2))
-    val forwardedFail3 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    val forwardedFail3 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
     assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) === htlcs)
-    relayerA.expectNoMessage(250 millis)
+    alice2relayer.expectNoMessage(250 millis)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -908,17 +908,17 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, bobCommitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(45), 0, closingState.claimMainOutputTx.get.tx)
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, claimHtlcTimeoutTxs(0))
-    val forwardedFail1 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(202), 0, claimHtlcTimeoutTxs(1))
-    val forwardedFail2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
-    relayerA.expectNoMessage(250 millis)
+    val forwardedFail2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(250 millis)
     alice ! WatchTxConfirmedTriggered(BlockHeight(203), 1, claimHtlcTimeoutTxs(2))
-    val forwardedFail3 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    val forwardedFail3 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
     assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) === htlcs)
-    relayerA.expectNoMessage(250 millis)
+    alice2relayer.expectNoMessage(250 millis)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -927,7 +927,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
     val (r1, htlc1) = addHtlc(110000000 msat, CltvExpiryDelta(64), bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    relayerA.expectMsgType[RelayForward]
+    alice2relayer.expectMsgType[RelayForward]
 
     // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
     val (_, htlc2) = addHtlc(95000000 msat, CltvExpiryDelta(32), alice, bob, alice2bob, bob2alice)
@@ -970,10 +970,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, closingState.claimMainOutputTx.get.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, claimHtlcSuccessTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, claimHtlcTimeoutTx)
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlc2)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc === htlc2)
     awaitCond(alice.stateName == CLOSED)
     alice2blockchain.expectNoMessage(100 millis)
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
   }
 
   test("recv INPUT_RESTORED (next remote commit, anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -1579,8 +1579,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
 
     // alice's first htlc has been failed
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Fail]].htlc === htlcs1.head)
-    relayerA.expectNoMessage(1 second)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Fail]].htlc === htlcs1.head)
+    alice2relayer.expectNoMessage(1 second)
 
     // bob publishes one of his revoked txs which quickly confirms
     alice ! WatchFundingSpentTriggered(bobRevokedTx)
@@ -1589,12 +1589,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice should fail all pending htlcs
     val htlcFails = Seq(
-      relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]],
-      relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]],
-      relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]]
+      alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]],
+      alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]],
+      alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]]
     ).map(_.htlc).toSet
     assert(htlcFails === Set(htlcs1(1), htlcs2(0), htlcs2(1)))
-    relayerA.expectNoMessage(1 second)
+    alice2relayer.expectNoMessage(1 second)
   }
 
   test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs)") { f =>

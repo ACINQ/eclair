@@ -87,8 +87,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       bob2alice.forward(alice)
       alice2bob.expectMsgType[RevokeAndAck]
       alice2bob.forward(bob)
-      relayerB.expectMsgType[RelayForward]
-      relayerB.expectMsgType[RelayForward]
+      bob2relayer.expectMsgType[RelayForward]
+      bob2relayer.expectMsgType[RelayForward]
       // alice initiates a closing
       alice ! CMD_CLOSE(sender.ref, None, None)
       alice2bob.expectMsgType[Shutdown]
@@ -480,13 +480,13 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice still hasn't forwarded the fail because it is not yet cross-signed
-    relayerA.expectNoMessage()
+    alice2relayer.expectNoMessage()
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFail]]
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFail]]
     assert(forward.result.fail === fail)
   }
 
@@ -503,13 +503,13 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice still hasn't forwarded the fail because it is not yet cross-signed
-    relayerA.expectNoMessage()
+    alice2relayer.expectNoMessage()
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFailMalformed]]
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFailMalformed]]
     assert(forward.result.fail === fail)
   }
 
@@ -601,7 +601,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
     alice ! CMD_UPDATE_RELAY_FEE(sender.ref, newFeeBaseMsat, newFeeProportionalMillionth, cltvExpiryDelta_opt = None)
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
-    relayerA.expectNoMessage(1 seconds)
+    alice2relayer.expectNoMessage(1 seconds)
   }
 
   test("recv CurrentBlockCount (no htlc timed out)") { f =>

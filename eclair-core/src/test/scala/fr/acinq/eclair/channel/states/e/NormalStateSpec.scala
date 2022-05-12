@@ -583,7 +583,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! htlc
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)))
     // bob won't forward the add before it is cross-signed
-    relayerB.expectNoMessage()
+    bob2relayer.expectNoMessage()
   }
 
   test("recv UpdateAddHtlc (unexpected id)") { f =>
@@ -1169,14 +1169,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
 
     // at this point bob still hasn't forwarded the htlc downstream
-    relayerB.expectNoMessage()
+    bob2relayer.expectNoMessage()
 
     // actual test begins
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     // now bob will forward the htlc downstream
-    val forward = relayerB.expectMsgType[RelayForward]
+    val forward = bob2relayer.expectMsgType[RelayForward]
     assert(forward.add === htlc)
   }
 
@@ -1273,12 +1273,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(bob, alice, bob2alice, alice2bob)
 
     // Alice forwards HTLCs that fit in the dust exposure.
-    relayerA.expectMsgAllOf(
+    alice2relayer.expectMsgAllOf(
       RelayForward(nonDust),
       RelayForward(almostTrimmed),
       RelayForward(trimmed2),
     )
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectNoMessage(100 millis)
     // And instantly fails the others.
     val failedHtlcs = Seq(
       alice2bob.expectMsgType[UpdateFailHtlc],
@@ -1299,8 +1299,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     addHtlc(4000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
     addHtlc(6000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    relayerA.expectMsgType[RelayForward]
-    relayerA.expectMsgType[RelayForward]
+    alice2relayer.expectMsgType[RelayForward]
+    alice2relayer.expectMsgType[RelayForward]
 
     // Alice sends HTLCs to Bob that add 10 000 sat to the dust exposure but doesn't sign them yet.
     addHtlc(6500.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
@@ -1321,8 +1321,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
 
     // Alice forwards HTLCs that fit in the dust exposure and instantly fails the others.
-    relayerA.expectMsg(RelayForward(acceptedHtlc))
-    relayerA.expectNoMessage(100 millis)
+    alice2relayer.expectMsg(RelayForward(acceptedHtlc))
+    alice2relayer.expectNoMessage(100 millis)
     assert(alice2bob.expectMsgType[UpdateFailHtlc].id === rejectedHtlc.id)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.expectNoMessage(100 millis)
@@ -1336,7 +1336,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // Bob sends HTLCs to Alice that add 10 500 sat to the dust exposure.
     (1 to 10).foreach(_ => addHtlc(1050.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob))
     crossSign(bob, alice, bob2alice, alice2bob)
-    (1 to 10).foreach(_ => relayerA.expectMsgType[RelayForward])
+    (1 to 10).foreach(_ => alice2relayer.expectMsgType[RelayForward])
 
     // Alice sends HTLCs to Bob that add 10 500 sat to the dust exposure but doesn't sign them yet.
     (1 to 10).foreach(_ => addHtlc(1050.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice))
@@ -1355,8 +1355,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
 
     // Alice forwards HTLCs that fit in the dust exposure and instantly fails the others.
-    (1 to 3).foreach(_ => relayerA.expectMsgType[RelayForward])
-    relayerA.expectNoMessage(100 millis)
+    (1 to 3).foreach(_ => alice2relayer.expectMsgType[RelayForward])
+    alice2relayer.expectNoMessage(100 millis)
     (1 to 5).foreach(_ => alice2bob.expectMsgType[UpdateFailHtlc])
     alice2bob.expectMsgType[CommitSig]
     alice2bob.expectNoMessage(100 millis)
@@ -1407,13 +1407,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice still hasn't forwarded the fail because it is not yet cross-signed
-    relayerA.expectNoMessage()
+    alice2relayer.expectNoMessage()
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFail]]
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFail]]
     assert(forward.result.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1433,13 +1433,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice still hasn't forwarded the fail because it is not yet cross-signed
-    relayerA.expectNoMessage()
+    alice2relayer.expectNoMessage()
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFailMalformed]]
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFailMalformed]]
     assert(forward.result.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1605,7 +1605,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))))
     // alice immediately propagates the fulfill upstream
-    val forward = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
+    val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
     assert(forward.result.fulfill === fulfill)
     assert(forward.htlc === htlc)
   }
@@ -1661,7 +1661,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    relayerB.expectMsgType[RelayForward]
+    bob2relayer.expectMsgType[RelayForward]
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // actual test begins
@@ -1809,7 +1809,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
     // alice won't forward the fail before it is cross-signed
-    relayerA.expectNoMessage()
+    alice2relayer.expectNoMessage()
   }
 
   test("recv UpdateFailHtlc") {
@@ -1843,7 +1843,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
     // alice won't forward the fail before it is cross-signed
-    relayerA.expectNoMessage()
+    alice2relayer.expectNoMessage()
 
     bob ! CMD_SIGN()
     val sig = bob2alice.expectMsgType[CommitSig]
@@ -2307,7 +2307,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
     assert(localUpdate.channelUpdate.feeProportionalMillionths == newFeeProportionalMillionth)
     assert(localUpdate.channelUpdate.cltvExpiryDelta == newCltvExpiryDelta)
-    relayerA.expectNoMessage(1 seconds)
+    alice2relayer.expectNoMessage(1 seconds)
   }
 
   def testCmdClose(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
@@ -2480,7 +2480,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     alice ! CMD_FORCECLOSE(sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
+    val addSettled = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
     assert(addSettled.htlc == htlc1)
   }
 
@@ -3007,7 +3007,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // bob publishes his current commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
+    val addSettled = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
     assert(addSettled.htlc == htlc1)
   }
 
@@ -3096,7 +3096,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // bob publishes his current commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
+    val addSettled = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
     assert(addSettled.htlc == htlc2)
   }
 
@@ -3229,7 +3229,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // bob publishes his current commit tx
 
     alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
+    val addSettled = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
     assert(addSettled.htlc == htlc3)
   }
 
@@ -3396,7 +3396,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test starts here
     alice ! Error(ByteVector32.Zeroes, "oops")
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
+    val addSettled = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
     assert(addSettled.htlc == htlc1)
   }
 
@@ -3554,10 +3554,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     Thread.sleep(1100)
     alice ! INPUT_DISCONNECTED
-    val addSettled1 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
+    val addSettled1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
     assert(addSettled1.htlc == htlc1)
     assert(addSettled1.result.isInstanceOf[HtlcResult.DisconnectedBeforeSigned])
-    val addSettled2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
+    val addSettled2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
     assert(addSettled2.htlc == htlc2)
     assert(addSettled2.result.isInstanceOf[HtlcResult.DisconnectedBeforeSigned])
     assert(!channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
@@ -3601,8 +3601,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     Thread.sleep(1100)
     alice ! INPUT_DISCONNECTED
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc1.paymentHash)
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc2.paymentHash)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc1.paymentHash)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc2.paymentHash)
     val update2a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1a.channelUpdate.timestamp < update2a.channelUpdate.timestamp)
     assert(!update2a.channelUpdate.channelFlags.isEnabled)

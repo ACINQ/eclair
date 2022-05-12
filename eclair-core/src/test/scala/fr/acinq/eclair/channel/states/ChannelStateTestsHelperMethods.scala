@@ -97,8 +97,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
                           alice2blockchain: TestProbe,
                           bob2blockchain: TestProbe,
                           router: TestProbe,
-                          relayerA: TestProbe,
-                          relayerB: TestProbe,
+                          alice2relayer: TestProbe,
+                          bob2relayer: TestProbe,
                           channelUpdateListener: TestProbe,
                           wallet: OnChainWallet,
                           alicePeer: TestProbe,
@@ -116,8 +116,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     TestUtils.forwardOutgoingToPipe(bobPeer, bob2alice.ref)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val relayerA = TestProbe()
-    val relayerB = TestProbe()
+    val alice2relayer = TestProbe()
+    val bob2relayer = TestProbe()
     val channelUpdateListener = TestProbe()
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
@@ -132,9 +132,9 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
-    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
-    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
-    SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
+    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
+    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
   def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, LocalParams, SupportedChannelType) = {
