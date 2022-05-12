@@ -52,7 +52,7 @@ trait CommonHandlers {
         case d: PersistentChannelData =>
           log.debug("updating database record for channelId={}", d.channelId)
           nodeParams.db.channels.addOrUpdateChannel(d)
-          context.system.eventStream.publish(ChannelPersisted(self, remoteNodeId, d.channelId, d))
+          eventStream.publish(ChannelPersisted(self, remoteNodeId, d.channelId, d))
           state
         case _: TransientChannelData =>
           log.error(s"can't store data=${state.stateData} in state=${state.stateName}")

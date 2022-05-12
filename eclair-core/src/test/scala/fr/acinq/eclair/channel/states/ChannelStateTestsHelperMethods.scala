@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel.states
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef}
+import akka.event.EventStream
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -118,9 +119,14 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     val bob2blockchain = TestProbe()
     val alice2relayer = TestProbe()
     val bob2relayer = TestProbe()
+    val aliceEventStream = new EventStream(system)
+    val bobEventStream = new EventStream(system)
     val channelUpdateListener = TestProbe()
-    system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
-    system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
+    // TODO: clean this up later, was to minimize changes
+    aliceEventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
+    aliceEventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
+    bobEventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
+    bobEventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
     val finalNodeParamsA = nodeParamsA
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
@@ -132,8 +138,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
-    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
-    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref), eventStream_opt = Some(aliceEventStream)), alicePeer.ref)
+    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain), eventStream_opt = Some(bobEventStream)), bobPeer.ref)
     SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 

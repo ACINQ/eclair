@@ -89,15 +89,19 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
         awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
         awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-        system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+        alice.underlyingActor.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+        alice.underlyingActor.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+        bob.underlyingActor.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+        bob.underlyingActor.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
         withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, alice2relayer, bob2relayer, channelUpdateListener, eventListener, Nil)))
       }
     } else {
       within(30 seconds) {
         reachNormal(setup, test.tags)
-        system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-        system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+        alice.underlyingActor.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+        alice.underlyingActor.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+        bob.underlyingActor.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+        bob.underlyingActor.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
         val bobCommitTxs: List[CommitTxAndRemoteSig] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
           val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
           crossSign(alice, bob, alice2bob, bob2alice)
@@ -368,8 +372,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelFeatures === channelFeatures)
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
-    system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
 
     // alice sends an htlc to bob
     val (_, htlca1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -473,7 +477,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (local commit with htlcs only signed by local)") { f =>
     import f._
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     // alice sends an htlc
     val (_, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
@@ -522,7 +526,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (local commit with fail not acked by remote)") { f =>
     import f._
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val (_, htlc) = addHtlc(25000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     failHtlc(htlc.id, bob, alice, bob2alice, alice2bob)
@@ -603,7 +607,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (remote commit with htlcs only signed by local in next remote commit)") { f =>
     import f._
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     // alice sends an htlc
     val (_, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)

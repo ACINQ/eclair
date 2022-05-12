@@ -74,7 +74,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
     val h = randomBytes32()
     val add = CMD_ADD_HTLC(sender.ref, 50000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add
@@ -881,7 +881,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     // we listen to channel_update events
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[LocalChannelUpdate])
+    bob.underlyingActor.eventStream.subscribe(listener.ref, classOf[LocalChannelUpdate])
 
     // actual test starts here
     // when signing the fulfill, bob will have its main output go above reserve in alice's commitment tx
@@ -896,7 +896,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_SIGN (after CMD_UPDATE_FEE)") { f =>
     import f._
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
     alice ! CMD_UPDATE_FEE(FeeratePerKw(654564 sat))
     alice2bob.expectMsgType[UpdateFee]
     alice ! CMD_SIGN()
@@ -2734,7 +2734,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
+    bob.underlyingActor.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
 
     // actual test begins:
     //  * Bob receives the HTLC pre-image and wants to fulfill
@@ -2767,7 +2767,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
+    bob.underlyingActor.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
 
     // actual test begins:
     //  * Bob receives the HTLC pre-image and wants to fulfill but doesn't sign
@@ -2800,7 +2800,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
+    bob.underlyingActor.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
 
     // actual test begins:
     //  * Bob receives the HTLC pre-image and wants to fulfill

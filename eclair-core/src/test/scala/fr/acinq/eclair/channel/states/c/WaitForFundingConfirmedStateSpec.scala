@@ -54,7 +54,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
 
     within(30 seconds) {
       val listener = TestProbe()
-      system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+      alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
@@ -83,8 +83,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
     // we create a new listener that registers after alice has published the funding tx
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-    system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
+    bob.underlyingActor.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    bob.underlyingActor.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
     // make bob send a FundingLocked msg
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
@@ -102,8 +102,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
     // we create a new listener that registers after alice has published the funding tx
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-    system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    alice.underlyingActor.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
     assert(listener.expectMsgType[TransactionConfirmed].tx === fundingTx)
