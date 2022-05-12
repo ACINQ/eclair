@@ -35,7 +35,11 @@ import scala.concurrent.duration.FiniteDuration
  * @param totalCapacity total capacity of all the channels between the pair of nodes
  * @param halfLife      time after which the certainty of the lower/upper bounds is halved
  */
-case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSecond, high: MilliSatoshi, highTimestamp: TimestampSecond, totalCapacity: Satoshi, halfLife: FiniteDuration) {
+case class BalanceEstimate private(low: MilliSatoshi,
+                                   lowTimestamp: TimestampSecond,
+                                   high: MilliSatoshi, highTimestamp: TimestampSecond,
+                                   totalCapacity: Satoshi,
+                                   halfLife: FiniteDuration) {
 
   /* The goal of this class is to estimate the probability that a given edge can relay the amount that we plan to send
    * through it. We model this probability with 3 pieces of linear functions.
@@ -72,8 +76,8 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
    *     |              |        *
    *     |              |         *
    *     |              |          *
-   *   0 +--------------|-----------|***********************
-   *     0             low     high                      capacity
+   *   0 +--------------|-----------|*************************
+   *     0             low         high                   capacity
    *
    * However this lower bound (or upper bound) is only valid at the moment we got that information. If we wait, the
    * information decays and we slowly go back towards our baseline:
@@ -81,17 +85,17 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
    *   1 |*****
    *     |     *****
    *     |          *****
-   *     |              |*
-   *     |              | *
+   *     |              |**
    *     |              |  *
-   *     |              |   *
-   *     |              |    *
-   *     |              |     *
-   *     |              |      *
-   *     |              |       **********
-   *     |              |       |         **********
-   *   0 +--------------|-------|-------------------**********
-   *     0             low     high                       capacity
+   *     |              |   **
+   *     |              |     **
+   *     |              |       *
+   *     |              |        **
+   *     |              |          *
+   *     |              |           ********
+   *     |              |           |       *********
+   *   0 +--------------|-----------|----------------*********
+   *     0             low         high                   capacity
    */
 
   /**
@@ -109,7 +113,8 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
     baseline * (1 - decayRatio) + successProbabilityAtT * decayRatio
   }
 
-  def otherSide: BalanceEstimate = BalanceEstimate(totalCapacity - high, highTimestamp, totalCapacity - low, lowTimestamp, totalCapacity, halfLife)
+  def otherSide: BalanceEstimate =
+    BalanceEstimate(totalCapacity - high, highTimestamp, totalCapacity - low, lowTimestamp, totalCapacity, halfLife)
 
   def couldNotSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate = {
     if (amount <= low) {
@@ -122,11 +127,9 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
       // We already expected not to be able to relay that amount as it above our upper bound. However if the upper bound
       // was old enough that replacing it with the current amount decreases the success probability for `high`, then we
       // replace it.
-      val pLow = decay(low, 1, lowTimestamp)
-      val pHigh = decay(high, 0, highTimestamp)
-      val x = low + (high - low) * (pLow / (pLow - pHigh))
-      if (amount <= x) {
-        copy(high = amount, highTimestamp = timestamp)
+      val updated = copy(high = amount, highTimestamp = timestamp)
+      if (updated.canSend(high) < this.canSend(high)) {
+        updated
       } else {
         this
       }
@@ -151,9 +154,11 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
     }
   }
 
-  def addChannel(capacity: Satoshi): BalanceEstimate = copy(high = high + toMilliSatoshi(capacity), totalCapacity = totalCapacity + capacity)
+  def addChannel(capacity: Satoshi): BalanceEstimate =
+    copy(high = high + toMilliSatoshi(capacity), totalCapacity = totalCapacity + capacity)
 
-  def removeChannel(capacity: Satoshi): BalanceEstimate = copy(low = (low - toMilliSatoshi(capacity)) max MilliSatoshi(0), high = high min toMilliSatoshi(totalCapacity - capacity), totalCapacity = totalCapacity - capacity)
+  def removeChannel(capacity: Satoshi): BalanceEstimate =
+    copy(low = (low - toMilliSatoshi(capacity)) max MilliSatoshi(0), high = high min toMilliSatoshi(totalCapacity - capacity), totalCapacity = totalCapacity - capacity)
 
   /**
    * Estimate the probability that we can successfully send `amount` through the channel
@@ -185,14 +190,18 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
 }
 
 object BalanceEstimate {
-  def baseline(capacity: Satoshi, halfLife: FiniteDuration): BalanceEstimate = BalanceEstimate(MilliSatoshi(0), TimestampSecond(0), MilliSatoshi(0), TimestampSecond(0), Satoshi(0), halfLife).addChannel(capacity)
+  def baseline(capacity: Satoshi, halfLife: FiniteDuration): BalanceEstimate =
+    BalanceEstimate(MilliSatoshi(0), TimestampSecond(0), MilliSatoshi(0), TimestampSecond(0), Satoshi(0), halfLife)
+      .addChannel(capacity)
 }
 
 /** A pair of nodes, lexicographically ordered. */
 case class OrderedNodePair private(node1: PublicKey, node2: PublicKey)
 
 object OrderedNodePair {
-  def create(a: PublicKey, b: PublicKey): OrderedNodePair = if (LexicographicalOrdering.isLessThan(a.value, b.value)) OrderedNodePair(a, b) else OrderedNodePair(b, a)
+  def create(a: PublicKey, b: PublicKey): OrderedNodePair =
+    if (LexicographicalOrdering.isLessThan(a.value, b.value)) OrderedNodePair(a, b)
+    else OrderedNodePair(b, a)
 }
 
 /**
@@ -210,7 +219,8 @@ case class BalancesEstimates(balances: Map[OrderedNodePair, BalanceEstimate], de
     }
   }
 
-  def get(edge: GraphEdge): BalanceEstimate = get(edge.desc.a, edge.desc.b).getOrElse(BalanceEstimate.baseline(edge.capacity, defaultHalfLife))
+  def get(edge: GraphEdge): BalanceEstimate =
+    get(edge.desc.a, edge.desc.b).getOrElse(BalanceEstimate.baseline(edge.capacity, defaultHalfLife))
 
   def addChannel(channel: PublicChannel): BalancesEstimates =
     BalancesEstimates(
