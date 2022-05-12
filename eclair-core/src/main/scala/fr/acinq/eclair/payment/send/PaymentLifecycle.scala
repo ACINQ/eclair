@@ -242,6 +242,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
    * @return updated routing hints if applicable.
    */
   private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[Seq[ExtraHop]] = {
+    // TODO: properly handle updates to channels provided as routing hints in the invoice
     data.route.getChannelUpdateForNode(nodeId) match {
       case Some(u) if u.shortChannelId != failure.update.shortChannelId =>
         // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine

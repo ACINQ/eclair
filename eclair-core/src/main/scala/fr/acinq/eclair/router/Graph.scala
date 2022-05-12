@@ -444,11 +444,11 @@ object Graph {
 
       def this(ac: AssistedChannel) = this(
         desc = ChannelDesc(ac.shortChannelId, ac.nodeId, ac.nextNodeId),
-        params = ac.source,
+        params = ac.params,
         // Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount
-        capacity = ac.source.htlcMaximum.truncateToSatoshi + 1.sat,
+        capacity = ac.params.htlcMaximum.truncateToSatoshi + 1.sat,
         // we assume channels provided as hints have enough balance to handle the payment
-        balance_opt = Some(ac.source.htlcMaximum)
+        balance_opt = Some(ac.params.htlcMaximum)
       )
 
       def maxHtlcAmount(reservedCapacity: MilliSatoshi): MilliSatoshi = Seq(

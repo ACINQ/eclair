@@ -320,7 +320,7 @@ object RouteCalculation {
       val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).collect {
         // We should always have balance information available for local channels.
         // NB: htlcMinimumMsat is set by our peer and may be 0 msat (even though it's not recommended).
-        case GraphEdge(_, source, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < source.htlcMinimum)
+        case GraphEdge(_, params, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < params.htlcMinimum)
       }
       // If we have direct channels to the target, we can use them all.
       // We also count empty channels, which allows replacing them with a non-direct route (multiple hops).
