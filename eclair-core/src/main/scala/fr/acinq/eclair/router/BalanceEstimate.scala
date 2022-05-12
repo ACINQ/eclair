@@ -25,7 +25,8 @@ import fr.acinq.eclair.{MilliSatoshi, TimestampSecond}
 
 import scala.concurrent.duration.FiniteDuration
 
-/** Estimates the balance between a pair of nodes
+/**
+ * Estimates the balance between a pair of nodes
  *
  * @param low           lower bound on the balance
  * @param lowTimestamp  time at which the lower bound was known to be correct
@@ -62,16 +63,16 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
    *   1 |***************
    *     |              |*
    *     |              | *
-   *     |              | *
    *     |              |  *
-   *     |              |   *
    *     |              |   *
    *     |              |    *
    *     |              |     *
-   *     |              |     *
    *     |              |      *
    *     |              |       *
-   *   0 +--------------|-------|***************************
+   *     |              |        *
+   *     |              |         *
+   *     |              |          *
+   *   0 +--------------|-----------|***********************
    *     0             low     high                      capacity
    *
    * However this lower bound (or upper bound) is only valid at the moment we got that information. If we wait, the
@@ -100,7 +101,7 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
    * @param amount                the amount that we knew we could send or not send at time t
    * @param successProbabilityAtT probability that we could relay amount at time t (usually 0 or 1)
    * @param t                     time at which we knew if we could or couldn't send amount
-   * @return                      the probability that we can send amount now
+   * @return the probability that we can send amount now
    */
   private def decay(amount: MilliSatoshi, successProbabilityAtT: Double, t: TimestampSecond): Double = {
     val decayRatio = 1 / math.pow(2, (TimestampSecond.now() - t) / halfLife)
@@ -110,28 +111,27 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
 
   def otherSide: BalanceEstimate = BalanceEstimate(totalCapacity - high, highTimestamp, totalCapacity - low, lowTimestamp, totalCapacity, halfLife)
 
-  def couldNotSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate =
-    if (amount < high) {
-      if (amount > low) {
-        copy(high = amount, highTimestamp = timestamp)
-      } else {
-        // the balance is actually below `low`, we discard our lower bound
-        copy(low = MilliSatoshi(0), lowTimestamp = timestamp, high = amount, highTimestamp = timestamp)
-      }
+  def couldNotSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate = {
+    if (amount <= low) {
+      // the balance is actually below `low`, we discard our previous lower bound
+      copy(low = MilliSatoshi(0), lowTimestamp = timestamp, high = amount, highTimestamp = timestamp)
+    } else if (amount < high) {
+      // the balance is actually below `high`, we discard our previous higher bound
+      copy(high = amount, highTimestamp = timestamp)
     } else {
-      /* We already expected not to be able to relay that amount as it above our upper bound. However if the upper bound
-       * was old enough that replacing it with the current amount decreases the success probability for `high`, then we
-       * replace it.
-       */
+      // We already expected not to be able to relay that amount as it above our upper bound. However if the upper bound
+      // was old enough that replacing it with the current amount decreases the success probability for `high`, then we
+      // replace it.
       val pLow = decay(low, 1, lowTimestamp)
       val pHigh = decay(high, 0, highTimestamp)
       val x = low + (high - low) * (pLow / (pLow - pHigh))
       if (amount <= x) {
         copy(high = amount, highTimestamp = timestamp)
       } else {
-        copy()
+        this
       }
     }
+  }
 
   def couldSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate =
     otherSide.couldNotSend(totalCapacity - amount, timestamp).otherSide
@@ -139,10 +139,9 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
   def didSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate = {
     val newLow = (low - amount) max MilliSatoshi(0)
     val newHigh = (high - amount) max MilliSatoshi(0)
-    /* We could shift everything left by amount without changing the timestamps (a) but we may get more information by
-     * ignoring the old high (b) if if has decayed too much. We try both and choose the one that gives the lowest
-     * probability for high.
-     */
+    // We could shift everything left by amount without changing the timestamps (a) but we may get more information by
+    // ignoring the old high (b) if if has decayed too much. We try both and choose the one that gives the lowest
+    // probability for high.
     val a = copy(low = newLow, high = newHigh)
     val b = copy(low = newLow, high = (totalCapacity - amount) max MilliSatoshi(0), highTimestamp = timestamp)
     if (a.canSend(newHigh) < b.canSend(newHigh)) {
@@ -156,7 +155,8 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
 
   def removeChannel(capacity: Satoshi): BalanceEstimate = copy(low = (low - toMilliSatoshi(capacity)) max MilliSatoshi(0), high = high min toMilliSatoshi(totalCapacity - capacity), totalCapacity = totalCapacity - capacity)
 
-  /* Estimate the probability that we can successfully send `amount` through the channel
+  /**
+   * Estimate the probability that we can successfully send `amount` through the channel
    *
    * We estimate this probability with a piecewise linear function:
    * - probability that it can relay a payment of 0 is 1
@@ -165,9 +165,9 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
    * - probability that it can relay a payment of totalCapacity is 0
    */
   def canSend(amount: MilliSatoshi): Double = {
-    val x = amount.toLong.toDouble
-    val a = low.toLong.toDouble
-    val b = high.toLong.toDouble
+    val a = amount.toLong.toDouble
+    val l = low.toLong.toDouble
+    val h = high.toLong.toDouble
     val c = toMilliSatoshi(totalCapacity).toLong.toDouble
 
     // Success probability at the low and high points
@@ -175,39 +175,54 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
     val pHigh = decay(high, 0, highTimestamp)
 
     if (amount < low) {
-      ((a - x) + x * pLow) / a
+      (l - a * (1.0 - pLow)) / l
     } else if (amount <= high) {
-      ((b - x) * pLow + (x - a) * pHigh) / (b - a)
+      ((h - a) * pLow + (a - l) * pHigh) / (h - l)
     } else {
-      ((c - x) * pHigh) / (c - b)
+      ((c - a) * pHigh) / (c - h)
     }
   }
 }
 
 object BalanceEstimate {
-  def noChannels(halfLife: FiniteDuration): BalanceEstimate = BalanceEstimate(MilliSatoshi(0), TimestampSecond(0), MilliSatoshi(0), TimestampSecond(0), Satoshi(0), halfLife)
-
-  def baseline(capacity: Satoshi, halfLife: FiniteDuration): BalanceEstimate = noChannels(halfLife).addChannel(capacity)
+  def baseline(capacity: Satoshi, halfLife: FiniteDuration): BalanceEstimate = BalanceEstimate(MilliSatoshi(0), TimestampSecond(0), MilliSatoshi(0), TimestampSecond(0), Satoshi(0), halfLife).addChannel(capacity)
 }
 
-case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstimate], defaultHalfLife: FiniteDuration) {
-  private def get(a: PublicKey, b: PublicKey): Option[BalanceEstimate] =
-    if (LexicographicalOrdering.isLessThan(a.value, b.value)) {
-      balances.get((a, b))
+/** A pair of nodes, lexicographically ordered. */
+case class OrderedNodePair private(node1: PublicKey, node2: PublicKey)
+
+object OrderedNodePair {
+  def create(a: PublicKey, b: PublicKey): OrderedNodePair = if (LexicographicalOrdering.isLessThan(a.value, b.value)) OrderedNodePair(a, b) else OrderedNodePair(b, a)
+}
+
+/**
+ * Balance estimates for the whole routing graph.
+ * Balance estimates are symmetrical: we can compute the balance estimate b -> a based on the balance estimate a -> b,
+ * so we only store it for one direction.
+ */
+case class BalancesEstimates(balances: Map[OrderedNodePair, BalanceEstimate], defaultHalfLife: FiniteDuration) {
+  private def get(a: PublicKey, b: PublicKey): Option[BalanceEstimate] = {
+    val nodePair = OrderedNodePair.create(a, b)
+    if (nodePair.node1 == a) {
+      balances.get(nodePair)
     } else {
-      balances.get((b, a)).map(_.otherSide)
+      balances.get(nodePair).map(_.otherSide)
     }
+  }
 
   def get(edge: GraphEdge): BalanceEstimate = get(edge.desc.a, edge.desc.b).getOrElse(BalanceEstimate.baseline(edge.capacity, defaultHalfLife))
 
   def addChannel(channel: PublicChannel): BalancesEstimates =
     BalancesEstimates(
-      balances.updatedWith((channel.ann.nodeId1, channel.ann.nodeId2))(opt => Some(opt.getOrElse(BalanceEstimate.noChannels(defaultHalfLife).addChannel(channel.capacity)))),
+      balances.updatedWith(OrderedNodePair.create(channel.ann.nodeId1, channel.ann.nodeId2)) {
+        case None => Some(BalanceEstimate.baseline(channel.capacity, defaultHalfLife))
+        case Some(balance) => Some(balance)
+      },
       defaultHalfLife)
 
   def removeChannel(channel: PublicChannel): BalancesEstimates =
     BalancesEstimates(
-      balances.updatedWith((channel.ann.nodeId1, channel.ann.nodeId2)) {
+      balances.updatedWith(OrderedNodePair.create(channel.ann.nodeId1, channel.ann.nodeId2)) {
         case None => None
         case Some(balance) =>
           val newBalance = balance.removeChannel(channel.capacity)
@@ -218,12 +233,14 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
           }
       }, defaultHalfLife)
 
-  private def channelXSend(x: (BalanceEstimate, MilliSatoshi, TimestampSecond) => BalanceEstimate, hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates =
-    if (LexicographicalOrdering.isLessThan(hop.nodeId.value, hop.nextNodeId.value)) {
-      BalancesEstimates(balances.updatedWith((hop.nodeId, hop.nextNodeId))(_.map(x(_, amount, TimestampSecond.now()))), defaultHalfLife)
+  private def channelXSend(x: (BalanceEstimate, MilliSatoshi, TimestampSecond) => BalanceEstimate, hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates = {
+    val nodePair = OrderedNodePair(hop.nodeId, hop.nextNodeId)
+    if (nodePair.node1 == hop.nodeId) {
+      BalancesEstimates(balances.updatedWith(nodePair)(_.map(b => x(b, amount, TimestampSecond.now()))), defaultHalfLife)
     } else {
-      BalancesEstimates(balances.updatedWith((hop.nextNodeId, hop.nodeId))(_.map(b => x(b.otherSide, amount, TimestampSecond.now()).otherSide)), defaultHalfLife)
+      BalancesEstimates(balances.updatedWith(nodePair)(_.map(b => x(b.otherSide, amount, TimestampSecond.now()).otherSide)), defaultHalfLife)
     }
+  }
 
   def channelCouldSend(hop: ChannelHop, amount: MilliSatoshi): BalancesEstimates = {
     get(hop.nodeId, hop.nextNodeId).foreach { balance =>
@@ -253,8 +270,8 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
 
 object BalancesEstimates {
   def baseline(graph: DirectedGraph, defaultHalfLife: FiniteDuration): BalancesEstimates = BalancesEstimates(
-    graph.edgeSet().foldLeft[Map[(PublicKey, PublicKey), BalanceEstimate]](Map.empty) {
-      case (m, edge) => m.updatedWith(if (LexicographicalOrdering.isLessThan(edge.desc.a.value, edge.desc.b.value)) (edge.desc.a, edge.desc.b) else (edge.desc.b, edge.desc.a)) {
+    graph.edgeSet().foldLeft[Map[OrderedNodePair, BalanceEstimate]](Map.empty) {
+      case (m, edge) => m.updatedWith(OrderedNodePair.create(edge.desc.a, edge.desc.b)) {
         case None => Some(BalanceEstimate.baseline(edge.capacity, defaultHalfLife))
         case Some(balance) => Some(balance.addChannel(edge.capacity))
       }

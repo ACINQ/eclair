@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.scalacompat.Satoshi
-import fr.acinq.eclair.{MilliSatoshiLong, TimestampSecond}
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.eclair.{MilliSatoshiLong, TimestampSecond, TimestampSecondLong}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -31,49 +31,45 @@ class BalanceEstimateSpec extends AnyFunSuite {
   }
 
   test("symmetry") {
-    var balanceA = BalanceEstimate.noChannels(1 day)
+    var balanceA = BalanceEstimate.baseline(40000 sat, 1 day)
     var balanceB = balanceA.otherSide
-    assert(balanceA === balanceB)
-
-    balanceA = balanceA.addChannel(Satoshi(40000))
-    balanceB = balanceB.addChannel(Satoshi(40000))
     assert(isValid(balanceA))
     assert(isValid(balanceB))
     assert(balanceB.otherSide === balanceA)
 
-    balanceA = balanceA.couldNotSend(35000000 msat, TimestampSecond(1000))
-    balanceB = balanceB.couldSend(balanceB.totalCapacity - 35000000.msat, TimestampSecond(1000))
+    balanceA = balanceA.couldNotSend(35000000 msat, 1000 unixsec)
+    balanceB = balanceB.couldSend(balanceB.totalCapacity - 35000000.msat, 1000 unixsec)
     assert(isValid(balanceA))
     assert(isValid(balanceB))
     assert(balanceB.otherSide === balanceA)
 
-    balanceA = balanceA.couldSend(10000000 msat, TimestampSecond(2000))
-    balanceB = balanceB.couldNotSend(balanceB.totalCapacity - 10000000.msat, TimestampSecond(2000))
+    balanceA = balanceA.couldSend(10000000 msat, 2000 unixsec)
+    balanceB = balanceB.couldNotSend(balanceB.totalCapacity - 10000000.msat, 2000 unixsec)
     assert(isValid(balanceA))
     assert(isValid(balanceB))
     assert(balanceB.otherSide === balanceA)
 
-    balanceA = balanceA.addChannel(Satoshi(5000))
-    balanceB = balanceB.addChannel(Satoshi(5000))
+    balanceA = balanceA.addChannel(5000 sat)
+    balanceB = balanceB.addChannel(5000 sat)
     assert(isValid(balanceA))
     assert(isValid(balanceB))
     assert(balanceB.otherSide === balanceA)
 
-    balanceA = balanceA.couldSend(balanceA.totalCapacity - 1000000.msat, TimestampSecond(15000))
-    balanceB = balanceB.couldNotSend(1000000 msat, TimestampSecond(15000))
+    balanceA = balanceA.couldSend(balanceA.totalCapacity - 1000000.msat, 15000 unixsec)
+    balanceB = balanceB.couldNotSend(1000000 msat, 15000 unixsec)
     assert(isValid(balanceA))
     assert(isValid(balanceB))
     assert(balanceB.otherSide === balanceA)
 
-    balanceA = balanceA.removeChannel(Satoshi(5000))
-    balanceB = balanceB.removeChannel(Satoshi(5000))
+    balanceA = balanceA.removeChannel(5000 sat)
+    balanceB = balanceB.removeChannel(5000 sat)
     assert(isValid(balanceA))
     assert(isValid(balanceB))
     assert(balanceB.otherSide === balanceA)
   }
 
   test("no balance information") {
-    val balance = BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+    val balance = BalanceEstimate.baseline(100 sat, 1 day)
     assert(balance.canSend(0 msat) === 1.0 +- 0.001)
     assert(balance.canSend(1 msat) === 1.0 +- 0.001)
     assert(balance.canSend(50000 msat) === 0.5 +- 0.001)
@@ -84,7 +80,7 @@ class BalanceEstimateSpec extends AnyFunSuite {
   test("can send balance info bounds") {
     val now = TimestampSecond.now()
     val balance =
-      BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+      BalanceEstimate.baseline(100 sat, 1 day)
         .couldSend(24000 msat, now)
         .couldNotSend(30000 msat, now)
     assert(balance.canSend(0 msat) === 1.0 +- 0.001)
@@ -103,7 +99,7 @@ class BalanceEstimateSpec extends AnyFunSuite {
   test("could and couldn't send at the same time") {
     val now = TimestampSecond.now()
     val balance =
-      BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+      BalanceEstimate.baseline(100 sat, 1 day)
         .couldSend(26000 msat, now)
         .couldNotSend(26000 msat, now)
     assert(isValid(balance))
@@ -118,7 +114,7 @@ class BalanceEstimateSpec extends AnyFunSuite {
   test("couldn't and could send at the same time") {
     val now = TimestampSecond.now()
     val balance =
-      BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+      BalanceEstimate.baseline(100 sat, 1 day)
         .couldNotSend(26000 msat, now)
         .couldSend(26000 msat, now)
     assert(isValid(balance))
@@ -133,7 +129,7 @@ class BalanceEstimateSpec extends AnyFunSuite {
   test("decay") {
     val longAgo = TimestampSecond.now() - 1.day
     val balance =
-      BalanceEstimate.noChannels(1 second).addChannel(Satoshi(100))
+      BalanceEstimate.baseline(100 sat, 1 second)
         .couldNotSend(32000 msat, longAgo)
         .couldSend(28000 msat, longAgo)
     assert(isValid(balance))
@@ -146,7 +142,7 @@ class BalanceEstimateSpec extends AnyFunSuite {
   test("sending shifts amounts") {
     val now = TimestampSecond.now()
     val balance =
-      BalanceEstimate.noChannels(1 day).addChannel(Satoshi(100))
+      BalanceEstimate.baseline(100 sat, 1 day)
         .couldNotSend(80000 msat, now)
         .couldSend(50000 msat, now)
     assert(isValid(balance))
@@ -162,7 +158,7 @@ class BalanceEstimateSpec extends AnyFunSuite {
     val longAgo = TimestampSecond.now() - 1.day
     val now = TimestampSecond.now()
     val balance =
-      BalanceEstimate.noChannels(1 second).addChannel(Satoshi(100))
+      BalanceEstimate.baseline(100 sat, 1 second)
         .couldNotSend(80000 msat, longAgo)
         .couldSend(50000 msat, longAgo)
         .didSend(40000 msat, now)

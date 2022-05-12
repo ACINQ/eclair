@@ -200,6 +200,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         val failure = UnreadableRemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route))
         retry(failure, d)
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
+        // We have discovered some liquidity information with this payment: we update the router accordingly.
         val stoppedRoute = d.route.stopAt(nodeId)
         if (stoppedRoute.hops.length > 1) {
           router ! Router.RouteCouldRelay(stoppedRoute)
@@ -207,12 +208,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         failureMessage match {
           case TemporaryChannelFailure(update) =>
             d.route.hops.find(_.nodeId == nodeId) match {
-              case Some(failingHop) =>
-                if (Announcements.areSame(failingHop.lastUpdate, update))
-                  router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
-              case None => ()
+              case Some(failingHop) if Announcements.areSame(failingHop.lastUpdate, update) => router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
+              case _ => // otherwise the relay parameters may have changed, so it's not necessarily a liquidity issue
             }
-          case _ => ()
+          case _ => // other errors should not be used for liquidity issues
         }
         failureMessage match {
           case failureMessage: Node =>
