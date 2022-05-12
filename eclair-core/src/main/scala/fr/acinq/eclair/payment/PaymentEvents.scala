@@ -180,7 +180,7 @@ object PaymentFailure {
   /** Ignore the channel outgoing from the given nodeId in the given route. */
   private def ignoreNodeOutgoingChannel(nodeId: PublicKey, hops: Seq[Hop], ignore: Ignore): Ignore = {
     hops.collectFirst {
-      case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
+      case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId)
     } match {
       case Some(faultyChannel) => ignore + faultyChannel
       case None => ignore
@@ -219,7 +219,7 @@ object PaymentFailure {
       ignore ++ blacklist
     case LocalFailure(_, hops, _) => hops.headOption match {
       case Some(hop: ChannelHop) =>
-        val faultyChannel = ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
+        val faultyChannel = ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId)
         ignore + faultyChannel
       case _ => ignore
     }

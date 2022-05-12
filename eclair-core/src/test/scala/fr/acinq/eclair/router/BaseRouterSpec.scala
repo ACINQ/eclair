@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
@@ -106,13 +106,13 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
     // and e --(4)--> f (we are a)
     within(30 seconds) {
       // first we make sure that we correctly resolve channelId+direction to nodeId
-      assert(Router.getDesc(update_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, a, b))
-      assert(Router.getDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
-      assert(Router.getDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
-      assert(Router.getDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
-      assert(Router.getDesc(update_ag_private, PrivateChannel(a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(channelId_ag_private, a, g))
-      assert(Router.getDesc(update_ag_private, PrivateChannel(g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(channelId_ag_private, a, g))
-      assert(Router.getDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
+      assert(ChannelDesc(update_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, a, b))
+      assert(ChannelDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
+      assert(ChannelDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
+      assert(ChannelDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
+      assert(ChannelDesc(update_ag_private, PrivateChannel(a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(channelId_ag_private, a, g))
+      assert(ChannelDesc(update_ag_private, PrivateChannel(g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(channelId_ag_private, a, g))
+      assert(ChannelDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
 
       // let's set up the router
       val sender = TestProbe()
@@ -221,4 +221,7 @@ object BaseRouterSpec {
     val funding2_sig = Announcements.signChannelAnnouncement(witness, funding2_priv)
     makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
   }
+
+  def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: ChannelUpdate): ChannelHop =
+    ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, ChannelRelayParams.FromAnnouncement(channelUpdate))
 }

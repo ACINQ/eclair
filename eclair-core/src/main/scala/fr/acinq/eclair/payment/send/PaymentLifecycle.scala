@@ -78,7 +78,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
       OutgoingPaymentPacket.buildCommand(self, cfg.upstream, paymentHash, route.hops, c.finalPayload) match {
         case Success((cmd, sharedSecrets)) =>
-          register ! Register.ForwardShortId(self, route.hops.head.lastUpdate.shortChannelId, cmd)
+          register ! Register.ForwardShortId(self, route.hops.head.shortChannelId, cmd)
           goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(c, cmd, failures, sharedSecrets, ignore, route)
         case Failure(t) =>
           log.warning("cannot send outgoing payment: {}", t.getMessage)
@@ -242,6 +242,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
    * @return updated routing hints if applicable.
    */
   private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[Seq[ExtraHop]] = {
+    // TODO: properly handle updates to channels provided as routing hints in the invoice
     data.route.getChannelUpdateForNode(nodeId) match {
       case Some(u) if u.shortChannelId != failure.update.shortChannelId =>
         // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine

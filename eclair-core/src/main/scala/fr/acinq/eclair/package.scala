@@ -75,8 +75,6 @@ package object eclair {
 
   def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
 
-  def nodeFee(channelUpdate: ChannelUpdate, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, paymentAmount)
-
   /**
    * @param address   base58 of bech32 address
    * @param chainHash hash of the chain we're on, which will be checked against the input address
