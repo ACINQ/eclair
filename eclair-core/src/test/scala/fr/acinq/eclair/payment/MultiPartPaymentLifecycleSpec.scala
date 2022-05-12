@@ -31,6 +31,7 @@ import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator}
+import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Announcements, RouteNotFound}
@@ -699,13 +700,13 @@ object MultiPartPaymentLifecycleSpec {
   val channelUpdate_ad = defaultChannelUpdate.copy(shortChannelId = channelId_ad)
   val channelUpdate_de = defaultChannelUpdate.copy(shortChannelId = channelId_de)
 
-  val hop_ab_1 = ChannelHop(channelUpdate_ab_1.shortChannelId, a, b, ChannelRelayParams.FromAnnouncement(channelUpdate_ab_1))
-  val hop_ab_2 = ChannelHop(channelUpdate_ab_2.shortChannelId, a, b, ChannelRelayParams.FromAnnouncement(channelUpdate_ab_2))
-  val hop_be = ChannelHop(channelUpdate_be.shortChannelId, b, e, ChannelRelayParams.FromAnnouncement(channelUpdate_be))
-  val hop_ac_1 = ChannelHop(channelUpdate_ac_1.shortChannelId, a, c, ChannelRelayParams.FromAnnouncement(channelUpdate_ac_1))
-  val hop_ac_2 = ChannelHop(channelUpdate_ac_2.shortChannelId, a, c, ChannelRelayParams.FromAnnouncement(channelUpdate_ac_2))
-  val hop_ce = ChannelHop(channelUpdate_ce.shortChannelId, c, e, ChannelRelayParams.FromAnnouncement(channelUpdate_ce))
-  val hop_ad = ChannelHop(channelUpdate_ad.shortChannelId, a, d, ChannelRelayParams.FromAnnouncement(channelUpdate_ad))
-  val hop_de = ChannelHop(channelUpdate_de.shortChannelId, d, e, ChannelRelayParams.FromAnnouncement(channelUpdate_de))
+  val hop_ab_1 = channelHopFromUpdate(a, b, channelUpdate_ab_1)
+  val hop_ab_2 = channelHopFromUpdate(a, b, channelUpdate_ab_2)
+  val hop_be = channelHopFromUpdate(b, e, channelUpdate_be)
+  val hop_ac_1 = channelHopFromUpdate(a, c, channelUpdate_ac_1)
+  val hop_ac_2 = channelHopFromUpdate(a, c, channelUpdate_ac_2)
+  val hop_ce = channelHopFromUpdate(c, e, channelUpdate_ce)
+  val hop_ad = channelHopFromUpdate(a, d, channelUpdate_ad)
+  val hop_de = channelHopFromUpdate(d, e, channelUpdate_de)
 
 }

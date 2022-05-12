@@ -103,7 +103,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // pre-computed route going from A to D
-    val route = Route(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, ChannelRelayParams.FromAnnouncement(update_ab)) :: ChannelHop(update_bc.shortChannelId, b, c, ChannelRelayParams.FromAnnouncement(update_bc)) :: ChannelHop(update_cd.shortChannelId, c, d, ChannelRelayParams.FromAnnouncement(update_cd)) :: Nil)
+    val route = Route(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil)
     val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata))
     sender.send(paymentFSM, request)
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
@@ -736,15 +736,15 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("filter errors properly") { _ =>
     val failures = Seq(
       LocalFailure(defaultAmountMsat, Nil, RouteNotFound),
-      RemoteFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, ChannelRelayParams.FromAnnouncement(update_ab)) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
-      LocalFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, ChannelRelayParams.FromAnnouncement(update_ab)) :: Nil, ChannelUnavailable(ByteVector32.Zeroes)),
+      RemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
+      LocalFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes)),
       LocalFailure(defaultAmountMsat, Nil, RouteNotFound)
     )
     val filtered = PaymentFailure.transformForUser(failures)
     val expected = Seq(
       LocalFailure(defaultAmountMsat, Nil, RouteNotFound),
-      RemoteFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, ChannelRelayParams.FromAnnouncement(update_ab)) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
-      LocalFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, ChannelRelayParams.FromAnnouncement(update_ab)) :: Nil, ChannelUnavailable(ByteVector32.Zeroes))
+      RemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
+      LocalFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes))
     )
     assert(filtered === expected)
   }

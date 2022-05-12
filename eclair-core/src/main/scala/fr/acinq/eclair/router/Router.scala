@@ -34,7 +34,6 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
@@ -423,14 +422,14 @@ object Router {
     /** We learnt about this channel from a channel_update */
     case class FromAnnouncement(channelUpdate: ChannelUpdate) extends ChannelRelayParams {
       override def cltvExpiryDelta: CltvExpiryDelta = channelUpdate.cltvExpiryDelta
-      override def relayFees: Relayer.RelayFees = RelayFees(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths)
+      override def relayFees: Relayer.RelayFees = channelUpdate.relayFees
       override def htlcMinimum: MilliSatoshi = channelUpdate.htlcMinimumMsat
       override def htlcMaximum_opt: Option[MilliSatoshi] = channelUpdate.htlcMaximumMsat
     }
     /** We learnt about this channel from hints in an invoice */
     case class FromHint(extraHop: Bolt11Invoice.ExtraHop, htlcMaximum: MilliSatoshi) extends ChannelRelayParams {
       override def cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
-      override def relayFees: Relayer.RelayFees = RelayFees(extraHop.feeBase, extraHop.feeProportionalMillionths)
+      override def relayFees: Relayer.RelayFees = extraHop.relayFees
       override def htlcMinimum: MilliSatoshi = 0 msat
       override def htlcMaximum_opt: Option[MilliSatoshi] = Some(htlcMaximum)
     }

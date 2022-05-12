@@ -154,7 +154,7 @@ object RouteCalculation {
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
     extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
       case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
-        val nextAmount = amount + nodeFee(extraHop.feeBase, extraHop.feeProportionalMillionths, amount)
+        val nextAmount = amount + nodeFee(extraHop.relayFees, amount)
         (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(nextNodeId, Router.ChannelRelayParams.FromHint(extraHop, nextAmount))))
     }._2
   }
