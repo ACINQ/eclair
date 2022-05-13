@@ -562,7 +562,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
 
     sender.send(nodes("A").router, Router.GetRouterData)
-    val routingHints = List(sender.expectMsgType[Router.Data].privateChannels.head._2.toExtraHop.toList)
+    val routingHints = List(sender.expectMsgType[Router.Data].privateChannels.head._2.toIncomingExtraHop.toList)
 
     val amount = 3000000000L.msat
     sender.send(nodes("A").paymentHandler, ReceivePayment(Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))

@@ -363,7 +363,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
     /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
-    def toExtraHop: Option[ExtraHop] = {
+    def toIncomingExtraHop: Option[ExtraHop] = {
       // we want the incoming channel_update
       val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
       remoteUpdate_opt.map { remoteUpdate =>
