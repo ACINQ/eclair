@@ -82,7 +82,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv FundingSigned with valid signature") { f =>
     import f._
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)

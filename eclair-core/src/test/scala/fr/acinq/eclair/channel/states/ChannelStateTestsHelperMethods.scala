@@ -17,8 +17,8 @@
 package fr.acinq.eclair.channel.states
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.actor.{ActorContext, ActorRef}
-import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
+import akka.actor.{ActorContext, ActorRef, ActorSystem}
+import akka.testkit.{TestFSMRef, TestKit, TestKitBase, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -106,6 +106,12 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
+  val systemA: ActorSystem = ActorSystem("system-alice")
+  val systemB: ActorSystem = ActorSystem("system-bob")
+
+  system.registerOnTermination(TestKit.shutdownActorSystem(systemA))
+  system.registerOnTermination(TestKit.shutdownActorSystem(systemB))
+
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: OnChainWallet = new DummyOnChainWallet(), tags: Set[String] = Set.empty): SetupFixture = {
     val aliceOrigin = TestProbe()
     val alice2bob = TestProbe()
@@ -119,8 +125,10 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     val alice2relayer = TestProbe()
     val bob2relayer = TestProbe()
     val channelUpdateListener = TestProbe()
-    system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
-    system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
+    systemA.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
+    systemA.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
+    systemB.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
+    systemB.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
     val finalNodeParamsA = nodeParamsA
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
@@ -132,8 +140,14 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
-    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
-    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = {
+      implicit val system: ActorSystem = systemA
+      TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
+    }
+    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = {
+      implicit val system: ActorSystem = systemB
+      TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    }
     SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
