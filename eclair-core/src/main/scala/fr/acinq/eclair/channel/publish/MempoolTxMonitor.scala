@@ -101,7 +101,6 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case PublishOk =>
         log.debug("txid={} was successfully published, waiting for confirmation...", cmd.tx.txid)
-        context.system.eventStream ! EventStream.Publish(TransactionPublished(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
         waitForConfirmation()
       case PublishFailed(reason) if reason.getMessage.contains("rejecting replacement") =>
         log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
@@ -134,6 +133,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
   def waitForConfirmation(): Behavior[Command] = {
     val messageAdapter = context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight))
     context.system.eventStream ! EventStream.Subscribe(messageAdapter)
+    context.system.eventStream ! EventStream.Publish(TransactionPublished(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
     Behaviors.receiveMessagePartial {
       case WrappedCurrentBlockHeight(currentBlockHeight) =>
         timers.startSingleTimer(CheckTxConfirmationsKey, CheckTxConfirmations(currentBlockHeight), (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis)
