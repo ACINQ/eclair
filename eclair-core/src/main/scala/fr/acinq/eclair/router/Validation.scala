@@ -118,9 +118,14 @@ object Validation {
               val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures())
               ctx.self ! nodeAnn
             }
-            // public channels that haven't yet been announced are considered as private channels
-            val channelMeta_opt = d0.privateChannels.get(c.shortChannelId).map(_.meta)
-            Some(PublicChannel(c, tx.txid, capacity, None, None, channelMeta_opt))
+            // maybe this previously was a local unannounced channel
+            val privateChannel_opt = d0.privateChannels.get(c.shortChannelId)
+            Some(PublicChannel(c,
+              tx.txid,
+              capacity,
+              update_1_opt = privateChannel_opt.flatMap(_.update_1_opt),
+              update_2_opt = privateChannel_opt.flatMap(_.update_2_opt),
+              meta_opt = privateChannel_opt.map(_.meta)))
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
           if (fundingTxStatus.spendingTxConfirmed) {
@@ -135,7 +140,7 @@ object Validation {
           db.removeChannel(c.shortChannelId)
           None
       }
-      // we also reprocess node and channel_update announcements related to channels that were just analyzed
+      // we also reprocess node and channel_update announcements related to the channel that was just analyzed
       val reprocessUpdates = d0.stash.updates.view.filterKeys(u => u.shortChannelId == c.shortChannelId)
       val reprocessNodes = d0.stash.nodes.view.filterKeys(n => isRelatedTo(c, n.nodeId))
       // and we remove the reprocessed messages from the stash
@@ -145,12 +150,13 @@ object Validation {
 
       publicChannel_opt match {
         case Some(pc) =>
-          // note: if the channel is graduating from private to public, the implementation (in the LocalChannelUpdate handler) guarantees that we will process a new channel_update
-          // right after the channel_announcement, channel_updates will be moved from private to public at that time
           val d1 = d0.copy(
             channels = d0.channels + (c.shortChannelId -> pc),
             privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
-            rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet)), // we also add the newly validated channels to the rebroadcast queue
+            rebroadcast = d0.rebroadcast.copy(
+              channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet), // we rebroadcast the channel to our peers
+              updates = d0.rebroadcast.updates ++ (pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).map(_ -> Set.empty[GossipOrigin]).toMap // those updates are only defined if this was a previously an unannounced local channel, we broadcast them
+            ), // we also add the newly validated channels to the rebroadcast queue
             stash = stash1,
             awaiting = awaiting1)
           // we only reprocess updates and nodes if validation succeeded
