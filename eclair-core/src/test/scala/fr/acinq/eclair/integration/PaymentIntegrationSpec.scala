@@ -127,8 +127,6 @@ class PaymentIntegrationSpec extends IntegrationSpec {
           sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-
-          
           sender.send(setup.router, Router.GetChannelUpdates)
           sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
         }, max = 60 seconds, interval = 1 second)
