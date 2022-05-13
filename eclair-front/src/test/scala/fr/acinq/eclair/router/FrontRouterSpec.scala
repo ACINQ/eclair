@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong, Transaction, TxOut}
@@ -32,9 +32,6 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.Color
 import org.scalatest.funsuite.AnyFunSuiteLike
-import scodec.bits._
-
-import scala.concurrent.duration._
 
 class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike {
 
@@ -151,9 +148,18 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val system2 = ActorSystem("front-system-2")
     val system3 = ActorSystem("front-system-3")
 
-    val front1 = system1.actorOf(FrontRouter.props(nodeParams.routerConf, router))
-    val front2 = system2.actorOf(FrontRouter.props(nodeParams.routerConf, router))
-    val front3 = system3.actorOf(FrontRouter.props(nodeParams.routerConf, router))
+    val front1 = {
+      implicit val system: ActorSystem = system1
+      TestFSMRef[FrontRouter.State, FrontRouter.Data, FrontRouter](new FrontRouter(nodeParams.routerConf, router))
+    }
+    val front2 = {
+      implicit val system: ActorSystem = system2
+      TestFSMRef[FrontRouter.State, FrontRouter.Data, FrontRouter](new FrontRouter(nodeParams.routerConf, router))
+    }
+    val front3 = {
+      implicit val system: ActorSystem = system3
+      TestFSMRef[FrontRouter.State, FrontRouter.Data, FrontRouter](new FrontRouter(nodeParams.routerConf, router))
+    }
 
     val peerConnection1a = TestProbe("peerconn-1a")
     val peerConnection1b = TestProbe("peerconn-1b")
@@ -184,7 +190,6 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection3a.expectMsg(TransportHandler.ReadAck(channelUpdate_bc))
     peerConnection3a.expectMsg(GossipDecision.NoRelatedChannel(channelUpdate_bc))
 
-
     watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
 
     peerConnection1a.expectMsg(TransportHandler.ReadAck(chan_ab))
@@ -208,6 +213,10 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, ann_b))
     peerConnection3a.expectMsg(TransportHandler.ReadAck(ann_b))
     peerConnection3a.expectMsg(GossipDecision.Accepted(ann_b))
+
+    awaitCond(front1.stateData.nodes.size == 2)
+    awaitCond(front2.stateData.nodes.size == 2)
+    awaitCond(front3.stateData.nodes.size == 2)
 
     // manual rebroadcast
     front1 ! Router.TickBroadcast
