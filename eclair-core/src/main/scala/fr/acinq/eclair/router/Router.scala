@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.Done
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated, typed}
-import akka.event.DiagnosticLoggingAdapter
+import akka.event.{DiagnosticLoggingAdapter, EventStream}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
@@ -50,7 +50,7 @@ import scala.util.{Random, Try}
 /**
  * Created by PM on 24/05/2016.
  */
-class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
+class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None, eventStream_opt: Option[EventStream] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
 
   import Router._
 
@@ -59,9 +59,12 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: DiagnosticLoggingAdapter = diagLog
 
-  context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
-  context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
-  context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+  // this allows overriding the default eventstream in tests
+  val eventStream = eventStream_opt.getOrElse(context.system.eventStream)
+
+  eventStream.subscribe(self, classOf[LocalChannelUpdate])
+  eventStream.subscribe(self, classOf[LocalChannelDown])
+  eventStream.subscribe(self, classOf[AvailableBalanceChanged])
 
   startTimerWithFixedDelay(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval)
   startTimerWithFixedDelay(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour)

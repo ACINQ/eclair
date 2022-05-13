@@ -193,7 +193,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     (aliceParams, bobParams, channelType)
   }
 
-  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
+  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Transaction = {
 
     import setup._
 
@@ -245,6 +245,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    fundingTx
   }
 
   def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(replyTo, UUID.randomUUID())
