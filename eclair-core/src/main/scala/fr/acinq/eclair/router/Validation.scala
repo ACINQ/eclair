@@ -81,17 +81,20 @@ object Validation {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     import nodeParams.db.{network => db}
     import r.c
-    d0.awaiting.get(c) match {
-      case Some(origin +: _) => origin.peerConnection ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
+    // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
+    // (the other ones have already been acknowledged as duplicates)
+    d0.awaiting.getOrElse(c, Seq.empty).headOption match {
+      case Some(origin: RemoteGossip) => origin.peerConnection ! TransportHandler.ReadAck(c)
+      case Some(LocalGossip) => () // there is nothing to ack if it was a local gossip
       case _ => ()
     }
-    val remoteOrigins_opt = d0.awaiting.get(c)
-    Logs.withMdc(log)(Logs.mdc(remoteNodeId_opt = remoteOrigins_opt.flatMap(_.headOption).map(_.nodeId))) { // in the MDC we use the node id that sent us the announcement first
+    val remoteOrigins = d0.awaiting.getOrElse(c, Set.empty).collect { case rg: RemoteGossip => rg }
+    Logs.withMdc(log)(Logs.mdc(remoteNodeId_opt = remoteOrigins.headOption.map(_.nodeId))) { // in the MDC we use the node id that sent us the announcement first
       log.debug("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
       val publicChannel_opt = r match {
         case ValidateResult(c, Left(t)) =>
           log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
-          remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.ValidationFailure(c))))
+          remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.ValidationFailure(c)))
           None
         case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
           val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
@@ -103,12 +106,12 @@ object Validation {
           }
           if (fundingOutputIsInvalid) {
             log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
-            remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.InvalidAnnouncement(c))))
+            remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.InvalidAnnouncement(c)))
             None
           } else {
             watcher ! WatchExternalChannelSpent(ctx.self, tx.txid, outputIndex, c.shortChannelId)
             log.debug("added channel channelId={}", c.shortChannelId)
-            remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c))))
+            remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
             ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(c, capacity, None, None) :: Nil))
             db.addChannel(c, tx.txid, capacity)
@@ -131,10 +134,10 @@ object Validation {
           if (fundingTxStatus.spendingTxConfirmed) {
             log.debug("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
             // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
-            remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.ChannelClosed(c))))
+            remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.ChannelClosed(c)))
           } else {
             log.debug("ignoring shortChannelId={} tx={} (funding tx already spent but spending tx isn't confirmed)", c.shortChannelId, tx.txid)
-            remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.ChannelClosing(c))))
+            remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.ChannelClosing(c)))
           }
           // there may be a record if we have just restarted
           db.removeChannel(c.shortChannelId)
@@ -155,7 +158,7 @@ object Validation {
             privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
             rebroadcast = d0.rebroadcast.copy(
               channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet), // we rebroadcast the channel to our peers
-              updates = d0.rebroadcast.updates ++ (pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).map(_ -> Set.empty[GossipOrigin]).toMap // those updates are only defined if this was a previously an unannounced local channel, we broadcast them
+              updates = d0.rebroadcast.updates ++ (pc.update_1_opt.toSet ++ pc.update_2_opt.toSet).map(u => u -> (if (pc.getNodeIdSameSideAs(u) == nodeParams.nodeId) Set[GossipOrigin](LocalGossip) else Set.empty[GossipOrigin])).toMap // those updates are only defined if this was a previously an unannounced local channel, we broadcast them
             ), // we also add the newly validated channels to the rebroadcast queue
             stash = stash1,
             awaiting = awaiting1)
@@ -425,7 +428,7 @@ object Validation {
           case Some(c) =>
             // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
             watcher ! ValidateRequest(ctx.self, c)
-            val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
+            val d1 = d.copy(awaiting = d.awaiting + (c -> Seq(LocalGossip))) // no origin
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
             handleChannelUpdate(d1, db, routerConf, Left(lcu))

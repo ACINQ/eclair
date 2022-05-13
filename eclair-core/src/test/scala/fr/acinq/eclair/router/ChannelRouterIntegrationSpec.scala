@@ -2,11 +2,12 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingDeeplyBuriedTriggered
-import fr.acinq.eclair.blockchain.bitcoind.{ZmqWatcher, ZmqWatcherSpec}
 import fr.acinq.eclair.channel.DATA_NORMAL
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.router.Router.{GossipOrigin, LocalGossip}
 import fr.acinq.eclair.wire.protocol.AnnouncementSignatures
 import fr.acinq.eclair.{BlockHeight, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -17,18 +18,20 @@ import org.scalatest.{Outcome, Tag}
  */
 class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(router: TestFSMRef[Router.State, Router.Data, Router], channels: SetupFixture, testTags: Set[String])
+  case class FixtureParam(router: TestFSMRef[Router.State, Router.Data, Router], rebroadcastListener: TestProbe, channels: SetupFixture, testTags: Set[String])
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
     val channels = init(tags = test.tags)
+    val rebroadcastListener = TestProbe()
     val router: TestFSMRef[Router.State, Router.Data, Router] = {
       // we use alice's actor system so we share the same event stream
       implicit val system: ActorSystem = channels.alice.underlying.system
+      system.eventStream.subscribe(rebroadcastListener.ref, classOf[Router.Rebroadcast])
       TestFSMRef(new Router(channels.alice.underlyingActor.nodeParams, channels.alice.underlyingActor.blockchain, initialized = None))
     }
-    withFixture(test.toNoArgTest(FixtureParam(router, channels, test.tags)))
+    withFixture(test.toNoArgTest(FixtureParam(router, rebroadcastListener, channels, test.tags)))
   }
 
   test("private local channel") { f =>
@@ -40,7 +43,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     {
       // only the local channel_update is known
-      val pc = router.stateData.privateChannels.head._2
+      val pc = router.stateData.privateChannels.values.head
       assert(pc.update_1_opt.isDefined ^ pc.update_2_opt.isDefined)
     }
 
@@ -50,9 +53,13 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     awaitCond {
       // only the local channel_update is known
-      val pc = router.stateData.privateChannels.head._2
+      val pc = router.stateData.privateChannels.values.head
       pc.update_1_opt.isDefined && pc.update_2_opt.isDefined
     }
+
+    // manual rebroadcast
+    router ! Router.TickBroadcast
+    rebroadcastListener.expectNoMessage()
 
   }
 
@@ -64,20 +71,22 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(router.stateData.privateChannels.size == 1)
 
     {
-      val pc = router.stateData.privateChannels.head._2
+      val pc = router.stateData.privateChannels.values.head
       // only the local channel_update is known
       assert(pc.update_1_opt.isDefined ^ pc.update_2_opt.isDefined)
     }
 
     val peerConnection = TestProbe()
+    val aliceChannelUpdate = channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     val bobChannelUpdate = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     router ! PeerRoutingMessage(peerConnection.ref, channels.bob.underlyingActor.nodeParams.nodeId, bobChannelUpdate)
 
     awaitCond {
-      val pc = router.stateData.privateChannels.head._2
+      val pc = router.stateData.privateChannels.values.head
       // both channel_updates are known
       pc.update_1_opt.isDefined && pc.update_2_opt.isDefined
     }
+    val privateChannel = router.stateData.privateChannels.values.head
 
     // funding tx reaches 6 blocks, announcements are exchanged
     channels.alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
@@ -97,10 +106,18 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     }
 
     awaitCond {
-      val pc = router.stateData.channels.head._2
+      val pc = router.stateData.channels.values.head
       // both channel updates are preserved
       pc.update_1_opt.isDefined && pc.update_2_opt.isDefined
     }
+
+    // manual rebroadcast
+    router ! Router.TickBroadcast
+    rebroadcastListener.expectMsg(Router.Rebroadcast(
+      channels = Map(vr.ann -> Set[GossipOrigin](LocalGossip)),
+      updates = Map(aliceChannelUpdate -> Set[GossipOrigin](LocalGossip), bobChannelUpdate -> Set.empty[GossipOrigin]), // broadcast the channel_updates (they were previously unannounced)
+      nodes = Map(router.underlyingActor.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)), // new node_announcement
+    ))
 
   }
 
