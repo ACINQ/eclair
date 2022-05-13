@@ -174,12 +174,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       sender() ! d.nodes.values
       stay()
 
-    case Event(GetLocalChannels, d) =>
-      val scids = d.graph.getIncomingEdgesOf(nodeParams.nodeId).map(_.desc.shortChannelId)
-      val localChannels = scids.flatMap(scid => d.channels.get(scid).orElse(d.privateChannels.get(scid)).map(c => LocalChannel(nodeParams.nodeId, scid, c)))
-      sender() ! localChannels
-      stay()
-
     case Event(GetChannels, d) =>
       sender() ! d.channels.values.map(_.ann)
       stay()
@@ -324,16 +318,16 @@ object Router {
     }
   }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
-  sealed trait ChannelDetails {
+  sealed trait KnownChannel {
     val capacity: Satoshi
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate]
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi]
-    def updateChannelUpdateSameSideAs(u: ChannelUpdate): ChannelDetails
-    def updateBalances(commitments: AbstractCommitments): ChannelDetails
-    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): ChannelDetails
+    def updateChannelUpdateSameSideAs(u: ChannelUpdate): KnownChannel
+    def updateBalances(commitments: AbstractCommitments): KnownChannel
+    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): KnownChannel
   }
-  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends ChannelDetails {
+  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends KnownChannel {
     update_1_opt.foreach(u => assert(u.channelFlags.isNode1))
     update_2_opt.foreach(u => assert(!u.channelFlags.isNode1))
 
@@ -351,7 +345,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends ChannelDetails {
+  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -368,24 +362,14 @@ object Router {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
-  }
-  case class LocalChannel(localNodeId: PublicKey, shortChannelId: ShortChannelId, channel: ChannelDetails) {
-    val isPrivate: Boolean = channel match {
-      case _: PrivateChannel => true
-      case _ => false
-    }
-    val capacity: Satoshi = channel.capacity
-    val remoteNodeId: PublicKey = channel match {
-      case c: PrivateChannel => c.remoteNodeId
-      case c: PublicChannel => if (c.ann.nodeId1 == localNodeId) c.ann.nodeId2 else c.ann.nodeId1
-    }
-    /** Our remote peer's channel_update: this is what must be used in invoice routing hints. */
-    val remoteUpdate: Option[ChannelUpdate] = channel match {
-      case c: PrivateChannel => if (remoteNodeId == c.nodeId1) c.update_1_opt else c.update_2_opt
-      case c: PublicChannel => if (remoteNodeId == c.ann.nodeId1) c.update_1_opt else c.update_2_opt
-    }
     /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
-    def toExtraHop: Option[ExtraHop] = remoteUpdate.map(u => ExtraHop(remoteNodeId, u.shortChannelId, u.feeBaseMsat, u.feeProportionalMillionths, u.cltvExpiryDelta))
+    def toIncomingExtraHop: Option[ExtraHop] = {
+      // we want the incoming channel_update
+      val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
+      remoteUpdate_opt.map { remoteUpdate =>
+          ExtraHop(remoteNodeId, remoteUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
+        }
+    }
   }
   // @formatter:on
 
