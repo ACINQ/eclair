@@ -122,7 +122,6 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       import com.softwaremill.quicklens._
       val nodeParams = Alice.nodeParams
         .modify(_.nodeKeyManager).setTo(testNodeKeyManager)
-        .modify(_.routerConf.routerBroadcastInterval).setTo(1 day) // "disable" auto rebroadcast
       val router = system.actorOf(Router.props(nodeParams, watcher.ref))
       // we announce channels
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ab))
