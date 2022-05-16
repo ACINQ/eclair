@@ -147,6 +147,14 @@ If your contribution is adding a new dependency, please detail:
 Contributions that add new dependencies may take longer to approve because a detailed audit of the
 dependency may be required.
 
+### Testing
+
+Your code should be tested. We use ScalaTest as a testing framework.
+
+ScalaTest's approach is to parallelize on test suites rather than individual tests, therefore it is
+recommended to keep the execution time of each test suite under one minute and split tests across
+multiple smaller suites if needed.
+
 ### IntelliJ Tips
 
 If you're using [IntelliJ](https://www.jetbrains.com/idea/), here are some useful commands:
