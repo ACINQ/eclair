@@ -52,7 +52,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-abstract class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
+class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
   type FixtureParam = SetupFixture
 
@@ -68,11 +68,8 @@ abstract class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
       withFixture(test.toNoArgTest(setup))
     }
   }
-}
 
-class Chunk1NormalStateSpec extends NormalStateSpec {
-
-   test("recv CMD_ADD_HTLC (empty origin)") { f =>
+  test("recv CMD_ADD_HTLC (empty origin)") { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
@@ -1918,10 +1915,6 @@ class Chunk1NormalStateSpec extends NormalStateSpec {
     // We should rectify the packet length before forwarding upstream.
     assert(fail.reason.length === Sphinx.FailurePacket.PacketLength)
   }
-
-}
-
-class Chunk2NormalStateSpec extends NormalStateSpec {
 
   private def testCmdUpdateFee(f: FixtureParam): Unit = {
     import f._
