@@ -17,8 +17,8 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.{Bech32, Block}
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.bitcoin.{Bech32, Block}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
@@ -95,10 +95,40 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       index = txs.indexOf(JString(txid.toHex))
     } yield (BlockHeight(height.toInt), index)
 
+  /**
+   * Return true if this output can potentially be spent.
+   *
+   * Note that if this function returns false, that doesn't mean the output cannot be spent. The output could be unknown
+   * (not in the blockchain nor in the mempool) but could reappear later and be spendable at that point. If you want to
+   * ensure that an output is not spendable anymore, you should use [[isTransactionOutputSpent]].
+   */
   def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
       json <- rpcClient.invoke("gettxout", txid, outputIndex, includeMempool)
     } yield json != JNull
+
+  /**
+   * Return true if this output has already been spent by a confirmed transaction.
+   * Note that a reorg may invalidate the result of this function and make a spent output spendable again.
+   */
+  def isTransactionOutputSpent(txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
+    getTxConfirmations(txid).flatMap {
+      case Some(confirmations) if confirmations > 0 =>
+        // There is an important limitation when using isTransactionOutputSpendable: if it returns false, it can mean a
+        // few different things:
+        //  - the input has been spent
+        //  - the input is coming from an unconfirmed transaction (in the mempool) but can be unspent
+        //  - the input is unknown (it may come from an unconfirmed transaction that we don't have in our mempool)
+        //
+        // The only way to make sure that our output has been spent is to verify that it is coming from a confirmed
+        // transaction and that it has been spent by another confirmed transaction. We want to ignore the mempool to
+        // only consider spending transactions that have been confirmed.
+        isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map(r => !r)
+      case _ =>
+        // If the output itself isn't in the blockchain, it cannot be spent by a confirmed transaction.
+        Future.successful(false)
+    }
+  }
 
   def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
@@ -111,16 +141,20 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
             false // won't be reached
           case _ => false
         }
-      doublespent <- if (exists) {
-        // if the tx is in the blockchain, it can't have been double-spent
+      doubleSpent <- if (exists) {
+        // if the tx is in the blockchain or in the mempool, it can't have been double-spent
         Future.successful(false)
       } else {
-        // if the tx wasn't in the blockchain and one of its inputs has been spent, it is double-spent
-        // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
-        // the overriding transaction has been confirmed
-        Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
+        // The only way to make sure that our transaction has been double-spent is to find an input that is coming from
+        // a confirmed transaction and that it has been spent by another confirmed transaction.
+        //
+        // Note that if our transaction only had unconfirmed inputs and the transactions creating those inputs have
+        // themselves been double-spent, we will never be able to consider our transaction double-spent. With the
+        // information we have, these unknown inputs could eventually reappear and the transaction could be broadcast
+        // again.
+        Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpent(txIn.outPoint.txid, txIn.outPoint.index.toInt))).map(_.exists(_ == true))
       }
-    } yield doublespent
+    } yield doubleSpent
 
   /**
    * Iterate over blocks to find the transaction that has spent a given output.
