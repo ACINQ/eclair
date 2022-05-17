@@ -17,6 +17,8 @@
 package fr.acinq.eclair.channel.fsm
 
 import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
+import fr.acinq.eclair.NotificationsLogger
+import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -80,7 +82,12 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def handleNewBlockDualFundingUnconfirmed(c: CurrentBlockHeight, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
-    if (Channel.FUNDING_TIMEOUT_FUNDEE < c.blockHeight - d.waitingSince && Closing.nothingAtStake(d)) {
+    // We regularly notify the node operator that they may want to RBF this channel.
+    val blocksSinceOpen = c.blockHeight - d.waitingSince
+    if (d.fundingParams.isInitiator && (blocksSinceOpen % 288 == 0)) {
+      context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Info, s"channelId=${d.channelId} is still unconfirmed after $blocksSinceOpen blocks, you may need to use the rbfopen RPC to make it confirm."))
+    }
+    if (Channel.FUNDING_TIMEOUT_FUNDEE < blocksSinceOpen && Closing.nothingAtStake(d)) {
       log.warning("funding transaction did not confirm in {} blocks and we have nothing at stake, forgetting channel", Channel.FUNDING_TIMEOUT_FUNDEE)
       handleFundingTimeout(d)
     } else if (d.lastChecked + 6 < c.blockHeight) {

@@ -73,6 +73,27 @@ $ ./eclair-cli open --nodeId=03864e... --fundingSatoshis=100000 --channelType=an
 $ ./eclair-cli open --nodeId=03864e... --fundingSatoshis=100000 --channelType=anchor_outputs_zero_fee_htlc_tx+scid_alias+zeroconf --announceChannel=false
 ```
 
+### Experimental support for dual-funding
+
+This release adds experimental support for dual-funded channels, as specified [here](https://github.com/lightning/bolts/pull/851).
+Dual-funded channels have many benefits:
+
+- both peers can contribute to channel funding
+- the funding transaction can be RBF-ed
+
+This feature is turned off by default, because there may still be breaking changes in the specification.
+To turn it on, simply enable the feature in your `eclair.conf`:
+
+```conf
+eclair.features.option_dual_fund = optional
+```
+
+If your peer also supports the feature, eclair will automatically use dual-funding when opening a channel.
+If the channel doesn't confirm, you can use the `rbfopen` RPC to initiate an RBF attempt and speed up confirmation.
+
+In this first version, the non-initiator cannot yet contribute funds to the channel.
+This will be added in future updates.
+
 ### Changes to features override
 
 Eclair supports overriding features on a per-peer basis, using the `eclair.override-init-features` field in `eclair.conf`.
@@ -91,9 +112,10 @@ upgrading to this release.
 
 ### API changes
 
-- `channelbalances`: retrieves information about the balances of all local channels (#2196)
-- `stop`: stops eclair. Please note that the recommended way of stopping eclair is simply to kill its process (#2233)
+- `channelbalances` retrieves information about the balances of all local channels (#2196)
 - `channelbalances` and `usablebalances` return a `shortIds` object instead of a single `shortChannelId` (#2323)
+- `stop` stops eclair: please note that the recommended way of stopping eclair is simply to kill its process (#2233)
+- `rbfopen` lets the initiator of a dual-funded channel RBF the funding transaction (#2275)
 
 ### Miscellaneous improvements and bug fixes
 
