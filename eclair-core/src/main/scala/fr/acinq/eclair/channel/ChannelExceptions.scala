@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, Error, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, Error, InteractiveTxMessage, UpdateAddHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
 
 /**
@@ -50,6 +50,26 @@ case class ChannelReserveTooHigh                   (override val channelId: Byte
 case class ChannelReserveBelowOurDustLimit         (override val channelId: ByteVector32, channelReserve: Satoshi, dustLimit: Satoshi) extends ChannelException(channelId, s"their channelReserve=$channelReserve is below our dustLimit=$dustLimit")
 case class ChannelReserveNotMet                    (override val channelId: ByteVector32, toLocal: MilliSatoshi, toRemote: MilliSatoshi, reserve: Satoshi) extends ChannelException(channelId, s"channel reserve is not met toLocal=$toLocal toRemote=$toRemote reserve=$reserve")
 case class ChannelFundingError                     (override val channelId: ByteVector32) extends ChannelException(channelId, "channel funding error")
+case class InvalidSerialId                         (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"invalid serial_id=${serialId.toByteVector.toHex}")
+case class DuplicateSerialId                       (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"duplicate serial_id=${serialId.toByteVector.toHex}")
+case class UnknownSerialId                         (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"unknown serial_id=${serialId.toByteVector.toHex}")
+case class DuplicateInput                          (override val channelId: ByteVector32, serialId: UInt64, previousTxId: ByteVector32, previousTxOutput: Long) extends ChannelException(channelId, s"duplicate input $previousTxId:$previousTxOutput (serial_id=${serialId.toByteVector.toHex})")
+case class InputOutOfBounds                        (override val channelId: ByteVector32, serialId: UInt64, previousTxId: ByteVector32, previousTxOutput: Long) extends ChannelException(channelId, s"invalid input $previousTxId:$previousTxOutput (serial_id=${serialId.toByteVector.toHex})")
+case class NonSegwitInput                          (override val channelId: ByteVector32, serialId: UInt64, previousTxId: ByteVector32, previousTxOutput: Long) extends ChannelException(channelId, s"$previousTxId:$previousTxOutput is not a native segwit input (serial_id=${serialId.toByteVector.toHex})")
+case class OutputBelowDust                         (override val channelId: ByteVector32, serialId: UInt64, amount: Satoshi, dustLimit: Satoshi) extends ChannelException(channelId, s"invalid output amount=$amount below dust=$dustLimit (serial_id=${serialId.toByteVector.toHex})")
+case class NonSegwitOutput                         (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"output with serial_id=${serialId.toByteVector.toHex} is not a native segwit output")
+case class InvalidCompleteInteractiveTx            (override val channelId: ByteVector32) extends ChannelException(channelId, "the completed interactive tx is invalid")
+case class TooManyInteractiveTxRounds              (override val channelId: ByteVector32) extends ChannelException(channelId, "too many messages exchanged during interactive tx construction")
+case class DualFundingAborted                      (override val channelId: ByteVector32) extends ChannelException(channelId, "dual funding aborted")
+case class UnexpectedInteractiveTxMessage          (override val channelId: ByteVector32, msg: InteractiveTxMessage) extends ChannelException(channelId, s"unexpected interactive-tx message (${msg.getClass.getSimpleName})")
+case class UnexpectedCommitSig                     (override val channelId: ByteVector32) extends ChannelException(channelId, "unexpected commitment signatures (commit_sig)")
+case class UnexpectedFundingSignatures             (override val channelId: ByteVector32) extends ChannelException(channelId, "unexpected funding signatures (tx_signatures)")
+case class InvalidFundingFeerate                   (override val channelId: ByteVector32, targetFeerate: FeeratePerKw, actualFeerate: FeeratePerKw) extends ChannelException(channelId, s"invalid funding feerate: target=$targetFeerate actual=$actualFeerate")
+case class InvalidFundingSignature                 (override val channelId: ByteVector32, tx_opt: Option[Transaction]) extends ChannelException(channelId, s"invalid funding signature: tx=${tx_opt.map(_.toString()).getOrElse("n/a")}")
+case class InvalidRbfFeerate                       (override val channelId: ByteVector32, proposed: FeeratePerKw, expected: FeeratePerKw) extends ChannelException(channelId, s"invalid rbf attempt: the feerate must be at least $expected, you proposed $proposed")
+case class InvalidRbfAlreadyInProgress             (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid rbf attempt: the current rbf attempt must be completed or aborted first")
+case class InvalidRbfTxConfirmed                   (override val channelId: ByteVector32) extends ChannelException(channelId, "no need to rbf, transaction is already confirmed")
+case class InvalidRbfAttempt                       (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid rbf attempt")
 case class NoMoreHtlcsClosingInProgress            (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class NoMoreFeeUpdateClosingInProgress        (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot send new update_fee, closing in progress")
 case class ClosingAlreadyInProgress                (override val channelId: ByteVector32) extends ChannelException(channelId, "closing already in progress")
@@ -59,6 +79,7 @@ case class ChannelUnavailable                      (override val channelId: Byte
 case class InvalidFinalScript                      (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid final script")
 case class MissingUpfrontShutdownScript            (override val channelId: ByteVector32) extends ChannelException(channelId, "missing upfront shutdown script")
 case class FundingTxTimedout                       (override val channelId: ByteVector32) extends ChannelException(channelId, "funding tx timed out")
+case class FundingTxDoubleSpent                    (override val channelId: ByteVector32) extends ChannelException(channelId, "funding tx double spent")
 case class FundingTxSpent                          (override val channelId: ByteVector32, spendingTx: Transaction) extends ChannelException(channelId, s"funding tx has been spent by txid=${spendingTx.txid}")
 case class HtlcsTimedoutDownstream                 (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs timed out downstream: ids=${htlcs.take(10).map(_.id).mkString(",")}") // we only display the first 10 ids
 case class HtlcsWillTimeoutUpstream                (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs that should be fulfilled are close to timing out upstream: ids=${htlcs.take(10).map(_.id).mkString}") // we only display the first 10 ids

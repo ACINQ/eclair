@@ -370,6 +370,18 @@ object Helpers {
         Some(channelConf.minDepthBlocks.max(blocksToReachFunding))
     }
 
+    /**
+     * When using dual funding, we may need to wait for multiple confirmations even if we're the initiator if our peer
+     * also contributes to the funding transaction.
+     */
+    def minDepthDualFunding(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingParams: InteractiveTxBuilder.InteractiveTxParams): Option[Long] = {
+      if (fundingParams.isInitiator && fundingParams.remoteAmount == 0.sat) {
+        minDepthFunder(channelFeatures)
+      } else {
+        minDepthFundee(channelConf, channelFeatures, fundingParams.fundingAmount)
+      }
+    }
+
     def makeFundingInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
       val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
@@ -381,9 +393,14 @@ object Helpers {
      *
      * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
      */
-    def makeFirstCommitTxs(keyManager: ChannelKeyManager, channelConfig: ChannelConfig, channelFeatures: ChannelFeatures, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, commitTxFeerate: FeeratePerKw, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
-      val toLocalMsat = if (localParams.isInitiator) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
-      val toRemoteMsat = if (localParams.isInitiator) pushMsat else fundingAmount.toMilliSatoshi - pushMsat
+    def makeFirstCommitTxs(keyManager: ChannelKeyManager, channelConfig: ChannelConfig, channelFeatures: ChannelFeatures, temporaryChannelId: ByteVector32,
+                           localParams: LocalParams, remoteParams: RemoteParams,
+                           localFundingAmount: Satoshi, remoteFundingAmount: Satoshi, pushMsat: MilliSatoshi,
+                           commitTxFeerate: FeeratePerKw,
+                           fundingTxHash: ByteVector32, fundingTxOutputIndex: Int,
+                           remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
+      val toLocalMsat = if (localParams.isInitiator) localFundingAmount.toMilliSatoshi - pushMsat else localFundingAmount.toMilliSatoshi + pushMsat
+      val toRemoteMsat = if (localParams.isInitiator) remoteFundingAmount.toMilliSatoshi + pushMsat else remoteFundingAmount.toMilliSatoshi - pushMsat
 
       val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
@@ -392,7 +409,11 @@ object Helpers {
         // they initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
-        val reserve = localParams.requestedChannelReserve_opt.getOrElse(0 sat)
+        val reserve = if (channelFeatures.hasFeature(Features.DualFunding)) {
+          ((localFundingAmount + remoteFundingAmount) / 100).max(localParams.dustLimit)
+        } else {
+          localParams.requestedChannelReserve_opt.getOrElse(0 sat)
+        }
         val missing = toRemoteMsat.truncateToSatoshi - reserve - fees
         if (missing < Satoshi(0)) {
           return Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = reserve, fees = fees))
@@ -401,7 +422,7 @@ object Helpers {
 
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, localFundingAmount + remoteFundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
       val (localCommitTx, _) = Commitments.makeLocalTxs(keyManager, channelConfig, channelFeatures, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, channelConfig, channelFeatures, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)

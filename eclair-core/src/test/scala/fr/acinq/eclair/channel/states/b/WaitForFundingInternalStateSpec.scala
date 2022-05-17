@@ -40,7 +40,7 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init(wallet = new NoOpOnChainWallet())
+    val setup = init(wallet_opt = Some(new NoOpOnChainWallet()), tags = test.tags)
     import setup._
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags.Private

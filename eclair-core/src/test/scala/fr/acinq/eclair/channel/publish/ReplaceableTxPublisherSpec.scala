@@ -129,7 +129,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val blockHeight = new AtomicLong()
     blockHeight.set(currentBlockHeight(probe).toLong)
     val aliceNodeParams = TestConstants.Alice.nodeParams.copy(blockHeight = blockHeight)
-    val setup = init(aliceNodeParams, TestConstants.Bob.nodeParams.copy(blockHeight = blockHeight), walletClient)
+    val setup = init(aliceNodeParams, TestConstants.Bob.nodeParams.copy(blockHeight = blockHeight), wallet_opt = Some(walletClient))
     val testTags = channelType match {
       case _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)
       case ChannelTypes.AnchorOutputs => Set(ChannelStateTestsTags.AnchorOutputs)

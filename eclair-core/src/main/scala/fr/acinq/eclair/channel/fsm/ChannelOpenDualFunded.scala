@@ -16,20 +16,23 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.Features
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
+import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, AcceptDualFundedChannelTlv, ChannelTlv, Error, OpenDualFundedChannel, OpenDualFundedChannelTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol._
 
 /**
  * Created by t-bast on 19/04/2022.
  */
 
-trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
+trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   this: Channel =>
 
@@ -41,7 +44,7 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
      WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL |                                 |
                                          |         accept_channel2         |
                                          |<--------------------------------|
-          WAIT_FOR_DUAL_FUNDING_COMPLETE |                                 | WAIT_FOR_DUAL_FUNDING_COMPLETE
+           WAIT_FOR_DUAL_FUNDING_CREATED |                                 | WAIT_FOR_DUAL_FUNDING_CREATED
                                          |    <interactive-tx protocol>    |
                                          |                .                |
                                          |                .                |
@@ -50,7 +53,31 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
                                          |-------------------------------->|
                                          |           tx_complete           |
                                          |<--------------------------------|
-            WAIT_FOR_DUAL_FUNDING_SIGNED |                                 | WAIT_FOR_DUAL_FUNDING_SIGNED
+                                         |                                 |
+                                         |        commitment_signed        |
+                                         |-------------------------------->|
+                                         |        commitment_signed        |
+                                         |<--------------------------------|
+                                         |          tx_signatures          |
+                                         |<--------------------------------|
+                                         |                                 | WAIT_FOR_DUAL_FUNDING_CONFIRMED
+                                         |          tx_signatures          |
+                                         |-------------------------------->|
+         WAIT_FOR_DUAL_FUNDING_CONFIRMED |                                 |
+                                         |           tx_init_rbf           |
+                                         |-------------------------------->|
+                                         |           tx_ack_rbf            |
+                                         |<--------------------------------|
+                                         |                                 |
+                                         |    <interactive-tx protocol>    |
+                                         |                .                |
+                                         |                .                |
+                                         |                .                |
+                                         |           tx_complete           |
+                                         |-------------------------------->|
+                                         |           tx_complete           |
+                                         |<--------------------------------|
+                                         |                                 |
                                          |        commitment_signed        |
                                          |-------------------------------->|
                                          |        commitment_signed        |
@@ -59,6 +86,11 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
                                          |<--------------------------------|
                                          |          tx_signatures          |
                                          |-------------------------------->|
+                                         |                                 |
+                                         |      <other rbf attempts>       |
+                                         |                .                |
+                                         |                .                |
+                                         |                .                |
             WAIT_FOR_DUAL_FUNDING_LOCKED |                                 | WAIT_FOR_DUAL_FUNDING_LOCKED
                                          | funding_locked   funding_locked |
                                          |----------------  ---------------|
@@ -148,11 +180,25 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
             initFeatures = remoteInit.features,
             shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
+          // We've exchanged open_channel2 and accept_channel2, we now know the final channelId.
           val channelId = Helpers.computeChannelId(open, accept)
           peer ! ChannelIdAssigned(self, remoteNodeId, accept.temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           txPublisher ! SetChannelId(remoteNodeId, channelId)
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, accept.temporaryChannelId, channelId))
-          goto(WAIT_FOR_DUAL_FUNDING_INTERNAL) using DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL(channelId, localParams, remoteParams, channelFeatures) sending accept
+          // We start the interactive-tx funding protocol.
+          val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
+          val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
+          val fundingParams = InteractiveTxParams(channelId, localParams.isInitiator, accept.fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, open.dustLimit.max(accept.dustLimit), open.fundingFeerate)
+          val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
+            remoteNodeId, fundingParams, keyManager,
+            localParams, remoteParams,
+            open.commitmentFeerate,
+            open.firstPerCommitmentPoint,
+            open.channelFlags, d.init.channelConfig, channelFeatures,
+            wallet
+          ))
+          txBuilder ! InteractiveTxBuilder.Start(self, Nil)
+          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, txBuilder, None) sending accept
       }
 
     case Event(c: CloseCommand, d) => handleFastClose(c, d.channelId)
@@ -170,6 +216,7 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
           channelOpenReplyToUser(Left(LocalError(t)))
           handleLocalError(t, d, Some(accept))
         case Right((channelFeatures, remoteShutdownScript)) =>
+          // We've exchanged open_channel2 and accept_channel2, we now know the final channelId.
           val channelId = Helpers.computeChannelId(d.lastSent, accept)
           peer ! ChannelIdAssigned(self, remoteNodeId, accept.temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           txPublisher ! SetChannelId(remoteNodeId, channelId)
@@ -190,9 +237,20 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
             initFeatures = remoteInit.features,
             shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
+          // We start the interactive-tx funding protocol.
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
-          goto(WAIT_FOR_DUAL_FUNDING_INTERNAL) using DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL(channelId, localParams, remoteParams, channelFeatures)
+          val fundingParams = InteractiveTxParams(channelId, localParams.isInitiator, d.lastSent.fundingAmount, accept.fundingAmount, fundingPubkeyScript, d.lastSent.lockTime, d.lastSent.dustLimit.max(accept.dustLimit), d.lastSent.fundingFeerate)
+          val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
+            remoteNodeId, fundingParams, keyManager,
+            localParams, remoteParams,
+            d.lastSent.commitmentFeerate,
+            accept.firstPerCommitmentPoint,
+            d.lastSent.channelFlags, d.init.channelConfig, channelFeatures,
+            wallet
+          ))
+          txBuilder ! InteractiveTxBuilder.Start(self, Nil)
+          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, txBuilder, None)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
@@ -212,22 +270,89 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
       goto(CLOSED)
   })
 
-  when(WAIT_FOR_DUAL_FUNDING_INTERNAL)(handleExceptions {
-    case Event(c: CloseCommand, d: DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL) =>
+  when(WAIT_FOR_DUAL_FUNDING_CREATED)(handleExceptions {
+    case Event(msg: InteractiveTxMessage, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
+      msg match {
+        case msg: InteractiveTxConstructionMessage =>
+          d.txBuilder ! InteractiveTxBuilder.ReceiveTxMessage(msg)
+          stay()
+        case msg: TxSignatures =>
+          d.txBuilder ! InteractiveTxBuilder.ReceiveTxSigs(msg)
+          stay()
+        case msg: TxAbort =>
+          log.info("our peer aborted the dual funding flow: ascii='{}' bin={}", msg.toAscii, msg.data)
+          d.txBuilder ! InteractiveTxBuilder.Abort
+          channelOpenReplyToUser(Left(LocalError(DualFundingAborted(d.channelId))))
+          goto(CLOSED)
+        case _: TxInitRbf =>
+          log.info("ignoring unexpected tx_init_rbf message")
+          stay() sending Warning(d.channelId, InvalidRbfAttempt(d.channelId).getMessage)
+        case _: TxAckRbf =>
+          log.info("ignoring unexpected tx_ack_rbf message")
+          stay() sending Warning(d.channelId, InvalidRbfAttempt(d.channelId).getMessage)
+      }
+
+    case Event(commitSig: CommitSig, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
+      d.txBuilder ! InteractiveTxBuilder.ReceiveCommitSig(commitSig)
+      stay()
+
+    case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
+      log.info("received their channel_ready, deferring message")
+      stay() using d.copy(deferred = Some(channelReady))
+
+    case Event(msg: InteractiveTxBuilder.Response, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) => msg match {
+      case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
+      case InteractiveTxBuilder.Succeeded(fundingParams, fundingTx, commitments) =>
+        d.deferred.foreach(self ! _)
+        Funding.minDepthDualFunding(nodeParams.channelConf, commitments.channelFeatures, fundingParams) match {
+          case Some(fundingMinDepth) =>
+            blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, fundingMinDepth)
+            val nextData = DATA_WAIT_FOR_DUAL_FUNDING_PLACEHOLDER(commitments, fundingTx, fundingParams, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, None, None)
+            fundingTx match {
+              case fundingTx: PartiallySignedSharedTransaction =>
+                goto(WAIT_FOR_DUAL_FUNDING_PLACEHOLDER) using nextData sending fundingTx.localSigs
+              case fundingTx: FullySignedSharedTransaction =>
+                goto(WAIT_FOR_DUAL_FUNDING_PLACEHOLDER) using nextData sending fundingTx.localSigs calling publishFundingTx(nextData)
+            }
+          case None =>
+            val (_, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown)
+            // TODO: skip waiting for confirmation, directly go to the channel_ready state
+            val nextData = DATA_WAIT_FOR_DUAL_FUNDING_PLACEHOLDER(commitments, fundingTx, fundingParams, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, None, None)
+            fundingTx match {
+              case fundingTx: PartiallySignedSharedTransaction =>
+                goto(WAIT_FOR_DUAL_FUNDING_PLACEHOLDER) using nextData sending Seq(fundingTx.localSigs, channelReady)
+              case fundingTx: FullySignedSharedTransaction =>
+                goto(WAIT_FOR_DUAL_FUNDING_PLACEHOLDER) using nextData sending Seq(fundingTx.localSigs, channelReady) calling publishFundingTx(nextData)
+            }
+        }
+      case f: InteractiveTxBuilder.Failed =>
+        channelOpenReplyToUser(Left(LocalError(f.cause)))
+        goto(CLOSED) sending TxAbort(d.channelId, f.cause.getMessage)
+    }
+
+    case Event(c: CloseCommand, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
+      d.txBuilder ! InteractiveTxBuilder.Abort
       channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
       handleFastClose(c, d.channelId)
 
-    case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL) =>
+    case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
+      d.txBuilder ! InteractiveTxBuilder.Abort
       channelOpenReplyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) =>
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
+      d.txBuilder ! InteractiveTxBuilder.Abort
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
       goto(CLOSED)
 
-    case Event(TickChannelOpenTimeout, _) =>
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
+      d.txBuilder ! InteractiveTxBuilder.Abort
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
+  })
+
+  when(WAIT_FOR_DUAL_FUNDING_PLACEHOLDER)(handleExceptions {
+    case Event(_, _) => ???
   })
 
 }

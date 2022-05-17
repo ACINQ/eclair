@@ -46,7 +46,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val bobNodeParams = Bob.nodeParams
       .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(1))
 
-    val setup = init(nodeParamsB = bobNodeParams)
+    val setup = init(nodeParamsB = bobNodeParams, tags = test.tags)
 
     import setup._
     val channelConfig = ChannelConfig.standard
