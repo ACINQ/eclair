@@ -98,10 +98,6 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     channels.bob2alice.expectMsgType[AnnouncementSignatures]
     channels.bob2alice.forward(channels.alice)
 
-    // router gets notified and attempts to validate the local channel
-    val vr = channels.alice2blockchain.expectMsgType[ZmqWatcher.ValidateRequest]
-    vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, Right((fundingTx, ZmqWatcher.UtxoStatus.Unspent)))
-
     awaitAssert {
       router.stateData.privateChannels.isEmpty && router.stateData.channels.size == 1
     }
@@ -115,7 +111,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     // manual rebroadcast
     router ! Router.TickBroadcast
     rebroadcastListener.expectMsg(Router.Rebroadcast(
-      channels = Map(vr.ann -> Set[GossipOrigin](LocalGossip)),
+      channels = Map(channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get -> Set[GossipOrigin](LocalGossip)),
       updates = Map(aliceChannelUpdate -> Set[GossipOrigin](LocalGossip), bobChannelUpdate -> Set.empty[GossipOrigin]), // broadcast the channel_updates (they were previously unannounced)
       nodes = Map(router.underlyingActor.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)), // new node_announcement
     ))

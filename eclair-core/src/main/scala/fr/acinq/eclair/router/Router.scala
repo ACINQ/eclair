@@ -240,7 +240,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
     case Event(lcu: LocalChannelUpdate, d: Data) => // from local channel
-      stay() using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, watcher, lcu)
+      stay() using Validation.handleLocalChannelUpdate(d, nodeParams, lcu)
 
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay() using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
