@@ -60,6 +60,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: DiagnosticLoggingAdapter = diagLog
 
+  context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
@@ -229,14 +230,17 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, n: NodeAnnouncement), d: Data) =>
       stay() using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
 
-    case Event(u: ChannelUpdate, d: Data) =>
+    case Event(scia: ShortChannelIdAssigned, d) =>
+      stay() using Validation.handleShortChannelIdAssigned(d, nodeParams.nodeId, scia)
+
+    case Event(u: ChannelUpdate, d: Data) => // from payment lifecycle
       stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) => // from network (gossip or peer)
       stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
-    case Event(lcu: LocalChannelUpdate, d: Data) =>
-      stay() using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
+    case Event(lcu: LocalChannelUpdate, d: Data) => // from local channel
+      stay() using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, watcher, lcu)
 
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay() using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)

@@ -54,7 +54,7 @@ case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, tempora
  * @param remoteAlias_opt         we only remember the last alias received from our peer, we use this to generate
  *                                routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
  */
-case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[RealShortChannelId], localAlias: LocalAlias, remoteAlias_opt: Option[ShortChannelId]) extends ChannelEvent
+case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[RealShortChannelId], localAlias: LocalAlias, remoteAlias_opt: Option[ShortChannelId], remoteNodeId: PublicKey) extends ChannelEvent
 
 case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[RealShortChannelId], localAlias: LocalAlias, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends ChannelEvent {
   /**

@@ -299,7 +299,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
         case normal: DATA_NORMAL =>
           watchFundingTx(data.commitments)
-          context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, realShortChannelId_opt = normal.realShortChannelId_opt, localAlias = normal.localAlias, remoteAlias_opt = normal.remoteAlias_opt))
+          context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, realShortChannelId_opt = normal.realShortChannelId_opt, localAlias = normal.localAlias, remoteAlias_opt = normal.remoteAlias_opt, remoteNodeId = remoteNodeId))
 
           // we check the configuration because the values for channel_update may have changed while eclair was down
           val fees = getRelayFees(nodeParams, remoteNodeId, data.commitments)
@@ -619,7 +619,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       if (!d.realShortChannelId_opt.contains(realShortChannelId)) {
         log.info(s"setting final real scid: old=${d.realShortChannelId_opt.getOrElse("empty")} new=$realShortChannelId")
         // we announce the new shortChannelId
-        context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, realShortChannelId_opt = Some(realShortChannelId), localAlias = d.localAlias, remoteAlias_opt = d.remoteAlias_opt))
+        context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, realShortChannelId_opt = Some(realShortChannelId), localAlias = d.localAlias, remoteAlias_opt = d.remoteAlias_opt, remoteNodeId = remoteNodeId))
       }
       val scidForChannelUpdate = Helpers.scidForChannelUpdate(d.commitments.channelFlags, Some(realShortChannelId), d.remoteAlias_opt)
       // if the shortChannelId is different from the one we had before, we need to re-announce it

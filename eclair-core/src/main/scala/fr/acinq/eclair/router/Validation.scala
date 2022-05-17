@@ -21,10 +21,9 @@ import akka.actor.{ActorContext, ActorRef, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
-import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, LocalChannelDown, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, LocalChannelDown, LocalChannelUpdate, ShortChannelIdAssigned}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
@@ -32,7 +31,7 @@ import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, ShortChannelId, TxCoordinates, toLongId}
+import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TxCoordinates, toLongId}
 
 object Validation {
 
@@ -390,14 +389,14 @@ object Validation {
         // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
         // let's remove the channel from the zombie list and ask the sender to re-send announcements (channel_announcement + updates)
         // about that channel. We can ignore this update since we will receive it again
-          log.info(s"channel shortChannelId=${realShortChannelId} is back from the dead! requesting announcements about this channel")
+        log.info(s"channel shortChannelId=${realShortChannelId} is back from the dead! requesting announcements about this channel")
         sendDecision(origins, GossipDecision.RelatedChannelPruned(u))
-          db.removeFromPruned(realShortChannelId)
+        db.removeFromPruned(realShortChannelId)
         // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
         // when we're sending updates to ourselves
         origins head match {
           case RemoteGossip(peerConnection, remoteNodeId) =>
-              val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(routerConf.encodingType, List(realShortChannelId)), TlvStream.empty)
+            val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(routerConf.encodingType, List(realShortChannelId)), TlvStream.empty)
             d.sync.get(remoteNodeId) match {
               case Some(sync) if sync.started =>
                 // we already have a pending request to that node, let's add this channel to the list and we'll get it later
@@ -421,41 +420,53 @@ object Validation {
     }
   }
 
-  def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  /**
+   * We will receive this event before [[LocalChannelUpdate]] or [[ChannelUpdate]]
+   */
+  def handleShortChannelIdAssigned(d: Data, localNodeId: PublicKey, scia: ShortChannelIdAssigned)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    lcu.realShortChannelId_opt.flatMap(d.channels.get) match {
+    // NB: we don't map remote aliases because they are decided our peer and could overlap with ours
+    val mappings = scia.realShortChannelId_opt match {
+      case Some(realScid) => Map(realScid -> scia.channelId, scia.localAlias -> scia.channelId)
+      case None => Map(scia.localAlias -> scia.channelId)
+    }
+    val d1 = d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ mappings)
+    d1.resolve(scia.channelId, scia.realShortChannelId_opt) match {
       case Some(_) =>
-        // channel has already been announced and router knows about it, we can process the channel_update
-        handleChannelUpdate(d, db, routerConf, Left(lcu))
+        // channel is known, nothing more to do
+        d1
       case None =>
+        // this is a local channel that hasn't yet been announced (maybe it is a private channel or maybe it is a public
+        // channel that doesn't yet have 6 confirmations), we create a corresponding private channel
+        val pc = PrivateChannel(scia.localAlias, scia.channelId, localNodeId, scia.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat))
+        log.debug("adding unannounced local channel to remote={} channelId={} localAlias={}", scia.remoteNodeId, scia.channelId, scia.localAlias)
+        d1.copy(privateChannels = d1.privateChannels + (scia.channelId -> pc))
+    }
+  }
+
+  def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+    d.resolve(lcu.channelId, lcu.realShortChannelId_opt) match {
+      case Some(_: PublicChannel) =>
+        // channel is already known, we can process the channel_update
+        handleChannelUpdate(d, db, routerConf, Left(lcu))
+      case _ =>
+        // known private channel, or unknown channel
         lcu.channelAnnouncement_opt match {
           case Some(c) if d.awaiting.contains(c) =>
-            // channel is currently being verified, we can process the channel_update right away (it will be stashed)
+            // this is a public channel currently being verified, we can process the channel_update right away (it will be stashed)
             handleChannelUpdate(d, db, routerConf, Left(lcu))
           case Some(c) =>
             // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
             watcher ! ValidateRequest(ctx.self, c)
-            val d1 = d.copy(awaiting = d.awaiting + (c -> Seq(LocalGossip))) // no origin
+            val d1 = d.copy(awaiting = d.awaiting + (c -> Seq(LocalGossip)))
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
-          case None if d.privateChannels.contains(lcu.channelId) =>
-            // channel isn't announced but we already know about it, we can process the channel_update
-            handleChannelUpdate(d, db, routerConf, Left(lcu))
           case None =>
-            // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
-            // let's create a corresponding private channel and process the channel_update
-            log.warning("unknown local channel update to remote={} channelId={}, localAlias={}", lcu.remoteNodeId, lcu.channelId, lcu.localAlias)
-            val pc = PrivateChannel(lcu.localAlias, lcu.channelId, localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
-            val mappings = lcu.realShortChannelId_opt match {
-              case Some(realScid) => Map(realScid -> lcu.channelId, lcu.localAlias -> lcu.channelId)
-              case None => Map(lcu.localAlias -> lcu.channelId)
-            }
-            val d1 = d.copy(
-              privateChannels = d.privateChannels + (lcu.channelId -> pc),
-              scid2PrivateChannels = d.scid2PrivateChannels + mappings
-            )
-            handleChannelUpdate(d1, db, routerConf, Left(lcu))
+            // should never happen, we log a warning and handle the update, it will be rejected since there is no related channel
+            log.warning("unrecognized local chanel update for channelId={} localAlias={}", lcu.channelId, lcu.localAlias)
+            handleChannelUpdate(d, db, routerConf, Left(lcu))
         }
     }
   }

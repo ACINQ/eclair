@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
-import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate, ShortChannelIdAssigned}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -154,6 +154,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_gh))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_hg))
       // then private channels
+      sender.send(router, ShortChannelIdAssigned(sender.ref, channelId_ag_private, Some(scid_ag_private), alias_ag_private, remoteAlias_opt = None, remoteNodeId = g))
       sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, Some(scid_ag_private), alias_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_ab)

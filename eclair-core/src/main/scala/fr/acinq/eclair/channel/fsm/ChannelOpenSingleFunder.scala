@@ -378,6 +378,9 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             tlvStream = TlvStream(ChannelReadyTlv.ShortChannelIdTlv(localAlias))
           )
 
+          // we announce our identifiers as early as we can
+          context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, realShortChannelId_opt = realShortChannelId_opt, localAlias = localAlias, remoteAlias_opt = None, remoteNodeId = remoteNodeId))
+
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments, realShortChannelId_opt = realShortChannelId_opt, localAlias = localAlias, channelReady) storing() sending channelReady
         case Failure(t) =>
           log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
@@ -417,10 +420,12 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
     case Event(channelReady: ChannelReady, d@DATA_WAIT_FOR_CHANNEL_READY(commitments, realShortChannelId_opt, localAlias, _)) =>
       // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
       blockchain ! WatchFundingDeeplyBuried(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
-      context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, realShortChannelId_opt = realShortChannelId_opt, localAlias = localAlias, remoteAlias_opt = channelReady.alias_opt))
-      // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val remoteAlias_opt = channelReady.alias_opt
-      remoteAlias_opt.foreach(remoteAlias => log.info("received remoteAlias={}", remoteAlias))
+      remoteAlias_opt.foreach { remoteAlias =>
+        log.info("received remoteAlias={}", remoteAlias)
+        context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, realShortChannelId_opt = realShortChannelId_opt, localAlias = localAlias, remoteAlias_opt = Some(remoteAlias), remoteNodeId = remoteNodeId))
+      }
+      // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val scidForChannelUpdate = Helpers.scidForChannelUpdate(commitments.channelFlags, realShortChannelId_opt, remoteAlias_opt)
       log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
       val relayFees = getRelayFees(nodeParams, remoteNodeId, commitments)
