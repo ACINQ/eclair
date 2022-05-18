@@ -8,7 +8,7 @@ import fr.acinq.eclair.channel.DATA_NORMAL
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Router.{GossipOrigin, LocalGossip}
-import fr.acinq.eclair.wire.protocol.AnnouncementSignatures
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate}
 import fr.acinq.eclair.{BlockHeight, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -39,21 +39,22 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     reachNormal(channels, testTags)
 
-    awaitCond(router.stateData.privateChannels.size == 1)
+    awaitAssert(router.stateData.privateChannels.size === 1)
 
     {
-      // only the local channel_update is known
+      // only the local channel_update is known (bob won't send his before the channel is deeply buried)
       val pc = router.stateData.privateChannels.values.head
       assert(pc.update_1_opt.isDefined ^ pc.update_2_opt.isDefined)
     }
 
     val peerConnection = TestProbe()
+    // bob hasn't yet sent his channel_update but we can get it by looking at its internal data
     val bobChannelUpdate = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     router ! PeerRoutingMessage(peerConnection.ref, channels.bob.underlyingActor.nodeParams.nodeId, bobChannelUpdate)
 
-    awaitCond {
-      // only the local channel_update is known
+    awaitAssert {
       val pc = router.stateData.privateChannels.values.head
+      // both channel_updates are known
       pc.update_1_opt.isDefined && pc.update_2_opt.isDefined
     }
 
@@ -68,7 +69,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     val fundingTx = reachNormal(channels, testTags)
 
-    awaitCond(router.stateData.privateChannels.size == 1)
+    awaitAssert(router.stateData.privateChannels.size === 1)
 
     {
       val pc = router.stateData.privateChannels.values.head
@@ -77,16 +78,16 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     }
 
     val peerConnection = TestProbe()
+    // alice and bob haven't yet sent their channel_updates but we can get them by looking at their internal data
     val aliceChannelUpdate = channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     val bobChannelUpdate = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     router ! PeerRoutingMessage(peerConnection.ref, channels.bob.underlyingActor.nodeParams.nodeId, bobChannelUpdate)
 
-    awaitCond {
+    awaitAssert {
       val pc = router.stateData.privateChannels.values.head
       // both channel_updates are known
       pc.update_1_opt.isDefined && pc.update_2_opt.isDefined
     }
-    val privateChannel = router.stateData.privateChannels.values.head
 
     // funding tx reaches 6 blocks, announcements are exchanged
     channels.alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
@@ -101,11 +102,11 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     val vr = channels.alice2blockchain.expectMsgType[ZmqWatcher.ValidateRequest]
     vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, Right((fundingTx, ZmqWatcher.UtxoStatus.Unspent)))
 
-    awaitCond {
+    awaitAssert {
       router.stateData.privateChannels.isEmpty && router.stateData.channels.size == 1
     }
 
-    awaitCond {
+    awaitAssert {
       val pc = router.stateData.channels.values.head
       // both channel updates are preserved
       pc.update_1_opt.isDefined && pc.update_2_opt.isDefined

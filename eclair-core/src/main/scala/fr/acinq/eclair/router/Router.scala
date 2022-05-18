@@ -187,14 +187,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       sender() ! updates
       stay()
 
-    case Event(PrintChannelUpdates, d) =>
-      println("public:")
-      d.channels.foreach { case (scid, pc) => println(s"$scid updates=${(pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).size}") }
-      println("private:")
-      d.privateChannels.foreach { case (scid, pc) => println(s"$scid updates=${(pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).size}") }
-      println("---------------------------------------------------")
-      stay()
-
     case Event(GetRouterData, d) =>
       sender() ! d
       stay()
@@ -566,7 +558,6 @@ object Router {
   case object GetChannels
   case object GetChannelsMap
   case object GetChannelUpdates
-  case object PrintChannelUpdates
   // @formatter:on
 
   // @formatter:off

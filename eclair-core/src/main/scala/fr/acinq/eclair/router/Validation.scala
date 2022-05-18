@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -153,12 +154,16 @@ object Validation {
 
       publicChannel_opt match {
         case Some(pc) =>
+          // those updates are only defined if this was a previously an unannounced local channel, we broadcast them if they use the real scid
+          val updates1 = (pc.update_1_opt.toSet ++ pc.update_2_opt.toSet)
+            .map(u => u -> (if (pc.getNodeIdSameSideAs(u) == nodeParams.nodeId) Set[GossipOrigin](LocalGossip) else Set.empty[GossipOrigin]))
+            .toMap
           val d1 = d0.copy(
             channels = d0.channels + (c.shortChannelId -> pc),
-            privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
+            privateChannels = d0.privateChannels - c.shortChannelId, // we remove the corresponding unannounced channel that we may have until now
             rebroadcast = d0.rebroadcast.copy(
               channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet), // we rebroadcast the channel to our peers
-              updates = d0.rebroadcast.updates ++ (pc.update_1_opt.toSet ++ pc.update_2_opt.toSet).map(u => u -> (if (pc.getNodeIdSameSideAs(u) == nodeParams.nodeId) Set[GossipOrigin](LocalGossip) else Set.empty[GossipOrigin])).toMap // those updates are only defined if this was a previously an unannounced local channel, we broadcast them
+              updates = d0.rebroadcast.updates ++ updates1
             ), // we also add the newly validated channels to the rebroadcast queue
             stash = stash1,
             awaiting = awaiting1)
