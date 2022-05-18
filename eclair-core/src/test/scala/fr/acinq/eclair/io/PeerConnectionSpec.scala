@@ -403,22 +403,16 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.expectMsg(())
   }
 
-  test("keep using transient connection") { f =>
+  test("keep transient connection open for a short while") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
     val probe = TestProbe()
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
-    probe.send(peerConnection, message)
     probe watch peerConnection
-    sleep(900 millis)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
     probe.send(peerConnection, message)
-    sleep(900 millis)
+    // The connection is still open for a short while.
     assert(peerConnection.stateName === PeerConnection.CONNECTED)
-    probe.send(peerConnection, message)
-    sleep(900 millis)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
-    sleep(200 millis)
+    sleep(1 second)
     probe.expectTerminated(peerConnection, max = Duration.Zero)
   }
 
