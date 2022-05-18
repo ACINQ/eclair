@@ -125,8 +125,8 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   def waitForAddResponse(selectedChannelId: ByteVector32, previousFailures: Seq[PreviouslyTried]): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, shortChannelId, CMD_ADD_HTLC(_, _, _, _, _, o: Origin.ChannelRelayedHot, _)))) =>
-        context.log.warn(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${o.add.id}")
+      case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, channelId, CMD_ADD_HTLC(_, _, _, _, _, o: Origin.ChannelRelayedHot, _)))) =>
+        context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${o.add.id}")
         val cmdFail = CMD_FAIL_HTLC(o.add.id, Right(UnknownNextPeer), commit = true)
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
         safeSendAndStop(o.add.channelId, cmdFail)
