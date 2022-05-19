@@ -28,6 +28,7 @@ import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgAuditDb
 import fr.acinq.eclair.db.pg.PgUtils.{getVersion, setVersion}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
+import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
@@ -939,10 +940,30 @@ class AuditDbSpec extends AnyFunSuite {
   test("add experiment metrics") {
     forAllDbs { dbs =>
       val isPg = dbs.isInstanceOf[TestPgDatabases]
-      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(randomBytes32(), 100000000 msat, 3000 msat, status = "SUCCESS", 37 millis, TimestampMilli.now(), isMultiPart = false, "my-test-experiment", randomKey().publicKey, Set(PublicKey(hex"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e"), PublicKey(hex"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7"))))
+      val hints = Seq(Seq(ExtraHop(
+        PublicKey(hex"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e"),
+        ShortChannelId(1),
+        1000 msat,
+        100,
+        CltvExpiryDelta(144)
+      ), ExtraHop(
+        PublicKey(hex"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7"),
+        ShortChannelId(2),
+        900 msat,
+        200,
+        CltvExpiryDelta(12)
+      )), Seq(ExtraHop(
+        PublicKey(hex"026ec3e3438308519a75ca4496822a6c1e229174fbcaadeeb174704c377112c331"),
+        ShortChannelId(3),
+        800 msat,
+        300,
+        CltvExpiryDelta(78)
+      )))
+      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(randomBytes32(), 100000000 msat, 3000 msat, status = "SUCCESS", 37 millis, TimestampMilli.now(), isMultiPart = false, "my-test-experiment", randomKey().publicKey, hints))
 
       val table = if (isPg) "audit.path_finding_metrics" else "path_finding_metrics"
-      using(dbs.connection.prepareStatement(s"SELECT amount_msat, status, fees_msat, duration_ms, experiment_name, routing_hint_node_ids FROM $table")) { statement =>
+      val hint_column = if (isPg) ", routing_hint_node_ids" else ""
+      using(dbs.connection.prepareStatement(s"SELECT amount_msat, status, fees_msat, duration_ms, experiment_name $hint_column FROM $table")) { statement =>
         val result = statement.executeQuery()
         assert(result.next())
         assert(result.getLong(1) == 100000000)
@@ -951,9 +972,7 @@ class AuditDbSpec extends AnyFunSuite {
         assert(result.getLong(4) == 37)
         assert(result.getString(5) == "my-test-experiment")
         if (isPg) {
-          assert(result.getString(6) == "[\"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e\", \"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7\"]")
-        } else {
-          assert(result.getBytes(6) sameElements hex"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7".toArray)
+          assert(result.getString(6) == "[[{\"nodeId\": \"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e\", \"feeBase\": 1000, \"shortChannelId\": \"0x0x1\", \"cltvExpiryDelta\": 144, \"feeProportionalMillionths\": 100}, {\"nodeId\": \"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7\", \"feeBase\": 900, \"shortChannelId\": \"0x0x2\", \"cltvExpiryDelta\": 12, \"feeProportionalMillionths\": 200}], [{\"nodeId\": \"026ec3e3438308519a75ca4496822a6c1e229174fbcaadeeb174704c377112c331\", \"feeBase\": 800, \"shortChannelId\": \"0x0x3\", \"cltvExpiryDelta\": 78, \"feeProportionalMillionths\": 300}]]")
         }
         assert(!result.next())
       }

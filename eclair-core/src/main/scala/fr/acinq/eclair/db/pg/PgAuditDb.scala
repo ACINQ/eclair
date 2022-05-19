@@ -44,10 +44,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   import PgUtils._
   import ExtendedResultSet._
   import PgAuditDb._
-  import org.json4s.DefaultFormats
-  import org.json4s.jackson.Serialization
-
-  implicit val formats: DefaultFormats = DefaultFormats
+  import fr.acinq.eclair.json.JsonSerializers.{formats, serialization}
 
   case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: TimestampMilli)
 
@@ -111,7 +108,6 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("ALTER TABLE audit.path_finding_metrics ADD COLUMN routing_hint_node_ids JSONB")
         statement.executeUpdate("CREATE INDEX metrics_hash_idx ON audit.path_finding_metrics(payment_hash)")
         statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
-        statement.executeUpdate("CREATE INDEX metrics_hint_idx ON audit.path_finding_metrics(routing_hint_node_ids)")
       }
 
       getVersion(statement, DB_NAME) match {
@@ -146,7 +142,6 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
           statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
           statement.executeUpdate("CREATE INDEX metrics_hash_idx ON audit.path_finding_metrics(payment_hash)")
-          statement.executeUpdate("CREATE INDEX metrics_hint_idx ON audit.path_finding_metrics(routing_hint_node_ids)")
           statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
           statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
         case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10)) =>
@@ -333,7 +328,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(7, m.experimentName)
         statement.setString(8, m.recipientNodeId.value.toHex)
         statement.setString(9, m.paymentHash.toHex)
-        statement.setString(10, Serialization.write(m.routingHints.map(_.value.toHex)))
+        statement.setString(10, serialization.write(m.routingHints))
         statement.executeUpdate()
       }
     }

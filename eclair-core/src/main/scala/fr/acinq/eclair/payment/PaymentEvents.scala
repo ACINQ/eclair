@@ -260,4 +260,4 @@ case class PathFindingExperimentMetrics(paymentHash: ByteVector32,
                                         isMultiPart: Boolean,
                                         experimentName: String,
                                         recipientNodeId: PublicKey,
-                                        routingHints: Set[PublicKey])
+                                        routingHints: Seq[Seq[ExtraHop]])
