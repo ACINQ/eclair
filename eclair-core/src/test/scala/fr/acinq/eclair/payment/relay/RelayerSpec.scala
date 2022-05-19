@@ -90,7 +90,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! RelayForward(add_ab)
-    register.expectMessageType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    register.expectMessageType[Register.Forward[CMD_ADD_HTLC]]
   }
 
   test("relay an htlc-add at the final node to the payment handler") { f =>

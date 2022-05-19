@@ -62,9 +62,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     fwd
   }
 
-  def expectFwdAdd(register: TestProbe[Any], shortChannelId: ShortChannelId, outAmount: MilliSatoshi, outExpiry: CltvExpiry): Register.ForwardShortId[CMD_ADD_HTLC] = {
-    val fwd = register.expectMessageType[Register.ForwardShortId[CMD_ADD_HTLC]]
-    assert(fwd.shortChannelId === shortChannelId)
+  def expectFwdAdd(register: TestProbe[Any], channelId: ByteVector32, outAmount: MilliSatoshi, outExpiry: CltvExpiry): Register.Forward[CMD_ADD_HTLC] = {
+    val fwd = register.expectMessageType[Register.Forward[CMD_ADD_HTLC]]
+    assert(fwd.channelId === channelId)
     assert(fwd.message.amount === outAmount)
     assert(fwd.message.cltvExpiry === outExpiry)
     assert(fwd.message.origin.isInstanceOf[Origin.ChannelRelayedHot])
@@ -83,7 +83,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r)
 
-    expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+    expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
   }
 
   test("relay an htlc-add with onion tlv payload") { f =>
@@ -97,7 +97,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r)
 
-    expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+    expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
   }
 
   test("relay an htlc-add with retries") { f =>
@@ -117,12 +117,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! Relay(r)
 
     // first try
-    val fwd1 = expectFwdAdd(register, shortId2, outgoingAmount, outgoingExpiry)
+    val fwd1 = expectFwdAdd(register, channelIds(shortId2), outgoingAmount, outgoingExpiry)
     // channel returns an error
     fwd1.message.replyTo ! RES_ADD_FAILED(fwd1.message, HtlcValueTooHighInFlight(channelIds(shortId2), UInt64(1000000000L), 1516977616L msat), Some(u2.channelUpdate))
 
     // second try
-    val fwd2 = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+    val fwd2 = expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
     // failure again
     fwd1.message.replyTo ! RES_ADD_FAILED(fwd2.message, HtlcValueTooHighInFlight(channelIds(shortId1), UInt64(1000000000L), 1516977616L msat), Some(u1.channelUpdate))
 
@@ -151,8 +151,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r)
 
-    val fwd = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
-    fwd.replyTo ! Register.ForwardShortIdFailure(fwd)
+    val fwd = expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
+    fwd.replyTo ! Register.ForwardFailure(fwd)
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
   }
@@ -208,7 +208,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r)
 
-    expectFwdAdd(register, shortId1, payload.amountToForward, payload.outgoingCltv).message
+    expectFwdAdd(register, channelIds(shortId1), payload.amountToForward, payload.outgoingCltv).message
   }
 
   test("fail to relay an htlc-add (expiry too small)") { f =>
@@ -248,7 +248,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! Relay(r)
 
     // relay succeeds with current channel update (u1) with lower fees
-    expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+    expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
 
     val u2 = createLocalUpdate(shortId1, timestamp = TimestampSecond.now() - 530)
 
@@ -256,7 +256,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! Relay(r)
 
     // relay succeeds because the current update (u2) with higher fees occurred less than 10 minutes ago
-    expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+    expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
 
     val u3 = createLocalUpdate(shortId1, timestamp = TimestampSecond.now() - 601)
 
@@ -290,7 +290,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     testCases.foreach { testCase =>
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r)
-      val fwd = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+      val fwd = expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
       fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, testCase.exc, Some(testCase.update))
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(testCase.failure), commit = true))
     }
@@ -303,7 +303,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     def dummyLocalUpdate(shortChannelId: ShortChannelId, remoteNodeId: PublicKey, availableBalanceForSend: MilliSatoshi, capacity: Satoshi) = {
       val channelId = randomBytes32()
       val update = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey(), remoteNodeId, shortChannelId, CltvExpiryDelta(10), 100 msat, 1000 msat, 100, capacity.toMilliSatoshi)
-      val commitments = PaymentPacketSpec.makeCommitments(ByteVector32.Zeroes, availableBalanceForSend, testCapacity = capacity)
+      val commitments = PaymentPacketSpec.makeCommitments(channelId, availableBalanceForSend, testCapacity = capacity)
       LocalChannelUpdate(null, channelId, shortChannelId, remoteNodeId, None, update, commitments)
     }
 
@@ -325,16 +325,16 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
       // select the channel to the same node, with the lowest capacity and balance but still high enough to handle the payment
-      val cmd1 = expectFwdAdd(register, ShortChannelId(22223), payload.amountToForward, payload.outgoingCltv).message
+      val cmd1 = expectFwdAdd(register, channelUpdates(ShortChannelId(22223)).channelId, payload.amountToForward, payload.outgoingCltv).message
       cmd1.replyTo ! RES_ADD_FAILED(cmd1, ChannelUnavailable(randomBytes32()), None)
       // select 2nd-to-best channel: higher capacity and balance
-      val cmd2 = expectFwdAdd(register, ShortChannelId(22222), payload.amountToForward, payload.outgoingCltv).message
+      val cmd2 = expectFwdAdd(register, channelUpdates(ShortChannelId(22222)).channelId, payload.amountToForward, payload.outgoingCltv).message
       cmd2.replyTo ! RES_ADD_FAILED(cmd2, TooManyAcceptedHtlcs(randomBytes32(), 42), Some(channelUpdates(ShortChannelId(22222)).channelUpdate))
       // select 3rd-to-best channel: same balance but higher capacity
-      val cmd3 = expectFwdAdd(register, ShortChannelId(12345), payload.amountToForward, payload.outgoingCltv).message
+      val cmd3 = expectFwdAdd(register, channelUpdates(ShortChannelId(12345)).channelId, payload.amountToForward, payload.outgoingCltv).message
       cmd3.replyTo ! RES_ADD_FAILED(cmd3, TooManyAcceptedHtlcs(randomBytes32(), 42), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))
       // select 4th-to-best channel: same capacity but higher balance
-      val cmd4 = expectFwdAdd(register, ShortChannelId(11111), payload.amountToForward, payload.outgoingCltv).message
+      val cmd4 = expectFwdAdd(register, channelUpdates(ShortChannelId(11111)).channelId, payload.amountToForward, payload.outgoingCltv).message
       cmd4.replyTo ! RES_ADD_FAILED(cmd4, HtlcValueTooHighInFlight(randomBytes32(), UInt64(100000000), 100000000 msat), Some(channelUpdates(ShortChannelId(11111)).channelUpdate))
       // all the suitable channels have been tried
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(channelUpdates(ShortChannelId(12345)).channelUpdate)), commit = true))
@@ -344,28 +344,28 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val payload = RelayLegacyPayload(ShortChannelId(12345), 50000000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(60000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
-      expectFwdAdd(register, ShortChannelId(11111), payload.amountToForward, payload.outgoingCltv).message
+      expectFwdAdd(register, channelUpdates(ShortChannelId(11111)).channelId, payload.amountToForward, payload.outgoingCltv).message
     }
     {
       // lower amount payment
       val payload = RelayLegacyPayload(ShortChannelId(12345), 1000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(60000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
-      expectFwdAdd(register, ShortChannelId(33333), payload.amountToForward, payload.outgoingCltv).message
+      expectFwdAdd(register, channelUpdates(ShortChannelId(33333)).channelId, payload.amountToForward, payload.outgoingCltv).message
     }
     {
       // payment too high, no suitable channel found, we keep the requested one
       val payload = RelayLegacyPayload(ShortChannelId(12345), 1000000000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(1010000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
-      expectFwdAdd(register, ShortChannelId(12345), payload.amountToForward, payload.outgoingCltv).message
+      expectFwdAdd(register, channelUpdates(ShortChannelId(12345)).channelId, payload.amountToForward, payload.outgoingCltv).message
     }
     {
       // cltv expiry larger than our requirements
       val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(50))
       val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
-      expectFwdAdd(register, ShortChannelId(22223), payload.amountToForward, payload.outgoingCltv).message
+      expectFwdAdd(register, channelUpdates(ShortChannelId(22223)).channelId, payload.amountToForward, payload.outgoingCltv).message
     }
     {
       // cltv expiry too small, no suitable channel found
@@ -399,7 +399,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     testCases.foreach { testCase =>
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r)
-      val fwd = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+      val fwd = expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
       fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
       fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream_htlc, testCase.result)
       expectFwdFail(register, r.add.channelId, testCase.cmd)
@@ -428,7 +428,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r)
 
-      val fwd1 = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
+      val fwd1 = expectFwdAdd(register, channelIds(shortId1), outgoingAmount, outgoingExpiry)
       fwd1.message.replyTo ! RES_SUCCESS(fwd1.message, channelId1)
       fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, downstream_htlc, testCase.result)
 
@@ -488,14 +488,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     // Simulate a chain re-org that changes the shortChannelId:
     channelRelayer ! WrappedShortChannelIdAssigned(ShortChannelIdAssigned(null, channelId_ab, ShortChannelId(42), Some(channelUpdate_ab.shortChannelId)))
-    val channels7 = getOutgoingChannels(true)
-    assert(channels7.isEmpty)
 
     // We should receive the updated channel update containing the new shortChannelId:
     channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, ShortChannelId(42), a, None, channelUpdate_ab.copy(shortChannelId = ShortChannelId(42)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
-    val channels8 = getOutgoingChannels(true)
-    assert(channels8.size === 1)
-    assert(channels8.head.channelUpdate.shortChannelId === ShortChannelId(42))
+    val channels7 = getOutgoingChannels(true)
+    assert(channels7.size === 1)
+    assert(channels7.head.channelUpdate.shortChannelId === ShortChannelId(42))
   }
 
 }
