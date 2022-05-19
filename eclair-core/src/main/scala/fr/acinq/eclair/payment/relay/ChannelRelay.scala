@@ -201,56 +201,52 @@ class ChannelRelay private(nodeParams: NodeParams,
   def selectPreferredChannel(alreadyTried: Seq[ByteVector32]): Option[OutgoingChannel] = {
     val requestedShortChannelId = r.payload.outgoingChannelId
     context.log.debug("selecting next channel with requestedShortChannelId={}", requestedShortChannelId)
-    nextNodeId_opt match {
-      case Some(_) =>
-        // we then filter out channels that we have already tried
-        val candidateChannels: Map[ByteVector32, OutgoingChannel] = channels -- alreadyTried
-        // and we filter again to keep the ones that are compatible with this payment (mainly fees, expiry delta)
-        candidateChannels
-          .values
-          .map { channel =>
-            val relayResult = relayOrFail(Some(channel))
-            context.log.debug(s"candidate channel: channelId=${channel.channelId} availableForSend={} capacity={} channelUpdate={} result={}",
-              channel.commitments.availableBalanceForSend,
-              channel.commitments.capacity,
-              channel.channelUpdate,
-              relayResult match {
-                case _: RelaySuccess => "success"
-                case RelayFailure(CMD_FAIL_HTLC(_, Right(failureReason), _, _)) => failureReason
-                case other => other
-              })
-            (channel, relayResult)
-          }
-          .collect {
-            // we only keep channels that have enough balance to handle this payment
-            case (channel, _: RelaySuccess) if channel.commitments.availableBalanceForSend > r.payload.amountToForward => channel
-          }
-          .toList // needed for ordering
-          // we want to use the channel with:
-          //  - the lowest available capacity to ensure we keep high-capacity channels for big payments
-          //  - the lowest available balance to increase our incoming liquidity
-          .sortBy { channel => (channel.commitments.capacity, channel.commitments.availableBalanceForSend) }
-          .headOption match {
-          case Some(channel) =>
-            if (requestedChannelId_opt.contains(channel.channelId)) {
-              context.log.debug("requested short channel id is our preferred channel")
-              Some(channel)
-            } else {
-              context.log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, channel.channelUpdate.shortChannelId, channel.commitments.availableBalanceForSend)
-              Some(channel)
-            }
-          case None =>
-            val requestedChannel_opt = requestedChannelId_opt.flatMap(channels.get)
-            requestedChannel_opt match {
-              case Some(requestedChannel) if alreadyTried.contains(requestedChannel.channelId) =>
-                context.log.debug("no channel seems to work for this payment and we have already tried the requested channel id: giving up")
-                None
-              case _ =>
-                context.log.debug("no channel seems to work for this payment, we will try to use the one requested")
-                requestedChannel_opt
-            }
+    // we filter out channels that we have already tried
+    val candidateChannels: Map[ByteVector32, OutgoingChannel] = channels -- alreadyTried
+    // and we filter again to keep the ones that are compatible with this payment (mainly fees, expiry delta)
+    candidateChannels
+      .values
+      .map { channel =>
+        val relayResult = relayOrFail(Some(channel))
+        context.log.debug(s"candidate channel: channelId=${channel.channelId} availableForSend={} capacity={} channelUpdate={} result={}",
+          channel.commitments.availableBalanceForSend,
+          channel.commitments.capacity,
+          channel.channelUpdate,
+          relayResult match {
+            case _: RelaySuccess => "success"
+            case RelayFailure(CMD_FAIL_HTLC(_, Right(failureReason), _, _)) => failureReason
+            case other => other
+          })
+        (channel, relayResult)
+      }
+      .collect {
+        // we only keep channels that have enough balance to handle this payment
+        case (channel, _: RelaySuccess) if channel.commitments.availableBalanceForSend > r.payload.amountToForward => channel
+      }
+      .toList // needed for ordering
+      // we want to use the channel with:
+      //  - the lowest available capacity to ensure we keep high-capacity channels for big payments
+      //  - the lowest available balance to increase our incoming liquidity
+      .sortBy { channel => (channel.commitments.capacity, channel.commitments.availableBalanceForSend) }
+      .headOption match {
+      case Some(channel) =>
+        if (requestedChannelId_opt.contains(channel.channelId)) {
+          context.log.debug("requested short channel id is our preferred channel")
+          Some(channel)
+        } else {
+          context.log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, channel.channelUpdate.shortChannelId, channel.commitments.availableBalanceForSend)
+          Some(channel)
         }
-      case _ => requestedChannelId_opt.flatMap(channels.get) // we don't have a channel_update for this short_channel_id
+      case None =>
+        val requestedChannel_opt = requestedChannelId_opt.flatMap(channels.get)
+        requestedChannel_opt match {
+          case Some(requestedChannel) if alreadyTried.contains(requestedChannel.channelId) =>
+            context.log.debug("no channel seems to work for this payment and we have already tried the requested channel id: giving up")
+            None
+          case _ =>
+            context.log.debug("no channel seems to work for this payment, we will try to use the one requested")
+            requestedChannel_opt
+        }
     }
   }
 
