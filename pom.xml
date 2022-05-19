@@ -235,7 +235,7 @@
                     <systemProperties>
                         <buildDirectory>${project.build.directory}</buildDirectory>
                     </systemProperties>
-                    <argLine>-Xmx1024m -Dfile.encoding=UTF-8</argLine>
+                    <argLine>-Xmx2048m -Dfile.encoding=UTF-8</argLine>
                 </configuration>
                 <executions>
                     <execution>

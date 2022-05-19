@@ -161,7 +161,7 @@ object TestConstants {
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
-        routerBroadcastInterval = 5 seconds,
+        routerBroadcastInterval = 1 day, // "disables" rebroadcast
         requestNodeAnnouncements = true,
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
@@ -299,7 +299,7 @@ object TestConstants {
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
-        routerBroadcastInterval = 5 seconds,
+        routerBroadcastInterval = 1 day, // "disables" rebroadcast
         requestNodeAnnouncements = true,
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,
