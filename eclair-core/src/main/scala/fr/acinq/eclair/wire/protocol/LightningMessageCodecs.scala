@@ -115,7 +115,7 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | extendedChannelFlags) ::
+      ("channelFlags" | channelflags) ::
       ("tlvStream" | OpenDualFundedChannelTlv.openTlvCodec)).as[OpenDualFundedChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
@@ -150,7 +150,6 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | extendedChannelFlags) ::
       ("tlvStream" | AcceptDualFundedChannelTlv.acceptTlvCodec)).as[AcceptDualFundedChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
@@ -170,25 +169,19 @@ object LightningMessageCodecs {
       ("nextPerCommitmentPoint" | publicKey) ::
       ("tlvStream" | FundingLockedTlv.fundingLockedTlvCodec)).as[FundingLocked]
 
-  private val scriptSigOptCodec: Codec[Option[ByteVector]] = lengthDelimited(bytes).xmap[Option[ByteVector]](
-    b => if (b.isEmpty) None else Some(b),
-    b => b.getOrElse(ByteVector.empty)
-  )
-
   val txAddInputCodec: Codec[TxAddInput] = (
     ("channelId" | bytes32) ::
       ("serialId" | uint64) ::
-      ("previousTx" | lengthDelimited(txCodec)) ::
+      ("previousTx" | variableSizeBytes(uint16, txCodec)) ::
       ("previousTxOutput" | uint32) ::
       ("sequence" | uint32) ::
-      ("scriptSig" | scriptSigOptCodec) ::
       ("tlvStream" | TxAddInputTlv.txAddInputTlvCodec)).as[TxAddInput]
 
   val txAddOutputCodec: Codec[TxAddOutput] = (
     ("channelId" | bytes32) ::
       ("serialId" | uint64) ::
       ("amount" | satoshi) ::
-      ("scriptPubKey" | lengthDelimited(bytes)) ::
+      ("scriptPubKey" | variableSizeBytes(uint16, bytes)) ::
       ("tlvStream" | TxAddOutputTlv.txAddOutputTlvCodec)).as[TxAddOutput]
 
   val txRemoveInputCodec: Codec[TxRemoveInput] = (
@@ -205,9 +198,9 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("tlvStream" | TxCompleteTlv.txCompleteTlvCodec)).as[TxComplete]
 
-  private val witnessElementCodec: Codec[ByteVector] = lengthDelimited(bytes)
-  private val witnessStackCodec: Codec[ScriptWitness] = listOfN(smallvarint, witnessElementCodec).xmap(s => ScriptWitness(s.toSeq), w => w.stack.toList)
-  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(smallvarint, witnessStackCodec).xmap(l => l.toSeq, l => l.toList)
+  private val witnessElementCodec: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
+  private val witnessStackCodec: Codec[ScriptWitness] = listOfN(uint16, witnessElementCodec).xmap(s => ScriptWitness(s.toSeq), w => w.stack.toList)
+  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(uint16, witnessStackCodec).xmap(l => l.toSeq, l => l.toList)
 
   val txSignaturesCodec: Codec[TxSignatures] = (
     ("channelId" | bytes32) ::
@@ -227,7 +220,7 @@ object LightningMessageCodecs {
 
   val txAbortCodec: Codec[TxAbort] = (
     ("channelId" | bytes32) ::
-      ("data" | lengthDelimited(bytes)) ::
+      ("data" | variableSizeBytes(uint16, bytes)) ::
       ("tlvStream" | TxAbortTlv.txAbortTlvCodec)).as[TxAbort]
 
   val shutdownCodec: Codec[Shutdown] = (

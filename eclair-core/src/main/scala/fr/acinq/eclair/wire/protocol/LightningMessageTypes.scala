@@ -86,7 +86,6 @@ case class TxAddInput(channelId: ByteVector32,
                       previousTx: Transaction,
                       previousTxOutput: Long,
                       sequence: Long,
-                      scriptSig_opt: Option[ByteVector],
                       tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
 
 case class TxAddOutput(channelId: ByteVector32,
@@ -211,7 +210,6 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
                                    delayedPaymentBasepoint: PublicKey,
                                    htlcBasepoint: PublicKey,
                                    firstPerCommitmentPoint: PublicKey,
-                                   channelFlags: ChannelFlags,
                                    tlvStream: TlvStream[AcceptDualFundedChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
