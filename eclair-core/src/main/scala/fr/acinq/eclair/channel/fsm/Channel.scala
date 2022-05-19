@@ -223,7 +223,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         pushMsat = pushMsat,
         dustLimitSatoshis = localParams.dustLimit,
         maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-        channelReserveSatoshis = localParams.requestedChannelReserve,
+        channelReserveSatoshis = localParams.requestedChannelReserve_opt.getOrElse(0 sat),
         htlcMinimumMsat = localParams.htlcMinimum,
         feeratePerKw = commitTxFeerate,
         toSelfDelay = localParams.toSelfDelay,

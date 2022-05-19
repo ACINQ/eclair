@@ -300,9 +300,10 @@ object Helpers {
         // they initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
         val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
-        val missing = toRemoteMsat.truncateToSatoshi - localParams.requestedChannelReserve - fees
+        val reserve = localParams.requestedChannelReserve_opt.getOrElse(0 sat)
+        val missing = toRemoteMsat.truncateToSatoshi - reserve - fees
         if (missing < Satoshi(0)) {
-          return Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = localParams.requestedChannelReserve, fees = fees))
+          return Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = reserve, fees = fees))
         }
       }
 

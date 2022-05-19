@@ -87,7 +87,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimit,
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-            channelReserveSatoshis = localParams.requestedChannelReserve,
+            channelReserveSatoshis = localParams.requestedChannelReserve_opt.getOrElse(0 sat),
             minimumDepth = minimumDepth,
             htlcMinimumMsat = localParams.htlcMinimum,
             toSelfDelay = localParams.toSelfDelay,

@@ -227,7 +227,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.requestedChannelReserve).max(0 msat))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.requestedChannelReserve_opt.getOrElse(0 sat)).max(0 msat))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]

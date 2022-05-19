@@ -473,9 +473,7 @@ case class LocalParams(nodeId: PublicKey,
                        isInitiator: Boolean,
                        defaultFinalScriptPubKey: ByteVector,
                        walletStaticPaymentBasepoint: Option[PublicKey],
-                       initFeatures: Features[InitFeature]) {
-  val requestedChannelReserve: Satoshi = requestedChannelReserve_opt.getOrElse(0 sat)
-}
+                       initFeatures: Features[InitFeature])
 
 /**
  * @param initFeatures see [[LocalParams.initFeatures]]
@@ -493,9 +491,7 @@ case class RemoteParams(nodeId: PublicKey,
                         delayedPaymentBasepoint: PublicKey,
                         htlcBasepoint: PublicKey,
                         initFeatures: Features[InitFeature],
-                        shutdownScript: Option[ByteVector]) {
-  val requestedChannelReserve: Satoshi = requestedChannelReserve_opt.getOrElse(0 sat)
-}
+                        shutdownScript: Option[ByteVector])
 
 case class ChannelFlags(announceChannel: Boolean) {
   override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"
