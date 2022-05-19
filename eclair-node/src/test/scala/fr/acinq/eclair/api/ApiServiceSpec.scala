@@ -1156,7 +1156,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         wsClient.expectMessage(expectedSerializedPset)
 
         val chcr = ChannelCreated(system.deadLetters, system.deadLetters, bobNodeId, isInitiator = true, ByteVector32.One, FeeratePerKw(25 sat), Some(FeeratePerKw(20 sat)))
-        val expectedSerializedChcr = """{"type":"channel-opened","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","isInitiator":true,"temporaryChannelId":"0100000000000000000000000000000000000000000000000000000000000000","initialFeeratePerKw":25,"fundingTxFeeratePerKw":20}"""
+        val expectedSerializedChcr = """{"type":"channel-opened","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","isInitiator":true,"temporaryChannelId":"0100000000000000000000000000000000000000000000000000000000000000","commitTxFeeratePerKw":25,"fundingTxFeeratePerKw":20}"""
         assert(serialization.write(chcr) === expectedSerializedChcr)
         system.eventStream.publish(chcr)
         wsClient.expectMessage(expectedSerializedChcr)

@@ -208,8 +208,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, remote, remoteInit, channelFlags, channelConfig, channelType), Nothing) =>
-      context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = true, temporaryChannelId, initialFeeratePerKw, Some(fundingTxFeeratePerKw)))
+    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, commitTxFeerate, fundingTxFeerate, localParams, remote, remoteInit, channelFlags, channelConfig, channelType), Nothing) =>
+      context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = true, temporaryChannelId, commitTxFeerate, Some(fundingTxFeerate)))
       activeConnection = remote
       txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
@@ -223,9 +223,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         pushMsat = pushMsat,
         dustLimitSatoshis = localParams.dustLimit,
         maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-        channelReserveSatoshis = localParams.channelReserve,
+        channelReserveSatoshis = localParams.requestedChannelReserve_opt.getOrElse(0 sat),
         htlcMinimumMsat = localParams.htlcMinimum,
-        feeratePerKw = initialFeeratePerKw,
+        feeratePerKw = commitTxFeerate,
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = fundingPubKey,

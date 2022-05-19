@@ -416,8 +416,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.channelType === ChannelTypes.AnchorOutputs)
     assert(init.fundingAmount === 15000.sat)
-    assert(init.initialFeeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeeratePerKw === feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+    assert(init.commitTxFeerate === TestConstants.anchorOutputsFeeratePerKw)
+    assert(init.fundingTxFeerate === feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs zero fee htlc)", Tag("anchor_outputs_zero_fee_htlc_tx")) { f =>
@@ -434,8 +434,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
     assert(init.fundingAmount === 15000.sat)
-    assert(init.initialFeeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeeratePerKw === feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+    assert(init.commitTxFeerate === TestConstants.anchorOutputsFeeratePerKw)
+    assert(init.fundingTxFeerate === feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
   }
 
   test("use correct final script if option_static_remotekey is negotiated", Tag("static_remotekey")) { f =>

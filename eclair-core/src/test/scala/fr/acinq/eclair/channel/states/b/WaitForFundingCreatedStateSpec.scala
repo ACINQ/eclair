@@ -106,7 +106,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     import f._
     val fees = Transactions.weight2fee(TestConstants.feeratePerKw, Transactions.DefaultCommitmentFormat.commitWeight)
     val bobParams = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].localParams
-    val reserve = bobParams.channelReserve
+    val reserve = bobParams.requestedChannelReserve_opt.get
     val missing = 100.sat - fees - reserve
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)

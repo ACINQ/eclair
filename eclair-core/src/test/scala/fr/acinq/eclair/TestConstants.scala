@@ -208,7 +208,7 @@ object TestConstants {
       isInitiator = true,
       fundingSatoshis
     ).copy(
-      channelReserve = 10000 sat // Bob will need to keep that much satoshis as direct payment
+      requestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
     )
   }
 
@@ -346,7 +346,7 @@ object TestConstants {
       isInitiator = false,
       fundingSatoshis
     ).copy(
-      channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
+      requestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance
     )
   }
 

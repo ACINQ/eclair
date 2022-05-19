@@ -401,8 +401,8 @@ object ChannelEventSerializer extends MinimalSerializer({
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
     JField("isInitiator", JBool(e.isInitiator)),
     JField("temporaryChannelId", JString(e.temporaryChannelId.toHex)),
-    JField("initialFeeratePerKw", JLong(e.initialFeeratePerKw.toLong)),
-    JField("fundingTxFeeratePerKw", e.fundingTxFeeratePerKw.map(f => JLong(f.toLong)).getOrElse(JNothing))
+    JField("commitTxFeeratePerKw", JLong(e.commitTxFeerate.toLong)),
+    JField("fundingTxFeeratePerKw", e.fundingTxFeerate.map(f => JLong(f.toLong)).getOrElse(JNothing))
   )
   case e: ChannelStateChanged => JObject(
     JField("type", JString("channel-state-changed")),

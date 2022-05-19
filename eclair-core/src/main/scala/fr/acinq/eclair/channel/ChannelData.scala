@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -78,8 +78,8 @@ case object ERR_INFORMATION_LEAK extends ChannelState
 case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              fundingAmount: Satoshi,
                              pushAmount: MilliSatoshi,
-                             initialFeeratePerKw: FeeratePerKw,
-                             fundingTxFeeratePerKw: FeeratePerKw,
+                             commitTxFeerate: FeeratePerKw,
+                             fundingTxFeerate: FeeratePerKw,
                              localParams: LocalParams,
                              remote: ActorRef,
                              remoteInit: Init,
@@ -196,7 +196,7 @@ final case class CMD_GET_CHANNEL_INFO(replyTo: ActorRef)extends HasReplyToComman
 /** response to [[Command]] requests */
 sealed trait CommandResponse[+C <: Command]
 sealed trait CommandSuccess[+C <: Command] extends CommandResponse[C]
-sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: Throwable }
+sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: T }
 
 /** generic responses */
 final case class RES_SUCCESS[+C <: Command](cmd: C, channelId: ByteVector32) extends CommandSuccess[C]
@@ -387,7 +387,7 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32
                                                 remoteParams: RemoteParams,
                                                 fundingAmount: Satoshi,
                                                 pushAmount: MilliSatoshi,
-                                                initialFeeratePerKw: FeeratePerKw,
+                                                commitTxFeerate: FeeratePerKw,
                                                 remoteFirstPerCommitmentPoint: PublicKey,
                                                 channelConfig: ChannelConfig,
                                                 channelFeatures: ChannelFeatures,
@@ -399,7 +399,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
                                                remoteParams: RemoteParams,
                                                fundingAmount: Satoshi,
                                                pushAmount: MilliSatoshi,
-                                               initialFeeratePerKw: FeeratePerKw,
+                                               commitTxFeerate: FeeratePerKw,
                                                remoteFirstPerCommitmentPoint: PublicKey,
                                                channelFlags: ChannelFlags,
                                                channelConfig: ChannelConfig,
@@ -466,7 +466,7 @@ case class LocalParams(nodeId: PublicKey,
                        fundingKeyPath: DeterministicWallet.KeyPath,
                        dustLimit: Satoshi,
                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                       channelReserve: Satoshi,
+                       requestedChannelReserve_opt: Option[Satoshi],
                        htlcMinimum: MilliSatoshi,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
@@ -481,7 +481,7 @@ case class LocalParams(nodeId: PublicKey,
 case class RemoteParams(nodeId: PublicKey,
                         dustLimit: Satoshi,
                         maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                        channelReserve: Satoshi,
+                        requestedChannelReserve_opt: Option[Satoshi],
                         htlcMinimum: MilliSatoshi,
                         toSelfDelay: CltvExpiryDelta,
                         maxAcceptedHtlcs: Int,
