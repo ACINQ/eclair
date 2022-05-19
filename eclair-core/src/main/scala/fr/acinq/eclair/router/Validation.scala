@@ -447,7 +447,7 @@ object Validation {
             val pc = PrivateChannel(lcu.shortChannelId, lcu.channelId, localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
             val d1 = d.copy(
               privateChannels = d.privateChannels + (lcu.channelId -> pc),
-              resolveScid = d.resolveScid + (lcu.shortChannelId -> lcu.channelId)
+              scid2PrivateChannels = d.scid2PrivateChannels + (lcu.shortChannelId -> lcu.channelId)
             )
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
         }
