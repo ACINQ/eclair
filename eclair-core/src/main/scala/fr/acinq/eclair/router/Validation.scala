@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, ShortChannelId, TxCoordinates, toLongId}
 
 object Validation {
 
@@ -123,7 +123,8 @@ object Validation {
               ctx.self ! nodeAnn
             }
             // maybe this previously was a local unannounced channel
-            val privateChannel_opt = d0.privateChannels.get(c.shortChannelId)
+            val channelId = toLongId(tx.txid.reverse, outputIndex)
+            val privateChannel_opt = d0.privateChannels.get(channelId)
             Some(PublicChannel(c,
               tx.txid,
               capacity,
@@ -160,7 +161,7 @@ object Validation {
             .toMap
           val d1 = d0.copy(
             channels = d0.channels + (c.shortChannelId -> pc),
-            privateChannels = d0.privateChannels - c.shortChannelId, // we remove the corresponding unannounced channel that we may have until now
+            privateChannels = d0.privateChannels - pc.channelId, // we remove the corresponding unannounced channel that we may have until now
             rebroadcast = d0.rebroadcast.copy(
               channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet), // we rebroadcast the channel to our peers
               updates = d0.rebroadcast.updates ++ updates1
@@ -264,158 +265,157 @@ object Validation {
 
   def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val (u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
-      case Left(lcu) => (lcu.channelUpdate, Set(LocalGossip))
+    val (pc_opt: Option[KnownChannel], u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
+      case Left(lcu) => (d.resolve(lcu.shortChannelId), lcu.channelUpdate, Set(LocalGossip))
       case Right(rcu) =>
         rcu.origins.collect {
           case RemoteGossip(peerConnection, _) if !wasStashed => // stashed changes have already been acknowledged
             log.debug("received channel update for shortChannelId={}", rcu.channelUpdate.shortChannelId)
             peerConnection ! TransportHandler.ReadAck(rcu.channelUpdate)
         }
-        (rcu.channelUpdate, rcu.origins)
+        (d.resolve(rcu.channelUpdate.shortChannelId), rcu.channelUpdate, rcu.origins)
     }
-    if (d.channels.contains(u.shortChannelId)) {
-      // related channel is already known (note: this means no related channel_update is in the stash)
-      val publicChannel = true
-      val pc = d.channels(u.shortChannelId)
-      if (d.rebroadcast.updates.contains(u)) {
-        log.debug("ignoring {} (pending rebroadcast)", u)
-        sendDecision(origins, GossipDecision.Accepted(u))
-        val origins1 = d.rebroadcast.updates(u) ++ origins
-        // NB: we update the channels because the balances may have changed even if the channel_update is the same.
-        val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
-        d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
-      } else if (StaleChannels.isStale(u)) {
-        log.debug("ignoring {} (stale)", u)
-        sendDecision(origins, GossipDecision.Stale(u))
-        d
-      } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
-        log.debug("ignoring {} (duplicate)", u)
-        sendDecision(origins, GossipDecision.Duplicate(u))
-        update match {
-          case Left(_) =>
-            // NB: we update the graph because the balances may have changed even if the channel_update is the same.
-            val pc1 = pc.applyChannelUpdate(update)
-            val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
-            d.copy(channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
-          case Right(_) => d
-        }
-      } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
-        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        sendDecision(origins, GossipDecision.InvalidSignature(u))
-        d
-      } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
-        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
-        sendDecision(origins, GossipDecision.Accepted(u))
-        ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        db.updateChannel(u)
-        // update the graph
-        val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = if (u.channelFlags.isEnabled) {
-          update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-          d.graph.addEdge(GraphEdge(u, pc1))
-        } else {
-          update.left.foreach(_ => log.info("removed local shortChannelId={} public={} from the network graph", u.shortChannelId, publicChannel))
-          d.graph.removeEdge(ChannelDesc(u, pc.ann))
-        }
-        d.copy(channels = d.channels + (u.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
-      } else {
-        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        sendDecision(origins, GossipDecision.Accepted(u))
-        ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        db.updateChannel(u)
-        // we also need to update the graph
-        val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
-        update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-        d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
-      }
-    } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
-      // channel is currently being validated
-      if (d.stash.updates.contains(u)) {
-        log.debug("ignoring {} (already stashed)", u)
-        val origins1 = d.stash.updates(u) ++ origins
-        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins1)))
-      } else {
-        log.debug("stashing {}", u)
-        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
-      }
-    } else if (d.privateChannels.contains(u.shortChannelId)) {
-      val publicChannel = false
-      val pc = d.privateChannels(u.shortChannelId)
-      if (StaleChannels.isStale(u)) {
-        log.debug("ignoring {} (stale)", u)
-        sendDecision(origins, GossipDecision.Stale(u))
-        d
-      } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
-        log.debug("ignoring {} (already know same or newer)", u)
-        sendDecision(origins, GossipDecision.Duplicate(u))
-        d
-      } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
-        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        sendDecision(origins, GossipDecision.InvalidSignature(u))
-        d
-      } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
-        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
-        sendDecision(origins, GossipDecision.Accepted(u))
-        ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        // we also need to update the graph
-        val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = if (u.channelFlags.isEnabled) {
-          update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-          d.graph.addEdge(GraphEdge(u, pc1))
-        } else {
-          update.left.foreach(_ => log.info("removed local shortChannelId={} public={} from the network graph", u.shortChannelId, publicChannel))
-          d.graph.removeEdge(ChannelDesc(u, pc1))
-        }
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
-      } else {
-        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        sendDecision(origins, GossipDecision.Accepted(u))
-        ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        // we also need to update the graph
-        val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
-        update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
-      }
-    } else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
-      // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
-      // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
-      // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
-      // let's remove the channel from the zombie list and ask the sender to re-send announcements (channel_announcement + updates)
-      // about that channel. We can ignore this update since we will receive it again
-      log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
-      sendDecision(origins, GossipDecision.RelatedChannelPruned(u))
-      db.removeFromPruned(u.shortChannelId)
-      // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
-      // when we're sending updates to ourselves
-      origins head match {
-        case RemoteGossip(peerConnection, remoteNodeId) =>
-          val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(routerConf.encodingType, List(u.shortChannelId)), TlvStream.empty)
-          d.sync.get(remoteNodeId) match {
-            case Some(sync) if sync.started =>
-              // we already have a pending request to that node, let's add this channel to the list and we'll get it later
-              // TODO: we only request channels with old style channel_query
-              d.copy(sync = d.sync + (remoteNodeId -> sync.copy(remainingQueries = sync.remainingQueries :+ query, totalQueries = sync.totalQueries + 1)))
-            case _ =>
-              // otherwise we send the query right away
-              peerConnection ! query
-              d.copy(sync = d.sync + (remoteNodeId -> Syncing(remainingQueries = Nil, totalQueries = 1)))
-          }
-        case _ =>
-          // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).
-          // or we don't have a peerConnection to send our query to.
-          // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
+    pc_opt match {
+      case Some(pc: PublicChannel) =>
+        // related channel is already known (note: this means no related channel_update is in the stash)
+        val publicChannel = true
+        if (d.rebroadcast.updates.contains(u)) {
+          log.debug("ignoring {} (pending rebroadcast)", u)
+          sendDecision(origins, GossipDecision.Accepted(u))
+          val origins1 = d.rebroadcast.updates(u) ++ origins
+          // NB: we update the channels because the balances may have changed even if the channel_update is the same.
+          val pc1 = pc.applyChannelUpdate(update)
+          val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
+          d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (pc.shortChannelId -> pc1), graph = graph1)
+        } else if (StaleChannels.isStale(u)) {
+          log.debug("ignoring {} (stale)", u)
+          sendDecision(origins, GossipDecision.Stale(u))
           d
-      }
-    } else {
-      log.debug("ignoring announcement {} (unknown channel)", u)
-      sendDecision(origins, GossipDecision.NoRelatedChannel(u))
-      d
+        } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
+          log.debug("ignoring {} (duplicate)", u)
+          sendDecision(origins, GossipDecision.Duplicate(u))
+          update match {
+            case Left(_) =>
+              // NB: we update the graph because the balances may have changed even if the channel_update is the same.
+              val pc1 = pc.applyChannelUpdate(update)
+              val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
+              d.copy(channels = d.channels + (pc.shortChannelId -> pc1), graph = graph1)
+            case Right(_) => d
+          }
+        } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
+          log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
+          sendDecision(origins, GossipDecision.InvalidSignature(u))
+          d
+        } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
+          log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
+          Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
+          sendDecision(origins, GossipDecision.Accepted(u))
+          ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
+          db.updateChannel(u)
+          // update the graph
+          val pc1 = pc.applyChannelUpdate(update)
+          val graph1 = if (u.channelFlags.isEnabled) {
+            update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
+            d.graph.addEdge(GraphEdge(u, pc1))
+          } else {
+            update.left.foreach(_ => log.info("removed local shortChannelId={} public={} from the network graph", u.shortChannelId, publicChannel))
+            d.graph.removeEdge(ChannelDesc(u, pc1.ann))
+          }
+          d.copy(channels = d.channels + (pc.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+        } else {
+          log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
+          sendDecision(origins, GossipDecision.Accepted(u))
+          ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
+          db.updateChannel(u)
+          // we also need to update the graph
+          val pc1 = pc.applyChannelUpdate(update)
+          val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
+          update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
+          d.copy(channels = d.channels + (pc.shortChannelId -> pc1), privateChannels = d.privateChannels - pc1.channelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+        }
+      case Some(pc: PrivateChannel) =>
+        val publicChannel = false
+        if (StaleChannels.isStale(u)) {
+          log.debug("ignoring {} (stale)", u)
+          sendDecision(origins, GossipDecision.Stale(u))
+          d
+        } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
+          log.debug("ignoring {} (already know same or newer)", u)
+          sendDecision(origins, GossipDecision.Duplicate(u))
+          d
+        } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
+          log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
+          sendDecision(origins, GossipDecision.InvalidSignature(u))
+          d
+        } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
+          log.debug("updated channel_update for channelId={} public={} flags={} {}", pc.channelId, publicChannel, u.channelFlags, u)
+          Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
+          sendDecision(origins, GossipDecision.Accepted(u))
+          ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
+          // we also need to update the graph
+          val pc1 = pc.applyChannelUpdate(update)
+          val graph1 = if (u.channelFlags.isEnabled) {
+            update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
+            d.graph.addEdge(GraphEdge(u, pc1))
+          } else {
+            update.left.foreach(_ => log.info("removed local channelId={} public={} from the network graph", pc.channelId, publicChannel))
+            d.graph.removeEdge(ChannelDesc(u, pc1))
+          }
+          d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graph = graph1)
+        } else {
+          log.debug("added channel_update for channelId={} public={} flags={} {}", pc.channelId, publicChannel, u.channelFlags, u)
+          sendDecision(origins, GossipDecision.Accepted(u))
+          ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
+          // we also need to update the graph
+          val pc1 = pc.applyChannelUpdate(update)
+          val graph1 = d.graph.addEdge(GraphEdge(u, pc1))
+          update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
+          d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graph = graph1)
+        }
+      case None if d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId) =>
+        // channel is currently being validated
+        if (d.stash.updates.contains(u)) {
+          log.debug("ignoring {} (already stashed)", u)
+          val origins1 = d.stash.updates(u) ++ origins
+          d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins1)))
+        } else {
+          log.debug("stashing {}", u)
+          d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
+        }
+      case None if db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u) =>
+        // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
+        // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
+        // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
+        // let's remove the channel from the zombie list and ask the sender to re-send announcements (channel_announcement + updates)
+        // about that channel. We can ignore this update since we will receive it again
+        log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
+        sendDecision(origins, GossipDecision.RelatedChannelPruned(u))
+        db.removeFromPruned(u.shortChannelId)
+        // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
+        // when we're sending updates to ourselves
+        origins head match {
+          case RemoteGossip(peerConnection, remoteNodeId) =>
+            val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(routerConf.encodingType, List(u.shortChannelId)), TlvStream.empty)
+            d.sync.get(remoteNodeId) match {
+              case Some(sync) if sync.started =>
+                // we already have a pending request to that node, let's add this channel to the list and we'll get it later
+                // TODO: we only request channels with old style channel_query
+                d.copy(sync = d.sync + (remoteNodeId -> sync.copy(remainingQueries = sync.remainingQueries :+ query, totalQueries = sync.totalQueries + 1)))
+              case _ =>
+                // otherwise we send the query right away
+                peerConnection ! query
+                d.copy(sync = d.sync + (remoteNodeId -> Syncing(remainingQueries = Nil, totalQueries = 1)))
+            }
+          case _ =>
+            // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).
+            // or we don't have a peerConnection to send our query to.
+            // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
+            d
+        }
+      case None =>
+        log.debug("ignoring announcement {} (unknown channel)", u)
+        sendDecision(origins, GossipDecision.NoRelatedChannel(u))
+        d
     }
   }
 
@@ -437,15 +437,18 @@ object Validation {
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
-          case None if d.privateChannels.contains(lcu.shortChannelId) =>
+          case None if d.privateChannels.contains(lcu.channelId) =>
             // channel isn't announced but we already know about it, we can process the channel_update
             handleChannelUpdate(d, db, routerConf, Left(lcu))
           case None =>
             // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
             // let's create a corresponding private channel and process the channel_update
             log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
-            val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
-            val d1 = d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
+            val pc = PrivateChannel(lcu.shortChannelId, lcu.channelId, localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
+            val d1 = d.copy(
+              privateChannels = d.privateChannels + (lcu.channelId -> pc),
+              scid2PrivateChannels = d.scid2PrivateChannels + (lcu.shortChannelId -> lcu.channelId)
+            )
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
         }
     }
@@ -458,7 +461,7 @@ object Validation {
       // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
       // so let's not do anything here
       d
-    } else if (d.privateChannels.contains(shortChannelId)) {
+    } else if (d.privateChannels.contains(channelId)) {
       // the channel was private or public-but-not-yet-announced, let's do the clean up
       log.info("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
       val desc1 = ChannelDesc(shortChannelId, localNodeId, remoteNodeId)
@@ -468,7 +471,7 @@ object Validation {
         .removeEdge(desc1)
         .removeEdge(desc2)
       // and we remove the channel and channel_update from our state
-      d.copy(privateChannels = d.privateChannels - shortChannelId, graph = graph1)
+      d.copy(privateChannels = d.privateChannels - channelId, graph = graph1)
     } else {
       d
     }
@@ -485,13 +488,13 @@ object Validation {
       case None =>
         (d.channels, d.graph)
     }
-    val (privateChannels1, graph2) = d.privateChannels.get(e.shortChannelId) match {
+    val (privateChannels1, graph2) = d.privateChannels.get(e.channelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("private channel balance updated: {}", pc1)
         val update_opt = if (e.commitments.localNodeId == pc1.nodeId1) pc1.update_1_opt else pc1.update_2_opt
         val graph2 = update_opt.map(u => graph1.addEdge(GraphEdge(u, pc1))).getOrElse(graph1)
-        (d.privateChannels + (e.shortChannelId -> pc1), graph2)
+        (d.privateChannels + (e.channelId -> pc1), graph2)
       case None =>
         (d.privateChannels, graph1)
     }

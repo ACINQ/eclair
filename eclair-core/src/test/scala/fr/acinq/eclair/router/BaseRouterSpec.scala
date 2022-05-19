@@ -80,6 +80,8 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val scid_ag_private = ShortChannelId(BlockHeight(420000), 5, 0)
   val scid_gh = ShortChannelId(BlockHeight(420000), 6, 0)
 
+  val channelId_ag_private = randomBytes32()
+
   val chan_ab = channelAnnouncement(scid_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
   val chan_bc = channelAnnouncement(scid_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
   val chan_cd = channelAnnouncement(scid_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
@@ -110,8 +112,8 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       assert(ChannelDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
       assert(ChannelDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
       assert(ChannelDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
-      assert(ChannelDesc(update_ag_private, PrivateChannel(a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(scid_ag_private, a, g))
-      assert(ChannelDesc(update_ag_private, PrivateChannel(g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(scid_ag_private, a, g))
+      assert(ChannelDesc(update_ag_private, PrivateChannel(scid_ag_private, channelId_ag_private, a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(scid_ag_private, a, g))
+      assert(ChannelDesc(update_ag_private, PrivateChannel(scid_ag_private, channelId_ag_private, g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(scid_ag_private, a, g))
       assert(ChannelDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
 
       // let's set up the router
@@ -149,7 +151,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_gh))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_hg))
       // then private channels
-      sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32(), scid_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
+      sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, scid_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_bc)
