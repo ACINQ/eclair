@@ -852,7 +852,7 @@ class AuditDbSpec extends AnyFunSuite {
   test("add experiment metrics") {
     forAllDbs { dbs =>
       val isPg = dbs.isInstanceOf[TestPgDatabases]
-      val hints = Seq(Seq(ExtraHop(
+      val hints = Some(Seq(Seq(ExtraHop(
         PublicKey(hex"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e"),
         ShortChannelId(1),
         1000 msat,
@@ -870,7 +870,7 @@ class AuditDbSpec extends AnyFunSuite {
         800 msat,
         300,
         CltvExpiryDelta(78)
-      )))
+      ))))
       dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(randomBytes32(), 100000000 msat, 3000 msat, status = "SUCCESS", 37 millis, TimestampMilli.now(), isMultiPart = false, "my-test-experiment", randomKey().publicKey, hints))
 
       val table = if (isPg) "audit.path_finding_metrics" else "path_finding_metrics"
