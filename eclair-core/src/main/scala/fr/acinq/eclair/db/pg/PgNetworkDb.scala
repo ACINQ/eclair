@@ -92,24 +92,24 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     val channelsTable = if (oldTableName) "channels" else "network.public_channels"
     migrateTable(connection, connection,
       nodesTable,
-      s"UPDATE $nodesTable SET json=?::JSON WHERE node_id=?",
+      s"UPDATE $nodesTable SET json=?::JSONB WHERE node_id=?",
       (rs, statement) => {
         val node = nodeAnnouncementCodec.decode(BitVector(rs.getBytes("data"))).require.value
-        val json = serialization.writePretty(node)
+        val json = serialization.write(node)
         statement.setString(1, json)
         statement.setString(2, node.nodeId.toString())
       }
     )(logger)
     migrateTable(connection, connection,
       channelsTable,
-      s"UPDATE $channelsTable SET channel_announcement_json=?::JSON, channel_update_1_json=?::JSON, channel_update_2_json=?::JSON WHERE short_channel_id=?",
+      s"UPDATE $channelsTable SET channel_announcement_json=?::JSONB, channel_update_1_json=?::JSONB, channel_update_2_json=?::JSONB WHERE short_channel_id=?",
       (rs, statement) => {
         val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
         val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
         val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
-        val json = serialization.writePretty(ann)
-        val u1_json = channel_update_1_opt.map(serialization.writePretty(_)).orNull
-        val u2_json = channel_update_2_opt.map(serialization.writePretty(_)).orNull
+        val json = serialization.write(ann)
+        val u1_json = channel_update_1_opt.map(serialization.write(_)).orNull
+        val u2_json = channel_update_2_opt.map(serialization.write(_)).orNull
         statement.setString(1, json)
         statement.setString(2, u1_json)
         statement.setString(3, u2_json)
@@ -124,7 +124,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
         statement =>
           statement.setString(1, n.nodeId.value.toHex)
           statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
-          statement.setString(3, serialization.writePretty(n))
+          statement.setString(3, serialization.write(n))
           statement.executeUpdate()
       }
     }
@@ -135,7 +135,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
       using(pg.prepareStatement("UPDATE network.nodes SET data=?, json=?::JSONB WHERE node_id=?")) {
         statement =>
           statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
-          statement.setString(2, serialization.writePretty(n))
+          statement.setString(2, serialization.write(n))
           statement.setString(3, n.nodeId.value.toHex)
           statement.executeUpdate()
       }
@@ -180,7 +180,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
           statement.setString(2, txid.toHex)
           statement.setBytes(3, channelAnnouncementCodec.encode(c).require.toByteArray)
           statement.setLong(4, capacity.toLong)
-          statement.setString(5, serialization.writePretty(c))
+          statement.setString(5, serialization.write(c))
           statement.executeUpdate()
       }
     }
@@ -192,7 +192,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
       using(pg.prepareStatement(s"UPDATE network.public_channels SET $column=?, ${column}_json=?::JSONB WHERE short_channel_id=?")) {
         statement =>
           statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
-          statement.setString(2, serialization.writePretty(u))
+          statement.setString(2, serialization.write(u))
           statement.setLong(3, u.shortChannelId.toLong)
           statement.executeUpdate()
       }

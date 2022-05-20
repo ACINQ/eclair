@@ -91,7 +91,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
             // store local commitment signatures anymore, and we want to clean up existing data
             val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
             val data = channelDataCodec.encode(state).require.toByteArray
-            val json = serialization.writePretty(state)
+            val json = serialization.write(state)
             statement.setBytes(1, data)
             statement.setString(2, json)
             statement.setString(3, state.channelId.toHex)
@@ -141,7 +141,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       s"UPDATE $table SET json=?::JSONB WHERE channel_id=?",
       (rs, statement) => {
         val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-        val json = serialization.writePretty(state)
+        val json = serialization.write(state)
         statement.setString(1, json)
         statement.setString(2, state.channelId.toHex)
       }
@@ -160,7 +160,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           | """.stripMargin)) { statement =>
         statement.setString(1, data.channelId.toHex)
         statement.setBytes(2, encoded)
-        statement.setString(3, serialization.writePretty(data))
+        statement.setString(3, serialization.write(data))
         statement.executeUpdate()
       }
     }

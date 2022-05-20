@@ -20,7 +20,7 @@ object MigrateChannelsDb {
       insertStatement.setString(1, rs.getByteVector32("channel_id").toHex)
       insertStatement.setBytes(2, rs.getBytes("data"))
       val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-      val json = serialization.writePretty(state)
+      val json = serialization.write(state)
       insertStatement.setString(3, json)
       insertStatement.setBoolean(4, rs.getBoolean("is_closed"))
       insertStatement.setTimestamp(5, rs.getLongNullable("created_timestamp").map(l => Timestamp.from(Instant.ofEpochMilli(l))).orNull)
