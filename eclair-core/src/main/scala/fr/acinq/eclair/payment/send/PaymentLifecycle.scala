@@ -334,7 +334,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
       request match {
         case SendPaymentToNode(_, _, _, _, _, routeParams) =>
-          context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, routeParams.experimentName, cfg.recipientNodeId, cfg.invoice.map(_.routingInfo)))
+          val hints_opt = cfg.invoice.flatMap(invoice => if (invoice.routingInfo.isEmpty) None else Some(invoice.routingInfo))
+          context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, routeParams.experimentName, cfg.recipientNodeId, hints_opt))
         case SendPaymentToRoute(_, _, _, _) => ()
       }
     }

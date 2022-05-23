@@ -328,7 +328,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(7, m.experimentName)
         statement.setString(8, m.recipientNodeId.value.toHex)
         statement.setString(9, m.paymentHash.toHex)
-        statement.setString(10, serialization.write(m.routingHints_opt))
+        statement.setString(10, m.routingHints_opt.map(serialization.write(_)).orNull)
         statement.executeUpdate()
       }
     }
