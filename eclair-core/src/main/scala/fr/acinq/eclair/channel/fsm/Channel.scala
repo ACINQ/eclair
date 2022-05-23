@@ -1586,7 +1586,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
       if (nextState == CLOSED) {
         // channel is closed, scheduling this actor for self destruction
-        context.system.scheduler.scheduleOnce(10 seconds, self, Symbol("shutdown"))
+        context.system.scheduler.scheduleOnce(1 minute, self, Symbol("shutdown"))
       }
       if (nextState == OFFLINE) {
         // we can cancel the timer, we are not expecting anything when disconnected
