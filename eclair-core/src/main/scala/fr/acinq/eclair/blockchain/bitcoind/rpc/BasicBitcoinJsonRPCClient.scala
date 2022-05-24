@@ -56,7 +56,8 @@ class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: S
     requests.groupBy(_.method).foreach {
       case (method, calls) => Metrics.RpcBasicInvokeCount.withTag(Tags.Method, method).increment(calls.size)
     }
-    KamonExt.timeFuture(Metrics.RpcBasicInvokeDuration.withoutTags()) {
+    // for the duration metric, we use a "mixed" method for batched requests
+    KamonExt.timeFuture(Metrics.RpcBasicInvokeDuration.withTag(Tags.Method, if (requests.size == 1) requests.head.method else "mixed")) {
       for {
         response <- basicRequest
           .post(serviceUri)
