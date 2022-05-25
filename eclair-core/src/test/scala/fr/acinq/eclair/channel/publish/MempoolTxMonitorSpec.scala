@@ -70,6 +70,20 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     awaitCond(getMempool(bitcoinClient, probe).exists(_.txid == txId))
   }
 
+  test("transaction still in mempool with unconfirmed parent") {
+    val f = createFixture()
+    import f._
+
+    val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
+    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 50 sat)
+    waitTxInMempool(bitcoinClient, tx.txid, probe)
+
+    // NB: we don't really generate a block, we're testing the case where both txs are still in the mempool.
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
+    probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(), parentConfirmed = false))
+    probe.expectNoMessage(100 millis)
+  }
+
   test("transaction confirmed") {
     val f = createFixture()
     import f._
@@ -83,7 +97,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     // NB: we don't really generate a block, we're testing the case where the tx is still in the mempool.
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
-    probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight()))
+    probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(), parentConfirmed = true))
     probe.expectNoMessage(100 millis)
 
     assert(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks > 1)
