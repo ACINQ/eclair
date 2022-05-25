@@ -244,7 +244,8 @@ object NodeParams extends Logging {
       // v0.7.1
       "payment-request-expiry" -> "invoice-expiry",
       "override-features" -> "override-init-features",
-      "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis"
+      "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
+      "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
