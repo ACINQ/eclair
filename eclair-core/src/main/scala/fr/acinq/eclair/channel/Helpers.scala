@@ -266,18 +266,6 @@ object Helpers {
     result
   }
 
-  /** NB: this is a blocking call, use carefully! */
-  def getFinalScriptPubKey(wallet: OnChainAddressGenerator, chainHash: ByteVector32)(implicit ec: ExecutionContext): ByteVector = {
-    import scala.concurrent.duration._
-    val finalAddress = Await.result(wallet.getReceiveAddress(), 40 seconds)
-    Script.write(addressToPublicKeyScript(finalAddress, chainHash))
-  }
-
-  /** NB: this is a blocking call, use carefully! */
-  def getWalletPaymentBasepoint(wallet: OnChainAddressGenerator)(implicit ec: ExecutionContext): PublicKey = {
-    Await.result(wallet.getReceivePubkey(), 40 seconds)
-  }
-
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, commitments: Commitments): RelayFees = {
     val defaultFees = nodeParams.relayParams.defaultFees(commitments.announceChannel)
     nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
