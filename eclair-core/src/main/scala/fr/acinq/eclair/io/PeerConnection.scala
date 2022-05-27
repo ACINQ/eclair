@@ -95,6 +95,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       log.warning(s"authentication timed out after ${conf.authTimeout}")
       d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("authentication timed out"))
       stop(FSM.Normal)
+
+    case Event(remoteInit: protocol.Init, _) =>
+      log.debug("delaying remote init")
+      context.system.scheduler.scheduleOnce(100 millis, self, remoteInit)(context.dispatcher)
+      stay()
   }
 
   when(BEFORE_INIT) {
@@ -109,6 +114,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync, d.isPersistent)
+
+    case Event(remoteInit: protocol.Init, _) =>
+      log.debug("delaying remote init")
+      context.system.scheduler.scheduleOnce(100 millis, self, remoteInit)(context.dispatcher)
+      stay()
   }
 
   when(INITIALIZING) {
