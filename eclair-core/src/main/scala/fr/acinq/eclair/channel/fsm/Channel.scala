@@ -1884,7 +1884,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       case INPUT_RESTORED(data) => data.channelId
       case _ => stateData.channelId
     }
-    Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(id))
+    Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(id), nodeAlias_opt = Some(nodeParams.alias))
   }
 
   // we let the peer decide what to do
