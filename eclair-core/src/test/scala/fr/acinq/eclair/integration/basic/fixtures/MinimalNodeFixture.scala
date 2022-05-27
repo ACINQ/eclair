@@ -3,7 +3,9 @@ package fr.acinq.eclair.integration.basic.fixtures
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestActor, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction}
+import com.softwaremill.quicklens.ModifyPimp
+import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingDeeplyBuriedTriggered}
@@ -11,6 +13,7 @@ import fr.acinq.eclair.channel.ChannelOpenResponse.ChannelOpened
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
@@ -19,10 +22,13 @@ import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestBitcoinCoreClient}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.Assertions
 
 import java.net.InetAddress
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.duration.DurationInt
 import scala.util.{Random, Try}
 
 
@@ -43,6 +49,24 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       wallet: DummyOnChainWallet)
 
 object MinimalNodeFixture extends Assertions {
+
+  def nodeParamsFor(alias: String, seed: ByteVector32): NodeParams = {
+    NodeParams.makeNodeParams(
+      config = ConfigFactory.load().getConfig("eclair"),
+      instanceId = UUID.randomUUID(),
+      nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
+      channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
+      torAddress_opt = None,
+      database = TestDatabases.inMemoryDb(),
+      blockHeight = new AtomicLong(400_000),
+      feeEstimator = new TestFeeEstimator
+    )
+      .modify(_.alias).setTo(alias)
+      .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
+      .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
+      .modify(_.peerConnectionConf.maxRebroadcastDelay).setTo(1 second)
+  }
+
   def apply(nodeParams: NodeParams): MinimalNodeFixture = {
     implicit val system: ActorSystem = ActorSystem(s"system-${nodeParams.alias}")
     val bitcoinClient = new TestBitcoinCoreClient()

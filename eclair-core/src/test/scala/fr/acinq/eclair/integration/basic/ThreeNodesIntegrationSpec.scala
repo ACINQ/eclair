@@ -1,17 +1,13 @@
 package fr.acinq.eclair.integration.basic
 
-import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.ShortChannelId.txIndex
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestDatabases}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong}
 import org.scalatest.TestData
 import org.scalatest.concurrent.IntegrationPatience
 import scodec.bits.HexStringSyntax
-
-import scala.concurrent.duration.DurationInt
 
 
 /**
@@ -24,24 +20,10 @@ class ThreeNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
   import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture._
 
   override def createFixture(testData: TestData): FixtureParam = {
-    val aliceParams = TestConstants.Alice.nodeParams
-      .modify(_.channelConf.dustLimit).setTo(1000 sat)
-      .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
-      .modifyAll(_.relayParams.privateChannelFees.feeBase, _.relayParams.publicChannelFees.feeBase).setTo(1_000 msat)
-      .modifyAll(_.relayParams.privateChannelFees.feeProportionalMillionths, _.relayParams.publicChannelFees.feeProportionalMillionths).setTo(10)
-    val bobParams = TestConstants.Bob.nodeParams
-      .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
-      .modifyAll(_.relayParams.privateChannelFees.feeBase, _.relayParams.publicChannelFees.feeBase).setTo(1_000 msat)
-      .modifyAll(_.relayParams.privateChannelFees.feeProportionalMillionths, _.relayParams.publicChannelFees.feeProportionalMillionths).setTo(10)
-
-    val charlieSeed: ByteVector32 = ByteVector32(hex"ebd5a5d3abfb3ef73731eb3418d918f247445183180522674666db98a66411cc") // 02cccc...
-    val charlieNodeKeyManager = new LocalNodeKeyManager(charlieSeed, Block.RegtestGenesisBlock.hash)
-    val charlieChannelKeyManager = new LocalChannelKeyManager(charlieSeed, Block.RegtestGenesisBlock.hash)
-    val charlieParams = TestConstants.Bob.nodeParams
-      .modify(_.alias).setTo("charlie")
-      .modify(_.nodeKeyManager).setTo(charlieNodeKeyManager)
-      .modify(_.db).setTo(TestDatabases.inMemoryDb())
-      .modify(_.channelKeyManager).setTo(charlieChannelKeyManager)
+    // seeds have been chose so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
+    val aliceParams = nodeParamsFor("alice", ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3"))
+    val bobParams = nodeParamsFor("bob", ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492"))
+    val charlieParams = nodeParamsFor("charlie", ByteVector32(hex"ebd5a5d3abfb3ef73731eb3418d918f247445183180522674666db98a66411cc"))
     ThreeNodesFixture(aliceParams, bobParams, charlieParams)
   }
 

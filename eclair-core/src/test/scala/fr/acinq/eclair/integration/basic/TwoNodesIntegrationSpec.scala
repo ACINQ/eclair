@@ -1,13 +1,13 @@
 package fr.acinq.eclair.integration.basic
 
-import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.channel.{DATA_NORMAL, NORMAL}
 import fr.acinq.eclair.integration.basic.fixtures.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong}
 import org.scalatest.TestData
 import org.scalatest.concurrent.IntegrationPatience
+import scodec.bits.HexStringSyntax
 
 
 /**
@@ -20,9 +20,9 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
   import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture._
 
   override def createFixture(testData: TestData): FixtureParam = {
-    val aliceParams = TestConstants.Alice.nodeParams
-      .modify(_.channelConf.dustLimit).setTo(1000 sat)
-    val bobParams = TestConstants.Bob.nodeParams
+    // seeds have been chose so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
+    val aliceParams = nodeParamsFor("alice", ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3"))
+    val bobParams = nodeParamsFor("bob", ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492"))
     TwoNodesFixture(aliceParams, bobParams)
   }
 
