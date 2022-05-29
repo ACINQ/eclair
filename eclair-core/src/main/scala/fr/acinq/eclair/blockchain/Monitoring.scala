@@ -16,12 +16,20 @@
 
 package fr.acinq.eclair.blockchain
 
+import io.prometheus.client.exporter.HTTPServer
+import io.prometheus.client.{Counter, Gauge}
 import kamon.Kamon
 import kamon.metric.Metric
 
 object Monitoring {
 
   object Metrics {
+    //Prometheus Metrics
+    val MempoolMinFeeratePerKwPrometheus: Gauge  = Gauge.build().name("bitcoin_mempool_min_feerate_per_kw").help( "Minimum feerate (sat/kw) for a tx to be accepted in our mempool").register()
+    val CannotRetrieveFeeratesCountPrometheus: Counter  = Counter.build().name("bitcoin_rpc_feerates_error").help( "Number of failures to retrieve on-chain feerates").register()
+    val server: HTTPServer = new HTTPServer.Builder().withPort(1234).build();
+
+    //Kamon Metrics
     val NewBlockCheckConfirmedDuration: Metric.Timer = Kamon.timer("bitcoin.watcher.newblock.checkconfirmed")
     val RpcBasicInvokeCount: Metric.Counter = Kamon.counter("bitcoin.rpc.basic.invoke.count")
     val RpcBasicInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.basic.invoke.duration")

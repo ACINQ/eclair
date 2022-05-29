@@ -244,12 +244,14 @@ class Setup(val datadir: File,
           feeratesPerKw.set(FeeratesPerKw(feerates))
           channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong.toDouble)
           blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.mempoolMinFee.toLong.toDouble)
+          blockchain.Monitoring.Metrics.MempoolMinFeeratePerKwPrometheus.set(feeratesPerKw.get.mempoolMinFee.toLong.toDouble)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>
           logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
           blockchain.Monitoring.Metrics.CannotRetrieveFeeratesCount.withoutTags().increment()
+          blockchain.Monitoring.Metrics.CannotRetrieveFeeratesCountPrometheus.inc()
           feeratesRetrieved.tryFailure(CannotRetrieveFeerates)
       })
       _ <- feeratesRetrieved.future
