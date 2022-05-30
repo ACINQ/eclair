@@ -24,9 +24,9 @@ class RoutingHeuristicsSpec extends AnyFunSuite {
   }
 
   test("normalize when value is == max") {
-    assert(normalize(value = 100, min = 0, max = 100) == 1.0)
-    assert(normalize(value = 200, min = 10, max = 200) == 1.0)
-    assert(normalize(value = -10, min = -100, max = -10) == 1.0)
+    assert(normalize(value = 100, min = 0, max = 100) == 0.99999)
+    assert(normalize(value = 200, min = 10, max = 200) == 0.99999)
+    assert(normalize(value = -10, min = -100, max = -10) == 0.99999)
   }
 
   test("normalize when value is > max") {
@@ -36,9 +36,9 @@ class RoutingHeuristicsSpec extends AnyFunSuite {
   }
 
   test("normalize when value is very close to max") {
-    assert(normalize(value = 99.999999, min = 0, max = 100) == 0.9999999900000001)
-    assert(normalize(value = 199.999999934, min = 10, max = 200) == 0.9999999996526315)
-    assert(normalize(value = -10.000000034, min = -100, max = -10) == 0.9999999996222223)
+    assert(normalize(value = 99.999999, min = 0, max = 100) == 0.99999)
+    assert(normalize(value = 199.999999934, min = 10, max = 200) == 0.99999)
+    assert(normalize(value = -10.000000034, min = -100, max = -10) == 0.99999)
   }
 
 }

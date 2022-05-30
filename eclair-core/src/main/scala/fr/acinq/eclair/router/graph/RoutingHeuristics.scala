@@ -17,17 +17,17 @@
 package fr.acinq.eclair.router.graph
 
 import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc}
-import fr.acinq.eclair.ToMilliSatoshiConversion
+import fr.acinq.eclair.{MilliSatoshi, ToMilliSatoshiConversion}
 
 
 object RoutingHeuristics {
 
   // Number of blocks in one year
-  val BLOCK_TIME_ONE_YEAR = 365 * 24 * 6
+  val BLOCK_TIME_ONE_YEAR: Int = 365 * 24 * 6
 
   // Low/High bound for channel capacity
-  val CAPACITY_CHANNEL_LOW = MilliBtc(1).toMilliSatoshi
-  val CAPACITY_CHANNEL_HIGH = Btc(1).toMilliSatoshi
+  val CAPACITY_CHANNEL_LOW: MilliSatoshi = MilliBtc(1).toMilliSatoshi
+  val CAPACITY_CHANNEL_HIGH: MilliSatoshi = Btc(1).toMilliSatoshi
 
   // Low/High bound for CLTV channel value
   val CLTV_LOW = 9
@@ -38,9 +38,10 @@ object RoutingHeuristics {
    * extremes but always bigger than zero so it's guaranteed to never return zero
    */
   def normalize(value: Double, min: Double, max: Double): Double = {
-    if (value <= min) 0.00001D
-    else if (value > max) 0.99999D
-    else (value - min) / (max - min)
+    val extent = max - min
+    val clampedValue = Math.min(Math.max(min, value), max)
+    val normalized = (clampedValue - min) / extent
+    Math.min(Math.max(0.00001D, normalized), 0.99999D)
   }
 
 }
