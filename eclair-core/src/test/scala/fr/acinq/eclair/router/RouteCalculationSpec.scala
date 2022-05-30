@@ -22,11 +22,12 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Satoshi,
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
-import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, RichWeight, WeightRatios}
+import fr.acinq.eclair.router.graph.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
+import fr.acinq.eclair.router.graph.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.graph.Graph.{HeuristicsConstants, RichWeight, WeightRatios}
 import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.router.graph.Graph
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, ShortChannelIdSpec, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, randomKey}

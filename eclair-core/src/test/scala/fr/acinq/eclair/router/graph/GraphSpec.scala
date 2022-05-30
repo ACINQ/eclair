@@ -19,10 +19,11 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
+import fr.acinq.eclair.router.graph.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.graph.Graph.{HeuristicsConstants, yenKshortestPaths, WeightRatios}
+import fr.acinq.eclair.router.graph.Path.WeightRatios
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._

@@ -1,28 +1,15 @@
-/*
- * Copyright 2019 ACINQ SAS
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+package fr.acinq.eclair.router.graph
 
-package fr.acinq.eclair.router
-
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc, Satoshi}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.router.graph.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{RealShortChannelId, _}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, ShortChannelId, nodeFee}
+import fr.acinq.eclair._
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
@@ -602,8 +589,11 @@ object Graph {
 
       // @formatter:off
       def apply(): DirectedGraph = new DirectedGraph(Map())
+
       def apply(key: PublicKey): DirectedGraph = new DirectedGraph(Map(key -> List.empty))
+
       def apply(edge: GraphEdge): DirectedGraph = DirectedGraph().addEdge(edge)
+
       def apply(edges: Seq[GraphEdge]): DirectedGraph = DirectedGraph().addEdges(edges)
       // @formatter:on
 

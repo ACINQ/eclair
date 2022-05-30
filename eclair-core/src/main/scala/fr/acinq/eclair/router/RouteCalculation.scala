@@ -23,11 +23,13 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
-import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight, RoutingHeuristics}
+import fr.acinq.eclair.router.graph.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
+import fr.acinq.eclair.router.graph.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.graph.Graph.{InfiniteLoop, NegativeProbability, RichWeight, RoutingHeuristics}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.router.graph.Graph
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec

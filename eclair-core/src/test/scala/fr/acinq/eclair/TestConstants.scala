@@ -27,7 +27,7 @@ import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.graph.Graph.WeightRatios
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
