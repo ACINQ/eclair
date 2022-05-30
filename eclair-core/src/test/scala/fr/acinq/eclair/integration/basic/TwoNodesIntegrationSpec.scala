@@ -20,7 +20,7 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
   import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture._
 
   override def createFixture(testData: TestData): FixtureParam = {
-    // seeds have been chose so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
+    // seeds have been chosen so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
     val aliceParams = nodeParamsFor("alice", ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3"))
     val bobParams = nodeParamsFor("bob", ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492"))
     TwoNodesFixture(aliceParams, bobParams)
