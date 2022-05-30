@@ -60,8 +60,7 @@ object MinimalNodeFixture extends Assertions {
       database = TestDatabases.inMemoryDb(),
       blockHeight = new AtomicLong(400_000),
       feeEstimator = new TestFeeEstimator
-    )
-      .modify(_.alias).setTo(alias)
+    ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
       .modify(_.peerConnectionConf.maxRebroadcastDelay).setTo(1 second)
@@ -226,7 +225,7 @@ object MinimalNodeFixture extends Assertions {
     (BlockHeight(blockHeight), txIndex)
   }
 
-  /** */
+  /** An autopilot method for the watcher, that handled funding confirmation requests from the channel */
   def autoConfirmLocalChannels(fundingTxs: collection.concurrent.Map[ByteVector32, Transaction]): TestActor.AutoPilot = (_, msg) => msg match {
     case watch: ZmqWatcher.WatchFundingConfirmed =>
       val (blockHeight, txIndex) = deterministicShortId(watch.txId)
