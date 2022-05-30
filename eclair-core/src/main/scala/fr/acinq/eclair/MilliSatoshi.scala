@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.{Btc, BtcAmount, MilliBtc, Satoshi, btc2sato
  */
 
 /**
- * One MilliSatoshi is a thousand of a Satoshi, the smallest unit usable in bitcoin
+ * One MilliSatoshi is a thousandth of a Satoshi, the smallest unit usable in bitcoin
  */
 case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatoshi] {
 

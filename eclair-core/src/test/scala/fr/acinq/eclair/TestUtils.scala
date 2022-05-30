@@ -36,7 +36,7 @@ object TestUtils {
   val BUILD_DIRECTORY = sys
     .props
     .get("buildDirectory") // this is defined if we run from maven
-    .getOrElse(new File(sys.props("user.dir"), "target").getAbsolutePath) // otherwise we probably are in intellij, so we build it manually assuming that user.dir == path to the module
+    .getOrElse(new File(sys.props("user.dir"), "eclair-core/target").getAbsolutePath) // otherwise we probably are in intellij, so we build it manually assuming that user.dir == path to the module
 
   def availablePort: Int = synchronized {
     var serverSocket: ServerSocket = null
