@@ -23,13 +23,12 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
-import fr.acinq.eclair.router.graph.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.graph.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.graph.Graph.{InfiniteLoop, NegativeProbability, RichWeight, RoutingHeuristics}
+import fr.acinq.eclair.router.graph.GraphStructure.DirectedGraph.graphEdgeToHop
+import fr.acinq.eclair.router.graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.graph.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.graph.Graph
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import fr.acinq.eclair.router.graph.{Graph, RoutingHeuristics, ShortestPathFinder}
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec
@@ -247,7 +246,9 @@ object RouteCalculation {
 
     val boundaries: RichWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
+    val foundRoutes: Seq[Graph.WeightedPath] =
+      new ShortestPathFinder().yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges,
+                                                 numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
       val routes = if (routeParams.randomize) {
