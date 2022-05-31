@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
-import fr.acinq.eclair.router.graph.Graph.HeuristicsConstants
+import fr.acinq.eclair.router.graph.Path.HeuristicsConstants
 import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId}
 import org.scalatest.funsuite.AnyFunSuite

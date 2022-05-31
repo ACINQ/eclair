@@ -23,11 +23,11 @@ import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.graph.structure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.graph.Graph.{HeuristicsConstants, RichWeight, WeightRatios}
+import fr.acinq.eclair.router.graph.Path.{HeuristicsConstants, RichWeight, WeightRatios}
 import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.graph.{Graph, ShortestPathFinder}
+import fr.acinq.eclair.router.graph.{Path, ShortestPathFinder}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, ShortChannelIdSpec, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, randomKey}
@@ -124,7 +124,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 7 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
-    val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, BlockHeight(0), Left(NO_WEIGHT_RATIOS), includeLocalChannelCost = false)
+    val weightedPath = Path.pathWeight(a, route2Edges(route), amount, BlockHeight(0), Left(NO_WEIGHT_RATIOS), includeLocalChannelCost = false)
     assert(route2Ids(route) == 4 :: 5 :: 6 :: Nil)
     assert(weightedPath.length == 3)
     assert(weightedPath.amount == expectedCost)
@@ -800,7 +800,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     for (_ <- 0 to 10) {
       val Success(routes) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, strictFee, numRoutes = 3, routeParams = strictFeeParams, currentBlockHeight = BlockHeight(400000))
       assert(routes.length == 2, routes)
-      val weightedPath = Graph.pathWeight(a, route2Edges(routes.head), DEFAULT_AMOUNT_MSAT, BlockHeight(400000), Left(NO_WEIGHT_RATIOS), includeLocalChannelCost = false)
+      val weightedPath = Path.pathWeight(a, route2Edges(routes.head), DEFAULT_AMOUNT_MSAT, BlockHeight(400000), Left(NO_WEIGHT_RATIOS), includeLocalChannelCost = false)
       val totalFees = weightedPath.amount - DEFAULT_AMOUNT_MSAT
       // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7 msat of fees)
       assert(totalFees == 5.msat || totalFees == 6.msat)
@@ -962,19 +962,19 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val bc = makeEdge(10L, b, c, feeBase = 5 msat, 10000, minHtlc = 100 msat, maxHtlc = Some(400 msat), capacity = 1 sat)
     val cd = makeEdge(20L, c, d, feeBase = 5 msat, 10000, minHtlc = 50 msat, maxHtlc = Some(500 msat), capacity = 1 sat)
 
-    assert(Graph.validatePath(Nil, 200 msat)) // ok
-    assert(Graph.validatePath(Seq(ab), 260 msat)) // ok
-    assert(!Graph.validatePath(Seq(ab), 10000 msat)) // above max-htlc
-    assert(Graph.validatePath(Seq(ab, bc), 250 msat)) // ok
-    assert(!Graph.validatePath(Seq(ab, bc), 255 msat)) // above balance (AB)
-    assert(Graph.validatePath(Seq(ab, bc, cd), 200 msat)) // ok
-    assert(!Graph.validatePath(Seq(ab, bc, cd), 25 msat)) // below min-htlc (CD)
-    assert(!Graph.validatePath(Seq(ab, bc, cd), 60 msat)) // below min-htlc (BC)
-    assert(!Graph.validatePath(Seq(ab, bc, cd), 110 msat)) // below min-htlc (AB)
-    assert(!Graph.validatePath(Seq(ab, bc, cd), 550 msat)) // above max-htlc (CD)
-    assert(!Graph.validatePath(Seq(ab, bc, cd), 450 msat)) // above max-htlc (BC)
-    assert(!Graph.validatePath(Seq(ab, bc, cd), 350 msat)) // above max-htlc (AB)
-    assert(!Graph.validatePath(Seq(ab, bc, cd), 250 msat)) // above balance (AB)
+    assert(Path.validatePath(Nil, 200 msat)) // ok
+    assert(Path.validatePath(Seq(ab), 260 msat)) // ok
+    assert(!Path.validatePath(Seq(ab), 10000 msat)) // above max-htlc
+    assert(Path.validatePath(Seq(ab, bc), 250 msat)) // ok
+    assert(!Path.validatePath(Seq(ab, bc), 255 msat)) // above balance (AB)
+    assert(Path.validatePath(Seq(ab, bc, cd), 200 msat)) // ok
+    assert(!Path.validatePath(Seq(ab, bc, cd), 25 msat)) // below min-htlc (CD)
+    assert(!Path.validatePath(Seq(ab, bc, cd), 60 msat)) // below min-htlc (BC)
+    assert(!Path.validatePath(Seq(ab, bc, cd), 110 msat)) // below min-htlc (AB)
+    assert(!Path.validatePath(Seq(ab, bc, cd), 550 msat)) // above max-htlc (CD)
+    assert(!Path.validatePath(Seq(ab, bc, cd), 450 msat)) // above max-htlc (BC)
+    assert(!Path.validatePath(Seq(ab, bc, cd), 350 msat)) // above max-htlc (AB)
+    assert(!Path.validatePath(Seq(ab, bc, cd), 250 msat)) // above balance (AB)
   }
 
   test("calculate multipart route to neighbor (many channels, known balance)") {

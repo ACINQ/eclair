@@ -24,7 +24,7 @@ import fr.acinq.eclair._
 
 import scala.annotation.tailrec
 
-object Graph {
+object Path {
 
   /**
    * The cumulative weight of a set of edges (path in the graph).

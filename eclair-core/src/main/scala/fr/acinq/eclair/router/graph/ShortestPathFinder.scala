@@ -21,7 +21,7 @@ import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta}
 import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router.ChannelDesc
-import fr.acinq.eclair.router.graph.Graph.{HeuristicsConstants, InfiniteLoop, NodeComparator, RichWeight, WeightRatios, WeightedNode, WeightedPath, addEdgeWeight}
+import fr.acinq.eclair.router.graph.Path.{HeuristicsConstants, InfiniteLoop, NodeComparator, RichWeight, WeightRatios, WeightedNode, WeightedPath, addEdgeWeight}
 import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
 
 import scala.collection.mutable
@@ -72,7 +72,7 @@ class ShortestPathFinder {
 
     var allSpurPathsFound = false
     val shortestPaths = new mutable.Queue[PathWithSpur]
-    shortestPaths.enqueue(PathWithSpur(WeightedPath(shortestPath, Graph.pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr, includeLocalChannelCost)), 0))
+    shortestPaths.enqueue(PathWithSpur(WeightedPath(shortestPath, Path.pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr, includeLocalChannelCost)), 0))
     // stores the candidates for the k-th shortest path, sorted by path cost
     val candidates = new mutable.PriorityQueue[PathWithSpur]
 
@@ -97,12 +97,12 @@ class ShortestPathFinder {
           val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i) == rootPathEdges => p.p.path(p.p.path.length - 1 - i).desc }.toSet
           // we also want to ignore any vertex on the root path to prevent loops
           val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
-          val rootPathWeight = Graph.pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
+          val rootPathWeight = Path.pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
           // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
           val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
           if (spurPath.nonEmpty) {
             val completePath = spurPath ++ rootPathEdges
-            val candidatePath = WeightedPath(completePath, Graph.pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
+            val candidatePath = WeightedPath(completePath, Path.pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
             candidates.enqueue(PathWithSpur(candidatePath, i))
           }
         }
@@ -191,7 +191,7 @@ class ShortestPathFinder {
             !ignoredVertices.contains(neighbor)) {
             // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
             // will be relayed through that edge is the one in `currentWeight`.
-            val neighborWeight = Graph.addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, includeLocalChannelCost)
+            val neighborWeight = Path.addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, includeLocalChannelCost)
             if (boundaries(neighborWeight)) {
               val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), 0.0, MilliSatoshi(Long.MaxValue), MilliSatoshi(Long.MaxValue), Double.MaxValue))
               // if this path between neighbor and the target has a shorter distance than previously known, we select it

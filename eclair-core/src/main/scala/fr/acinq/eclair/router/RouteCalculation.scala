@@ -25,10 +25,10 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.graph.structure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.graph.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
+import fr.acinq.eclair.router.graph.Path.{InfiniteLoop, NegativeProbability, RichWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.graph.{Graph, RoutingHeuristics, ShortestPathFinder}
+import fr.acinq.eclair.router.graph.{Path, RoutingHeuristics, ShortestPathFinder}
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec
@@ -233,7 +233,7 @@ object RouteCalculation {
                                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
-                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[Graph.WeightedPath]] = {
+                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[Path.WeightedPath]] = {
     require(amount > 0.msat, "route amount must be strictly positive")
 
     if (localNodeId == targetNodeId) return Left(CannotRouteToSelf)
@@ -246,7 +246,7 @@ object RouteCalculation {
 
     val boundaries: RichWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes: Seq[Graph.WeightedPath] =
+    val foundRoutes: Seq[Path.WeightedPath] =
       new ShortestPathFinder().yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges,
                                                  numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
     if (foundRoutes.nonEmpty) {
@@ -347,7 +347,7 @@ object RouteCalculation {
   }
 
   @tailrec
-  private def split(amount: MilliSatoshi, paths: mutable.Queue[Graph.WeightedPath], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
+  private def split(amount: MilliSatoshi, paths: mutable.Queue[Path.WeightedPath], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
     if (amount == 0.msat) {
       Right(selectedRoutes)
     } else if (paths.isEmpty) {
