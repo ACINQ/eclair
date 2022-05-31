@@ -106,52 +106,62 @@ object Path {
     val totalFees = prev.fees + fee
     val cltv = if (edge.desc.a == sender && !includeLocalChannelCost) CltvExpiryDelta(0) else edge.params.cltvExpiryDelta
     val totalCltv = prev.cltv + cltv
+
     weightRatios match {
       case Left(weightRatios) =>
-        val hopCost = if (edge.desc.a == sender) 0 msat else nodeFee(weightRatios.hopCost, prev.amount)
-        import RoutingHeuristics._
+        addEdgeWeight(sender, edge, prev, currentBlockHeight, totalAmount, fee, totalFees, totalCltv, weightRatios)
+      case Right(heuristicsConstants) =>
+        addEdgeWeight(edge, prev, totalAmount, fee, totalFees, cltv, totalCltv, heuristicsConstants)
+    }
+  }
 
-        // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
-        val ageFactor = edge.desc.shortChannelId match {
-          case real: RealShortChannelId => normalize(real.blockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
+  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: BlockHeight, totalAmount: MilliSatoshi, fee: MilliSatoshi, totalFees: MilliSatoshi, totalCltv: CltvExpiryDelta, weightRatios: WeightRatios): RichWeight = {
+    val hopCost = if (edge.desc.a == sender) 0 msat else nodeFee(weightRatios.hopCost, prev.amount)
+    import RoutingHeuristics._
+
+    // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
+    val ageFactor = edge.desc.shortChannelId match {
+    case real: RealShortChannelId => normalize(real.blockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
           // for local channels or route hints we don't easily have access to the channel block height, but we want to
           // give them the best score anyway
           case _: Alias => 1
           case _: UnspecifiedShortChannelId => 1
         }
 
-        // Every edge is weighted by channel capacity, larger channels add less weight
-        val edgeMaxCapacity = edge.capacity.toMilliSatoshi
-        val capFactor =
-          if (edge.balance_opt.isDefined) 0 // If we know the balance of the channel we treat it as if it had the maximum capacity.
-          else 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
+    // Every edge is weighted by channel capacity, larger channels add less weight
+    val edgeMaxCapacity = edge.capacity.toMilliSatoshi
+    val capFactor =
+      if (edge.balance_opt.isDefined) 0 // If we know the balance of the channel we treat it as if it had the maximum capacity.
+      else 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
 
-        // Every edge is weighted by its cltv-delta value, normalized
-        val cltvFactor = normalize(edge.params.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
+    // Every edge is weighted by its cltv-delta value, normalized
+    val cltvFactor = normalize(edge.params.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
 
-        // NB we're guaranteed to have weightRatios and factors > 0
-        val factor = weightRatios.baseFactor + (cltvFactor * weightRatios.cltvDeltaFactor) + (ageFactor * weightRatios.ageFactor) + (capFactor * weightRatios.capacityFactor)
-        val totalWeight = prev.weight + (fee + hopCost).toLong * factor
-        RichWeight(totalAmount, prev.length + 1, totalCltv, 1.0, totalFees, 0 msat, totalWeight)
-      case Right(heuristicsConstants) =>
-        val hopCost = nodeFee(heuristicsConstants.hopCost, prev.amount)
-        val totalHopsCost = prev.virtualFees + hopCost
-        // If we know the balance of the channel, then we will check separately that it can relay the payment.
-        val successProbability = if (edge.balance_opt.nonEmpty) 1.0 else 1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
-        if (successProbability < 0) {
-          throw NegativeProbability(edge, prev, heuristicsConstants)
-        }
-        val totalSuccessProbability = prev.successProbability * successProbability
-        val failureCost = nodeFee(heuristicsConstants.failureCost, totalAmount)
-        if (heuristicsConstants.useLogProbability) {
-          val riskCost = totalAmount.toLong * cltv.toInt * heuristicsConstants.lockedFundsRisk
-          val weight = prev.weight + fee.toLong + hopCost.toLong + riskCost - failureCost.toLong * math.log(successProbability)
-          RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
-        } else {
-          val totalRiskCost = totalAmount.toLong * totalCltv.toInt * heuristicsConstants.lockedFundsRisk
-          val weight = totalFees.toLong + totalHopsCost.toLong + totalRiskCost + failureCost.toLong / totalSuccessProbability
-          RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
-        }
+    // NB we're guaranteed to have weightRatios and factors > 0
+    val factor = weightRatios.baseFactor + (cltvFactor * weightRatios.cltvDeltaFactor) + (ageFactor * weightRatios.ageFactor) + (capFactor * weightRatios.capacityFactor)
+    val totalWeight = prev.weight + (fee + hopCost).toLong * factor
+    RichWeight(totalAmount, prev.length + 1, totalCltv, 1.0, totalFees, 0 msat, totalWeight)
+  }
+
+
+  private def addEdgeWeight(edge: GraphEdge, prev: RichWeight, totalAmount: MilliSatoshi, fee: MilliSatoshi, totalFees: MilliSatoshi, cltv: CltvExpiryDelta, totalCltv: CltvExpiryDelta, heuristicsConstants: HeuristicsConstants): RichWeight = {
+    val hopCost = nodeFee(heuristicsConstants.hopCost, prev.amount)
+    val totalHopsCost = prev.virtualFees + hopCost
+    // If we know the balance of the channel, then we will check separately that it can relay the payment.
+    val successProbability = if (edge.balance_opt.nonEmpty) 1.0 else 1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
+    if (successProbability < 0) {
+      throw NegativeProbability(edge, prev, heuristicsConstants)
+    }
+    val totalSuccessProbability = prev.successProbability * successProbability
+    val failureCost = nodeFee(heuristicsConstants.failureCost, totalAmount)
+    if (heuristicsConstants.useLogProbability) {
+      val riskCost = totalAmount.toLong * cltv.toInt * heuristicsConstants.lockedFundsRisk
+      val weight = prev.weight + fee.toLong + hopCost.toLong + riskCost - failureCost.toLong * math.log(successProbability)
+      RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
+    } else {
+      val totalRiskCost = totalAmount.toLong * totalCltv.toInt * heuristicsConstants.lockedFundsRisk
+      val weight = totalFees.toLong + totalHopsCost.toLong + totalRiskCost + failureCost.toLong / totalSuccessProbability
+      RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
     }
   }
 
