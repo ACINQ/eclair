@@ -23,8 +23,8 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
-import fr.acinq.eclair.router.graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.graph.structure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.graph.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._

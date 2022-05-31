@@ -18,7 +18,7 @@ package fr.acinq.eclair.router.graph
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.graph.GraphStructure.GraphEdge
+import fr.acinq.eclair.router.graph.structure.GraphEdge
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, ShortChannelId, nodeFee}
 import fr.acinq.eclair._
 

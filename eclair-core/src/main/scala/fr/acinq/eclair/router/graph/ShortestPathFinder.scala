@@ -22,7 +22,7 @@ import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta}
 import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.router.graph.Graph.{HeuristicsConstants, InfiniteLoop, NodeComparator, RichWeight, WeightRatios, WeightedNode, WeightedPath, addEdgeWeight}
-import fr.acinq.eclair.router.graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
 
 import scala.collection.mutable
 
