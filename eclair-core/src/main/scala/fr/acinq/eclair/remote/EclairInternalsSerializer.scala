@@ -25,7 +25,7 @@ import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
-import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries, SendChannelQuery}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -108,7 +108,8 @@ object EclairInternalsSerializer {
       ("pingDisconnect" | bool(8)) ::
       ("maxRebroadcastDelay" | finiteDurationCodec) ::
       ("killIdleDelay" | finiteDurationCodec) ::
-      ("maxOnionMessagesPerSecond" | int32)).as[PeerConnection.Conf]
+      ("maxOnionMessagesPerSecond" | int32) ::
+      ("sendRemoteAddressInit" | bool(8))).as[PeerConnection.Conf]
 
   val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
 

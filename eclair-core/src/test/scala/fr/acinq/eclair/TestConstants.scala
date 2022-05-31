@@ -154,7 +154,8 @@ object TestConstants {
         pingDisconnect = true,
         maxRebroadcastDelay = 5 seconds,
         killIdleDelay = 1 seconds,
-        maxOnionMessagesPerSecond = 10
+        maxOnionMessagesPerSecond = 10,
+        sendRemoteAddressInit = true,
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
@@ -289,7 +290,8 @@ object TestConstants {
         pingDisconnect = true,
         maxRebroadcastDelay = 5 seconds,
         killIdleDelay = 10 seconds,
-        maxOnionMessagesPerSecond = 10
+        maxOnionMessagesPerSecond = 10,
+        sendRemoteAddressInit = true,
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
