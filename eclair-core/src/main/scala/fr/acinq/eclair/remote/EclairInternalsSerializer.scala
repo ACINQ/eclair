@@ -31,7 +31,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.queryFlagsCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InitFeature}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features}
 import scodec._
 import scodec.codecs._
 
@@ -108,7 +108,8 @@ object EclairInternalsSerializer {
       ("pingDisconnect" | bool(8)) ::
       ("maxRebroadcastDelay" | finiteDurationCodec) ::
       ("killIdleDelay" | finiteDurationCodec) ::
-      ("maxOnionMessagesPerSecond" | int32)).as[PeerConnection.Conf]
+      ("maxOnionMessagesPerSecond" | int32) ::
+      ("sendRemoteAddressInit" | bool(8))).as[PeerConnection.Conf]
 
   val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
 
