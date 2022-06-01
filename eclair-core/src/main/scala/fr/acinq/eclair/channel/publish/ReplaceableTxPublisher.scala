@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, ReplaceableTxWithWitnessData}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{BlockHeight, NodeParams}
 
 import scala.concurrent.duration.{DurationInt, DurationLong}
@@ -195,10 +196,17 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {
-          case MempoolTxMonitor.TxInMempool(_, currentBlockHeight) =>
-            context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.feeTargets.safeUtxosThreshold)) {
-              case Success(isSafe) => CheckUtxosResult(isSafe, currentBlockHeight)
-              case Failure(_) => CheckUtxosResult(isSafe = false, currentBlockHeight) // if we can't check our utxos, we assume the worst
+          case MempoolTxMonitor.TxInMempool(_, currentBlockHeight, parentConfirmed) =>
+            val shouldRbf = cmd.txInfo match {
+              // Our commit tx was confirmed on its own, so there's no need to increase fees on the anchor tx.
+              case _: Transactions.ClaimLocalAnchorOutputTx if parentConfirmed => false
+              case _ => true
+            }
+            if (shouldRbf) {
+              context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.feeTargets.safeUtxosThreshold)) {
+                case Success(isSafe) => CheckUtxosResult(isSafe, currentBlockHeight)
+                case Failure(_) => CheckUtxosResult(isSafe = false, currentBlockHeight) // if we can't check our utxos, we assume the worst
+              }
             }
             Behaviors.same
           case MempoolTxMonitor.TxRecentlyConfirmed(_, _) => Behaviors.same // just wait for the tx to be deeply buried
