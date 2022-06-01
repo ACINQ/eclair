@@ -114,8 +114,8 @@ class FeaturesSpec extends AnyFunSuite {
 
     for ((testCase, valid) <- testCases) {
       if (valid) {
-        assert(validateFeatureGraph(Features(testCase)) === None)
-        assert(validateFeatureGraph(Features(testCase.bytes)) === None)
+        assert(validateFeatureGraph(Features(testCase)) == None)
+        assert(validateFeatureGraph(Features(testCase.bytes)) == None)
       } else {
         assert(validateFeatureGraph(Features(testCase)).nonEmpty)
         assert(validateFeatureGraph(Features(testCase.bytes)).nonEmpty)
@@ -220,9 +220,9 @@ class FeaturesSpec extends AnyFunSuite {
     )
 
     for (testCase <- testCases) {
-      assert(areCompatible(testCase.ours, testCase.theirs) === testCase.compatible, testCase)
-      assert(testCase.ours.areSupported(testCase.theirs) === testCase.oursSupportTheirs, testCase)
-      assert(testCase.theirs.areSupported(testCase.ours) === testCase.theirsSupportOurs, testCase)
+      assert(areCompatible(testCase.ours, testCase.theirs) == testCase.compatible, testCase)
+      assert(testCase.ours.areSupported(testCase.theirs) == testCase.oursSupportTheirs, testCase)
+      assert(testCase.theirs.areSupported(testCase.ours) == testCase.theirsSupportOurs, testCase)
     }
   }
 
@@ -231,15 +231,15 @@ class FeaturesSpec extends AnyFunSuite {
       Map(DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
       Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     )
-    assert(features.initFeatures() === Features(
+    assert(features.initFeatures() == Features(
       Map(DataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
       Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     ))
-    assert(features.nodeAnnouncementFeatures() === Features(
+    assert(features.nodeAnnouncementFeatures() == Features(
       Map(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
       Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     ))
-    assert(features.invoiceFeatures() === Features(
+    assert(features.invoiceFeatures() == Features(
       Map(VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
       Set(UnknownFeature(753), UnknownFeature(852), UnknownFeature(65303))
     ))
@@ -255,11 +255,11 @@ class FeaturesSpec extends AnyFunSuite {
     )
 
     for ((bin, features) <- testCases) {
-      assert(features.toByteVector === bin)
-      assert(Features(bin) === features)
+      assert(features.toByteVector == bin)
+      assert(Features(bin) == features)
       val notMinimallyEncoded = Features(hex"00" ++ bin)
-      assert(notMinimallyEncoded === features)
-      assert(notMinimallyEncoded.toByteVector === bin) // features are minimally-encoded when converting to bytes
+      assert(notMinimallyEncoded == features)
+      assert(notMinimallyEncoded.toByteVector == bin) // features are minimally-encoded when converting to bytes
     }
   }
 
@@ -277,9 +277,9 @@ class FeaturesSpec extends AnyFunSuite {
         """)
 
       val features = fromConfiguration(conf)
-      assert(features.toByteVector === hex"028a8a")
-      assert(Features(hex"028a8a") === features)
-      assert(validateFeatureGraph(features) === None)
+      assert(features.toByteVector == hex"028a8a")
+      assert(Features(hex"028a8a") == features)
+      assert(validateFeatureGraph(features) == None)
       assert(features.hasFeature(DataLossProtect, Some(Optional)))
       assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
       assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
@@ -300,9 +300,9 @@ class FeaturesSpec extends AnyFunSuite {
         """)
 
       val features = fromConfiguration(conf)
-      assert(features.toByteVector === hex"068a")
-      assert(Features(hex"068a") === features)
-      assert(validateFeatureGraph(features) === None)
+      assert(features.toByteVector == hex"068a")
+      assert(Features(hex"068a") == features)
+      assert(validateFeatureGraph(features) == None)
       assert(features.hasFeature(DataLossProtect, Some(Optional)))
       assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
       assert(!features.hasFeature(InitialRoutingSync, Some(Mandatory)))

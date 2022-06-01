@@ -85,8 +85,8 @@ class PaymentsDbSpec extends AnyFunSuite {
         db.addIncomingPayment(i1, preimage1)
         db.receiveIncomingPayment(i1.paymentHash, 550 msat, 1100 unixms)
 
-        assert(db.listIncomingPayments(1 unixms, 1500 unixms) === Seq(pr1))
-        assert(db.listOutgoingPayments(1 unixms, 1500 unixms) === Seq(ps1))
+        assert(db.listIncomingPayments(1 unixms, 1500 unixms) == Seq(pr1))
+        assert(db.listOutgoingPayments(1 unixms, 1500 unixms) == Seq(ps1))
 
       }
     )
@@ -184,9 +184,9 @@ class PaymentsDbSpec extends AnyFunSuite {
       postCheck = _ => {
         val db = dbs.db.payments
 
-        assert(db.getIncomingPayment(i1.paymentHash) === Some(pr1))
-        assert(db.getIncomingPayment(i2.paymentHash) === Some(pr2))
-        assert(db.listOutgoingPayments(1 unixms, 2000 unixms) === Seq(ps1, ps2, ps3))
+        assert(db.getIncomingPayment(i1.paymentHash) == Some(pr1))
+        assert(db.getIncomingPayment(i2.paymentHash) == Some(pr2))
+        assert(db.listOutgoingPayments(1 unixms, 2000 unixms) == Seq(ps1, ps2, ps3))
 
         val i3 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), paymentHash3, alicePriv, Left("invoice #3"), CltvExpiryDelta(18), expirySeconds = Some(30))
         val pr3 = IncomingPayment(i3, preimage3, PaymentType.Standard, i3.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
@@ -201,9 +201,9 @@ class PaymentsDbSpec extends AnyFunSuite {
         db.addOutgoingPayment(ps6.copy(status = OutgoingPaymentStatus.Pending))
         db.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1300 unixms))
 
-        assert(db.listOutgoingPayments(1 unixms, 2000 unixms) === Seq(ps1, ps2, ps3, ps4, ps5, ps6))
-        assert(db.listIncomingPayments(1 unixms, TimestampMilli.now()) === Seq(pr1, pr2, pr3))
-        assert(db.listExpiredIncomingPayments(1 unixms, 2000 unixms) === Seq(pr2))
+        assert(db.listOutgoingPayments(1 unixms, 2000 unixms) == Seq(ps1, ps2, ps3, ps4, ps5, ps6))
+        assert(db.listIncomingPayments(1 unixms, TimestampMilli.now()) == Seq(pr1, pr2, pr3))
+        assert(db.listExpiredIncomingPayments(1 unixms, 2000 unixms) == Seq(pr2))
       })
   }
 
@@ -284,8 +284,8 @@ class PaymentsDbSpec extends AnyFunSuite {
       targetVersion = SqlitePaymentsDb.CURRENT_VERSION,
       postCheck = _ => {
         val db = dbs.db.payments
-        assert(db.getOutgoingPayment(id1) === Some(ps1))
-        assert(db.listOutgoingPayments(parentId) === Seq(ps2, ps3))
+        assert(db.getOutgoingPayment(id1) == Some(ps1))
+        assert(db.listOutgoingPayments(parentId) == Seq(ps2, ps3))
       }
     )
   }
@@ -378,18 +378,18 @@ class PaymentsDbSpec extends AnyFunSuite {
       postCheck = _ => {
         val db = dbs.db.payments
 
-        assert(db.getIncomingPayment(i1.paymentHash) === Some(pr1))
-        assert(db.getIncomingPayment(i2.paymentHash) === Some(pr2))
-        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli)) === Seq(pr2, pr1))
-        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli)) === Seq(pr2))
-        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli)) === Seq.empty)
-        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli)) === Seq(pr2))
-        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli)) === Seq(pr2))
-        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli)) === Seq.empty)
+        assert(db.getIncomingPayment(i1.paymentHash) == Some(pr1))
+        assert(db.getIncomingPayment(i2.paymentHash) == Some(pr2))
+        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli)) == Seq(pr2, pr1))
+        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli)) == Seq(pr2))
+        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli)) == Seq.empty)
+        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli)) == Seq(pr2))
+        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli)) == Seq(pr2))
+        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli)) == Seq.empty)
 
-        assert(db.listOutgoingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2021-12-31T23:59:59.00Z").toEpochMilli)) === Seq(ps2, ps1, ps3))
-        assert(db.listOutgoingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2021-01-15T23:59:59.00Z").toEpochMilli)) === Seq(ps2, ps1))
-        assert(db.listOutgoingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli)) === Seq.empty)
+        assert(db.listOutgoingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2021-12-31T23:59:59.00Z").toEpochMilli)) == Seq(ps2, ps1, ps3))
+        assert(db.listOutgoingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2021-01-15T23:59:59.00Z").toEpochMilli)) == Seq(ps2, ps1))
+        assert(db.listOutgoingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli)) == Seq.empty)
       }
     )
   }
@@ -427,29 +427,29 @@ class PaymentsDbSpec extends AnyFunSuite {
       db.addIncomingPayment(paidInvoice1, payment1.paymentPreimage)
       db.addIncomingPayment(paidInvoice2, payment2.paymentPreimage)
 
-      assert(db.getIncomingPayment(pendingInvoice1.paymentHash) === Some(pendingPayment1))
-      assert(db.getIncomingPayment(expiredInvoice2.paymentHash) === Some(expiredPayment2))
-      assert(db.getIncomingPayment(paidInvoice1.paymentHash) === Some(payment1.copy(status = IncomingPaymentStatus.Pending)))
+      assert(db.getIncomingPayment(pendingInvoice1.paymentHash) == Some(pendingPayment1))
+      assert(db.getIncomingPayment(expiredInvoice2.paymentHash) == Some(expiredPayment2))
+      assert(db.getIncomingPayment(paidInvoice1.paymentHash) == Some(payment1.copy(status = IncomingPaymentStatus.Pending)))
 
       val now = TimestampMilli.now()
-      assert(db.listIncomingPayments(0 unixms, now) === Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
-      assert(db.listExpiredIncomingPayments(0 unixms, now) === Seq(expiredPayment1, expiredPayment2))
-      assert(db.listReceivedIncomingPayments(0 unixms, now) === Nil)
-      assert(db.listPendingIncomingPayments(0 unixms, now) === Seq(pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
+      assert(db.listIncomingPayments(0 unixms, now) == Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
+      assert(db.listExpiredIncomingPayments(0 unixms, now) == Seq(expiredPayment1, expiredPayment2))
+      assert(db.listReceivedIncomingPayments(0 unixms, now) == Nil)
+      assert(db.listPendingIncomingPayments(0 unixms, now) == Seq(pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
 
       db.receiveIncomingPayment(paidInvoice1.paymentHash, 461 msat, receivedAt1)
       db.receiveIncomingPayment(paidInvoice1.paymentHash, 100 msat, receivedAt2) // adding another payment to this invoice should sum
       db.receiveIncomingPayment(paidInvoice2.paymentHash, 1111 msat, receivedAt2)
 
-      assert(db.getIncomingPayment(paidInvoice1.paymentHash) === Some(payment1))
+      assert(db.getIncomingPayment(paidInvoice1.paymentHash) == Some(payment1))
 
-      assert(db.listIncomingPayments(0 unixms, now) === Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1, payment2))
-      assert(db.listIncomingPayments(now - 60.seconds, now) === Seq(pendingPayment1, pendingPayment2, payment1, payment2))
-      assert(db.listPendingIncomingPayments(0 unixms, now) === Seq(pendingPayment1, pendingPayment2))
-      assert(db.listReceivedIncomingPayments(0 unixms, now) === Seq(payment1, payment2))
+      assert(db.listIncomingPayments(0 unixms, now) == Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1, payment2))
+      assert(db.listIncomingPayments(now - 60.seconds, now) == Seq(pendingPayment1, pendingPayment2, payment1, payment2))
+      assert(db.listPendingIncomingPayments(0 unixms, now) == Seq(pendingPayment1, pendingPayment2))
+      assert(db.listReceivedIncomingPayments(0 unixms, now) == Seq(payment1, payment2))
 
       assert(db.removeIncomingPayment(paidInvoice1.paymentHash).isFailure)
-      db.removeIncomingPayment(paidInvoice1.paymentHash).failed.foreach(e => assert(e.getMessage === "Cannot remove a received incoming payment"))
+      db.removeIncomingPayment(paidInvoice1.paymentHash).failed.foreach(e => assert(e.getMessage == "Cannot remove a received incoming payment"))
       assert(db.removeIncomingPayment(pendingPayment1.invoice.paymentHash).isSuccess)
       assert(db.removeIncomingPayment(pendingPayment1.invoice.paymentHash).isSuccess) // idempotent
       assert(db.removeIncomingPayment(expiredPayment1.invoice.paymentHash).isSuccess)
@@ -476,12 +476,12 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.listOutgoingPayments(1 unixms, 300 unixms).toList == Seq(s1, s2))
       assert(db.listOutgoingPayments(1 unixms, 150 unixms).toList == Seq(s1))
       assert(db.listOutgoingPayments(150 unixms, 250 unixms).toList == Seq(s2))
-      assert(db.getOutgoingPayment(s1.id) === Some(s1))
-      assert(db.getOutgoingPayment(UUID.randomUUID()) === None)
-      assert(db.listOutgoingPayments(s2.paymentHash) === Seq(s1, s2))
-      assert(db.listOutgoingPayments(s1.id) === Nil)
-      assert(db.listOutgoingPayments(parentId) === Seq(s1, s2))
-      assert(db.listOutgoingPayments(ByteVector32.Zeroes) === Nil)
+      assert(db.getOutgoingPayment(s1.id) == Some(s1))
+      assert(db.getOutgoingPayment(UUID.randomUUID()) == None)
+      assert(db.listOutgoingPayments(s2.paymentHash) == Seq(s1, s2))
+      assert(db.listOutgoingPayments(s1.id) == Nil)
+      assert(db.listOutgoingPayments(parentId) == Seq(s1, s2))
+      assert(db.listOutgoingPayments(ByteVector32.Zeroes) == Nil)
 
       val s3 = s2.copy(id = UUID.randomUUID(), amount = 789 msat, createdAt = 300 unixms)
       val s4 = s2.copy(id = UUID.randomUUID(), paymentType = PaymentType.Standard, createdAt = 301 unixms)
@@ -490,10 +490,10 @@ class PaymentsDbSpec extends AnyFunSuite {
 
       db.updateOutgoingPayment(PaymentFailed(s3.id, s3.paymentHash, Nil, 310 unixms))
       val ss3 = s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310 unixms))
-      assert(db.getOutgoingPayment(s3.id) === Some(ss3))
+      assert(db.getOutgoingPayment(s3.id) == Some(ss3))
       db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(s4.amount, Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(s4.amount, Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320 unixms))
       val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", List(HopSummary(alice, bob, Some(ShortChannelId(42)))), Some(alice)), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)), Some(carol))), 320 unixms))
-      assert(db.getOutgoingPayment(s4.id) === Some(ss4))
+      assert(db.getOutgoingPayment(s4.id) == Some(ss4))
 
       // can't update again once it's in a final state
       assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, s3.paymentHash, preimage1, s3.recipientAmount, s3.recipientNodeId, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32(), None)))))
@@ -505,9 +505,9 @@ class PaymentsDbSpec extends AnyFunSuite {
       val ss1 = s1.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 15 msat, Nil, 400 unixms))
       val ss2 = s2.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 20 msat, Seq(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)), 410 unixms))
       db.updateOutgoingPayment(paymentSent)
-      assert(db.getOutgoingPayment(s1.id) === Some(ss1))
-      assert(db.getOutgoingPayment(s2.id) === Some(ss2))
-      assert(db.listOutgoingPayments(parentId) === Seq(ss1, ss2, ss3, ss4))
+      assert(db.getOutgoingPayment(s1.id) == Some(ss1))
+      assert(db.getOutgoingPayment(s2.id) == Some(ss2))
+      assert(db.listOutgoingPayments(parentId) == Seq(ss1, ss2, ss3, ss4))
 
       // can't update again once it's in a final state
       assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentFailed(s1.id, s1.paymentHash, Nil)))

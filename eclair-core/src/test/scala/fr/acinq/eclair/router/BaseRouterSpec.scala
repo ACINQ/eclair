@@ -108,13 +108,13 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
     // and e --(4)--> f (we are a)
     within(30 seconds) {
       // first we make sure that we correctly resolve channelId+direction to nodeId
-      assert(ChannelDesc(update_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, a, b))
-      assert(ChannelDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
-      assert(ChannelDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
-      assert(ChannelDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
-      assert(ChannelDesc(update_ag_private, PrivateChannel(scid_ag_private, channelId_ag_private, a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(scid_ag_private, a, g))
-      assert(ChannelDesc(update_ag_private, PrivateChannel(scid_ag_private, channelId_ag_private, g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(scid_ag_private, a, g))
-      assert(ChannelDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
+      assert(ChannelDesc(update_ab, chan_ab) == ChannelDesc(chan_ab.shortChannelId, a, b))
+      assert(ChannelDesc(update_bc, chan_bc) == ChannelDesc(chan_bc.shortChannelId, b, c))
+      assert(ChannelDesc(update_cd, chan_cd) == ChannelDesc(chan_cd.shortChannelId, c, d))
+      assert(ChannelDesc(update_ef, chan_ef) == ChannelDesc(chan_ef.shortChannelId, e, f))
+      assert(ChannelDesc(update_ag_private, PrivateChannel(scid_ag_private, channelId_ag_private, a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) == ChannelDesc(scid_ag_private, a, g))
+      assert(ChannelDesc(update_ag_private, PrivateChannel(scid_ag_private, channelId_ag_private, g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) == ChannelDesc(scid_ag_private, a, g))
+      assert(ChannelDesc(update_gh, chan_gh) == ChannelDesc(chan_gh.shortChannelId, g, h))
 
       // let's set up the router
       val sender = TestProbe()
@@ -153,11 +153,11 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       // then private channels
       sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, scid_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_bc)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_cd)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ef)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_gh)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_ab)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_bc)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_cd)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_ef)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_gh)
       // and answers with valid scripts
       watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       watcher.send(router, ValidateResult(chan_bc, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
@@ -172,7 +172,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId,
         watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId,
       )
-      assert(watchedShortChannelIds === Set(scid_ab, scid_bc, scid_cd, scid_ef, scid_gh))
+      assert(watchedShortChannelIds == Set(scid_ab, scid_bc, scid_cd, scid_ef, scid_gh))
       // all messages are acked
       peerConnection.expectMsgAllOf(
         GossipDecision.Accepted(chan_ab),
@@ -205,7 +205,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
         sender.send(router, GetChannelUpdates)
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
-        nodes.size === 8 && channels.size === 5 && updates.size === 11
+        nodes.size == 8 && channels.size == 5 && updates.size == 11
       }, max = 10 seconds, interval = 1 second)
 
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, watcher)))

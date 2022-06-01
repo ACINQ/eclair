@@ -60,11 +60,11 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     })
 
     val now = TimestampMilli.now()
-    assert(db.listIncomingPayments(0 unixms, now) === expiredPayments ++ pendingPayments ++ paidPayments)
-    assert(db.listIncomingPayments(now - 100.days, now) === pendingPayments ++ paidPayments)
-    assert(db.listPendingIncomingPayments(0 unixms, now) === pendingPayments)
-    assert(db.listReceivedIncomingPayments(0 unixms, now) === paidPayments)
-    assert(db.listExpiredIncomingPayments(0 unixms, now) === expiredPayments)
+    assert(db.listIncomingPayments(0 unixms, now) == expiredPayments ++ pendingPayments ++ paidPayments)
+    assert(db.listIncomingPayments(now - 100.days, now) == pendingPayments ++ paidPayments)
+    assert(db.listPendingIncomingPayments(0 unixms, now) == pendingPayments)
+    assert(db.listReceivedIncomingPayments(0 unixms, now) == paidPayments)
+    assert(db.listExpiredIncomingPayments(0 unixms, now) == expiredPayments)
 
     val probe = testKit.createTestProbe[PurgeEvent]()
     system.eventStream ! EventStream.Subscribe(probe.ref)
@@ -75,7 +75,7 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     probe.expectMessage(5 seconds, PurgeCompleted)
     probe.expectNoMessage()
     assert(db.listExpiredIncomingPayments(0 unixms, now).isEmpty)
-    assert(db.listIncomingPayments(0 unixms, now) === pendingPayments ++ paidPayments)
+    assert(db.listIncomingPayments(0 unixms, now) == pendingPayments ++ paidPayments)
 
     testKit.stop(purger)
   }
@@ -122,7 +122,7 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     // check that subsequent purge runs do not go back > 15 days
     probe.expectMessage(10 seconds, PurgeCompleted)
     probe.expectNoMessage()
-    assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now()) === Seq(expiredPayment3))
+    assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now()) == Seq(expiredPayment3))
 
     testKit.stop(purger)
   }

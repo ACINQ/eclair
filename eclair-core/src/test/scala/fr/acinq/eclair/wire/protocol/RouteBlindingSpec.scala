@@ -27,9 +27,9 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
 
     for ((encoded, data) <- payloads) {
       val decoded = RouteBlindingEncryptedDataCodecs.encryptedDataCodec.decode(encoded.bits).require.value
-      assert(decoded === data)
+      assert(decoded == data)
       val reEncoded = RouteBlindingEncryptedDataCodecs.encryptedDataCodec.encode(data).require.bytes
-      assert(reEncoded === encoded)
+      assert(reEncoded == encoded)
     }
   }
 
@@ -51,7 +51,7 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
     val Success((decryptedPayload2, blinding3)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(2), blinding2, blindedRoute.encryptedPayloads(2))
     val Success((decryptedPayload3, blinding4)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(3), blinding3, blindedRoute.encryptedPayloads(3))
     val Success((decryptedPayload4, _)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(4), blinding4, blindedRoute.encryptedPayloads(4))
-    assert(Seq(decryptedPayload0, decryptedPayload1, decryptedPayload2, decryptedPayload3, decryptedPayload4) === payloads.map(_._1))
+    assert(Seq(decryptedPayload0, decryptedPayload1, decryptedPayload2, decryptedPayload3, decryptedPayload4) == payloads.map(_._1))
   }
 
   test("decode invalid encrypted route blinding data") {

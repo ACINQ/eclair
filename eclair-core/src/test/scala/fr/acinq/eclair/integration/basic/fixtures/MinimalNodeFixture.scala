@@ -152,7 +152,7 @@ object MinimalNodeFixture extends Assertions {
   }
 
   def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): ShortChannelId = {
-    assert(getChannelState(node1, channelId) === WAIT_FOR_FUNDING_CONFIRMED)
+    assert(getChannelState(node1, channelId) == WAIT_FOR_FUNDING_CONFIRMED)
     val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
     val fundingTx = data1Before.fundingTx.get
 

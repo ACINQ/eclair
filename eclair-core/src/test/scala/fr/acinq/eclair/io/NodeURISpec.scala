@@ -48,7 +48,7 @@ class NodeURISpec extends AnyFunSuite {
       assert(nodeUri.nodeId.toString() == PUBKEY)
       assert(nodeUri.address.host == testCase.formattedAddr)
       assert(nodeUri.address.port == testCase.port)
-      assert(nodeUri.toString === s"$PUBKEY@${testCase.formattedAddr}:${testCase.port}")
+      assert(nodeUri.toString == s"$PUBKEY@${testCase.formattedAddr}:${testCase.port}")
     }
   }
 

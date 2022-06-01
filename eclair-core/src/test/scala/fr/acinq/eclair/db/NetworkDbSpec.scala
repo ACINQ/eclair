@@ -60,17 +60,17 @@ class NetworkDbSpec extends AnyFunSuite {
       val node_3 = Announcements.makeNodeAnnouncement(randomKey(), "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
       val node_4 = Announcements.makeNodeAnnouncement(randomKey(), "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), Tor2("aaaqeayeaudaocaj", 42000) :: Nil, Features.empty)
 
-      assert(db.listNodes().toSet === Set.empty)
+      assert(db.listNodes().toSet == Set.empty)
       db.addNode(node_1)
       db.addNode(node_1) // duplicate is ignored
-      assert(db.getNode(node_1.nodeId) === Some(node_1))
-      assert(db.listNodes().size === 1)
+      assert(db.getNode(node_1.nodeId) == Some(node_1))
+      assert(db.listNodes().size == 1)
       db.addNode(node_2)
       db.addNode(node_3)
       db.addNode(node_4)
-      assert(db.listNodes().toSet === Set(node_1, node_2, node_3, node_4))
+      assert(db.listNodes().toSet == Set(node_1, node_2, node_3, node_4))
       db.removeNode(node_2.nodeId)
-      assert(db.listNodes().toSet === Set(node_1, node_3, node_4))
+      assert(db.listNodes().toSet == Set(node_1, node_3, node_4))
       db.updateNode(node_1)
 
       assert(node_4.addresses == List(Tor2("aaaqeayeaudaocaj", 42000)))
@@ -84,7 +84,7 @@ class NetworkDbSpec extends AnyFunSuite {
       val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
       val txid = ByteVector32.fromValidHex("0001" * 16)
       db.addChannel(c, txid, Satoshi(42))
-      assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
+      assert(db.listChannels() == SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
     }
   }
 
@@ -113,18 +113,18 @@ class NetworkDbSpec extends AnyFunSuite {
     val txid_3 = randomBytes32()
     val capacity = 10000 sat
 
-    assert(db.listChannels().toSet === Set.empty)
+    assert(db.listChannels().toSet == Set.empty)
     db.addChannel(channel_1, txid_1, capacity)
     db.addChannel(channel_1, txid_1, capacity) // duplicate is ignored
-    assert(db.listChannels().size === 1)
+    assert(db.listChannels().size == 1)
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
       channel_2.shortChannelId -> PublicChannel(channel_2, txid_2, capacity, None, None, None),
       channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
     db.removeChannel(channel_2.shortChannelId)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
       channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
 
@@ -136,11 +136,11 @@ class NetworkDbSpec extends AnyFunSuite {
     db.updateChannel(channel_update_1) // duplicate is ignored
     db.updateChannel(channel_update_2)
     db.updateChannel(channel_update_3)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2), None),
       channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, Some(channel_update_3), None, None)))
     db.removeChannel(channel_3.shortChannelId)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2), None)))
   }
 
@@ -210,11 +210,11 @@ class NetworkDbSpec extends AnyFunSuite {
       val txid = randomBytes32()
       channels.foreach(ca => db.addChannel(ca, txid, capacity))
       updates.foreach(u => db.updateChannel(u))
-      assert(db.listChannels().keySet === channels.map(_.shortChannelId).toSet)
+      assert(db.listChannels().keySet == channels.map(_.shortChannelId).toSet)
 
       val toDelete = channels.map(_.shortChannelId).take(1 + Random.nextInt(2500))
       db.removeChannels(toDelete)
-      assert(db.listChannels().keySet === (channels.map(_.shortChannelId).toSet -- toDelete))
+      assert(db.listChannels().keySet == (channels.map(_.shortChannelId).toSet -- toDelete))
     }
   }
 
@@ -279,9 +279,9 @@ class NetworkDbSpec extends AnyFunSuite {
       dbName = SqliteNetworkDb.DB_NAME,
       targetVersion = SqliteNetworkDb.CURRENT_VERSION,
       postCheck = _ => {
-        assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
+        assert(dbs.network.listNodes().toSet == nodeTestCases.map(_.node).toSet)
         // NB: channel updates are not migrated
-        assert(dbs.network.listChannels().values.toSet === channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, None, None, None)).toSet)
+        assert(dbs.network.listChannels().values.toSet == channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, None, None, None)).toSet)
       }
     )
   }
@@ -319,9 +319,9 @@ class NetworkDbSpec extends AnyFunSuite {
       dbName = PgNetworkDb.DB_NAME,
       targetVersion = PgNetworkDb.CURRENT_VERSION,
       postCheck = _ => {
-        assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
+        assert(dbs.network.listNodes().toSet == nodeTestCases.map(_.node).toSet)
         // NB: channel updates are not migrated
-        assert(dbs.network.listChannels().values.toSet === channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, tc.update_1_opt, tc.update_2_opt, None)).toSet)
+        assert(dbs.network.listChannels().values.toSet == channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, tc.update_1_opt, tc.update_2_opt, None)).toSet)
       }
     )
   }

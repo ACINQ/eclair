@@ -253,9 +253,9 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 15 sat)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
     val txPublished = eventListener.expectMsgType[TransactionPublished]
-    assert(txPublished.tx === tx)
-    assert(txPublished.miningFee === 15.sat)
-    assert(txPublished.desc === "test-tx")
+    assert(txPublished.tx == tx)
+    assert(txPublished.miningFee == 15.sat)
+    assert(txPublished.desc == "test-tx")
 
     generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))

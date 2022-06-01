@@ -39,7 +39,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     reachNormal(channels, testTags)
 
-    awaitAssert(router.stateData.privateChannels.size === 1)
+    awaitAssert(router.stateData.privateChannels.size == 1)
 
     {
       // only the local channel_update is known (bob won't send his before the channel is deeply buried)
@@ -69,7 +69,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     val fundingTx = reachNormal(channels, testTags)
 
-    awaitAssert(router.stateData.privateChannels.size === 1)
+    awaitAssert(router.stateData.privateChannels.size == 1)
 
     {
       val pc = router.stateData.privateChannels.values.head

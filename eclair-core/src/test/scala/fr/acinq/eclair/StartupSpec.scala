@@ -54,14 +54,14 @@ class StartupSpec extends AnyFunSuite {
     val threeBytesUTFChar = '\u20AC' // €
     val baseUkraineAlias = "BitcoinLightningNodeUkraine"
 
-    assert(baseUkraineAlias.length === 27)
-    assert(baseUkraineAlias.getBytes.length === 27)
+    assert(baseUkraineAlias.length == 27)
+    assert(baseUkraineAlias.getBytes.length == 27)
 
     // we add 2 UTF-8 chars, each is 3-bytes long -> total new length 33 bytes!
     val goUkraineGo = s"${threeBytesUTFChar}BitcoinLightningNodeUkraine$threeBytesUTFChar"
 
-    assert(goUkraineGo.length === 29)
-    assert(goUkraineGo.getBytes.length === 33) // too long for the alias, should be truncated
+    assert(goUkraineGo.length == 29)
+    assert(goUkraineGo.getBytes.length == 33) // too long for the alias, should be truncated
 
     val illegalAliasConf = ConfigFactory.parseString(s"node-alias = $goUkraineGo")
     val conf = illegalAliasConf.withFallback(defaultConf)
@@ -182,7 +182,7 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
     val perNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
-    assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelType -> Optional))
+    assert(perNodeFeatures == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelType -> Optional))
   }
 
   test("reject non-init features in node override") {
@@ -247,9 +247,9 @@ class StartupSpec extends AnyFunSuite {
     )
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")) === FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat)), DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b")) === FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat)), DustTolerance(40_000 sat, closeOnUpdateFeeOverflow = false)))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat)), DustTolerance(50_000 sat, closeOnUpdateFeeOverflow = false)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")) == FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat)), DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b")) == FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat)), DustTolerance(40_000 sat, closeOnUpdateFeeOverflow = false)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7")) == FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat)), DustTolerance(50_000 sat, closeOnUpdateFeeOverflow = false)))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {

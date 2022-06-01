@@ -71,13 +71,13 @@ class ChannelCodecsSpec extends AnyFunSuite {
       .htlcTxsAndRemoteSigs
       .map(data => Scripts.der(data.remoteSig))
 
-    assert(ref === sigs)
+    assert(ref == sigs)
   }
 
   test("nonreg for channel flags codec") {
     // make sure that we correctly decode data encoded with the previous standard 'byte' codec
-    assert(CommonCodecs.channelflags.decode(byte.encode(0).require).require === DecodeResult(ChannelFlags(announceChannel = false), BitVector.empty))
-    assert(CommonCodecs.channelflags.decode(byte.encode(1).require).require === DecodeResult(ChannelFlags(announceChannel = true), BitVector.empty))
+    assert(CommonCodecs.channelflags.decode(byte.encode(0).require).require == DecodeResult(ChannelFlags(announceChannel = false), BitVector.empty))
+    assert(CommonCodecs.channelflags.decode(byte.encode(1).require).require == DecodeResult(ChannelFlags(announceChannel = true), BitVector.empty))
   }
 
   test("backward compatibility DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec") {
@@ -87,7 +87,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(bin_old.startsWith(hex"000001"))
     // let's decode the old data (this will use the old codec that provides default values for new fields)
     val data_new = channelDataCodec.decode(bin_old.toBitVector).require.value
-    assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx === None)
+    assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx == None)
     assert(TimestampSecond.now().toLong - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince.toLong < 3600) // we just set this to current time
     // and re-encode it with the new codec
     val bin_new = ByteVector(channelDataCodec.encode(data_new).require.toByteVector.toArray)
@@ -96,7 +96,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // now let's decode it again
     val data_new2 = channelDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
-    assert(data_new === data_new2)
+    assert(data_new == data_new2)
   }
 
   test("backward compatibility DATA_NORMAL_COMPAT_03_Codec (roundtrip)") {
@@ -127,7 +127,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       assert(newbin.startsWith(hex"030007"))
       // make sure that round-trip yields the same data
       val newnormal = channelDataCodec.decode(newbin.bits).require.value
-      assert(newnormal === oldnormal)
+      assert(newnormal == oldnormal)
     }
   }
 
@@ -152,8 +152,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // finally we check that the actual data is the same as before (we just remove the new json field)
       val oldjson = Serialization.write(oldnormal)(JsonSerializers.formats)
       val newjson = Serialization.write(newnormal)(JsonSerializers.formats)
-      assert(oldjson === refjson)
-      assert(newjson === refjson)
+      assert(oldjson == refjson)
+      assert(newjson == refjson)
     }
   }
 
@@ -178,38 +178,38 @@ class ChannelCodecsSpec extends AnyFunSuite {
       assert(newBin.startsWith(hex"0300"))
       // make sure that round-trip yields the same data
       val decoded2 = channelDataCodec.decode(newBin.bits).require.value
-      assert(decoded1 === decoded2)
+      assert(decoded1 == decoded2)
     })
 
     val negotiating = channelDataCodec.decode(dataNegotiating.bits).require.value.asInstanceOf[DATA_NEGOTIATING]
     assert(negotiating.bestUnpublishedClosingTx_opt.nonEmpty)
-    negotiating.bestUnpublishedClosingTx_opt.foreach(tx => assert(tx.toLocalOutput === None))
+    negotiating.bestUnpublishedClosingTx_opt.foreach(tx => assert(tx.toLocalOutput == None))
     assert(negotiating.closingTxProposed.flatten.nonEmpty)
-    negotiating.closingTxProposed.flatten.foreach(tx => assert(tx.unsignedTx.toLocalOutput === None))
+    negotiating.closingTxProposed.flatten.foreach(tx => assert(tx.unsignedTx.toLocalOutput == None))
 
     val normal = channelDataCodec.decode(dataNormal.bits).require.value.asInstanceOf[DATA_NORMAL]
     assert(normal.commitments.localCommit.htlcTxsAndRemoteSigs.nonEmpty)
-    normal.commitments.localCommit.htlcTxsAndRemoteSigs.foreach(tx => assert(tx.htlcTx.htlcId === 0))
+    normal.commitments.localCommit.htlcTxsAndRemoteSigs.foreach(tx => assert(tx.htlcTx.htlcId == 0))
 
     val closingLocal = channelDataCodec.decode(dataClosingLocal.bits).require.value.asInstanceOf[DATA_CLOSING]
     assert(closingLocal.localCommitPublished.nonEmpty)
-    assert(closingLocal.localCommitPublished.get.commitTx.txOut.size === 6)
-    assert(closingLocal.localCommitPublished.get.htlcTxs.size === 4)
-    assert(closingLocal.localCommitPublished.get.claimHtlcDelayedTxs.size === 4)
+    assert(closingLocal.localCommitPublished.get.commitTx.txOut.size == 6)
+    assert(closingLocal.localCommitPublished.get.htlcTxs.size == 4)
+    assert(closingLocal.localCommitPublished.get.claimHtlcDelayedTxs.size == 4)
     assert(closingLocal.localCommitPublished.get.irrevocablySpent.isEmpty)
 
     val closingRemote = channelDataCodec.decode(dataClosingRemote.bits).require.value.asInstanceOf[DATA_CLOSING]
     assert(closingRemote.remoteCommitPublished.nonEmpty)
-    assert(closingRemote.remoteCommitPublished.get.commitTx.txOut.size === 7)
-    assert(closingRemote.remoteCommitPublished.get.commitTx.txOut.count(_.amount === AnchorOutputsCommitmentFormat.anchorAmount) === 2)
-    assert(closingRemote.remoteCommitPublished.get.claimHtlcTxs.size === 3)
+    assert(closingRemote.remoteCommitPublished.get.commitTx.txOut.size == 7)
+    assert(closingRemote.remoteCommitPublished.get.commitTx.txOut.count(_.amount == AnchorOutputsCommitmentFormat.anchorAmount) == 2)
+    assert(closingRemote.remoteCommitPublished.get.claimHtlcTxs.size == 3)
     assert(closingRemote.remoteCommitPublished.get.irrevocablySpent.isEmpty)
 
     val closingRevoked = channelDataCodec.decode(dataClosingRevoked.bits).require.value.asInstanceOf[DATA_CLOSING]
-    assert(closingRevoked.revokedCommitPublished.size === 1)
-    assert(closingRevoked.revokedCommitPublished.head.commitTx.txOut.size === 6)
-    assert(closingRevoked.revokedCommitPublished.head.htlcPenaltyTxs.size === 4)
-    assert(closingRevoked.revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size === 2)
+    assert(closingRevoked.revokedCommitPublished.size == 1)
+    assert(closingRevoked.revokedCommitPublished.head.commitTx.txOut.size == 6)
+    assert(closingRevoked.revokedCommitPublished.head.htlcPenaltyTxs.size == 4)
+    assert(closingRevoked.revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 2)
     assert(closingRevoked.revokedCommitPublished.head.irrevocablySpent.isEmpty)
   }
 
@@ -236,7 +236,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       val newbin = channelDataCodec.encode(oldnormal).require.bytes
       // make sure that round-trip yields the same data
       val newnormal = channelDataCodec.decode(newbin.bits).require.value
-      assert(newnormal === oldnormal)
+      assert(newnormal == oldnormal)
       // make sure that we have stripped sigs from the transactions
       assert(newnormal.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
       assert(newnormal.commitments.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))

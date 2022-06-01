@@ -52,8 +52,8 @@ class OffersSpec extends AnyFunSuite {
     val offer = Offer.decode(encoded).get
     assert(offer.amount.isEmpty)
     assert(offer.signature.isEmpty)
-    assert(offer.description === "Offer by rusty's node")
-    assert(offer.nodeIdXOnly === nodeId)
+    assert(offer.description == "Offer by rusty's node")
+    assert(offer.nodeIdXOnly == nodeId)
   }
 
   test("basic signed offer") {
@@ -61,30 +61,30 @@ class OffersSpec extends AnyFunSuite {
     val Success(signedOffer) = Offer.decode(encodedSigned)
     assert(signedOffer.checkSignature())
     assert(signedOffer.amount.isEmpty)
-    assert(signedOffer.description === "Offer by rusty's node")
-    assert(signedOffer.nodeIdXOnly === nodeId)
+    assert(signedOffer.description == "Offer by rusty's node")
+    assert(signedOffer.nodeIdXOnly == nodeId)
   }
 
   test("offer with amount and quantity") {
     val encoded = "lno1pqqnyzsmx5cx6umpwssx6atvw35j6ut4v9h8g6t50ysx7enxv4epgrmjw4ehgcm0wfczucm0d5hxzagkqyq3ugztng063cqx783exlm97ekyprnd4rsu5u5w5sez9fecrhcuc3ykq5"
     val Success(offer) = Offer.decode(encoded)
-    assert(offer.amount === Some(50 msat))
+    assert(offer.amount == Some(50 msat))
     assert(offer.signature.isEmpty)
-    assert(offer.description === "50msat multi-quantity offer")
-    assert(offer.nodeIdXOnly === nodeId)
-    assert(offer.issuer === Some("rustcorp.com.au"))
-    assert(offer.quantityMin === Some(1))
+    assert(offer.description == "50msat multi-quantity offer")
+    assert(offer.nodeIdXOnly == nodeId)
+    assert(offer.issuer == Some("rustcorp.com.au"))
+    assert(offer.quantityMin == Some(1))
   }
 
   test("signed offer with amount and quantity") {
     val encodedSigned = "lno1pqqnyzsmx5cx6umpwssx6atvw35j6ut4v9h8g6t50ysx7enxv4epgrmjw4ehgcm0wfczucm0d5hxzagkqyq3ugztng063cqx783exlm97ekyprnd4rsu5u5w5sez9fecrhcuc3ykqhcypjju7unu05vav8yvhn27lztf46k9gqlga8uvu4uq62kpuywnu6me8srgh2q7puczukr8arectaapfl5d4rd6uc7st7tnqf0ttx39n40s"
     val Success(signedOffer) = Offer.decode(encodedSigned)
     assert(signedOffer.checkSignature())
-    assert(signedOffer.amount === Some(50 msat))
-    assert(signedOffer.description === "50msat multi-quantity offer")
-    assert(signedOffer.nodeIdXOnly === nodeId)
-    assert(signedOffer.issuer === Some("rustcorp.com.au"))
-    assert(signedOffer.quantityMin === Some(1))
+    assert(signedOffer.amount == Some(50 msat))
+    assert(signedOffer.description == "50msat multi-quantity offer")
+    assert(signedOffer.nodeIdXOnly == nodeId)
+    assert(signedOffer.issuer == Some("rustcorp.com.au"))
+    assert(signedOffer.quantityMin == Some(1))
   }
 
   test("decode invalid offer") {
@@ -198,16 +198,16 @@ class OffersSpec extends AnyFunSuite {
   test("decode invoice request") {
     val encoded = "lnr1qvsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqqyypz8xu3xwsqpar9dd26lgrrvc7s63ljt0pgh6ag2utv5udez7n2mjzqzz47qcqczqgqzqqgzycsv2tmjgzc5l546aldq699wj9pdusvfred97l352p4aa862vqvzw5p8pdyjqctdyppxzardv9hrypx74klwluzqd0rqgeew2uhuagttuv6aqwklvm0xmlg52lfnagzw8ygt0wrtnv2tsx69m6tgug7njaw5ypa5fn369n9yzc87v02rqccj9h04dxf3nzc"
     val Success(request) = InvoiceRequest.decode(encoded)
-    assert(request.amount === Some(5500 msat))
-    assert(request.offerId === ByteVector32(hex"4473722674001e8cad6ab5f40c6cc7a1a8fe4b78517d750ae2d94e3722f4d5b9"))
-    assert(request.quantity === 2)
-    assert(request.features === Features(VariableLengthOnion -> Optional, BasicMultiPartPayment -> Optional))
+    assert(request.amount == Some(5500 msat))
+    assert(request.offerId == ByteVector32(hex"4473722674001e8cad6ab5f40c6cc7a1a8fe4b78517d750ae2d94e3722f4d5b9"))
+    assert(request.quantity == 2)
+    assert(request.features == Features(VariableLengthOnion -> Optional, BasicMultiPartPayment -> Optional))
     assert(request.records.get[Chain].nonEmpty)
-    assert(request.chain === Block.LivenetGenesisBlock.hash)
-    assert(request.payerKey === ByteVector32(hex"c52f7240b14fd2baefda0d14ae9142de41891e5a5f7e34506bde9f4a60182750"))
-    assert(request.payerInfo === Some(hex"deadbeef"))
-    assert(request.payerNote === Some("I am Batman"))
-    assert(request.encode() === encoded)
+    assert(request.chain == Block.LivenetGenesisBlock.hash)
+    assert(request.payerKey == ByteVector32(hex"c52f7240b14fd2baefda0d14ae9142de41891e5a5f7e34506bde9f4a60182750"))
+    assert(request.payerInfo == Some(hex"deadbeef"))
+    assert(request.payerNote == Some("I am Batman"))
+    assert(request.encode() == encoded)
   }
 
   test("decode invalid invoice request") {
@@ -274,9 +274,9 @@ class OffersSpec extends AnyFunSuite {
       case TestCase(tlvStream, tlvCount, expectedRoot) =>
         val genericTlvStream: Codec[TlvStream[GenericTlv]] = list(TlvCodecs.genericTlv).xmap(tlvs => TlvStream(tlvs), tlvs => tlvs.records.toList)
         val tlvs = genericTlvStream.decode(tlvStream.bits).require.value
-        assert(tlvs.records.size === tlvCount)
+        assert(tlvs.records.size == tlvCount)
         val root = Offers.rootHash(tlvs, genericTlvStream)
-        assert(root === expectedRoot)
+        assert(root == expectedRoot)
     }
   }
 

@@ -26,7 +26,7 @@ class ChaCha20Poly1305Spec extends AnyFunSuite {
     val key: ByteVector = hex"85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b"
     val data: ByteVector = ByteVector.view("Cryptographic Forum Research Group".getBytes("UTF-8"))
     val mac = Poly1305.mac(key, data)
-    assert(mac === hex"a8061dc1305136c6c22b8baf0c0127a9")
+    assert(mac == hex"a8061dc1305136c6c22b8baf0c0127a9")
   }
 
   test("Poly1305 #2") {
@@ -34,7 +34,7 @@ class ChaCha20Poly1305Spec extends AnyFunSuite {
     val key: ByteVector = ByteVector.view("this is 32-byte key for Poly1305".getBytes())
     val data: ByteVector = ByteVector.view("Hello world!".getBytes("UTF-8"))
     val mac = Poly1305.mac(key, data)
-    assert(mac === hex"a6f745008f81c916a20dcc74eef2b2f0")
+    assert(mac == hex"a6f745008f81c916a20dcc74eef2b2f0")
   }
 
   test("Chacha20Poly1305 IETF RFC7539 tests") {

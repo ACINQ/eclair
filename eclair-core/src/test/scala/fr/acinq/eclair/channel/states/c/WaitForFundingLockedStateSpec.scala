@@ -89,8 +89,8 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.forward(alice)
     awaitCond(alice.stateName == NORMAL)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
-    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
-    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     bob2alice.expectNoMessage(200 millis)
   }
 
@@ -100,7 +100,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(tx)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
     awaitCond(alice.stateName == CLOSING)
   }
 
@@ -109,7 +109,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
     alice2bob.expectMsgType[Error]
-    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid === tx.txid)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
   }
@@ -119,9 +119,9 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid === tx.txid)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
   }
 
   test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.NoPushMsat)) { f =>
@@ -129,8 +129,8 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! Error(ByteVector32.Zeroes, "funding double-spent")
     awaitCond(bob.stateName == CLOSING)
-    assert(bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid === tx.txid)
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === tx.txid)
+    assert(bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
   }
 
   test("recv CMD_CLOSE") { f =>
@@ -147,8 +147,8 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid === tx.txid)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
   }
 }

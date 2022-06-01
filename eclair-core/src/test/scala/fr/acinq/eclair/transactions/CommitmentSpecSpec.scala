@@ -31,19 +31,19 @@ class CommitmentSpecSpec extends AnyFunSuite {
 
     val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec1 = CommitmentSpec.reduce(spec, add1 :: Nil, Nil)
-    assert(spec1 === spec.copy(htlcs = Set(OutgoingHtlc(add1)), toLocal = 3000000 msat))
+    assert(spec1 == spec.copy(htlcs = Set(OutgoingHtlc(add1)), toLocal = 3000000 msat))
 
     val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec2 = CommitmentSpec.reduce(spec1, add2 :: Nil, Nil)
-    assert(spec2 === spec1.copy(htlcs = Set(OutgoingHtlc(add1), OutgoingHtlc(add2)), toLocal = 2000000 msat))
+    assert(spec2 == spec1.copy(htlcs = Set(OutgoingHtlc(add1), OutgoingHtlc(add2)), toLocal = 2000000 msat))
 
     val ful1 = UpdateFulfillHtlc(ByteVector32.Zeroes, add1.id, R)
     val spec3 = CommitmentSpec.reduce(spec2, Nil, ful1 :: Nil)
-    assert(spec3 === spec2.copy(htlcs = Set(OutgoingHtlc(add2)), toRemote = 2000000 msat))
+    assert(spec3 == spec2.copy(htlcs = Set(OutgoingHtlc(add2)), toRemote = 2000000 msat))
 
     val fail1 = UpdateFailHtlc(ByteVector32.Zeroes, add2.id, R)
     val spec4 = CommitmentSpec.reduce(spec3, Nil, fail1 :: Nil)
-    assert(spec4 === spec3.copy(htlcs = Set(), toLocal = 3000000 msat))
+    assert(spec4 == spec3.copy(htlcs = Set(), toLocal = 3000000 msat))
   }
 
   test("add, fulfill and fail htlcs from the receiver side") {
@@ -53,26 +53,26 @@ class CommitmentSpecSpec extends AnyFunSuite {
 
     val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec1 = CommitmentSpec.reduce(spec, Nil, add1 :: Nil)
-    assert(spec1 === spec.copy(htlcs = Set(IncomingHtlc(add1)), toRemote = 3000 * 1000 msat))
+    assert(spec1 == spec.copy(htlcs = Set(IncomingHtlc(add1)), toRemote = 3000 * 1000 msat))
 
     val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec2 = CommitmentSpec.reduce(spec1, Nil, add2 :: Nil)
-    assert(spec2 === spec1.copy(htlcs = Set(IncomingHtlc(add1), IncomingHtlc(add2)), toRemote = (2000 * 1000) msat))
+    assert(spec2 == spec1.copy(htlcs = Set(IncomingHtlc(add1), IncomingHtlc(add2)), toRemote = (2000 * 1000) msat))
 
     val ful1 = UpdateFulfillHtlc(ByteVector32.Zeroes, add1.id, R)
     val spec3 = CommitmentSpec.reduce(spec2, ful1 :: Nil, Nil)
-    assert(spec3 === spec2.copy(htlcs = Set(IncomingHtlc(add2)), toLocal = (2000 * 1000) msat))
+    assert(spec3 == spec2.copy(htlcs = Set(IncomingHtlc(add2)), toLocal = (2000 * 1000) msat))
 
     val fail1 = UpdateFailHtlc(ByteVector32.Zeroes, add2.id, R)
     val spec4 = CommitmentSpec.reduce(spec3, fail1 :: Nil, Nil)
-    assert(spec4 === spec3.copy(htlcs = Set(), toRemote = (3000 * 1000) msat))
+    assert(spec4 == spec3.copy(htlcs = Set(), toRemote = (3000 * 1000) msat))
   }
 
   test("compute htlc tx feerate based on commitment format") {
     val spec = CommitmentSpec(htlcs = Set(), commitTxFeerate = FeeratePerKw(2500 sat), toLocal = (5000 * 1000) msat, toRemote = (2500 * 1000) msat)
-    assert(spec.htlcTxFeerate(Transactions.DefaultCommitmentFormat) === FeeratePerKw(2500 sat))
-    assert(spec.htlcTxFeerate(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === FeeratePerKw(2500 sat))
-    assert(spec.htlcTxFeerate(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === FeeratePerKw(0 sat))
+    assert(spec.htlcTxFeerate(Transactions.DefaultCommitmentFormat) == FeeratePerKw(2500 sat))
+    assert(spec.htlcTxFeerate(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) == FeeratePerKw(2500 sat))
+    assert(spec.htlcTxFeerate(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(0 sat))
   }
 
   def createHtlc(amount: MilliSatoshi): UpdateAddHtlc = {

@@ -123,19 +123,19 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // channel 1 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val fails_ab_1 = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
-    assert(fails_ab_1.toSet === Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
+    assert(fails_ab_1.toSet == Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
     channel.expectNoMessage(100 millis)
 
     // channel 2 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
     val fails_ab_2 = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
-    assert(fails_ab_2.toSet === Set(CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
+    assert(fails_ab_2.toSet == Set(CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
     channel.expectNoMessage(100 millis)
 
     // let's assume that channel 1 was disconnected before having signed the fails, and gets connected again:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val fails_ab_1_bis = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
-    assert(fails_ab_1_bis.toSet === Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
+    assert(fails_ab_1_bis.toSet == Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to fail the htlcs:
@@ -191,7 +191,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       CMD_FAIL_HTLC(7, Right(TemporaryNodeFailure), commit = true)
     )
     val received1 = expected1.map(_ => channel.expectMsgType[Command])
-    assert(received1 === expected1)
+    assert(received1 == expected1)
     channel.expectNoMessage(100 millis)
 
     // channel 2 goes to NORMAL state:
@@ -203,13 +203,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       CMD_FAIL_HTLC(9, Right(TemporaryNodeFailure), commit = true)
     )
     val received2 = expected2.map(_ => channel.expectMsgType[Command])
-    assert(received2 === expected2)
+    assert(received2 == expected2)
     channel.expectNoMessage(100 millis)
 
     // let's assume that channel 1 was disconnected before having signed the updates, and gets connected again:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val received3 = expected1.map(_ => channel.expectMsgType[Command])
-    assert(received3 === expected1)
+    assert(received3 == expected1)
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to sign the htlcs:
@@ -232,20 +232,20 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, testCase.fails(1))
     eventListener.expectNoMessage(100 millis)
     // This is a multi-part payment, the second part is still pending.
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status === OutgoingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status == OutgoingPaymentStatus.Pending)
 
     sender.send(relayer, testCase.fails(2))
     val e1 = eventListener.expectMsgType[PaymentFailed]
-    assert(e1.id === testCase.parentId)
-    assert(e1.paymentHash === paymentHash2)
+    assert(e1.id == testCase.parentId)
+    assert(e1.paymentHash == paymentHash2)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(1)).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status === OutgoingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status == OutgoingPaymentStatus.Pending)
 
     sender.send(relayer, testCase.fails.head)
     val e2 = eventListener.expectMsgType[PaymentFailed]
-    assert(e2.id === testCase.childIds.head)
-    assert(e2.paymentHash === paymentHash1)
+    assert(e2.id == testCase.childIds.head)
+    assert(e2.paymentHash == paymentHash1)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
 
     register.expectNoMessage(100 millis)
@@ -261,27 +261,27 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, testCase.fulfills(1))
     eventListener.expectNoMessage(100 millis)
     // This is a multi-part payment, the second part is still pending.
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status === OutgoingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status == OutgoingPaymentStatus.Pending)
 
     sender.send(relayer, testCase.fulfills(2))
     val e1 = eventListener.expectMsgType[PaymentSent]
-    assert(e1.id === testCase.parentId)
-    assert(e1.paymentPreimage === preimage2)
-    assert(e1.paymentHash === paymentHash2)
-    assert(e1.parts.length === 2)
-    assert(e1.amountWithFees === 2834.msat)
-    assert(e1.recipientAmount === 2500.msat)
+    assert(e1.id == testCase.parentId)
+    assert(e1.paymentPreimage == preimage2)
+    assert(e1.paymentHash == paymentHash2)
+    assert(e1.parts.length == 2)
+    assert(e1.amountWithFees == 2834.msat)
+    assert(e1.recipientAmount == 2500.msat)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(1)).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status === OutgoingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status == OutgoingPaymentStatus.Pending)
 
     sender.send(relayer, testCase.fulfills.head)
     val e2 = eventListener.expectMsgType[PaymentSent]
-    assert(e2.id === testCase.childIds.head)
-    assert(e2.paymentPreimage === preimage1)
-    assert(e2.paymentHash === paymentHash1)
-    assert(e2.parts.length === 1)
-    assert(e2.recipientAmount === 561.msat)
+    assert(e2.id == testCase.childIds.head)
+    assert(e2.paymentPreimage == preimage1)
+    assert(e2.paymentHash == paymentHash1)
+    assert(e2.parts.length == 1)
+    assert(e2.recipientAmount == 561.msat)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
 
     register.expectNoMessage(100 millis)
@@ -299,8 +299,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val probe = TestProbe()
     probe.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
     val brokenHtlcs = probe.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
-    assert(brokenHtlcs.notRelayed.map(htlc => (htlc.add.id, htlc.add.channelId)).toSet === testCase.notRelayed)
-    assert(brokenHtlcs.relayedOut === Map(
+    assert(brokenHtlcs.notRelayed.map(htlc => (htlc.add.id, htlc.add.channelId)).toSet == testCase.notRelayed)
+    assert(brokenHtlcs.relayedOut == Map(
       testCase.origin_1 -> Set(testCase.downstream_1_1).map(htlc => (htlc.channelId, htlc.id)),
       testCase.origin_2 -> Set(testCase.downstream_2_1, testCase.downstream_2_2, testCase.downstream_2_3).map(htlc => (htlc.channelId, htlc.id))
     ))
@@ -383,8 +383,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val closingState = localClose(alice, alice2blockchain)
       alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, closingState.commitTx)
       // All committed htlcs timed out except the last two; one will be fulfilled later and the other will timeout later.
-      assert(closingState.htlcTxs.size === 4)
-      assert(getHtlcTimeoutTxs(closingState).length === 4)
+      assert(closingState.htlcTxs.size == 4)
+      assert(getHtlcTimeoutTxs(closingState).length == 4)
       val htlcTxs = getHtlcTimeoutTxs(closingState).sortBy(_.tx.txOut.map(_.amount).sum)
       htlcTxs.reverse.drop(2).zipWithIndex.foreach {
         case (htlcTx, i) => alice ! WatchTxConfirmedTriggered(BlockHeight(201), i, htlcTx.tx)
@@ -479,13 +479,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     nodeParams.db.channels.addOrUpdateChannel(upstreamChannel)
     nodeParams.db.channels.addOrUpdateChannel(downstreamChannel)
-    assert(Closing.isClosed(downstreamChannel, None) === None)
+    assert(Closing.isClosed(downstreamChannel, None) == None)
 
     val (_, postRestart) = f.createRelayer(nodeParams)
     sender.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
     val brokenHtlcs = sender.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
     assert(brokenHtlcs.relayedOut.isEmpty)
-    assert(brokenHtlcs.notRelayed === htlc_ab.map(htlc => PostRestartHtlcCleaner.IncomingHtlc(htlc.add, None)))
+    assert(brokenHtlcs.notRelayed == htlc_ab.map(htlc => PostRestartHtlcCleaner.IncomingHtlc(htlc.add, None)))
   }
 
   test("handle a channel relay htlc-fail") { f =>
@@ -529,7 +529,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.origin_1))
     val fails = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
-    assert(fails.toSet === testCase.origin_1.htlcs.map {
+    assert(fails.toSet == testCase.origin_1.htlcs.map {
       case (channelId, htlcId) => Register.Forward(ActorRef.noSender, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
     }.toSet)
 
@@ -559,7 +559,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.origin_1, preimage1))
     val fulfills = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]] :: Nil
-    assert(fulfills.toSet === testCase.origin_1.htlcs.map {
+    assert(fulfills.toSet == testCase.origin_1.htlcs.map {
       case (channelId, htlcId) => Register.Forward(ActorRef.noSender, channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
     }.toSet)
 

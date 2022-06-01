@@ -27,15 +27,15 @@ class CltvExpirySpec extends AnyFunSuite with ParallelTestExecution {
 
   test("cltv expiry delta") {
     val d = CltvExpiryDelta(561)
-    assert(d.toInt === 561)
+    assert(d.toInt == 561)
 
     // add
-    assert(d + 5 === CltvExpiryDelta(566))
-    assert(d + CltvExpiryDelta(5) === CltvExpiryDelta(566))
+    assert(d + 5 == CltvExpiryDelta(566))
+    assert(d + CltvExpiryDelta(5) == CltvExpiryDelta(566))
 
     // subtract
-    assert(d - CltvExpiryDelta(5) === CltvExpiryDelta(556))
-    assert(d - CltvExpiryDelta(562) === CltvExpiryDelta(-1))
+    assert(d - CltvExpiryDelta(5) == CltvExpiryDelta(556))
+    assert(d - CltvExpiryDelta(562) == CltvExpiryDelta(-1))
 
     // compare
     assert(d <= CltvExpiryDelta(561))
@@ -44,18 +44,18 @@ class CltvExpirySpec extends AnyFunSuite with ParallelTestExecution {
     assert(d > CltvExpiryDelta(560))
 
     // convert to cltv expiry
-    assert(d.toCltvExpiry(currentBlockHeight = BlockHeight(1105)) === CltvExpiry(1666))
-    assert(d.toCltvExpiry(currentBlockHeight = BlockHeight(1106)) === CltvExpiry(1667))
+    assert(d.toCltvExpiry(currentBlockHeight = BlockHeight(1105)) == CltvExpiry(1666))
+    assert(d.toCltvExpiry(currentBlockHeight = BlockHeight(1106)) == CltvExpiry(1667))
   }
 
   test("cltv expiry") {
     val e = CltvExpiry(1105)
-    assert(e.toLong === 1105)
+    assert(e.toLong == 1105)
 
     // add
-    assert(e + CltvExpiryDelta(561) === CltvExpiry(1666))
-    assert(e - CltvExpiryDelta(561) === CltvExpiry(544))
-    assert(e - CltvExpiry(561) === CltvExpiryDelta(544))
+    assert(e + CltvExpiryDelta(561) == CltvExpiry(1666))
+    assert(e - CltvExpiryDelta(561) == CltvExpiry(544))
+    assert(e - CltvExpiry(561) == CltvExpiryDelta(544))
 
     // compare
     assert(e <= CltvExpiry(1105))

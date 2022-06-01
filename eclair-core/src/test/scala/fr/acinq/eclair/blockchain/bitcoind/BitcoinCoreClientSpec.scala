@@ -85,12 +85,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       assert(fundTxResponse.amountIn > 0.sat)
       assert(fundTxResponse.fee > 0.sat)
       fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.signatureScript.isEmpty && txIn.witness.isNull))
-      fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence === bitcoin.TxIn.SEQUENCE_FINAL - 2))
+      fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence == bitcoin.TxIn.SEQUENCE_FINAL - 2))
 
       bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
       val signTxResponse = sender.expectMsgType[SignTransactionResponse]
       assert(signTxResponse.complete)
-      assert(signTxResponse.tx.txOut.size === 2)
+      assert(signTxResponse.tx.txOut.size == 2)
 
       bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
       sender.expectMsg(signTxResponse.tx.txid)
@@ -123,11 +123,11 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val txManyOutputs = Transaction(2, Nil, TxOut(410000 sat, Script.pay2wpkh(randomKey().publicKey)) :: TxOut(230000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
       bitcoinClient.fundTransaction(txManyOutputs, FundTransactionOptions(TestConstants.feeratePerKw, replaceable = false, changePosition = Some(1))).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
-      assert(fundTxResponse.tx.txOut.size === 3)
-      assert(fundTxResponse.changePosition === Some(1))
+      assert(fundTxResponse.tx.txOut.size == 3)
+      assert(fundTxResponse.changePosition == Some(1))
       assert(!Set(230000 sat, 410000 sat).contains(fundTxResponse.tx.txOut(1).amount))
-      assert(Set(230000 sat, 410000 sat) === Set(fundTxResponse.tx.txOut.head.amount, fundTxResponse.tx.txOut.last.amount))
-      fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence === bitcoin.TxIn.SEQUENCE_FINAL - 1))
+      assert(Set(230000 sat, 410000 sat) == Set(fundTxResponse.tx.txOut.head.amount, fundTxResponse.tx.txOut.last.amount))
+      fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence == bitcoin.TxIn.SEQUENCE_FINAL - 1))
     }
   }
 
@@ -149,11 +149,11 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val sender = TestProbe()
       val bitcoinClient = new BitcoinCoreClient(rpcClient)
       bitcoinClient.onChainBalance().pipeTo(sender.ref)
-      assert(sender.expectMsgType[OnChainBalance] === OnChainBalance(Satoshi(satoshi), Satoshi(satoshi)))
+      assert(sender.expectMsgType[OnChainBalance] == OnChainBalance(Satoshi(satoshi), Satoshi(satoshi)))
 
       bitcoinClient.fundTransaction(txIn, FundTransactionOptions(FeeratePerKw(250 sat))).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
-      assert(fundTxResponse.fee === Satoshi(satoshi))
+      assert(fundTxResponse.fee == Satoshi(satoshi))
     }
   }
 
@@ -182,7 +182,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       sender.expectMsgType[MakeFundingTxResponse].fundingTx
     }
 
-    assert(getLocks(sender).size === 4)
+    assert(getLocks(sender).size == 4)
 
     bitcoinClient.commit(fundingTxs(0)).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
@@ -294,9 +294,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // tx2 replaced tx1 in the mempool
     bitcoinClient.getMempool().pipeTo(sender.ref)
     val mempoolTxs = sender.expectMsgType[Seq[Transaction]]
-    assert(mempoolTxs.length === 1)
-    assert(mempoolTxs.head.txid === tx2.txid)
-    assert(tx2.txIn.map(_.outPoint).intersect(tx1.txIn.map(_.outPoint)).length === 1)
+    assert(mempoolTxs.length == 1)
+    assert(mempoolTxs.head.txid == tx2.txid)
+    assert(tx2.txIn.map(_.outPoint).intersect(tx1.txIn.map(_.outPoint)).length == 1)
   }
 
   test("unlock transaction inputs if publishing fails") {
@@ -540,7 +540,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.onChainBalance().pipeTo(sender.ref)
     val initialBalance = sender.expectMsgType[OnChainBalance]
-    assert(initialBalance.unconfirmed === 0.sat)
+    assert(initialBalance.unconfirmed == 0.sat)
     assert(initialBalance.confirmed > 50.btc.toSatoshi)
 
     val address = "n2YKngjUp139nkjKvZGnfLRN6HzzYxJsje"
@@ -550,10 +550,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.listTransactions(25, 0).pipeTo(sender.ref)
     val Some(tx1) = sender.expectMsgType[List[WalletTx]].collectFirst { case tx if tx.txid == txid => tx }
-    assert(tx1.address === address)
-    assert(tx1.amount === -amount)
+    assert(tx1.address == address)
+    assert(tx1.amount == -amount)
     assert(tx1.fees < 0.sat)
-    assert(tx1.confirmations === 0)
+    assert(tx1.confirmations == 0)
 
     bitcoinClient.onChainBalance().pipeTo(sender.ref)
     // NB: we use + because these amounts are already negative
@@ -562,10 +562,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     generateBlocks(1)
     bitcoinClient.listTransactions(25, 0).pipeTo(sender.ref)
     val Some(tx2) = sender.expectMsgType[List[WalletTx]].collectFirst { case tx if tx.txid == txid => tx }
-    assert(tx2.address === address)
-    assert(tx2.amount === -amount)
+    assert(tx2.address == address)
+    assert(tx2.amount == -amount)
     assert(tx2.fees < 0.sat)
-    assert(tx2.confirmations === 1)
+    assert(tx2.confirmations == 1)
   }
 
   test("get mempool transaction") {
@@ -591,26 +591,26 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.getMempoolTx(tx1.txid).pipeTo(sender.ref)
     val mempoolTx1 = sender.expectMsgType[MempoolTx]
-    assert(mempoolTx1.ancestorCount === 0)
-    assert(mempoolTx1.descendantCount === 2)
-    assert(mempoolTx1.fees === mempoolTx1.ancestorFees)
-    assert(mempoolTx1.descendantFees === mempoolTx1.fees + 12500.sat)
+    assert(mempoolTx1.ancestorCount == 0)
+    assert(mempoolTx1.descendantCount == 2)
+    assert(mempoolTx1.fees == mempoolTx1.ancestorFees)
+    assert(mempoolTx1.descendantFees == mempoolTx1.fees + 12500.sat)
 
     bitcoinClient.getMempoolTx(tx2.txid).pipeTo(sender.ref)
     val mempoolTx2 = sender.expectMsgType[MempoolTx]
-    assert(mempoolTx2.ancestorCount === 1)
-    assert(mempoolTx2.descendantCount === 1)
-    assert(mempoolTx2.fees === 5000.sat)
-    assert(mempoolTx2.descendantFees === 12500.sat)
-    assert(mempoolTx2.ancestorFees === mempoolTx1.fees + 5000.sat)
+    assert(mempoolTx2.ancestorCount == 1)
+    assert(mempoolTx2.descendantCount == 1)
+    assert(mempoolTx2.fees == 5000.sat)
+    assert(mempoolTx2.descendantFees == 12500.sat)
+    assert(mempoolTx2.ancestorFees == mempoolTx1.fees + 5000.sat)
 
     bitcoinClient.getMempoolTx(tx3.txid).pipeTo(sender.ref)
     val mempoolTx3 = sender.expectMsgType[MempoolTx]
-    assert(mempoolTx3.ancestorCount === 2)
-    assert(mempoolTx3.descendantCount === 0)
-    assert(mempoolTx3.fees === 7500.sat)
-    assert(mempoolTx3.descendantFees === mempoolTx3.fees)
-    assert(mempoolTx3.ancestorFees === mempoolTx1.fees + 12500.sat)
+    assert(mempoolTx3.ancestorCount == 2)
+    assert(mempoolTx3.descendantCount == 0)
+    assert(mempoolTx3.fees == 7500.sat)
+    assert(mempoolTx3.descendantFees == mempoolTx3.fees)
+    assert(mempoolTx3.ancestorFees == mempoolTx1.fees + 12500.sat)
   }
 
   test("abandon transaction") {
@@ -781,7 +781,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     generateBlocks(1)
     bitcoinClient.getBlockHeight().pipeTo(sender.ref)
     val blockHeight1 = sender.expectMsgType[BlockHeight]
-    assert(blockHeight1 === blockHeight + 1)
+    assert(blockHeight1 == blockHeight + 1)
     bitcoinClient.getTxConfirmations(tx1.txid).pipeTo(sender.ref)
     sender.expectMsg(Some(1))
     bitcoinClient.isTransactionOutputSpendable(tx1.txid, 0, includeMempool = false).pipeTo(sender.ref)
@@ -803,7 +803,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.getReceivePubkey(receiveAddress = Some(address)).pipeTo(sender.ref)
     val receiveKey = sender.expectMsgType[PublicKey]
-    assert(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash) === Script.pay2wpkh(receiveKey))
+    assert(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash) == Script.pay2wpkh(receiveKey))
   }
 
 }

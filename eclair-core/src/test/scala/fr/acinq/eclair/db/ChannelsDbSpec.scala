@@ -70,16 +70,16 @@ class ChannelsDbSpec extends AnyFunSuite {
 
       intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
 
-      assert(db.listLocalChannels().toSet === Set.empty)
+      assert(db.listLocalChannels().toSet == Set.empty)
       db.addOrUpdateChannel(channel1)
       db.addOrUpdateChannel(channel1)
-      assert(db.listLocalChannels() === List(channel1))
+      assert(db.listLocalChannels() == List(channel1))
       db.addOrUpdateChannel(channel2a)
-      assert(db.listLocalChannels() === List(channel1, channel2a))
+      assert(db.listLocalChannels() == List(channel1, channel2a))
       assert(db.getChannel(channel1.channelId).contains(channel1))
       assert(db.getChannel(channel2a.channelId).contains(channel2a))
       db.addOrUpdateChannel(channel2b)
-      assert(db.listLocalChannels() === List(channel1, channel2b))
+      assert(db.listLocalChannels() == List(channel1, channel2b))
       assert(db.getChannel(channel2b.channelId).contains(channel2b))
 
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
@@ -90,11 +90,11 @@ class ChannelsDbSpec extends AnyFunSuite {
 
       db.removeChannel(channel1.channelId)
       assert(db.getChannel(channel1.channelId).isEmpty)
-      assert(db.listLocalChannels() === List(channel2b))
+      assert(db.listLocalChannels() == List(channel2b))
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
       db.removeChannel(channel2b.channelId)
       assert(db.getChannel(channel2b.channelId).isEmpty)
-      assert(db.listLocalChannels() === Nil)
+      assert(db.listLocalChannels() == Nil)
     }
   }
 
@@ -195,11 +195,11 @@ class ChannelsDbSpec extends AnyFunSuite {
         using(sqlite.createStatement()) { statement =>
           assert(getVersion(statement, "channels").contains(targetVersion))
         }
-        assert(db.listLocalChannels().size === testCases.size)
+        assert(db.listLocalChannels().size == testCases.size)
         for (testCase <- testCases) {
           db.updateChannelMeta(testCase.channelId, ChannelEvent.EventType.Created) // this call must not fail
           for (commitmentNumber <- testCase.commitmentNumbers) {
-            assert(db.listHtlcInfos(testCase.channelId, commitmentNumber).size === testCase.commitmentNumbers.count(_ == commitmentNumber))
+            assert(db.listHtlcInfos(testCase.channelId, commitmentNumber).size == testCase.commitmentNumbers.count(_ == commitmentNumber))
           }
         }
     }
@@ -207,11 +207,11 @@ class ChannelsDbSpec extends AnyFunSuite {
 
   test("migrate channel database v2 -> current") {
     def postCheck(channelsDb: ChannelsDb): Unit = {
-      assert(channelsDb.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
+      assert(channelsDb.listLocalChannels().size == testCases.filterNot(_.isClosed).size)
       for (testCase <- testCases.filterNot(_.isClosed)) {
         channelsDb.updateChannelMeta(testCase.channelId, ChannelEvent.EventType.Created) // this call must not fail
         for (commitmentNumber <- testCase.commitmentNumbers) {
-          assert(channelsDb.listHtlcInfos(testCase.channelId, commitmentNumber).size === testCase.commitmentNumbers.count(_ == commitmentNumber))
+          assert(channelsDb.listHtlcInfos(testCase.channelId, commitmentNumber).size == testCase.commitmentNumbers.count(_ == commitmentNumber))
         }
       }
     }
@@ -320,13 +320,13 @@ class ChannelsDbSpec extends AnyFunSuite {
       dbName = PgChannelsDb.DB_NAME,
       targetVersion = PgChannelsDb.CURRENT_VERSION,
       postCheck = connection => {
-        assert(dbs.channels.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
+        assert(dbs.channels.listLocalChannels().size == testCases.filterNot(_.isClosed).size)
         testCases.foreach { testCase =>
-          assert(getPgTimestamp(connection, testCase.channelId, "created_timestamp") === testCase.createdTimestamp)
-          assert(getPgTimestamp(connection, testCase.channelId, "last_payment_sent_timestamp") === testCase.lastPaymentSentTimestamp)
-          assert(getPgTimestamp(connection, testCase.channelId, "last_payment_received_timestamp") === testCase.lastPaymentReceivedTimestamp)
-          assert(getPgTimestamp(connection, testCase.channelId, "last_connected_timestamp") === testCase.lastConnectedTimestamp)
-          assert(getPgTimestamp(connection, testCase.channelId, "closed_timestamp") === testCase.closedTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "created_timestamp") == testCase.createdTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "last_payment_sent_timestamp") == testCase.lastPaymentSentTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "last_payment_received_timestamp") == testCase.lastPaymentReceivedTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "last_connected_timestamp") == testCase.lastConnectedTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "closed_timestamp") == testCase.closedTimestamp)
         }
       }
     )

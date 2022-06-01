@@ -86,7 +86,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     bob2blockchain.expectMsgType[WatchFundingSpent]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(watchConfirmed.minDepth === Alice.nodeParams.channelConf.minDepthBlocks)
+    assert(watchConfirmed.minDepth == Alice.nodeParams.channelConf.minDepthBlocks)
   }
 
   test("recv FundingCreated (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
@@ -111,7 +111,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missing=${-missing} reserve=$reserve fees=$fees"))
+    assert(error == Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missing=${-missing} reserve=$reserve fees=$fees"))
     awaitCond(bob.stateName == CLOSED)
   }
 

@@ -59,12 +59,12 @@ class RouterSpec extends BaseRouterSpec {
       val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac))
       peerConnection.expectNoMessage(100 millis) // we don't immediately acknowledge the announcement (back pressure)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ac)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_ac)
       watcher.send(router, ValidateResult(chan_ac, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ac))
       peerConnection.expectMsg(GossipDecision.Accepted(chan_ac))
       assert(peerConnection.sender() == router)
-      assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId === chan_ac.shortChannelId)
+      assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId == chan_ac.shortChannelId)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ac))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ac))
       peerConnection.expectMsg(GossipDecision.Accepted(update_ac))
@@ -89,7 +89,7 @@ class RouterSpec extends BaseRouterSpec {
       val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, Features.empty)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_uc))
       peerConnection.expectNoMessage(200 millis) // we don't immediately acknowledge the announcement (back pressure)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_uc)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_uc)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_uc))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_uc))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_u))
@@ -98,7 +98,7 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_uc))
       peerConnection.expectMsg(GossipDecision.Accepted(chan_uc))
       assert(peerConnection.sender() == router)
-      assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId === chan_uc.shortChannelId)
+      assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId == chan_uc.shortChannelId)
       peerConnection.expectMsg(GossipDecision.Accepted(update_uc))
       peerConnection.expectMsg(GossipDecision.Accepted(node_u))
       eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_uc, 2000000 sat, None, None) :: Nil))
@@ -194,7 +194,7 @@ class RouterSpec extends BaseRouterSpec {
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures())
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ay))
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ay)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_ay)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_y))
@@ -214,7 +214,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_x = randomKey()
       val chan_ax = channelAnnouncement(ShortChannelId(42001), priv_a, priv_x, priv_funding_a, randomKey())
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ax))
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ax)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_ax)
       watcher.send(router, ValidateResult(chan_ax, Left(new RuntimeException("funding tx not found"))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ax))
       peerConnection.expectMsg(GossipDecision.ValidationFailure(chan_ax))
@@ -229,7 +229,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_funding_z = randomKey()
       val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_az)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_az)
       watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = false))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
       peerConnection.expectMsg(GossipDecision.ChannelClosing(chan_az))
@@ -244,7 +244,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_funding_z = randomKey()
       val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_az)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_az)
       watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
       peerConnection.expectMsg(GossipDecision.ChannelClosed(chan_az))
@@ -340,13 +340,13 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
-    assert(res.routes.head.hops.last.nextNodeId === d)
+    assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: Nil)
+    assert(res.routes.head.hops.last.nextNodeId == d)
 
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res1 = sender.expectMsgType[RouteResponse]
-    assert(res1.routes.head.hops.map(_.nodeId).toList === a :: g :: Nil)
-    assert(res1.routes.head.hops.last.nextNodeId === h)
+    assert(res1.routes.head.hops.map(_.nodeId).toList == a :: g :: Nil)
+    assert(res1.routes.head.hops.last.nextNodeId == h)
   }
 
   test("route found (with extra routing info)") { fixture =>
@@ -360,8 +360,8 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
     sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil), routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: x :: y :: Nil)
-    assert(res.routes.head.hops.last.nextNodeId === z)
+    assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: x :: y :: Nil)
+    assert(res.routes.head.hops.last.nextNodeId == z)
   }
 
   test("route not found (channel disabled)") { fixture =>
@@ -370,8 +370,8 @@ class RouterSpec extends BaseRouterSpec {
     val peerConnection = TestProbe()
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
-    assert(res.routes.head.hops.last.nextNodeId === d)
+    assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: Nil)
+    assert(res.routes.head.hops.last.nextNodeId == d)
 
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, scid_cd, CltvExpiryDelta(3), 0 msat, 153000 msat, 4, htlcMaximum, enable = false)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cd1))
@@ -385,8 +385,8 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.routes.head.hops.map(_.nodeId).toList === a :: g :: Nil)
-    assert(res.routes.head.hops.last.nextNodeId === h)
+    assert(res.routes.head.hops.map(_.nodeId).toList == a :: g :: Nil)
+    assert(res.routes.head.hops.last.nextNodeId == h)
 
     val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, scid_ag_private, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
     sender.send(router, LocalChannelUpdate(sender.ref, null, scid_ag_private, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
@@ -448,7 +448,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.channels.size == 5)
     assert(state.nodes.size == 8)
     assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 10)
-    state.channels.foreach(c => assert(c.capacity === publicChannelCapacity))
+    state.channels.foreach(c => assert(c.capacity == publicChannelCapacity))
   }
 
   test("given a pre-defined nodes route add the proper channel updates") { fixture =>
@@ -460,9 +460,9 @@ class RouterSpec extends BaseRouterSpec {
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
-    assert(response.routes.head.hops.map(_.nodeId) === preComputedRoute.nodes.dropRight(1))
-    assert(response.routes.head.hops.map(_.nextNodeId) === preComputedRoute.nodes.drop(1))
-    assert(response.routes.head.hops.map(_.params) === Seq(ChannelRelayParams.FromAnnouncement(update_ab), ChannelRelayParams.FromAnnouncement(update_bc), ChannelRelayParams.FromAnnouncement(update_cd)))
+    assert(response.routes.head.hops.map(_.nodeId) == preComputedRoute.nodes.dropRight(1))
+    assert(response.routes.head.hops.map(_.nextNodeId) == preComputedRoute.nodes.drop(1))
+    assert(response.routes.head.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ab), ChannelRelayParams.FromAnnouncement(update_bc), ChannelRelayParams.FromAnnouncement(update_cd)))
   }
 
   test("given a pre-defined channels route add the proper channel updates") { fixture =>
@@ -474,9 +474,9 @@ class RouterSpec extends BaseRouterSpec {
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
-    assert(response.routes.head.hops.map(_.nodeId) === Seq(a, b, c))
-    assert(response.routes.head.hops.map(_.nextNodeId) === Seq(b, c, d))
-    assert(response.routes.head.hops.map(_.params) === Seq(ChannelRelayParams.FromAnnouncement(update_ab), ChannelRelayParams.FromAnnouncement(update_bc), ChannelRelayParams.FromAnnouncement(update_cd)))
+    assert(response.routes.head.hops.map(_.nodeId) == Seq(a, b, c))
+    assert(response.routes.head.hops.map(_.nextNodeId) == Seq(b, c, d))
+    assert(response.routes.head.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ab), ChannelRelayParams.FromAnnouncement(update_bc), ChannelRelayParams.FromAnnouncement(update_cd)))
   }
 
   test("given a pre-defined private channels route add the proper channel updates") { fixture =>
@@ -487,21 +487,21 @@ class RouterSpec extends BaseRouterSpec {
       val preComputedRoute = PredefinedChannelRoute(g, Seq(scid_ag_private))
       sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
       val response = sender.expectMsgType[RouteResponse]
-      assert(response.routes.length === 1)
+      assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.params) === Seq(ChannelRelayParams.FromAnnouncement(update_ag_private)))
-      assert(route.hops.head.nodeId === a)
-      assert(route.hops.head.nextNodeId === g)
+      assert(route.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private)))
+      assert(route.hops.head.nodeId == a)
+      assert(route.hops.head.nextNodeId == g)
     }
     {
       val preComputedRoute = PredefinedChannelRoute(h, Seq(scid_ag_private, scid_gh))
       sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
       val response = sender.expectMsgType[RouteResponse]
-      assert(response.routes.length === 1)
+      assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.nodeId) === Seq(a, g))
-      assert(route.hops.map(_.nextNodeId) === Seq(g, h))
-      assert(route.hops.map(_.params) === Seq(ChannelRelayParams.FromAnnouncement(update_ag_private), ChannelRelayParams.FromAnnouncement(update_gh)))
+      assert(route.hops.map(_.nodeId) == Seq(a, g))
+      assert(route.hops.map(_.nextNodeId) == Seq(g, h))
+      assert(route.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private), ChannelRelayParams.FromAnnouncement(update_gh)))
     }
   }
 
@@ -518,12 +518,12 @@ class RouterSpec extends BaseRouterSpec {
       assert(amount < RoutingHeuristics.CAPACITY_CHANNEL_LOW)
       sender.send(router, FinalizeRoute(amount, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
       val response = sender.expectMsgType[RouteResponse]
-      assert(response.routes.length === 1)
+      assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.nodeId) === Seq(a, b))
-      assert(route.hops.map(_.nextNodeId) === Seq(b, targetNodeId))
-      assert(route.hops.head.params === ChannelRelayParams.FromAnnouncement(update_ab))
-      assert(route.hops.last.params === ChannelRelayParams.FromHint(invoiceRoutingHint, RoutingHeuristics.CAPACITY_CHANNEL_LOW + nodeFee(invoiceRoutingHint.feeBase, invoiceRoutingHint.feeProportionalMillionths, RoutingHeuristics.CAPACITY_CHANNEL_LOW)))
+      assert(route.hops.map(_.nodeId) == Seq(a, b))
+      assert(route.hops.map(_.nextNodeId) == Seq(b, targetNodeId))
+      assert(route.hops.head.params == ChannelRelayParams.FromAnnouncement(update_ab))
+      assert(route.hops.last.params == ChannelRelayParams.FromHint(invoiceRoutingHint, RoutingHeuristics.CAPACITY_CHANNEL_LOW + nodeFee(invoiceRoutingHint.feeBase, invoiceRoutingHint.feeProportionalMillionths, RoutingHeuristics.CAPACITY_CHANNEL_LOW)))
     }
     {
       val invoiceRoutingHint = ExtraHop(h, ShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
@@ -533,12 +533,12 @@ class RouterSpec extends BaseRouterSpec {
       assert(amount > RoutingHeuristics.CAPACITY_CHANNEL_LOW)
       sender.send(router, FinalizeRoute(amount, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
       val response = sender.expectMsgType[RouteResponse]
-      assert(response.routes.length === 1)
+      assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.nodeId) === Seq(a, g, h))
-      assert(route.hops.map(_.nextNodeId) === Seq(g, h, targetNodeId))
-      assert(route.hops.map(_.params).dropRight(1) === Seq(ChannelRelayParams.FromAnnouncement(update_ag_private), ChannelRelayParams.FromAnnouncement(update_gh)))
-      assert(route.hops.last.params === ChannelRelayParams.FromHint(invoiceRoutingHint, amount + nodeFee(invoiceRoutingHint.feeBase, invoiceRoutingHint.feeProportionalMillionths, amount)))
+      assert(route.hops.map(_.nodeId) == Seq(a, g, h))
+      assert(route.hops.map(_.nextNodeId) == Seq(g, h, targetNodeId))
+      assert(route.hops.map(_.params).dropRight(1) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private), ChannelRelayParams.FromAnnouncement(update_gh)))
+      assert(route.hops.last.params == ChannelRelayParams.FromHint(invoiceRoutingHint, amount + nodeFee(invoiceRoutingHint.feeBase, invoiceRoutingHint.feeProportionalMillionths, amount)))
     }
   }
 
@@ -605,7 +605,7 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, GetRoutingState)
     val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-    assert(channel_ab.meta_opt === None)
+    assert(channel_ab.meta_opt == None)
 
     {
       // When the local channel comes back online, it will send a LocalChannelUpdate to the router.
@@ -614,7 +614,7 @@ class RouterSpec extends BaseRouterSpec {
       sender.send(router, LocalChannelUpdate(sender.ref, null, scid_ab, b, Some(chan_ab), update_ab, commitments))
       sender.send(router, GetRoutingState)
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
+      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graph
@@ -622,7 +622,7 @@ class RouterSpec extends BaseRouterSpec {
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
       assert(balances.contains(edge_ab.balance_opt))
-      assert(edge_ba.balance_opt === None)
+      assert(edge_ba.balance_opt == None)
     }
 
     {
@@ -637,7 +637,7 @@ class RouterSpec extends BaseRouterSpec {
       sender.send(router, LocalChannelUpdate(sender.ref, null, scid_ab, b, Some(chan_ab), update_ab, commitments))
       sender.send(router, GetRoutingState)
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
+      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graph
@@ -645,7 +645,7 @@ class RouterSpec extends BaseRouterSpec {
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
       assert(balances.contains(edge_ab.balance_opt))
-      assert(edge_ba.balance_opt === None)
+      assert(edge_ba.balance_opt == None)
     }
 
     {
@@ -655,7 +655,7 @@ class RouterSpec extends BaseRouterSpec {
       sender.send(router, AvailableBalanceChanged(sender.ref, null, scid_ab, commitments))
       sender.send(router, GetRoutingState)
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
+      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graph
@@ -663,7 +663,7 @@ class RouterSpec extends BaseRouterSpec {
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
       assert(balances.contains(edge_ab.balance_opt))
-      assert(edge_ba.balance_opt === None)
+      assert(edge_ba.balance_opt == None)
     }
 
     {
@@ -674,11 +674,11 @@ class RouterSpec extends BaseRouterSpec {
       sender.send(router, Router.GetRouterData)
       val data = sender.expectMsgType[Data]
       val channel_ag = data.privateChannels(channelId_ag_private)
-      assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) === balances)
+      assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) == balances)
       // And the graph should be updated too.
       val edge_ag = data.graph.getEdge(ChannelDesc(scid_ag_private, a, g)).get
       assert(edge_ag.capacity == channel_ag.capacity)
-      assert(edge_ag.balance_opt === Some(33000000 msat))
+      assert(edge_ag.balance_opt == Some(33000000 msat))
     }
   }
 
@@ -702,7 +702,7 @@ class RouterSpec extends BaseRouterSpec {
         false
       case RoutingStateStreamingUpToDate => true
     }
-    assert(nodes.size === 8 && channels.size === 5 && updates.size === 10) // public channels only
+    assert(nodes.size == 8 && channels.size == 5 && updates.size == 10) // public channels only
 
     // just making sure that we have been subscribed to network events, otherwise there is a possible race condition
     awaitCond({

@@ -81,12 +81,12 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     for (testCase <- testCases) {
       if (testCase.valid) {
         val init = initCodec.decode(testCase.encoded.bits).require.value
-        assert(init.features.toByteVector === testCase.rawFeatures)
-        assert(init.networks === testCase.networks)
-        assert(init.remoteAddress_opt === testCase.address)
+        assert(init.features.toByteVector == testCase.rawFeatures)
+        assert(init.networks == testCase.networks)
+        assert(init.remoteAddress_opt == testCase.address)
         val encoded = initCodec.encode(init).require
-        assert(encoded.bytes === testCase.reEncoded.getOrElse(testCase.encoded))
-        assert(initCodec.decode(encoded).require.value === init)
+        assert(encoded.bytes == testCase.reEncoded.getOrElse(testCase.encoded))
+        assert(initCodec.decode(encoded).require.value == init)
       } else {
         assert(initCodec.decode(testCase.encoded.bits).isFailure)
       }
@@ -102,8 +102,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
 
     for ((warning, expected) <- testCases) {
-      assert(lightningMessageCodec.encode(warning).require.bytes === expected)
-      assert(lightningMessageCodec.decode(expected.bits).require.value === warning)
+      assert(lightningMessageCodec.encode(warning).require.bytes == expected)
+      assert(lightningMessageCodec.decode(expected.bits).require.value == warning)
     }
   }
 
@@ -142,8 +142,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
 
     refs.foreach { case ((bin, remainder), msg) =>
-      assert(lightningMessageCodec.decode(bin.bits ++ remainder.bits).require === DecodeResult(msg, remainder.bits))
-      assert(lightningMessageCodec.encode(msg).require === bin.bits)
+      assert(lightningMessageCodec.decode(bin.bits ++ remainder.bits).require == DecodeResult(msg, remainder.bits))
+      assert(lightningMessageCodec.encode(msg).require == bin.bits)
     }
   }
 
@@ -153,7 +153,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     val node = nodeAnnouncementCodec.decode(bin).require.value
     val bin2 = nodeAnnouncementCodec.encode(node).require
-    assert(bin === bin2)
+    assert(bin == bin2)
   }
 
   test("encode/decode interactive-tx messages") {
@@ -187,9 +187,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     testCases.foreach { case (message, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require
       assert(decoded.remainder.isEmpty)
-      assert(decoded.value === message)
+      assert(decoded.value == message)
       val encoded = lightningMessageCodec.encode(message).require.bytes
-      assert(encoded === bin)
+      assert(encoded == bin)
     }
   }
 
@@ -226,9 +226,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     for ((encoded, expected) <- testCases) {
       val decoded = openChannelCodec.decode(encoded.bits).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
       val reEncoded = openChannelCodec.encode(decoded).require.bytes
-      assert(reEncoded === encoded)
+      assert(reEncoded == encoded)
     }
   }
 
@@ -260,9 +260,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
     testCases.foreach { case (open, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
-      assert(decoded === open)
+      assert(decoded == open)
       val encoded = lightningMessageCodec.encode(open).require.bytes
-      assert(encoded === bin)
+      assert(encoded == bin)
     }
   }
 
@@ -276,7 +276,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
     testCases.foreach { case (bin, flags) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
-      assert(decoded === defaultOpen.copy(channelFlags = flags))
+      assert(decoded == defaultOpen.copy(channelFlags = flags))
     }
   }
 
@@ -300,9 +300,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     for ((encoded, expected) <- testCases) {
       val decoded = acceptChannelCodec.decode(encoded.bits).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
       val reEncoded = acceptChannelCodec.encode(decoded).require.bytes
-      assert(reEncoded === encoded)
+      assert(reEncoded == encoded)
     }
   }
 
@@ -315,9 +315,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
     testCases.foreach { case (accept, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
-      assert(decoded === accept)
+      assert(decoded == accept)
       val encoded = lightningMessageCodec.encode(accept).require.bytes
-      assert(encoded === bin)
+      assert(encoded == bin)
     }
   }
 
@@ -334,9 +334,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     for ((encoded, expected) <- testCases) {
       val decoded = closingSignedCodec.decode(encoded.bits).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
       val reEncoded = closingSignedCodec.encode(decoded).require.bytes
-      assert(reEncoded === encoded)
+      assert(reEncoded == encoded)
     }
   }
 
@@ -389,7 +389,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       msg => {
         val encoded = lightningMessageCodecWithFallback.encode(msg).require
         val decoded = lightningMessageCodecWithFallback.decode(encoded).require
-        assert(msg === decoded.value)
+        assert(msg == decoded.value)
       }
     }
   }
@@ -401,7 +401,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val encoded1 = lightningMessageCodecWithFallback.encode(unknown).require
     val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value
     assert(lightningMessageCodec.decode(encoded1).isFailure)
-    assert(decoded1 === unknown)
+    assert(decoded1 == unknown)
   }
 
   test("non-reg encoding type") {
@@ -462,7 +462,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     val items = refs.map { case (obj, refbin) =>
       val bin = lightningMessageCodec.encode(obj).require
-      assert(refbin.bits === bin)
+      assert(refbin.bits == bin)
       TestItem(obj, bin.toHex)
     }
 
@@ -520,11 +520,11 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     // this was generated by c-lightning
     val bin = hex"010258fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf1792306226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f0005a100000200005bc75919010100060000000000000001000000010000000a000000003a699d00"
     val update = lightningMessageCodec.decode(bin.bits).require.value.asInstanceOf[ChannelUpdate]
-    assert(update === ChannelUpdate(ByteVector64(hex"58fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf17923"), ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"), ShortChannelId(0x5a10000020000L), 1539791129 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(6), 1 msat, 1 msat, 10, Some(980000000 msat)))
+    assert(update == ChannelUpdate(ByteVector64(hex"58fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf17923"), ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"), ShortChannelId(0x5a10000020000L), 1539791129 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(6), 1 msat, 1 msat, 10, Some(980000000 msat)))
     val nodeId = PublicKey(hex"03370c9bac836e557eb4f017fe8f9cc047f44db39c1c4e410ff0f7be142b817ae4")
     assert(Announcements.checkSig(update, nodeId))
     val bin2 = ByteVector(lightningMessageCodec.encode(update).require.toByteArray)
-    assert(bin === bin2)
+    assert(bin == bin2)
   }
 
   test("non-regression on channel_update") {
@@ -549,10 +549,10 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     for ((bin, ref) <- bins) {
       val decoded = channelUpdateCodec.decode(bin.bits).require
       // not only must decoding succeed, it must also produce the same object
-      assert(Serialization.write(decoded.value)(JsonSerializers.formats) === ref)
+      assert(Serialization.write(decoded.value)(JsonSerializers.formats) == ref)
       assert(decoded.remainder.isEmpty)
       // encoding must produce the same buffer
-      assert(channelUpdateCodec.encode(decoded.value).require.bytes === bin)
+      assert(channelUpdateCodec.encode(decoded.value).require.bytes == bin)
     }
   }
 
@@ -565,9 +565,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
     for ((bin, ref) <- testCases) {
       val decoded = channelFlagsCodec.decode(bin).require
-      assert(decoded.value === ref)
+      assert(decoded.value == ref)
       assert(decoded.remainder.isEmpty)
-      assert(channelFlagsCodec.encode(ref).require === bin)
+      assert(channelFlagsCodec.encode(ref).require == bin)
     }
   }
 

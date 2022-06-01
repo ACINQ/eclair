@@ -85,7 +85,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     bob2alice.forward(newAlice)
     // ... and ask bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data.toArray) === PleasePublishYourCommitment(channelId(newAlice)).getMessage)
+    assert(new String(error.data.toArray) == PleasePublishYourCommitment(channelId(newAlice)).getMessage)
 
     // alice now waits for bob to publish its commitment
     awaitCond(newAlice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
@@ -224,9 +224,9 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
 
       val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
       assert(!Announcements.areSameIgnoreFlags(u1.channelUpdate, oldStateData.channelUpdate))
-      assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.privateChannelFees.feeBase)
-      assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
-      assert(u1.channelUpdate.cltvExpiryDelta === newConfig.channelConf.expiryDelta)
+      assert(u1.channelUpdate.feeBaseMsat == newConfig.relayParams.privateChannelFees.feeBase)
+      assert(u1.channelUpdate.feeProportionalMillionths == newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
+      assert(u1.channelUpdate.cltvExpiryDelta == newConfig.channelConf.expiryDelta)
 
       newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
       bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
