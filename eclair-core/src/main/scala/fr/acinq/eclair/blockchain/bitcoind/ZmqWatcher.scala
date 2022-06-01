@@ -413,7 +413,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
       case Some(confirmations) if confirmations >= w.minDepth =>
         client.getTransaction(w.txId).flatMap { tx =>
           w match {
-            case w: WatchFundingConfirmed if confirmations == 0 && w.minDepth == 0 =>
+            case w: WatchFundingConfirmed if confirmations == 0 =>
               // if the tx doesn't have confirmations but we don't require any, we reply with a fake block index
               // otherwise, we get the real short id
               context.self ! TriggerEvent(w.replyTo, w, WatchFundingConfirmedTriggered(BlockHeight(0), 0, tx))

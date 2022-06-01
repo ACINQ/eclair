@@ -81,6 +81,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
           val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, channelFeatures, open.fundingSatoshis)
+          log.info("will use fundingMinDepth={}", minimumDepth)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
@@ -151,7 +152,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             initFeatures = remoteInit.features,
             shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
-          log.info("remote indicates they are going to use fundingMinDepth={}", accept.minimumDepth)
+          log.info("remote will use fundingMinDepth={}", accept.minimumDepth)
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
           wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeerate).pipeTo(self)

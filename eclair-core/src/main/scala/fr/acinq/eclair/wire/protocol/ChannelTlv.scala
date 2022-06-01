@@ -114,10 +114,10 @@ object ChannelReadyTlv {
 
   case class ShortChannelIdTlv(alias: ShortChannelId) extends ChannelReadyTlv
 
-  val channelTypeCodec: Codec[ShortChannelIdTlv] = variableSizeBytesLong(varintoverflow, "alias" | shortchannelid).as[ShortChannelIdTlv]
+  val channelAliasTlvCodec: Codec[ShortChannelIdTlv] = variableSizeBytesLong(varintoverflow, "alias" | shortchannelid).as[ShortChannelIdTlv]
 
   val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint)
-    .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(1), channelAliasTlvCodec)
   )
 }
 
