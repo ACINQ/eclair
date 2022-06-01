@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef, ActorSystem}
-import akka.testkit.{TestFSMRef, TestKit, TestKitBase, TestProbe}
+import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -39,7 +39,8 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import org.scalatest.FixtureTestSuite
+import org.scalatest.{Assertions, FixtureTestSuite}
+import org.scalatest.concurrent.Eventually
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -47,7 +48,7 @@ import scala.concurrent.duration._
 /**
  * Created by PM on 23/08/2016.
  */
-trait ChannelStateTestsBase extends ChannelStateTestsHelperMethods with FixtureTestSuite {
+trait ChannelStateTestsBase extends ChannelStateTestsHelperMethods {
 
   implicit class ChannelWithTestFeeConf(a: TestFSMRef[ChannelState, ChannelData, Channel]) {
     // @formatter:off
@@ -87,7 +88,7 @@ object ChannelStateTestsTags {
   val ChannelType = "option_channel_type"
 }
 
-trait ChannelStateTestsHelperMethods extends TestKitBase {
+trait ChannelStateTestsHelperMethods extends Assertions with Eventually {
 
   case class SetupFixture(alice: TestFSMRef[ChannelState, ChannelData, Channel],
                           bob: TestFSMRef[ChannelState, ChannelData, Channel],
@@ -106,6 +107,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
+  implicit val system: ActorSystem
   val systemA: ActorSystem = ActorSystem("system-alice")
   val systemB: ActorSystem = ActorSystem("system-bob")
 
@@ -227,7 +229,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     bob2blockchain.expectMsgType[WatchFundingSpent]
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+
+    eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
@@ -239,8 +242,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
-    awaitCond(alice.stateName == NORMAL)
-    awaitCond(bob.stateName == NORMAL)
+    eventually(assert(alice.stateName == NORMAL))
+    eventually(assert(bob.stateName == NORMAL))
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.requestedChannelReserve_opt.getOrElse(0 sat)).max(0 msat))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -288,7 +291,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     s ! cmdAdd
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(htlc))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(htlc)))
     htlc
   }
 
@@ -296,14 +299,14 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     s ! CMD_FULFILL_HTLC(id, preimage)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(fulfill))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(fulfill)))
   }
 
   def failHtlc(id: Long, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     s ! CMD_FAIL_HTLC(id, Right(TemporaryNodeFailure))
     val fail = s2r.expectMsgType[UpdateFailHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(fail))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteChanges.proposed.contains(fail)))
   }
 
   def crossSign(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
@@ -326,15 +329,19 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       s2r.forward(r)
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
-      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == sCommitIndex + 1)
-      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == sCommitIndex + 2)
-      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == rCommitIndex + 2)
-      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == rCommitIndex + 1)
+      eventually {
+        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == sCommitIndex + 2)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == rCommitIndex + 2)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == rCommitIndex + 1)
+      }
     } else {
-      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == sCommitIndex + 1)
-      awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == sCommitIndex + 1)
-      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == rCommitIndex + 1)
-      awaitCond(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == rCommitIndex + 1)
+      eventually {
+        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == sCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index == rCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommit.index == rCommitIndex + 1)
+      }
     }
   }
 
@@ -350,7 +357,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     r2s.forward(s)
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
-    awaitCond(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.spec.commitTxFeerate == feerate)
+    eventually(assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.spec.commitTxFeerate == feerate))
   }
 
   def mutualClose(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, s2blockchain: TestProbe, r2blockchain: TestProbe): Unit = {
@@ -373,8 +380,10 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     s2blockchain.expectMsgType[WatchTxConfirmed]
     r2blockchain.expectMsgType[TxPublisher.PublishTx]
     r2blockchain.expectMsgType[WatchTxConfirmed]
-    awaitCond(s.stateName == CLOSING)
-    awaitCond(r.stateName == CLOSING)
+    eventually {
+      assert(s.stateName == CLOSING)
+      assert(r.stateName == CLOSING)
+    }
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
   }
 
@@ -387,7 +396,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
 
     val commitTx = localCommit.commitTxAndRemoteSig.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
-    awaitCond(s.stateName == CLOSING)
+    eventually(assert(s.stateName == CLOSING))
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
@@ -432,7 +441,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
   def remoteClose(rCommitTx: Transaction, s: TestFSMRef[ChannelState, ChannelData, Channel], s2blockchain: TestProbe): RemoteCommitPublished = {
     // we make s believe r unilaterally closed the channel
     s ! WatchFundingSpentTriggered(rCommitTx)
-    awaitCond(s.stateName == CLOSING)
+    eventually(assert(s.stateName == CLOSING))
     val closingData = s.stateData.asInstanceOf[DATA_CLOSING]
     val remoteCommitPublished_opt = closingData.remoteCommitPublished.orElse(closingData.nextRemoteCommitPublished).orElse(closingData.futureRemoteCommitPublished)
     assert(remoteCommitPublished_opt.isDefined)
