@@ -32,32 +32,18 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
-import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import org.scalatest.{Assertions, FixtureTestSuite}
+import org.scalatest.Assertions
 import org.scalatest.concurrent.Eventually
 
 import java.util.UUID
 import scala.concurrent.duration._
-
-/**
- * Created by PM on 23/08/2016.
- */
-trait ChannelStateTestsBase extends ChannelStateTestsHelperMethods {
-
-  implicit class ChannelWithTestFeeConf(a: TestFSMRef[ChannelState, ChannelData, Channel]) {
-    // @formatter:off
-    def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
-    def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
-    // @formatter:on
-  }
-
-}
 
 object ChannelStateTestsTags {
   /** If set, channels will use option_support_large_channel. */
@@ -88,7 +74,7 @@ object ChannelStateTestsTags {
   val ChannelType = "option_channel_type"
 }
 
-trait ChannelStateTestsHelperMethods extends Assertions with Eventually {
+trait ChannelStateTestsBase extends Assertions with Eventually {
 
   case class SetupFixture(alice: TestFSMRef[ChannelState, ChannelData, Channel],
                           bob: TestFSMRef[ChannelState, ChannelData, Channel],
@@ -105,6 +91,13 @@ trait ChannelStateTestsHelperMethods extends Assertions with Eventually {
                           alicePeer: TestProbe,
                           bobPeer: TestProbe) {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
+  }
+
+  implicit class ChannelWithTestFeeConf(a: TestFSMRef[ChannelState, ChannelData, Channel]) {
+    // @formatter:off
+    def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
+    def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
+    // @formatter:on
   }
 
   implicit val system: ActorSystem
@@ -486,7 +479,7 @@ trait ChannelStateTestsHelperMethods extends Assertions with Eventually {
 
 }
 
-object ChannelStateTestsHelperMethods {
+object ChannelStateTestsBase {
 
   case class FakeTxPublisherFactory(txPublisher: TestProbe) extends Channel.TxPublisherFactory {
     override def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): akka.actor.typed.ActorRef[TxPublisher.Command] = txPublisher.ref

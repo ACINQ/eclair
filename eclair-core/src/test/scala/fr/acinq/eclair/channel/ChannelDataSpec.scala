@@ -21,14 +21,14 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Transa
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
-class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
+class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsBase {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 

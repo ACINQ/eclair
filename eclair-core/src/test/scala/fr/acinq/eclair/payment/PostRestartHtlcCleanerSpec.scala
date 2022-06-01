@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, Sato
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.{Upstream, buildCommand}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
@@ -50,7 +50,7 @@ import scala.util.Success
  * Created by t-bast on 21/11/2019.
  */
 
-class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution with ChannelStateTestsHelperMethods {
+class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution with ChannelStateTestsBase {
 
   import PostRestartHtlcCleanerSpec._
 

@@ -18,12 +18,12 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.FeatureSupport._
 import fr.acinq.eclair.Features._
-import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{Features, InitFeature, NodeFeature, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
-class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
+class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsBase {
 
   test("channel features determines commitment format") {
     val standardChannel = ChannelFeatures()
