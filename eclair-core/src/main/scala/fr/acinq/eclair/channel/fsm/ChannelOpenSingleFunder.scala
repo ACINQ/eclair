@@ -427,7 +427,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
         context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, realShortChannelId_opt = realShortChannelId_opt, localAlias = localAlias, remoteAlias_opt = Some(remoteAlias), remoteNodeId = remoteNodeId))
       }
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
-      val scidForChannelUpdate = Helpers.scidForChannelUpdate(commitments.channelFlags, realShortChannelId_opt, remoteAlias_opt)
+      val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, realShortChannelId_opt = realShortChannelId_opt, remoteAlias_opt = remoteAlias_opt)
       log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
       val relayFees = getRelayFees(nodeParams, remoteNodeId, commitments)
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, nodeParams.channelConf.expiryDelta, d.commitments.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))

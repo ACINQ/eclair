@@ -92,7 +92,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
-    // we have a real scid, but this is a private channel so alice uses bob's alias
+    // we have a real scid, but the channel is not announced so alice uses bob's alias
     assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
     assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
@@ -108,7 +108,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
-    // this is a private channel but bob didn't send an alias so we use the real scid
+    // the channel is not announced but bob didn't send an alias so we use the real scid
     assert(initialChannelUpdate.shortChannelId == realScid)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
@@ -123,7 +123,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
-    // this is a private channel so alice uses bob's alias
+    // the channel is not announced so alice uses bob's alias (we have a no real scid anyway)
     assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
     assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
@@ -156,6 +156,21 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     // we have a real scid, but it is not the final one (less than 6 confirmations) so alice uses bob's alias
+    assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
+    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    bob2alice.expectNoMessage(200 millis)
+    awaitCond(alice.stateName == NORMAL)
+  }
+
+  test("recv ChannelReady (public, zero-conf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+    import f._
+    // zero-conf channel: we don't have a real scid
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.isEmpty)
+    val channelReady = bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
+    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    // the channel is not announced, so alice uses bob's alias (we have a no real scid anyway)
     assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
     assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)

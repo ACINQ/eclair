@@ -621,7 +621,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         // we announce the new shortChannelId
         context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, realShortChannelId_opt = Some(realShortChannelId), localAlias = d.localAlias, remoteAlias_opt = d.remoteAlias_opt, remoteNodeId = remoteNodeId))
       }
-      val scidForChannelUpdate = Helpers.scidForChannelUpdate(d.commitments.channelFlags, Some(realShortChannelId), d.remoteAlias_opt)
+      val scidForChannelUpdate = Helpers.scidForChannelUpdate(d.channelAnnouncement, realShortChannelId_opt = Some(realShortChannelId), remoteAlias_opt = d.remoteAlias_opt)
       // if the shortChannelId is different from the one we had before, we need to re-announce it
       val channelUpdate1 = if (d.channelUpdate.shortChannelId != scidForChannelUpdate) {
         log.info(s"using new scid in channel_update: old=${d.channelUpdate.shortChannelId} new=$scidForChannelUpdate")
@@ -653,8 +653,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             if (!Announcements.checkSigs(channelAnn)) {
               handleLocalError(InvalidAnnouncementSignatures(d.channelId, remoteAnnSigs), d, Some(remoteAnnSigs))
             } else {
+              // we generate a new channel_update because the scid used may change if we were previously using an alias
+              val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), realShortChannelId_opt = d.realShortChannelId_opt, remoteAlias_opt = d.remoteAlias_opt)
+              val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
               // we use goto() instead of stay() because we want to fire transitions
-              goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn)) storing()
+              goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate) storing()
             }
           case Some(_) =>
             // they have sent their announcement sigs, but we already have a valid channel announcement

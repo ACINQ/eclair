@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.eclair.{RealShortChannelId, _}
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.channel.fsm.Channel
@@ -36,6 +35,7 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{RealShortChannelId, _}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -186,41 +186,34 @@ object Helpers {
   }
 
   /**
-   * The short channel id used in channel_update depends on multiple factors:
-   * - is the channel public or private?
-   * - do we have a real scid?
-   * - do we have a remote alias?
+   * The general rule is that we use remote_alias for our channel_update until the channel is publicly announced, and
+   * then we use the real scid.
    *
-   * {{{
+   * Private channels are handled like public channels that have not yet been announced, there is no special case.
+   *
+   * Decision tree:
    *  - received remote_alias from peer
-   *    - public :
-   *      - before 6 blocks : use remote_alias
-   *      - after 6 blocks : use real scid
-   *    - private : use remote_alias
+   *    - before channel announcement: use remote_alias
+   *    - after channel announcement: use real scid
    *  - no remote_alias from peer
    *    - min_depth > 0 : use real scid (may change if reorg between min_depth and 6 conf)
    *    - min_depth = 0 (zero-conf) : unsupported
-   * }}}
    */
-  def scidForChannelUpdate(channelFlags: ChannelFlags, realShortChannelId_opt: Option[ShortChannelId], remoteAlias_opt: Option[ShortChannelId])(implicit log: DiagnosticLoggingAdapter): ShortChannelId = {
-    val scid_opt = if (channelFlags.announceChannel) {
-      // public channel: we prefer the real scid
-      realShortChannelId_opt.orElse(remoteAlias_opt)
-    } else {
-      // private channel: we prefer the remote alias
-      remoteAlias_opt.orElse(realShortChannelId_opt)
-    }
-    scid_opt.getOrElse {
-      // TODO A bit hacky!
-      // Our model requires a channel_update in DATA_NORMAL. But if we are in zero-conf and our peer
-      // does not send an alias, then we have neither a remote alias, nor a real scid. This should never happen, so
-      // we default to a ShortChannelId(0) which should never be used.
-      log.warning("no real scid and no alias!! this should never happen")
-      ShortChannelId(0)
-    }
+  def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], realShortChannelId_opt: Option[ShortChannelId], remoteAlias_opt: Option[ShortChannelId])(implicit log: DiagnosticLoggingAdapter): ShortChannelId = {
+    channelAnnouncement_opt.map(_.shortChannelId) // we use the real "final" scid when it is publicly announced
+      .orElse(remoteAlias_opt) // otherwise the remote alias
+      .orElse(realShortChannelId_opt) // if we don't have a remote alias, we use the real scid (which could change because the funding tx possibly has less than 6 confs here)
+      .getOrElse {
+        // Our model requires a channel_update in DATA_NORMAL. But if we are in zero-conf and our peer
+        // does not send an alias, then we have neither a remote alias, nor a real scid. This should never happen, so
+        // we default to a ShortChannelId(0) which should never be used.
+        log.warning("no real scid and no alias!! this should never happen")
+        ShortChannelId(0)
+      }
+      //.getOrElse(throw new RuntimeException("this is a zero-conf channel and remote hasn't provided an alias")) // if we don't have a real scid, it means this is a zero-conf channel and our peer must have sent an alias
   }
 
-  def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.commitments.channelFlags, d.realShortChannelId_opt, d.remoteAlias_opt)
+  def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, realShortChannelId_opt = d.realShortChannelId_opt, remoteAlias_opt = d.remoteAlias_opt)
 
   /**
    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by

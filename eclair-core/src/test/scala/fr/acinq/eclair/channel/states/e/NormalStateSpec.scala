@@ -3428,10 +3428,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(annSigs.shortChannelId == realShortChannelId)
     // alice updates her internal state
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.contains(annSigs.shortChannelId) && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
-    // public channel: we prefer the real scid alias so we switched from remote alias to real scid : we send a new channel_update
-    val channelUpdate1 = alice2bob.expectMsgType[ChannelUpdate]
-    assert(channelUpdate1.shortChannelId == realShortChannelId)
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate == channelUpdate1)
+    // we don't send out a new channel_update with the real scid just yet, we wait for the peer's announcement_signatures
     channelUpdateListener.expectNoMessage(1 second)
   }
 
@@ -3448,10 +3445,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(annSigs.shortChannelId == newRealShortChannelId)
     // update data with real short channel id
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.contains(newRealShortChannelId) && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
-    // public channel: we prefer the real scid alias and the real scid alias changed, so we send a new channel_update
-    val channelUpdate1 = alice2bob.expectMsgType[ChannelUpdate]
-    assert(channelUpdate1.shortChannelId == newRealShortChannelId)
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate == channelUpdate1)
+    // we don't send out a new channel_update with the real scid just yet, we wait for the peer's announcement_signatures
     channelUpdateListener.expectNoMessage(1 second)
   }
 
@@ -3519,7 +3513,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
       normal.realShortChannelId_opt.contains(annSigsA.shortChannelId) && normal.buried && normal.channelAnnouncement.contains(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId
     })
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt == Some(channelAnn))
+    // we use the real scid instead of remote alias as soon as the channel is announced
+    val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(lcu.channelUpdate.shortChannelId == realShortChannelId)
+    assert(lcu.channelAnnouncement_opt == Some(channelAnn))
+    // we don't send directly the channel_update to our peer, public announcements are handled by the router
+    alice2bob.expectNoMessage(100 millis)
   }
 
   test("recv AnnouncementSignatures (re-send)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
