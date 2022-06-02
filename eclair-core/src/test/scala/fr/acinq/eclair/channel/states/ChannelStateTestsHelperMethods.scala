@@ -192,7 +192,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     (aliceParams, bobParams, channelType)
   }
 
-  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Transaction = {
+  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty, interceptChannelUpdates: Boolean = true): Transaction = {
 
     import setup._
 
@@ -237,9 +237,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
-    // we don't forward the channel updates, in reality they would be processed by the router
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[ChannelUpdate]
+    if (interceptChannelUpdates) {
+      // we don't forward the channel updates, in reality they would be processed by the router
+      alice2bob.expectMsgType[ChannelUpdate]
+      bob2alice.expectMsgType[ChannelUpdate]
+    }
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     eventually(assert(alice.stateName == NORMAL))
