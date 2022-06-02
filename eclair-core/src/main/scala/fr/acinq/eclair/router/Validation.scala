@@ -166,18 +166,12 @@ object Validation {
   private def addPublicChannel(d: Data, nodeParams: NodeParams, pc: PublicChannel)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     log.debug("adding public channel channelId={} realScid={}", pc.channelId, pc.shortChannelId)
-    // in case this was our first local channel, we make a node announcement
-    if (!d.nodes.contains(nodeParams.nodeId)) {
-      log.info("first local channel validated, announcing local node")
-      val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures())
-      ctx.self ! nodeAnn
-    }
     // those updates are only defined if this was a previously an unannounced local channel, we broadcast them if they use the real scid
     val updates1 = (pc.update_1_opt.toSet ++ pc.update_2_opt.toSet)
       .filter(_.shortChannelId == pc.shortChannelId)
       .map(u => u -> (if (pc.getNodeIdSameSideAs(u) == nodeParams.nodeId) Set[GossipOrigin](LocalGossip) else Set.empty[GossipOrigin]))
       .toMap
-    d.copy(
+    val d1 = d.copy(
       channels = d.channels + (pc.shortChannelId -> pc),
       // we remove the corresponding unannounced channel that we may have until now
       privateChannels = d.privateChannels - pc.channelId,
@@ -189,6 +183,12 @@ object Validation {
         updates = d.rebroadcast.updates ++ updates1
       )
     )
+    // in case this was our first local channel, we make a node announcement
+    if (!d.nodes.contains(nodeParams.nodeId)) {
+      log.info("first local channel validated, announcing local node")
+      val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures())
+      handleNodeAnnouncement(d1, nodeParams.db.network, Set(LocalGossip), nodeAnn)
+    } else d1
   }
 
   def handleChannelSpent(d: Data, db: NetworkDb, shortChannelId: RealShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
