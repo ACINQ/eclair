@@ -68,14 +68,14 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     reachNormal(channels, testTags, interceptChannelUpdates = false)
 
-    // the router learns about the local, still unannounced, channel
-    awaitCond(router.stateData.privateChannels.size == 1)
-
     //@formatter:off
     /** there is only one channel here */
     def privateChannel: PrivateChannel = router.stateData.privateChannels.values.head
     def publicChannel: PublicChannel = router.stateData.channels.values.head
     //@formatter:on
+
+    // the router learns about the local, still unannounced, channel
+    awaitCond(router.stateData.privateChannels.size == 1)
 
     // only alice's channel_update is known (NB : due to how node ids are constructed, 1 = alice and 2 = bob)
     assert(privateChannel.update_1_opt.isDefined)
@@ -114,6 +114,11 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     channels.bob2alice.expectMsgType[AnnouncementSignatures]
     channels.bob2alice.forward(channels.alice)
 
+    // the router learns about the announcement and channel graduates from private to public
+    awaitCond {
+      router.stateData.privateChannels.isEmpty && router.stateData.channels.size == 1
+    }
+
     // alice and bob won't send their channel_update directly to each other because the channel has been announced
     // but we can get the update from their data
     awaitCond {
@@ -126,11 +131,6 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(aliceChannelUpdate2.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get.shortChannelId)
     assert(bobChannelUpdate2.shortChannelId == channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get.shortChannelId)
 
-    // the router learns about the announcement and channel graduates from private to public
-    awaitCond {
-      router.stateData.privateChannels.isEmpty && router.stateData.channels.size == 1
-    }
-
     // the router has already processed the new local channel update from alice which uses the real scid, and keeps bob's previous channel update
     assert(publicChannel.update_1_opt.contains(aliceChannelUpdate2) && publicChannel.update_2_opt.contains(bobChannelUpdate1))
 
@@ -138,11 +138,11 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(router.stateData.rebroadcast == Rebroadcast(
       channels = Map(channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get -> Set[GossipOrigin](LocalGossip)),
       updates = Map(aliceChannelUpdate2 -> Set[GossipOrigin](LocalGossip)),
-      nodes = Map(router.underlyingActor.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)))
+      nodes = Map(router.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)))
     )
 
     // bob's channel_update reaches the router
-    router ! PeerRoutingMessage(peerConnection.ref, channels.bob.underlyingActor.nodeParams.nodeId, bobChannelUpdate1)
+    router ! PeerRoutingMessage(peerConnection.ref, channels.bob.underlyingActor.nodeParams.nodeId, bobChannelUpdate2)
 
     // router processes bob's channel_update and now knows both channel updates with real scids
     awaitCond {
@@ -155,7 +155,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       updates = Map(
         aliceChannelUpdate2 -> Set[GossipOrigin](LocalGossip),
         bobChannelUpdate2 -> Set[GossipOrigin](RemoteGossip(peerConnection.ref, nodeId = channels.bob.underlyingActor.nodeParams.nodeId))),
-      nodes = Map(router.underlyingActor.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)))
+      nodes = Map(router.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)))
     )
   }
 

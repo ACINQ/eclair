@@ -31,7 +31,7 @@ import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TxCoordinates, toLongId}
+import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TxCoordinates}
 
 object Validation {
 
@@ -174,6 +174,7 @@ object Validation {
     }
     // those updates are only defined if this was a previously an unannounced local channel, we broadcast them if they use the real scid
     val updates1 = (pc.update_1_opt.toSet ++ pc.update_2_opt.toSet)
+      .filter(_.shortChannelId == pc.shortChannelId)
       .map(u => u -> (if (pc.getNodeIdSameSideAs(u) == nodeParams.nodeId) Set[GossipOrigin](LocalGossip) else Set.empty[GossipOrigin]))
       .toMap
     d.copy(
@@ -297,7 +298,7 @@ object Validation {
           log.debug("ignoring {} (stale)", u)
           sendDecision(origins, GossipDecision.Stale(u))
           d
-        } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
+        } else if (pc.getChannelUpdateSameSideAs(u).exists(previous => previous.timestamp >= u.timestamp && previous.shortChannelId == u.shortChannelId)) { // NB: we also check the id because there could be a switch alias->real scid
           log.debug("ignoring {} (duplicate)", u)
           sendDecision(origins, GossipDecision.Duplicate(u))
           update match {
@@ -476,7 +477,8 @@ object Validation {
             val d1 = addPublicChannel(d, nodeParams, publicChannel)
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(ann.shortChannelId)
-            handleChannelUpdate(d1, db, nodeParams.routerConf, Left(lcu))
+            val d2 = handleChannelUpdate(d1, db, nodeParams.routerConf, Left(lcu))
+            d2
           case None =>
             // this is a known unannounced channel, we can process the channel_update
             handleChannelUpdate(d, db, nodeParams.routerConf, Left(lcu))
