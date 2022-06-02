@@ -12,12 +12,20 @@ import fr.acinq.eclair.{BlockHeight, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
+import scala.concurrent.duration.DurationInt
+
 /**
  * This test checks the integration between Channel and Router (events, etc.)
  */
 class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(router: TestFSMRef[Router.State, Router.Data, Router], rebroadcastListener: TestProbe, channels: SetupFixture, testTags: Set[String])
+  case class FixtureParam(router: TestFSMRef[Router.State, Router.Data, Router], rebroadcastListener: TestProbe, channels: SetupFixture, testTags: Set[String]) {
+    //@formatter:off
+    /** there is only one channel here */
+    def privateChannel: PrivateChannel = router.stateData.privateChannels.values.head
+    def publicChannel: PublicChannel = router.stateData.channels.values.head
+    //@formatter:on
+  }
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
@@ -36,31 +44,46 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("private local channel") { f =>
     import f._
 
-    reachNormal(channels, testTags)
+    reachNormal(channels, testTags, interceptChannelUpdates = false)
 
+    // the router learns about the local, still unannounced, channel
     awaitCond(router.stateData.privateChannels.size == 1)
 
-    {
-      // only the local channel_update is known (bob won't send his before the channel is deeply buried)
-      val pc = router.stateData.privateChannels.values.head
-      assert(pc.update_1_opt.isDefined ^ pc.update_2_opt.isDefined)
-    }
+    // only alice's channel_update is known (NB : due to how node ids are constructed, 1 = alice and 2 = bob)
+    assert(privateChannel.update_1_opt.isDefined)
+    assert(privateChannel.update_2_opt.isEmpty)
+    // alice already has a real scid because this is not a zeroconf channel
+    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
+    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].remoteAlias_opt.isDefined)
+    // alice uses bob's alias for her channel update
+    assert(privateChannel.update_1_opt.get.shortChannelId != privateChannel.localAlias)
+    assert(privateChannel.update_1_opt.get.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].remoteAlias_opt.get)
 
+    // alice and bob send their channel_updates using remote alias when they go to NORMAL state
+    val aliceChannelUpdate1 = channels.alice2bob.expectMsgType[ChannelUpdate]
+    val bobChannelUpdate1 = channels.bob2alice.expectMsgType[ChannelUpdate]
+    // alice's channel_update uses bob's alias, and vice versa
+    assert(aliceChannelUpdate1.shortChannelId == channels.bob.stateData.asInstanceOf[DATA_NORMAL].localAlias)
+    assert(bobChannelUpdate1.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].localAlias)
+    // channel_updates are handled by the peer connection and sent to the router
     val peerConnection = TestProbe()
-    // bob hasn't yet sent his channel_update but we can get it by looking at its internal data
-    val bobChannelUpdate = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
-    router ! PeerRoutingMessage(peerConnection.ref, channels.bob.underlyingActor.nodeParams.nodeId, bobChannelUpdate)
+    router ! PeerRoutingMessage(peerConnection.ref, channels.bob.underlyingActor.nodeParams.nodeId, bobChannelUpdate1)
 
+    // router processes bob's channel_update and now knows both channel updates
     awaitCond {
-      val pc = router.stateData.privateChannels.values.head
-      // both channel_updates are known
-      pc.update_1_opt.isDefined && pc.update_2_opt.isDefined
+      privateChannel.update_1_opt.contains(aliceChannelUpdate1) && privateChannel.update_2_opt.contains(bobChannelUpdate1)
     }
 
-    // manual rebroadcast
-    router ! Router.TickBroadcast
-    rebroadcastListener.expectNoMessage()
+    // there is nothing for the router to rebroadcast, channel is not announced
+    assert(router.stateData.rebroadcast == Rebroadcast(Map.empty, Map.empty, Map.empty))
 
+    // funding tx reaches 6 blocks, no announcements are exchanged because the channel is private
+    channels.alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    channels.bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+
+    // alice and bob won't send their channel_update directly to each other because they haven't changed
+    channels.alice2bob.expectNoMessage(100 millis)
+    channels.bob2alice.expectNoMessage(100 millis)
   }
 
   test("public local channel", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
