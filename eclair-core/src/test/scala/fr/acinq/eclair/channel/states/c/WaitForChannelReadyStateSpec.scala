@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -46,7 +46,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val setup = init()
     import setup._
     val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags.Private
+    val channelFlags = ChannelFlags(announceChannel = test.tags.contains(ChannelStateTestsTags.ChannelsPublic))
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val pushMsat = if (test.tags.contains(ChannelStateTestsTags.NoPushMsat)) 0.msat else TestConstants.pushMsat
     val aliceInit = Init(aliceParams.initFeatures)
@@ -141,6 +141,22 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     // edge case: we have neither a real scid nor an alias, we use a fake scid
     assert(initialChannelUpdate.shortChannelId === ShortChannelId(0))
+    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    bob2alice.expectNoMessage(200 millis)
+    awaitCond(alice.stateName == NORMAL)
+  }
+
+  test("recv ChannelReady (public)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+    // we have a real scid at this stage, because this isn't a zero-conf channel
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.nonEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.channelFlags.announceChannel)
+    val channelReady = bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
+    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    // we have a real scid, but it is not the final one (less than 6 confirmations) so alice uses bob's alias
+    assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
     assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
     bob2alice.expectNoMessage(200 millis)
