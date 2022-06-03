@@ -93,9 +93,9 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     // we have a real scid, but the channel is not announced so alice uses bob's alias
-    assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
-    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
-    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    assert(initialChannelUpdate.shortChannelId == channelReady.alias_opt.get)
+    assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     bob2alice.expectNoMessage(200 millis)
     awaitCond(alice.stateName == NORMAL)
   }
@@ -124,9 +124,9 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     // the channel is not announced so alice uses bob's alias (we have a no real scid anyway)
-    assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
-    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
-    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    assert(initialChannelUpdate.shortChannelId == channelReady.alias_opt.get)
+    assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     bob2alice.expectNoMessage(200 millis)
     awaitCond(alice.stateName == NORMAL)
   }
@@ -140,9 +140,9 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     bob2alice.forward(alice, channelReadyNoAlias)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     // edge case: we have neither a real scid nor an alias, we use a fake scid
-    assert(initialChannelUpdate.shortChannelId === ShortChannelId(0))
-    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
-    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    assert(initialChannelUpdate.shortChannelId == ShortChannelId(0))
+    assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     bob2alice.expectNoMessage(200 millis)
     awaitCond(alice.stateName == NORMAL)
   }
@@ -156,9 +156,9 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     // we have a real scid, but it is not the final one (less than 6 confirmations) so alice uses bob's alias
-    assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
-    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
-    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    assert(initialChannelUpdate.shortChannelId == channelReady.alias_opt.get)
+    assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     bob2alice.expectNoMessage(200 millis)
     awaitCond(alice.stateName == NORMAL)
   }
@@ -171,9 +171,9 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     // the channel is not announced, so alice uses bob's alias (we have a no real scid anyway)
-    assert(initialChannelUpdate.shortChannelId === channelReady.alias_opt.get)
-    assert(initialChannelUpdate.feeBaseMsat === relayFees.feeBase)
-    assert(initialChannelUpdate.feeProportionalMillionths === relayFees.feeProportionalMillionths)
+    assert(initialChannelUpdate.shortChannelId == channelReady.alias_opt.get)
+    assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
+    assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     bob2alice.expectNoMessage(200 millis)
     awaitCond(alice.stateName == NORMAL)
   }

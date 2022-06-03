@@ -489,11 +489,11 @@ class RouterSpec extends BaseRouterSpec {
       val preComputedRoute = PredefinedChannelRoute(g, Seq(alias_ag_private))
       sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
       val response = sender.expectMsgType[RouteResponse]
-      assert(response.routes.length === 1)
+      assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.params) === Seq(ChannelRelayParams.FromAnnouncement(update_ag_private)))
-      assert(route.hops.head.nodeId === a)
-      assert(route.hops.head.nextNodeId === g)
+      assert(route.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private)))
+      assert(route.hops.head.nodeId == a)
+      assert(route.hops.head.nextNodeId == g)
     }
     {
       // using the real scid
