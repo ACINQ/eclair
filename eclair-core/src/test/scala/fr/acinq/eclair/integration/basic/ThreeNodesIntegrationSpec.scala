@@ -1,10 +1,9 @@
 package fr.acinq.eclair.integration.basic
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
-import fr.acinq.eclair.ShortChannelId.txIndex
+import fr.acinq.eclair.MilliSatoshiLong
 import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong}
 import org.scalatest.TestData
 import org.scalatest.concurrent.IntegrationPatience
 import scodec.bits.HexStringSyntax
@@ -36,26 +35,13 @@ class ThreeNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     connect(alice, bob)
     connect(bob, carol)
 
-    val channelIdAB = openChannel(alice, bob, 100_000 sat).channelId
-    val channelIdBC = openChannel(bob, carol, 100_000 sat).channelId
+    // we put watchers on auto pilot to confirm funding txs
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
+    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
+    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
 
-    val fundingTxAB = fundingTx(alice, channelIdAB)
-    val fundingTxBC = fundingTx(bob, channelIdBC)
-
-    val shortIdAB = confirmChannel(alice, bob, channelIdAB, BlockHeight(420_000), 21)
-    val shortIdBC = confirmChannel(bob, carol, channelIdBC, BlockHeight(420_001), 22)
-
-    val fundingTxs = Map(
-      shortIdAB -> fundingTxAB,
-      shortIdBC -> fundingTxBC
-    )
-
-    // auto-validate channel announcements
-    alice.watcher.setAutoPilot(autoValidatePublicChannels(fundingTxs))
-    bob.watcher.setAutoPilot(autoValidatePublicChannels(fundingTxs))
-
-    confirmChannelDeep(alice, bob, channelIdAB, shortIdAB.blockHeight, txIndex(shortIdAB))
-    confirmChannelDeep(bob, carol, channelIdBC, shortIdBC.blockHeight, txIndex(shortIdBC))
+    openChannel(alice, bob, 100_000 sat).channelId
+    openChannel(bob, carol, 100_000 sat).channelId
 
     // alice now knows about bob-carol
     eventually {

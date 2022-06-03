@@ -50,6 +50,9 @@ object ChannelRelayer {
 
   def mdc: Command => Map[String, String] = {
     case c: Relay => Logs.mdc(paymentHash_opt = Some(c.channelRelayPacket.add.paymentHash))
+    case c: WrappedLocalChannelUpdate => Logs.mdc(channelId_opt = Some(c.localChannelUpdate.channelId))
+    case c: WrappedLocalChannelDown => Logs.mdc(channelId_opt = Some(c.localChannelDown.channelId))
+    case c: WrappedAvailableBalanceChanged => Logs.mdc(channelId_opt = Some(c.availableBalanceChanged.channelId))
     case _ => Map.empty
   }
 
@@ -63,7 +66,7 @@ object ChannelRelayer {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelDown](WrappedLocalChannelDown))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[AvailableBalanceChanged](WrappedAvailableBalanceChanged))
       context.messageAdapter[IncomingPaymentPacket.ChannelRelayPacket](Relay)
-      Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
+      Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), nodeAlias_opt = Some(nodeParams.alias)), mdc) {
         Behaviors.receiveMessage {
           case Relay(channelRelayPacket) =>
             val relayId = UUID.randomUUID()
@@ -88,8 +91,8 @@ object ChannelRelayer {
             replyTo ! Relayer.OutgoingChannels(selected.toSeq)
             Behaviors.same
 
-          case WrappedLocalChannelUpdate(lcu@LocalChannelUpdate(_, channelId, _, localAlias, remoteNodeId, _, channelUpdate, commitments)) =>
-            context.log.debug(s"updating local channel info for channelId=$channelId localAlias=$localAlias remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+          case WrappedLocalChannelUpdate(lcu@LocalChannelUpdate(_, channelId, realShortChannelId_opt, localAlias, remoteNodeId, _, channelUpdate, commitments)) =>
+            context.log.debug(s"updating local channel info for channelId=$channelId realScid=$realShortChannelId_opt localAlias=$localAlias remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
             val prevChannelUpdate = channels.get(channelId).map(_.channelUpdate)
             val channel = Relayer.OutgoingChannel(remoteNodeId, channelUpdate, prevChannelUpdate, commitments)
             val channels1 = channels + (channelId -> channel)

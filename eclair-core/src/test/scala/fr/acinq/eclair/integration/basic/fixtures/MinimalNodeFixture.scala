@@ -6,6 +6,7 @@ import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Transaction}
+import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingDeeplyBuriedTriggered}
@@ -16,6 +17,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
+import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.PaymentInitiator
@@ -97,7 +99,7 @@ object MinimalNodeFixture extends Assertions {
     )
   }
 
-  def connect(node1: MinimalNodeFixture, node2: MinimalNodeFixture)(implicit system: ActorSystem): ConnectionResult.Connected = {
+  def connect(node1: MinimalNodeFixture, node2: MinimalNodeFixture, mutate12: Any => Any = identity, mutate21: Any => Any = identity)(implicit system: ActorSystem): ConnectionResult.Connected = {
     val sender = TestProbe("sender")
 
     val connection1 = TestProbe("connection-1")(node1.system)
@@ -114,7 +116,7 @@ object MinimalNodeFixture extends Assertions {
         case _: TransportHandler.Listener => TestActor.KeepRunning
         case _: TransportHandler.ReadAck => TestActor.KeepRunning
         case _ =>
-          peerConnection2.tell(msg, transport2.ref)
+          peerConnection2.tell(mutate12(msg), transport2.ref)
           TestActor.KeepRunning
       }
     }
@@ -124,7 +126,7 @@ object MinimalNodeFixture extends Assertions {
         case _: TransportHandler.Listener => TestActor.KeepRunning
         case _: TransportHandler.ReadAck => TestActor.KeepRunning
         case _ =>
-          peerConnection1.tell(msg, transport1.ref)
+          peerConnection1.tell(mutate21(msg), transport1.ref)
           TestActor.KeepRunning
       }
     }
@@ -152,7 +154,7 @@ object MinimalNodeFixture extends Assertions {
     node.wallet.funded(fundingTxid)
   }
 
-  def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealShortChannelId = {
+  def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): Option[RealShortChannelId] = {
     assert(getChannelState(node1, channelId) == WAIT_FOR_FUNDING_CONFIRMED)
     val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
     val fundingTx = data1Before.fundingTx.get
@@ -170,11 +172,17 @@ object MinimalNodeFixture extends Assertions {
 
     val data1After = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val data2After = getChannelData(node2, channelId).asInstanceOf[DATA_NORMAL]
-    assert(data1After.realShortChannelId_opt.isDefined && data2After.realShortChannelId_opt.isDefined)
-    assert(data1After.realShortChannelId_opt.get == data2After.realShortChannelId_opt.get)
-    assert(!data1After.buried && !data2After.buried)
 
-    data1After.realShortChannelId_opt.get
+    if ((blockHeight, txIndex) == (BlockHeight(0), 0)) {
+      // special case for zero-conf channels, the watcher answers with a special 0/0 coordinates when the funding tx
+      // hasn't been confirmed yet and doesn't have a real scid
+      None
+    } else {
+      assert(data1After.realShortChannelId_opt.isDefined && data2After.realShortChannelId_opt.isDefined)
+      assert(data1After.realShortChannelId_opt.get == data2After.realShortChannelId_opt.get)
+      assert(!data1After.buried && !data2After.buried)
+      Some(data1After.realShortChannelId_opt.get)
+    }
   }
 
   def confirmChannelDeep(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealShortChannelId = {
@@ -223,41 +231,59 @@ object MinimalNodeFixture extends Assertions {
     sender.expectMsgType[Router.Data]
   }
 
-  private def deterministicShortId(txId: ByteVector32): (BlockHeight, Int) = {
+  /**
+   * Computes a deterministic [[RealShortChannelId]] based on a txid. We need this so that watchers can verify
+   * transactions in a independent and stateless fashion, since there is no actual blockchain in those tests.
+   */
+  def deterministicShortId(txId: ByteVector32): RealShortChannelId = {
     val blockHeight = txId.take(3).toInt(signed = false)
     val txIndex = txId.takeRight(2).toInt(signed = false)
-    (BlockHeight(blockHeight), txIndex)
+    val outputIndex = 0 // funding txs created by the dummy wallet used in tests only have one output
+    ShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex).toReal
   }
 
-  /** An autopilot method for the watcher, that handled funding confirmation requests from the channel */
-  def autoConfirmLocalChannels(fundingTxs: collection.concurrent.Map[ByteVector32, Transaction]): TestActor.AutoPilot = (_, msg) => msg match {
+  /** All known funding txs (we don't evaluate immediately because new ones could be created) */
+  def knownFundingTxs(nodes: MinimalNodeFixture*): () => Iterable[Transaction] = () => nodes.map(_.wallet.funded.values).reduce(_ ++ _)
+
+  /**
+   * An autopilot method for the watcher, that handled funding confirmation requests from the channel and channel
+   * validation requests from the router
+   */
+  def watcherAutopilot(knownFundingTxs: () => Iterable[Transaction], deepConfirm: Boolean = true): TestActor.AutoPilot = (_, msg) => msg match {
     case watch: ZmqWatcher.WatchFundingConfirmed =>
-      val (blockHeight, txIndex) = deterministicShortId(watch.txId)
-      watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTxs(watch.txId))
+      val realScid = if (watch.minDepth == 0) {
+        // special case for zero-conf channels, this is what the real watcher does
+        ShortChannelId(BlockHeight(0), 0, 0).toReal
+      } else {
+        deterministicShortId(watch.txId)
+      }
+      val fundingTx = knownFundingTxs().find(_.txid == watch.txId)
+        .getOrElse(throw new RuntimeException(s"unknown fundingTxId=${watch.txId}, known=${knownFundingTxs().map(_.txid).mkString(",")}"))
+      watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
       TestActor.KeepRunning
-    case watch: ZmqWatcher.WatchFundingDeeplyBuried =>
-      val (blockHeight, txIndex) = deterministicShortId(watch.txId)
-      watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, fundingTxs(watch.txId))
+    case watch: ZmqWatcher.WatchFundingDeeplyBuried if deepConfirm =>
+      val realScid = deterministicShortId(watch.txId)
+      val fundingTx = knownFundingTxs().find(_.txid == watch.txId).get
+      watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
       TestActor.KeepRunning
-    case _ => TestActor.KeepRunning
-  }
-
-  /** An autopilot method for the watcher, that handles channel validation requests from the router */
-  def autoValidatePublicChannels(fundingTxs: Map[RealShortChannelId, Transaction]): TestActor.AutoPilot = (_, msg: Any) => msg match {
     case vr: ZmqWatcher.ValidateRequest =>
-      val res = Try(fundingTxs(vr.ann.shortChannelId), ZmqWatcher.UtxoStatus.Unspent).toEither
+      val res = Try {
+        val fundingTx = knownFundingTxs().find(tx => deterministicShortId(tx.txid) == vr.ann.shortChannelId)
+          .getOrElse(throw new RuntimeException(s"unknown realScid=${vr.ann.shortChannelId}, known=${knownFundingTxs().map(tx => deterministicShortId(tx.txid)).mkString(",")}"))
+        (fundingTx, ZmqWatcher.UtxoStatus.Unspent)
+      }.toEither
       vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
       TestActor.KeepRunning
     case _ => TestActor.KeepRunning
   }
 
-  def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi)(implicit system: ActorSystem): PaymentSent = {
+  def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): PaymentSent = {
     val sender = TestProbe("sender")
     sender.send(node2.paymentHandler, MultiPartHandler.ReceivePayment(Some(amount), Left("test payment")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
 
     val routeParams = node1.nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
-    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, blockUntilComplete = true))
+    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, assistedRoutes = hints, blockUntilComplete = true))
     sender.expectMsgType[PaymentSent]
   }
 
