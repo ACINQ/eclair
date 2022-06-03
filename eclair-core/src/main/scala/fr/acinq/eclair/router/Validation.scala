@@ -166,8 +166,23 @@ object Validation {
   private def addPublicChannel(d: Data, nodeParams: NodeParams, pc: PublicChannel)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     log.debug("adding public channel channelId={} realScid={}", pc.channelId, pc.shortChannelId)
+    val graph1 = d.privateChannels.get(pc.channelId) match {
+      case Some(privateChannel) =>
+        // we need to update the graph because the edge identifiers change from alias to real scid
+        log.debug("updating the graph")
+        // mutable variable is simpler here
+        var graph = d.graphWithBalances
+        // remove previous private edges
+        pc.update_1_opt.foreach(u => graph = graph.removeEdge(ChannelDesc(u, privateChannel)))
+        pc.update_2_opt.foreach(u => graph = graph.removeEdge(ChannelDesc(u, privateChannel)))
+        // add new public edges
+        pc.update_1_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pc)))
+        pc.update_2_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pc)))
+        graph
+      case None => d.graphWithBalances
+    }
     // those updates are only defined if this was a previously an unannounced local channel, we broadcast them if they use the real scid
-    val updates1 = (pc.update_1_opt.toSet ++ pc.update_2_opt.toSet)
+    val rebroadcastUpdates1 = (pc.update_1_opt.toSet ++ pc.update_2_opt.toSet)
       .filter(_.shortChannelId == pc.shortChannelId)
       .map(u => u -> (if (pc.getNodeIdSameSideAs(u) == nodeParams.nodeId) Set[GossipOrigin](LocalGossip) else Set.empty[GossipOrigin]))
       .toMap
@@ -180,8 +195,9 @@ object Validation {
         // we rebroadcast the channel to our peers
         channels = d.rebroadcast.channels + (pc.ann -> d.awaiting.getOrElse(pc.ann, if (pc.nodeId1 == nodeParams.nodeId || pc.nodeId2 == nodeParams.nodeId) Seq(LocalGossip) else Nil).toSet),
         // those updates are only defined if the channel is was previously an unannounced local channel, we broadcast them
-        updates = d.rebroadcast.updates ++ updates1
-      )
+        updates = d.rebroadcast.updates ++ rebroadcastUpdates1
+      ),
+      graphWithBalances = graph1
     )
     // in case this was our first local channel, we make a node announcement
     if (!d.nodes.contains(nodeParams.nodeId)) {

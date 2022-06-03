@@ -6,6 +6,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingDeeplyBuriedTr
 import fr.acinq.eclair.channel.DATA_NORMAL
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate}
 import fr.acinq.eclair.{BlockHeight, TestKitBaseClass}
@@ -84,6 +85,10 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     // alice and bob won't send their channel_update directly to each other because they haven't changed
     channels.alice2bob.expectNoMessage(100 millis)
     channels.bob2alice.expectNoMessage(100 millis)
+
+    // router graph contains a single channel
+    assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(channels.alice.underlyingActor.nodeParams.nodeId, channels.bob.underlyingActor.nodeParams.nodeId))
+    assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate1, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
   }
 
   test("public local channel", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
@@ -127,6 +132,10 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     // there is nothing for the router to rebroadcast, channel is not announced
     assert(router.stateData.rebroadcast == Rebroadcast(Map.empty, Map.empty, Map.empty))
+
+    // router graph contains a single channel
+    assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(channels.alice.underlyingActor.nodeParams.nodeId, channels.bob.underlyingActor.nodeParams.nodeId))
+    assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate1, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
 
     // funding tx reaches 6 blocks, announcements are exchanged
     channels.alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
@@ -180,6 +189,11 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
         bobChannelUpdate2 -> Set[GossipOrigin](RemoteGossip(peerConnection.ref, nodeId = channels.bob.underlyingActor.nodeParams.nodeId))),
       nodes = Map(router.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)))
     )
+
+    // router graph contains a single channel
+    assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(channels.alice.underlyingActor.nodeParams.nodeId, channels.bob.underlyingActor.nodeParams.nodeId))
+    assert(router.stateData.graphWithBalances.graph.edgeSet().size == 2)
+    assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate2, publicChannel), GraphEdge(bobChannelUpdate2, publicChannel)))
   }
 
 }
