@@ -86,9 +86,9 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
     }
 
     // When migrating, we simply copy the estimate for blocks 144 to blocks 1008.
-    assert(migratedDb.getFeerates() === Some(feerate.copy(blocks_1008 = feerate.blocks_144, mempoolMinFee = feerate.blocks_144)))
+    assert(migratedDb.getFeerates() == Some(feerate.copy(blocks_1008 = feerate.blocks_144, mempoolMinFee = feerate.blocks_144)))
     migratedDb.addOrUpdateFeerates(feerate)
-    assert(migratedDb.getFeerates() === Some(feerate))
+    assert(migratedDb.getFeerates() == Some(feerate))
   }
 
 }

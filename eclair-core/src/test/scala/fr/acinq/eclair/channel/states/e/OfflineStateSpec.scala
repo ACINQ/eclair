@@ -256,11 +256,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     reconnect(alice, bob, alice2bob, bob2alice)
     val reestablishA = alice2bob.expectMsgType[ChannelReestablish]
-    assert(reestablishA.nextLocalCommitmentNumber === 4)
-    assert(reestablishA.nextRemoteRevocationNumber === 3)
+    assert(reestablishA.nextLocalCommitmentNumber == 4)
+    assert(reestablishA.nextRemoteRevocationNumber == 3)
     val reestablishB = bob2alice.expectMsgType[ChannelReestablish]
-    assert(reestablishB.nextLocalCommitmentNumber === 5)
-    assert(reestablishB.nextRemoteRevocationNumber === 3)
+    assert(reestablishB.nextLocalCommitmentNumber == 5)
+    assert(reestablishB.nextRemoteRevocationNumber == 3)
 
     bob2alice.forward(alice, reestablishB)
     // alice does not re-send messages bob already received
@@ -275,8 +275,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 4)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 4)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index == 4)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index == 4)
   }
 
   test("reconnect with an outdated commitment") { f =>
@@ -313,7 +313,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.forward(alice, reestablishB)
     // ... and ask bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
-    assert(error === Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
+    assert(error == Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
     alice2bob.forward(bob)
 
     // alice now waits for bob to publish its commitment
@@ -370,7 +370,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.forward(alice, reestablishB)
     // alice asks bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
-    assert(error === Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
+    assert(error == Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
     alice2bob.forward(bob)
 
     // alice now waits for bob to publish its commitment
@@ -400,10 +400,10 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice then finds out bob is lying
     bob2alice.send(alice, invalidReestablish)
     val error = alice2bob.expectMsgType[Error]
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
     val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
     Transaction.correctlySpends(claimMainOutput, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(error === Error(channelId(alice), InvalidRevokedCommitProof(channelId(alice), 0, 42, invalidReestablish.yourLastPerCommitmentSecret).getMessage))
+    assert(error == Error(channelId(alice), InvalidRevokedCommitProof(channelId(alice), 0, 42, invalidReestablish.yourLastPerCommitmentSecret).getMessage))
   }
 
   test("change relay fee while offline") { f =>
@@ -434,8 +434,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // then alice reaches NORMAL state, and after a delay she broadcasts the channel_update
     val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
-    assert(channelUpdate.feeBaseMsat === 4200.msat)
-    assert(channelUpdate.feeProportionalMillionths === 123456)
+    assert(channelUpdate.feeBaseMsat == 4200.msat)
+    assert(channelUpdate.feeProportionalMillionths == 123456)
     assert(channelUpdate.channelFlags.isEnabled)
 
     // no more messages
@@ -544,16 +544,16 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid === initialCommitTx.txid)
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == initialCommitTx.txid)
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === initialCommitTx.txid)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
     bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
     bob2blockchain.expectMsgType[WatchOutputSpent] // htlc
 
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid === initialCommitTx.txid)
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == initialCommitTx.txid)
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txOut === htlcSuccessTx.txOut)
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === initialCommitTx.txid)
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txOut == htlcSuccessTx.txOut)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
     bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
     bob2blockchain.expectMsgType[WatchOutputSpent] // htlc
     bob2blockchain.expectNoMessage(500 millis)
@@ -607,7 +607,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice is funder
     alice ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
+      assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
     } else {
       alice2blockchain.expectNoMessage()
     }
@@ -716,7 +716,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob is fundee
     bob ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid === bobCommitTx.txid)
+      assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == bobCommitTx.txid)
     } else {
       bob2blockchain.expectNoMessage()
     }

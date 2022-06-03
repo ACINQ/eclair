@@ -53,7 +53,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
       msg => {
         val encoded = failureMessageCodec.encode(msg).require
         val decoded = failureMessageCodec.decode(encoded).require
-        assert(msg === decoded.value)
+        assert(msg == decoded.value)
       }
     }
   }
@@ -74,8 +74,8 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
       val decoded = failureMessageCodec.decode(bin.bits).require.value
       assert(decoded.isInstanceOf[FailureMessage])
       assert(decoded.isInstanceOf[UnknownFailureMessage])
-      assert(decoded.isInstanceOf[Node] === node)
-      assert(decoded.isInstanceOf[Perm] === perm)
+      assert(decoded.isInstanceOf[Node] == node)
+      assert(decoded.isInstanceOf[Perm] == perm)
     }
   }
 
@@ -87,7 +87,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
     )
 
     for ((code, message) <- msgs) {
-      assert(message.code === code)
+      assert(message.code == code)
     }
   }
 
@@ -100,10 +100,10 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
 
     for ((expected, bin) <- testCases) {
       val decoded = codec.decode(bin.toBitVector).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
 
       val encoded = codec.encode(expected).require.toByteVector
-      assert(encoded === bin)
+      assert(encoded == bin)
     }
   }
 
@@ -119,7 +119,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
     )
 
     for ((expected, bin) <- testCases) {
-      assert(codec.decode(bin.bits).require.value === expected)
+      assert(codec.decode(bin.bits).require.value == expected)
     }
   }
 
@@ -151,10 +151,10 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
     val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759 unixsec, ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(14), 1000 msat, 1 msat, 1, None))
 
     val u = failureMessageCodec.decode(tmp_channel_failure_notype.toBitVector).require.value
-    assert(u === ref)
+    assert(u == ref)
     val bin = ByteVector(failureMessageCodec.encode(u).require.toByteArray)
-    assert(bin === tmp_channel_failure_withtype)
+    assert(bin == tmp_channel_failure_withtype)
     val u2 = failureMessageCodec.decode(bin.toBitVector).require.value
-    assert(u2 === ref)
+    assert(u2 == ref)
   }
 }

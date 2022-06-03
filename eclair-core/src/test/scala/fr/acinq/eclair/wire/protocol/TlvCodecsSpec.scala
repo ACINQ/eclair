@@ -48,13 +48,13 @@ class TlvCodecsSpec extends AnyFunSuite {
     for ((bin, lengthPrefixedBin, expected) <- testCases) {
       val decoded = tu16.decode(bin.bits).require.value
       val decoded1 = ltu16.decode(lengthPrefixedBin.bits).require.value
-      assert(decoded === expected)
-      assert(decoded1 === expected)
+      assert(decoded == expected)
+      assert(decoded1 == expected)
 
       val encoded = tu16.encode(expected).require.bytes
       val encoded1 = ltu16.encode(expected).require.bytes
-      assert(encoded === bin)
-      assert(encoded1 === lengthPrefixedBin)
+      assert(encoded == bin)
+      assert(encoded1 == lengthPrefixedBin)
     }
   }
 
@@ -77,13 +77,13 @@ class TlvCodecsSpec extends AnyFunSuite {
     for ((bin, lengthPrefixedBin, expected) <- testCases) {
       val decoded = tu32.decode(bin.bits).require.value
       val decoded1 = ltu32.decode(lengthPrefixedBin.bits).require.value
-      assert(decoded === expected)
-      assert(decoded1 === expected)
+      assert(decoded == expected)
+      assert(decoded1 == expected)
 
       val encoded = tu32.encode(expected).require.bytes
       val encoded1 = ltu32.encode(expected).require.bytes
-      assert(encoded === bin)
-      assert(encoded1 === lengthPrefixedBin)
+      assert(encoded == bin)
+      assert(encoded1 == lengthPrefixedBin)
     }
   }
 
@@ -118,32 +118,32 @@ class TlvCodecsSpec extends AnyFunSuite {
     for ((bin, lengthPrefixedBin, expected) <- testCases) {
       val decoded = tu64.decode(bin.bits).require.value
       val decoded1 = ltu64.decode(lengthPrefixedBin.bits).require.value
-      assert(decoded === expected)
-      assert(decoded1 === expected)
+      assert(decoded == expected)
+      assert(decoded1 == expected)
 
       val encoded = tu64.encode(expected).require.bytes
       val encoded1 = ltu64.encode(expected).require.bytes
-      assert(encoded === bin)
-      assert(encoded1 === lengthPrefixedBin)
+      assert(encoded == bin)
+      assert(encoded1 == lengthPrefixedBin)
     }
   }
 
   test("encode/decode truncated uint64 overflow") {
-    assert(tu64overflow.encode(Long.MaxValue).require.toByteVector === hex"7fffffffffffffff")
-    assert(tu64overflow.decode(hex"7fffffffffffffff".bits).require.value === Long.MaxValue)
+    assert(tu64overflow.encode(Long.MaxValue).require.toByteVector == hex"7fffffffffffffff")
+    assert(tu64overflow.decode(hex"7fffffffffffffff".bits).require.value == Long.MaxValue)
 
-    assert(tu64overflow.encode(42L).require.toByteVector === hex"2a")
-    assert(tu64overflow.decode(hex"2a".bits).require.value === 42L)
+    assert(tu64overflow.encode(42L).require.toByteVector == hex"2a")
+    assert(tu64overflow.decode(hex"2a".bits).require.value == 42L)
 
     assert(tu64overflow.encode(-1L).isFailure)
     assert(tu64overflow.decode(hex"8000000000000000".bits).isFailure)
   }
 
   test("decode length-prefixed truncated uint64 ignores trailing bytes") {
-    assert(ltu64.decode(hex"00 1234".bits).require.value === UInt64(0))
-    assert(ltu64.decode(hex"01 2a ff".bits).require.value === UInt64(42))
-    assert(ltu64.decode(hex"02 0451 1234".bits).require.value === UInt64(1105))
-    assert(ltu64.decode(hex"03 010000 0000".bits).require.value === UInt64(65536))
+    assert(ltu64.decode(hex"00 1234".bits).require.value == UInt64(0))
+    assert(ltu64.decode(hex"01 2a ff".bits).require.value == UInt64(42))
+    assert(ltu64.decode(hex"02 0451 1234".bits).require.value == UInt64(1105))
+    assert(ltu64.decode(hex"03 010000 0000".bits).require.value == UInt64(65536))
   }
 
   test("decode invalid truncated integers") {
@@ -200,9 +200,9 @@ class TlvCodecsSpec extends AnyFunSuite {
 
     for ((bin, expected) <- testCases) {
       val decoded = testTlvStreamCodec.decode(bin.bits).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
       val encoded = testTlvStreamCodec.encode(expected).require.bytes
-      assert(encoded === bin)
+      assert(encoded == bin)
     }
   }
 
@@ -275,7 +275,7 @@ class TlvCodecsSpec extends AnyFunSuite {
     )
 
     for (testCase <- testCases) {
-      assert(lengthPrefixedTestTlvStreamCodec.encode(lengthPrefixedTestTlvStreamCodec.decode(testCase.bits).require.value).require.bytes === testCase)
+      assert(lengthPrefixedTestTlvStreamCodec.encode(lengthPrefixedTestTlvStreamCodec.decode(testCase.bits).require.value).require.bytes == testCase)
     }
   }
 
@@ -302,8 +302,8 @@ class TlvCodecsSpec extends AnyFunSuite {
 
   test("encode unordered tlv stream (codec should sort appropriately)") {
     val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
-    assert(testTlvStreamCodec.encode(stream).require.toByteVector === hex"01012a 0b012b 0d012a fd00fe02002a")
-    assert(lengthPrefixedTestTlvStreamCodec.encode(stream).require.toByteVector === hex"0f 01012a 0b012b 0d012a fd00fe02002a")
+    assert(testTlvStreamCodec.encode(stream).require.toByteVector == hex"01012a 0b012b 0d012a fd00fe02002a")
+    assert(lengthPrefixedTestTlvStreamCodec.encode(stream).require.toByteVector == hex"0f 01012a 0b012b 0d012a fd00fe02002a")
   }
 
   test("encode/decode custom even tlv records") {
@@ -334,9 +334,9 @@ class TlvCodecsSpec extends AnyFunSuite {
 
   test("get optional TLV field") {
     val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
-    assert(stream.get[TestType254] === Some(TestType254(42)))
-    assert(stream.get[TestType1] === Some(TestType1(42)))
-    assert(stream.get[TestType2] === None)
+    assert(stream.get[TestType254] == Some(TestType254(42)))
+    assert(stream.get[TestType1] == Some(TestType1(42)))
+    assert(stream.get[TestType2] == None)
   }
 }
 

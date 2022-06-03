@@ -49,15 +49,18 @@ object Logs {
           parentPaymentId_opt: Option[UUID] = None,
           paymentId_opt: Option[UUID] = None,
           paymentHash_opt: Option[ByteVector32] = None,
-          txPublishId_opt: Option[UUID] = None): Map[String, String] =
+          txPublishId_opt: Option[UUID] = None,
+          nodeAlias_opt: Option[String] = None): Map[String, String] =
     Seq(
+      // nb: we preformat MDC values so that there is no white spaces in logs when they are not defined
       category_opt.map(l => "category" -> s" ${l.category}"),
-      remoteNodeId_opt.map(n => "nodeId" -> s" n:$n"), // nb: we preformat MDC values so that there is no white spaces in logs when they are not defined
+      remoteNodeId_opt.map(n => "nodeId" -> s" n:$n"),
       channelId_opt.map(c => "channelId" -> s" c:$c"),
       parentPaymentId_opt.map(p => "parentPaymentId" -> s" p:$p"),
       paymentId_opt.map(i => "paymentId" -> s" i:$i"),
       paymentHash_opt.map(h => "paymentHash" -> s" h:$h"),
-      txPublishId_opt.map(t => "txPublishId" -> s" t:$t")
+      txPublishId_opt.map(t => "txPublishId" -> s" t:$t"),
+      nodeAlias_opt.map(a => "nodeAlias" -> s" a:$a"),
     ).flatten.toMap
 
   /**

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Stash, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -56,7 +56,7 @@ import scala.util.Random
  *
  * Created by PM on 11/03/2020.
  */
-class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[PeerConnection.State, PeerConnection.Data] {
+class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[PeerConnection.State, PeerConnection.Data] with Stash {
 
   import PeerConnection._
 
@@ -95,6 +95,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       log.warning(s"authentication timed out after ${conf.authTimeout}")
       d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("authentication timed out"))
       stop(FSM.Normal)
+
+    case Event(_: protocol.Init, _) =>
+      log.debug("stashing remote init")
+      stash()
+      stay()
   }
 
   when(BEFORE_INIT) {
@@ -108,7 +113,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       }
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
+      unstashAll() // unstash remote init if it already arrived
       goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync, d.isPersistent)
+
+    case Event(_: protocol.Init, _) =>
+      log.debug("stashing remote init")
+      stash()
+      stay()
   }
 
   when(INITIALIZING) {

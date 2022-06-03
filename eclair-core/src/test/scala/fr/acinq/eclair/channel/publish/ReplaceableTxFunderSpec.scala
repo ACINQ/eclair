@@ -68,8 +68,8 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
         txOut = TxOut(amountOut, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil,
       )))
       val adjustedTx = adjustAnchorOutputChange(unsignedTx, commitTx.tx, amountIn, commitFeerate, targetFeerate, dustLimit)
-      assert(adjustedTx.txInfo.tx.txIn.size === unsignedTx.txInfo.tx.txIn.size)
-      assert(adjustedTx.txInfo.tx.txOut.size === 1)
+      assert(adjustedTx.txInfo.tx.txIn.size == unsignedTx.txInfo.tx.txIn.size)
+      assert(adjustedTx.txInfo.tx.txOut.size == 1)
       assert(adjustedTx.txInfo.tx.txOut.head.amount >= dustLimit)
       if (adjustedTx.txInfo.tx.txOut.head.amount > dustLimit) {
         // Simulate tx signing to check final feerate.
@@ -133,8 +133,8 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       for (unsignedTx <- Seq(unsignedHtlcSuccessTx, unsignedHtlcTimeoutTx)) {
         val totalAmountIn = unsignedTx.txInfo.input.txOut.amount + walletAmountIn
         val adjustedTx = adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, dustLimit, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
-        assert(adjustedTx.txInfo.tx.txIn.size === unsignedTx.txInfo.tx.txIn.size)
-        assert(adjustedTx.txInfo.tx.txOut.size === 1 || adjustedTx.txInfo.tx.txOut.size === 2)
+        assert(adjustedTx.txInfo.tx.txIn.size == unsignedTx.txInfo.tx.txIn.size)
+        assert(adjustedTx.txInfo.tx.txOut.size == 1 || adjustedTx.txInfo.tx.txOut.size == 2)
         if (adjustedTx.txInfo.tx.txOut.size == 2) {
           // Simulate tx signing to check final feerate.
           val signedTx = {
@@ -184,8 +184,8 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
         adjustClaimHtlcTxOutput(claimHtlc, targetFeerate, dustLimit) match {
           case Left(_) => assert(targetFeerate >= FeeratePerKw(7000 sat))
           case Right(updatedClaimHtlc) =>
-            assert(updatedClaimHtlc.txInfo.tx.txIn.length === 1)
-            assert(updatedClaimHtlc.txInfo.tx.txOut.length === 1)
+            assert(updatedClaimHtlc.txInfo.tx.txIn.length == 1)
+            assert(updatedClaimHtlc.txInfo.tx.txOut.length == 1)
             assert(updatedClaimHtlc.txInfo.tx.txOut.head.amount < previousAmount)
             previousAmount = updatedClaimHtlc.txInfo.tx.txOut.head.amount
             val signedTx = updatedClaimHtlc match {
@@ -223,16 +223,16 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // We can handle a small feerate update by lowering the change output.
     val TxOutputAdjusted(feerateUpdate1) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitments)
-    assert(feerateUpdate1.txInfo.tx.txIn === previousAnchorTx.txInfo.tx.txIn)
-    assert(feerateUpdate1.txInfo.tx.txOut.length === 1)
+    assert(feerateUpdate1.txInfo.tx.txIn == previousAnchorTx.txInfo.tx.txIn)
+    assert(feerateUpdate1.txInfo.tx.txOut.length == 1)
     val TxOutputAdjusted(feerateUpdate2) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(6000 sat), commitments)
-    assert(feerateUpdate2.txInfo.tx.txIn === previousAnchorTx.txInfo.tx.txIn)
-    assert(feerateUpdate2.txInfo.tx.txOut.length === 1)
+    assert(feerateUpdate2.txInfo.tx.txIn == previousAnchorTx.txInfo.tx.txIn)
+    assert(feerateUpdate2.txInfo.tx.txOut.length == 1)
     assert(feerateUpdate2.txInfo.tx.txOut.head.amount < feerateUpdate1.txInfo.tx.txOut.head.amount)
 
     // But if the feerate increase is too large, we must add new wallet inputs.
     val AddWalletInputs(previousTx) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(10000 sat), commitments)
-    assert(previousTx === previousAnchorTx)
+    assert(previousTx == previousAnchorTx)
   }
 
   test("adjust previous htlc transaction outputs", Tag("fuzzy")) {
@@ -259,19 +259,19 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
       // We can handle a small feerate update by lowering the change output.
       val TxOutputAdjusted(feerateUpdate1) = adjustPreviousTxOutput(FundedTx(previousTx, 15000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitments)
-      assert(feerateUpdate1.txInfo.tx.txIn === previousTx.txInfo.tx.txIn)
-      assert(feerateUpdate1.txInfo.tx.txOut.length === 2)
-      assert(feerateUpdate1.txInfo.tx.txOut.head === previousTx.txInfo.tx.txOut.head)
+      assert(feerateUpdate1.txInfo.tx.txIn == previousTx.txInfo.tx.txIn)
+      assert(feerateUpdate1.txInfo.tx.txOut.length == 2)
+      assert(feerateUpdate1.txInfo.tx.txOut.head == previousTx.txInfo.tx.txOut.head)
       val TxOutputAdjusted(feerateUpdate2) = adjustPreviousTxOutput(FundedTx(previousTx, 15000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(6000 sat), commitments)
-      assert(feerateUpdate2.txInfo.tx.txIn === previousTx.txInfo.tx.txIn)
-      assert(feerateUpdate2.txInfo.tx.txOut.length === 2)
-      assert(feerateUpdate2.txInfo.tx.txOut.head === previousTx.txInfo.tx.txOut.head)
+      assert(feerateUpdate2.txInfo.tx.txIn == previousTx.txInfo.tx.txIn)
+      assert(feerateUpdate2.txInfo.tx.txOut.length == 2)
+      assert(feerateUpdate2.txInfo.tx.txOut.head == previousTx.txInfo.tx.txOut.head)
       assert(feerateUpdate2.txInfo.tx.txOut.last.amount < feerateUpdate1.txInfo.tx.txOut.last.amount)
 
       // If the previous funding attempt didn't add a change output, we must add new wallet inputs.
       val previousTxNoChange = previousTx.updateTx(previousTx.txInfo.tx.copy(txOut = Seq(previousTx.txInfo.tx.txOut.head)))
       val AddWalletInputs(tx) = adjustPreviousTxOutput(FundedTx(previousTxNoChange, 25000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitments)
-      assert(tx === previousTxNoChange)
+      assert(tx == previousTxNoChange)
 
       for (_ <- 1 to 100) {
         val amountIn = Random.nextInt(25_000_000).sat
@@ -283,11 +283,11 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
         val targetFeerate = FeeratePerKw(2500 sat) + FeeratePerKw(Random.nextInt(20000).sat)
         adjustPreviousTxOutput(FundedTx(fuzzyPreviousTx, amountIn, FeeratePerKw(2500 sat)), targetFeerate, commitments) match {
           case AdjustPreviousTxOutputResult.Skip(_) => // nothing do check
-          case AddWalletInputs(tx) => assert(tx === fuzzyPreviousTx)
+          case AddWalletInputs(tx) => assert(tx == fuzzyPreviousTx)
           case TxOutputAdjusted(updatedTx) =>
-            assert(updatedTx.txInfo.tx.txIn === fuzzyPreviousTx.txInfo.tx.txIn)
+            assert(updatedTx.txInfo.tx.txIn == fuzzyPreviousTx.txInfo.tx.txIn)
             assert(Set(1, 2).contains(updatedTx.txInfo.tx.txOut.length))
-            assert(updatedTx.txInfo.tx.txOut.head === fuzzyPreviousTx.txInfo.tx.txOut.head)
+            assert(updatedTx.txInfo.tx.txOut.head == fuzzyPreviousTx.txInfo.tx.txOut.head)
             assert(updatedTx.txInfo.tx.txOut.last.amount >= 600.sat)
         }
       }
@@ -308,8 +308,8 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
           case AdjustPreviousTxOutputResult.Skip(_) => assert(targetFeerate >= FeeratePerKw(10000 sat))
           case AddWalletInputs(_) => fail("shouldn't add wallet inputs to claim-htlc-tx")
           case TxOutputAdjusted(updatedTx) =>
-            assert(updatedTx.txInfo.tx.txIn === claimHtlc.txInfo.tx.txIn)
-            assert(updatedTx.txInfo.tx.txOut.length === 1)
+            assert(updatedTx.txInfo.tx.txIn == claimHtlc.txInfo.tx.txIn)
+            assert(updatedTx.txInfo.tx.txOut.length == 1)
             assert(updatedTx.txInfo.tx.txOut.head.amount < previousAmount)
             previousAmount = updatedTx.txInfo.tx.txOut.head.amount
         }

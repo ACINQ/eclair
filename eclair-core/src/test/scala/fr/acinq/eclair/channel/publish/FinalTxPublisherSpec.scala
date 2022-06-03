@@ -83,8 +83,8 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     publisher ! Publish(probe.ref, cmd)
 
     val w = watcher.expectMsgType[WatchParentTxConfirmed]
-    assert(w.txId === parentTx.txid)
-    assert(w.minDepth === 5)
+    assert(w.txId == parentTx.txid)
+    assert(w.minDepth == 5)
     createBlocks(5, probe)
     w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, parentTx)
 
@@ -143,8 +143,8 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     createBlocks(1, probe)
     val response = probe.expectMsgType[TxRejected]
-    assert(response.cmd === cmd)
-    assert(response.reason === ConflictingTxConfirmed)
+    assert(response.cmd == cmd)
+    assert(response.reason == ConflictingTxConfirmed)
 
     // The actor should stop when requested:
     probe.watch(publisher.toClassic)

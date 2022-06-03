@@ -41,7 +41,7 @@ class PackageSpec extends AnyFunSuite {
       (hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00F0", 0x0F00, hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0FF0") :: Nil)
       .map(x => (ByteVector32(x._1), x._2, ByteVector32(x._3)))
 
-    data.foreach(x => assert(toLongId(ByteVector32(x._1), x._2) === x._3))
+    data.foreach(x => assert(toLongId(ByteVector32(x._1), x._2) == x._3))
   }
 
   test("decode base58 addresses") {

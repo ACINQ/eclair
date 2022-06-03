@@ -38,7 +38,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
       intercept[LockFailureHandler.LockException] {
         // this will fail because the database is already locked for a different instance id
         Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
-      }.lockFailure === LockFailure.AlreadyLocked(instanceId1))
+      }.lockFailure == LockFailure.AlreadyLocked(instanceId1))
 
     // we can renew the lease at will
     db1.obtainExclusiveLock()
@@ -49,7 +49,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
       intercept[LockFailureHandler.LockException] {
         // this will fail because the database is already locked for a different instance id
         Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
-      }.lockFailure === LockFailure.AlreadyLocked(instanceId1))
+      }.lockFailure == LockFailure.AlreadyLocked(instanceId1))
 
     // we close the first connection
     db1.dataSource.close()
@@ -69,7 +69,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     assert(intercept[LockFailureHandler.LockException] {
       // this will fail because even if we have acquired the table lock, the previous lease still hasn't expired
       Databases.postgres(config, UUID.randomUUID(), datadir, None, LockFailureHandler.logAndThrow)
-    }.lockFailure === LockFailure.AlreadyLocked(instanceId2))
+    }.lockFailure == LockFailure.AlreadyLocked(instanceId2))
 
     pg.close()
   }
@@ -261,7 +261,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
 
     using(pg.getPostgresDatabase.getConnection.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT bar FROM foo")
-      assert(rs.map(_.getInt("bar")).toSet === Set(10, 20, 30))
+      assert(rs.map(_.getInt("bar")).toSet == Set(10, 20, 30))
     }
 
   }

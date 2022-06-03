@@ -59,7 +59,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
       val msg3 = CMD_FAIL_HTLC(3, Left(randomBytes32()))
       val msg4 = CMD_FAIL_MALFORMED_HTLC(4, randomBytes32(), FailureMessageCodecs.BADONION)
 
-      assert(db.listSettlementCommands(channelId1).toSet === Set.empty)
+      assert(db.listSettlementCommands(channelId1).toSet == Set.empty)
       db.addSettlementCommand(channelId1, msg0)
       db.addSettlementCommand(channelId1, msg0) // duplicate
       db.addSettlementCommand(channelId1, msg1)
@@ -68,11 +68,11 @@ class PendingCommandsDbSpec extends AnyFunSuite {
       db.addSettlementCommand(channelId1, msg4)
       db.addSettlementCommand(channelId2, msg0) // same messages but for different channel
       db.addSettlementCommand(channelId2, msg1)
-      assert(db.listSettlementCommands(channelId1).toSet === Set(msg0, msg1, msg2, msg3, msg4))
-      assert(db.listSettlementCommands(channelId2).toSet === Set(msg0, msg1))
-      assert(db.listSettlementCommands().toSet === Set((channelId1, msg0), (channelId1, msg1), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
+      assert(db.listSettlementCommands(channelId1).toSet == Set(msg0, msg1, msg2, msg3, msg4))
+      assert(db.listSettlementCommands(channelId2).toSet == Set(msg0, msg1))
+      assert(db.listSettlementCommands().toSet == Set((channelId1, msg0), (channelId1, msg1), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
       db.removeSettlementCommand(channelId1, msg1.id)
-      assert(db.listSettlementCommands().toSet === Set((channelId1, msg0), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
+      assert(db.listSettlementCommands().toSet == Set((channelId1, msg0), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
     }
   }
 
@@ -98,7 +98,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
           dbName = PgPendingCommandsDb.DB_NAME,
           targetVersion = PgPendingCommandsDb.CURRENT_VERSION,
           postCheck = _ =>
-            assert(dbs.pendingCommands.listSettlementCommands().toSet === testCases.map(tc => tc.channelId -> tc.cmd))
+            assert(dbs.pendingCommands.listSettlementCommands().toSet == testCases.map(tc => tc.channelId -> tc.cmd))
         )
       case dbs: TestSqliteDatabases =>
         migrationCheck(
@@ -120,7 +120,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
           dbName = SqlitePendingCommandsDb.DB_NAME,
           targetVersion = SqlitePendingCommandsDb.CURRENT_VERSION,
           postCheck = _ =>
-            assert(dbs.pendingCommands.listSettlementCommands().toSet === testCases.map(tc => tc.channelId -> tc.cmd))
+            assert(dbs.pendingCommands.listSettlementCommands().toSet == testCases.map(tc => tc.channelId -> tc.cmd))
         )
     }
   }

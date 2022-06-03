@@ -27,26 +27,26 @@ class MilliSatoshiSpec extends AnyFunSuite {
 
   test("millisatoshi numeric operations") {
     // add
-    assert(MilliSatoshi(561) + 0.msat === MilliSatoshi(561))
-    assert(MilliSatoshi(561) + 0.sat === MilliSatoshi(561))
-    assert(MilliSatoshi(561) + 1105.msat === MilliSatoshi(1666))
-    assert(MilliSatoshi(2000) + 3.sat === MilliSatoshi(5000))
+    assert(MilliSatoshi(561) + 0.msat == MilliSatoshi(561))
+    assert(MilliSatoshi(561) + 0.sat == MilliSatoshi(561))
+    assert(MilliSatoshi(561) + 1105.msat == MilliSatoshi(1666))
+    assert(MilliSatoshi(2000) + 3.sat == MilliSatoshi(5000))
 
     // subtract
-    assert(MilliSatoshi(561) - 0.msat === MilliSatoshi(561))
-    assert(MilliSatoshi(1105) - 561.msat === MilliSatoshi(544))
-    assert(561.msat - 1105.msat === -MilliSatoshi(544))
-    assert(MilliSatoshi(561) - 1105.msat === -MilliSatoshi(544))
-    assert(MilliSatoshi(1105) - 1.sat === MilliSatoshi(105))
+    assert(MilliSatoshi(561) - 0.msat == MilliSatoshi(561))
+    assert(MilliSatoshi(1105) - 561.msat == MilliSatoshi(544))
+    assert(561.msat - 1105.msat == -MilliSatoshi(544))
+    assert(MilliSatoshi(561) - 1105.msat == -MilliSatoshi(544))
+    assert(MilliSatoshi(1105) - 1.sat == MilliSatoshi(105))
 
     // multiply
-    assert(MilliSatoshi(561) * 1 === 561.msat)
-    assert(MilliSatoshi(561) * 2 === 1122.msat)
-    assert(MilliSatoshi(561) * 2.5 === 1402.msat)
+    assert(MilliSatoshi(561) * 1 == 561.msat)
+    assert(MilliSatoshi(561) * 2 == 1122.msat)
+    assert(MilliSatoshi(561) * 2.5 == 1402.msat)
 
     // divide
-    assert(MilliSatoshi(561) / 1 === MilliSatoshi(561))
-    assert(MilliSatoshi(561) / 2 === MilliSatoshi(280))
+    assert(MilliSatoshi(561) / 1 == MilliSatoshi(561))
+    assert(MilliSatoshi(561) / 2 == MilliSatoshi(280))
 
     // compare
     assert(MilliSatoshi(561) <= MilliSatoshi(561))
@@ -63,16 +63,16 @@ class MilliSatoshiSpec extends AnyFunSuite {
     assert(MilliSatoshi(2000) > Satoshi(1))
 
     // maxOf
-    assert((561 msat).max(1105 msat) === MilliSatoshi(1105))
-    assert((1105 msat).max(1 sat) === MilliSatoshi(1105))
-    assert((1105 msat).max(2 sat) === MilliSatoshi(2000))
-    assert((1 sat).max(2 sat) === Satoshi(2))
+    assert((561 msat).max(1105 msat) == MilliSatoshi(1105))
+    assert((1105 msat).max(1 sat) == MilliSatoshi(1105))
+    assert((1105 msat).max(2 sat) == MilliSatoshi(2000))
+    assert((1 sat).max(2 sat) == Satoshi(2))
 
     // minOf
-    assert((561 msat).min(1105 msat) === MilliSatoshi(561))
-    assert((1105 msat).min(1 sat) === MilliSatoshi(1000))
-    assert((1105 msat).min(2 sat) === MilliSatoshi(1105))
-    assert((1 sat).min(2 sat) === Satoshi(1))
+    assert((561 msat).min(1105 msat) == MilliSatoshi(561))
+    assert((1105 msat).min(1 sat) == MilliSatoshi(1000))
+    assert((1105 msat).min(2 sat) == MilliSatoshi(1105))
+    assert((1 sat).min(2 sat) == Satoshi(1))
   }
 
 }

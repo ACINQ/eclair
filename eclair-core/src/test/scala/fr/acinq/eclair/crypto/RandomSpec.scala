@@ -28,7 +28,7 @@ class RandomSpec extends AnyFunSuiteLike {
   test("random long generation") {
     for (rng <- Seq(new WeakRandom(), new StrongRandom())) {
       val randomNumbers = (1 to 1000).map(_ => rng.nextLong())
-      assert(randomNumbers.toSet.size === 1000)
+      assert(randomNumbers.toSet.size == 1000)
       val entropy = randomNumbers.foldLeft(0.0) { case (current, next) => current + entropyScore(next) } / 1000
       assert(entropy >= 0.98)
     }

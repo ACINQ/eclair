@@ -157,7 +157,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   }
 
   override def mdc(currentMessage: Any): MDC = {
-    Logs.mdc(Some(LogCategory.CONNECTION), Some(remoteNodeId))
+    Logs.mdc(Some(LogCategory.CONNECTION), Some(remoteNodeId), nodeAlias_opt = Some(nodeParams.alias))
   }
 
 }

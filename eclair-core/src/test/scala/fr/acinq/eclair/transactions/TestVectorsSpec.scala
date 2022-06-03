@@ -125,7 +125,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey)
 
   val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, isInitiator = true, Local.payment_basepoint, Remote.payment_basepoint)
-  assert(obscured_tx_number === (0x2bb038521914L ^ 42L))
+  assert(obscured_tx_number == (0x2bb038521914L ^ 42L))
 
   logger.info(s"local_payment_basepoint: ${Local.payment_basepoint}")
   logger.info(s"remote_payment_basepoint: ${Remote.payment_basepoint}")
@@ -227,7 +227,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       }
     })
 
-    assert(Transactions.getCommitTxNumber(commitTx.tx, isInitiator = true, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
+    assert(Transactions.getCommitTxNumber(commitTx.tx, isInitiator = true, Local.payment_basepoint, Remote.payment_basepoint) == Local.commitTxNumber)
     Transaction.correctlySpends(commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     logger.info(s"output commit_tx: ${commitTx.tx}")
 
@@ -276,7 +276,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val check = (0 to 4).flatMap(i =>
       tests(name).get(s"htlc_success_tx (htlc #$i)").toSeq ++ tests(name).get(s"htlc_timeout_tx (htlc #$i)").toSeq
     ).toSet.map((tx: String) => Transaction.read(tx))
-    assert(htlcTxs.map(_.tx).toSet === check)
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("simple commitment tx with no HTLCs") {

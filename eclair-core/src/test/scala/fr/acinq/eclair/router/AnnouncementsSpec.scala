@@ -50,7 +50,7 @@ class AnnouncementsSpec extends AnyFunSuite {
     val bitcoin_b_sig = Announcements.signChannelAnnouncement(witness, bitcoin_b)
     val ann = makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42L), node_a.publicKey, node_b.publicKey, bitcoin_a.publicKey, bitcoin_b.publicKey, node_a_sig, node_b_sig, bitcoin_a_sig, bitcoin_b_sig)
     assert(checkSigs(ann))
-    assert(checkSigs(ann.copy(nodeId1 = randomKey().publicKey)) === false)
+    assert(checkSigs(ann.copy(nodeId1 = randomKey().publicKey)) == false)
   }
 
   test("create valid signed node announcement") {
@@ -66,7 +66,7 @@ class AnnouncementsSpec extends AnyFunSuite {
     )
     val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, features.nodeAnnouncementFeatures())
     // Features should be filtered to only include node_announcement related features.
-    assert(ann.features === Features(
+    assert(ann.features == Features(
       Features.DataLossProtect -> FeatureSupport.Optional,
       Features.ChannelRangeQueries -> FeatureSupport.Optional,
       Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
@@ -75,7 +75,7 @@ class AnnouncementsSpec extends AnyFunSuite {
       Features.BasicMultiPartPayment -> FeatureSupport.Optional,
     ))
     assert(checkSig(ann))
-    assert(checkSig(ann.copy(timestamp = 153 unixsec)) === false)
+    assert(checkSig(ann.copy(timestamp = 153 unixsec)) == false)
   }
 
   test("sort node announcement addresses") {
@@ -87,7 +87,7 @@ class AnnouncementsSpec extends AnyFunSuite {
     )
     val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, addresses, Alice.nodeParams.features.nodeAnnouncementFeatures())
     assert(checkSig(ann))
-    assert(ann.addresses === List(
+    assert(ann.addresses == List(
       NodeAddress.fromParts("140.82.121.4", 9735).get,
       NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:200", 9735).get,
       NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get,
@@ -96,13 +96,13 @@ class AnnouncementsSpec extends AnyFunSuite {
   }
 
   test("nodeParams.nodeId equals nodeParams.privateKey.publicKey") {
-    assert(Alice.nodeParams.nodeId === Alice.nodeParams.privateKey.publicKey)
+    assert(Alice.nodeParams.nodeId == Alice.nodeParams.privateKey.publicKey)
   }
 
   test("create valid signed channel update announcement") {
     val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey().publicKey, ShortChannelId(45561L), Alice.nodeParams.channelConf.expiryDelta, Alice.nodeParams.channelConf.htlcMinimum, Alice.nodeParams.relayParams.publicChannelFees.feeBase, Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths, 500000000 msat)
     assert(checkSig(ann, Alice.nodeParams.nodeId))
-    assert(checkSig(ann, randomKey().publicKey) === false)
+    assert(checkSig(ann, randomKey().publicKey) == false)
   }
 
   test("check flags") {
@@ -135,6 +135,6 @@ class AnnouncementsSpec extends AnyFunSuite {
     val ann = nodeAnnouncementCodec.decode(encoded.bits).require.value
     assert(ann.features.hasFeature(Features.PaymentMetadata))
     assert(checkSig(ann))
-    assert(nodeAnnouncementCodec.encode(ann).require.bytes === encoded)
+    assert(nodeAnnouncementCodec.encode(ann).require.bytes == encoded)
   }
 }

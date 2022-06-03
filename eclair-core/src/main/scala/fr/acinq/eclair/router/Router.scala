@@ -257,12 +257,13 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
   override def mdc(currentMessage: Any): MDC = {
     val category_opt = LogCategory(currentMessage)
-    currentMessage match {
-      case s: SendChannelQuery => Logs.mdc(category_opt, remoteNodeId_opt = Some(s.remoteNodeId))
-      case prm: PeerRoutingMessage => Logs.mdc(category_opt, remoteNodeId_opt = Some(prm.remoteNodeId))
-      case lcu: LocalChannelUpdate => Logs.mdc(category_opt, remoteNodeId_opt = Some(lcu.remoteNodeId))
-      case _ => Logs.mdc(category_opt)
+    val remoteNodeId_opt = currentMessage match {
+      case s: SendChannelQuery => Some(s.remoteNodeId)
+      case prm: PeerRoutingMessage => Some(prm.remoteNodeId)
+      case lcu: LocalChannelUpdate => Some(lcu.remoteNodeId)
+      case _ => None
     }
+    Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt, nodeAlias_opt = Some(nodeParams.alias))
   }
 }
 

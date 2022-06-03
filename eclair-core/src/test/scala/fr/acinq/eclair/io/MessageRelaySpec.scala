@@ -61,9 +61,9 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, None)
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
-    assert(connectToNextPeer.nodeId === bobId)
+    assert(connectToNextPeer.nodeId == bobId)
     connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.Connected(peerConnection.ref.toClassic, peer.ref.toClassic)
-    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg === message)
+    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }
 
   test("relay with existing peer") { f =>
@@ -74,9 +74,9 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, None)
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
-    assert(connectToNextPeer.nodeId === bobId)
+    assert(connectToNextPeer.nodeId == bobId)
     connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
-    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg === message)
+    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }
 
   test("can't open new connection") { f =>
@@ -87,7 +87,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, Some(probe.ref))
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
-    assert(connectToNextPeer.nodeId === bobId)
+    assert(connectToNextPeer.nodeId == bobId)
     connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.NoAddressFound
     probe.expectMessage(ConnectionFailure(messageId, PeerConnection.ConnectionResult.NoAddressFound))
   }
@@ -101,7 +101,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, Some(probe.ref))
 
     val getPeerInfo = switchboard.expectMsgType[GetPeerInfo]
-    assert(getPeerInfo.remoteNodeId === previousNodeId)
+    assert(getPeerInfo.remoteNodeId == previousNodeId)
     getPeerInfo.replyTo ! PeerInfo(peer.ref.toClassic, previousNodeId, Peer.CONNECTED, None, 0)
 
     probe.expectMessage(AgainstPolicy(messageId, RelayChannelsOnly))
@@ -117,11 +117,11 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, Some(probe.ref))
 
     val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
-    assert(getPeerInfo1.remoteNodeId === previousNodeId)
+    assert(getPeerInfo1.remoteNodeId == previousNodeId)
     getPeerInfo1.replyTo ! PeerInfo(peer.ref.toClassic, previousNodeId, Peer.CONNECTED, None, 1)
 
     val getPeerInfo2 = switchboard.expectMsgType[GetPeerInfo]
-    assert(getPeerInfo2.remoteNodeId === bobId)
+    assert(getPeerInfo2.remoteNodeId == bobId)
     getPeerInfo2.replyTo ! PeerNotFound(bobId)
 
     probe.expectMessage(AgainstPolicy(messageId, RelayChannelsOnly))
@@ -137,14 +137,14 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, None)
 
     val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
-    assert(getPeerInfo1.remoteNodeId === previousNodeId)
+    assert(getPeerInfo1.remoteNodeId == previousNodeId)
     getPeerInfo1.replyTo ! PeerInfo(TestProbe()(system.classicSystem).ref, previousNodeId, Peer.CONNECTED, None, 1)
 
     val getPeerInfo2 = switchboard.expectMsgType[GetPeerInfo]
-    assert(getPeerInfo2.remoteNodeId === bobId)
+    assert(getPeerInfo2.remoteNodeId == bobId)
     getPeerInfo2.replyTo ! PeerInfo(peer.ref.toClassic, bobId, Peer.CONNECTED, None, 2)
 
-    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg === message)
+    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }
 
   test("no relay") { f =>

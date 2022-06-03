@@ -89,7 +89,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     pipe1.expectMsg(PeerRoutingMessage(front1, origin1a.nodeId, chan_ab))
     pipe1.send(router, PeerRoutingMessage(pipe1.ref, origin1a.nodeId, chan_ab))
 
-    assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
+    assert(watcher.expectMsgType[ValidateRequest].ann == chan_ab)
 
     peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, chan_ab))
     pipe1.expectNoMessage()
@@ -177,7 +177,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val origin3a = RemoteGossip(peerConnection3a.ref, randomKey().publicKey)
 
     peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, chan_ab))
-    assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
+    assert(watcher.expectMsgType[ValidateRequest].ann == chan_ab)
     peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, chan_ab))
     peerConnection2a.send(front2, PeerRoutingMessage(peerConnection2a.ref, origin2a.nodeId, chan_ab))
 

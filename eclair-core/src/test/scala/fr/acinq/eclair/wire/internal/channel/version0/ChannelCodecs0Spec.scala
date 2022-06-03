@@ -22,21 +22,21 @@ class ChannelCodecs0Spec extends AnyFunSuite {
     val current03 = hex"010000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
     val current04 = hex"010000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
-    assert(codec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
-    assert(codec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
-    assert(codec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
-    assert(codec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
-    assert(codec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(5).bits)))
+    assert(codec.decode(legacy02.bits) == Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
+    assert(codec.decode(legacy03.bits) == Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
+    assert(codec.decode(current02.bits) == Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
+    assert(codec.decode(current03.bits) == Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
+    assert(codec.decode(current04.bits) == Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(5).bits)))
 
-    assert(codec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
-    assert(codec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"0100000003".bits))
+    assert(codec.encode(ChannelVersion.STANDARD) == Attempt.successful(hex"0100000001".bits))
+    assert(codec.encode(ChannelVersion.STATIC_REMOTEKEY) == Attempt.successful(hex"0100000003".bits))
   }
 
   test("backward compatibility local params with global features") {
     // Backwards-compatibility: decode localparams with global features.
     val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
     val withGlobalFeaturesDecoded = localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.initFeatures.toByteVector === hex"0a8a")
+    assert(withGlobalFeaturesDecoded.initFeatures.toByteVector == hex"0a8a")
   }
 
   test("backward compatibility of htlc codec") {
@@ -69,8 +69,8 @@ class ChannelCodecs0Spec extends AnyFunSuite {
     assert(r1 == remaining)
     assert(r2 == remaining)
 
-    assert(codec.encode(h1).require.bytes === encodedHtlc1)
-    assert(codec.encode(h2).require.bytes === encodedHtlc2)
+    assert(codec.encode(h1).require.bytes == encodedHtlc1)
+    assert(codec.encode(h2).require.bytes == encodedHtlc2)
   }
 
   test("tell channel_update length") {

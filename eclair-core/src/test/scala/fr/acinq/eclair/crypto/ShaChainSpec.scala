@@ -78,7 +78,7 @@ class ShaChainSpec extends AnyFunSuite {
 
   test("generate and receive hashes") {
     val result: List[ByteVector32] = (for (i <- 0 until 50) yield ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - i)).toList
-    assert(result === expected)
+    assert(result == expected)
 
     var receiver = ShaChain.empty
     for (i <- 0 until 1000) {
