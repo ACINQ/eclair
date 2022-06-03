@@ -225,7 +225,6 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val aliceWatchFundingConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     bob2blockchain.expectMsgType[WatchFundingSpent]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
     val bobWatchFundingConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
     eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get

@@ -22,7 +22,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.Assertions
 import org.scalatest.concurrent.Eventually.eventually
 
@@ -152,7 +152,7 @@ object MinimalNodeFixture extends Assertions {
     node.wallet.funded(fundingTxid)
   }
 
-  def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): ShortChannelId = {
+  def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealShortChannelId = {
     assert(getChannelState(node1, channelId) == WAIT_FOR_FUNDING_CONFIRMED)
     val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
     val fundingTx = data1Before.fundingTx.get
@@ -170,13 +170,14 @@ object MinimalNodeFixture extends Assertions {
 
     val data1After = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val data2After = getChannelData(node2, channelId).asInstanceOf[DATA_NORMAL]
-    assert(data1After.shortChannelId == data2After.shortChannelId)
+    assert(data1After.realShortChannelId_opt.isDefined && data2After.realShortChannelId_opt.isDefined)
+    assert(data1After.realShortChannelId_opt.get == data2After.realShortChannelId_opt.get)
     assert(!data1After.buried && !data2After.buried)
 
-    data1After.shortChannelId
+    data1After.realShortChannelId_opt.get
   }
 
-  def confirmChannelDeep(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): ShortChannelId = {
+  def confirmChannelDeep(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealShortChannelId = {
     assert(getChannelState(node1, channelId) == NORMAL)
     val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val fundingTxid = data1Before.commitments.commitInput.outPoint.txid
@@ -193,10 +194,10 @@ object MinimalNodeFixture extends Assertions {
 
     val data1After = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val data2After = getChannelData(node2, channelId).asInstanceOf[DATA_NORMAL]
-    assert(data1After.shortChannelId == data2After.shortChannelId)
+    assert(data1After.realShortChannelId_opt.get == data2After.realShortChannelId_opt.get)
     assert(data1After.buried && data2After.buried)
 
-    data1After.shortChannelId
+    data1After.realShortChannelId_opt.get
   }
 
   /** Utility method to make sure that the channel has processed all previous messages */
@@ -242,7 +243,7 @@ object MinimalNodeFixture extends Assertions {
   }
 
   /** An autopilot method for the watcher, that handles channel validation requests from the router */
-  def autoValidatePublicChannels(fundingTxs: Map[ShortChannelId, Transaction]): TestActor.AutoPilot = (_, msg: Any) => msg match {
+  def autoValidatePublicChannels(fundingTxs: Map[RealShortChannelId, Transaction]): TestActor.AutoPilot = (_, msg: Any) => msg match {
     case vr: ZmqWatcher.ValidateRequest =>
       val res = Try(fundingTxs(vr.ann.shortChannelId), ZmqWatcher.UtxoStatus.Unspent).toEither
       vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
