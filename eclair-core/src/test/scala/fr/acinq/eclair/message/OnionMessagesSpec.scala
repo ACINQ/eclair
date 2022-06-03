@@ -224,11 +224,11 @@ class OnionMessagesSpec extends AnyFunSuite {
     val blindingOverride = randomKey()
     val destination = randomKey()
     val replyPath = buildRoute(blindingOverride, IntermediateNode(destination.publicKey) :: Nil, Recipient(destination.publicKey, pathId = Some(hex"01234567")))
-    assert(replyPath.blindingKey === blindingOverride.publicKey)
-    assert(replyPath.introductionNodeId === destination.publicKey)
+    assert(replyPath.blindingKey == blindingOverride.publicKey)
+    assert(replyPath.introductionNodeId == destination.publicKey)
     val (nextNodeId, message) = buildMessage(sessionKey, blindingSecret, Nil, BlindedPath(replyPath), Nil)
-    assert(nextNodeId === destination.publicKey)
-    assert(message.blindingKey === blindingOverride.publicKey) // blindingSecret was not used as the replyPath was used as is
+    assert(nextNodeId == destination.publicKey)
+    assert(message.blindingKey == blindingOverride.publicKey) // blindingSecret was not used as the replyPath was used as is
 
     process(destination, message) match {
       case ReceiveMessage(_, Some(pathId)) if pathId == hex"01234567" => ()

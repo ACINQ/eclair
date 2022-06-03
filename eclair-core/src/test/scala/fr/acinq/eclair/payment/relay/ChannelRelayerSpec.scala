@@ -57,19 +57,19 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   def expectFwdFail(register: TestProbe[Any], channelId: ByteVector32, cmd: channel.Command): Register.Forward[channel.Command] = {
     val fwd = register.expectMessageType[Register.Forward[channel.Command]]
-    assert(fwd.channelId === channelId)
-    assert(fwd.message === cmd)
+    assert(fwd.channelId == channelId)
+    assert(fwd.message == cmd)
     fwd
   }
 
   def expectFwdAdd(register: TestProbe[Any], channelId: ByteVector32, outAmount: MilliSatoshi, outExpiry: CltvExpiry): Register.Forward[CMD_ADD_HTLC] = {
     val fwd = register.expectMessageType[Register.Forward[CMD_ADD_HTLC]]
-    assert(fwd.channelId === channelId)
-    assert(fwd.message.amount === outAmount)
-    assert(fwd.message.cltvExpiry === outExpiry)
+    assert(fwd.channelId == channelId)
+    assert(fwd.message.amount == outAmount)
+    assert(fwd.message.cltvExpiry == outExpiry)
     assert(fwd.message.origin.isInstanceOf[Origin.ChannelRelayedHot])
     val o = fwd.message.origin.asInstanceOf[Origin.ChannelRelayedHot]
-    assert(o.amountOut === outAmount)
+    assert(o.amountOut == outAmount)
     fwd
   }
 
@@ -433,12 +433,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, downstream_htlc, testCase.result)
 
       val fwd2 = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
-      assert(fwd2.channelId === r.add.channelId)
-      assert(fwd2.message.id === r.add.id)
-      assert(fwd2.message.r === paymentPreimage)
+      assert(fwd2.channelId == r.add.channelId)
+      assert(fwd2.message.id == r.add.id)
+      assert(fwd2.message.r == paymentPreimage)
 
       val paymentRelayed = eventListener.expectMessageType[ChannelPaymentRelayed]
-      assert(paymentRelayed.copy(timestamp = 0 unixms) === ChannelPaymentRelayed(r.add.amountMsat, r.payload.amountToForward, r.add.paymentHash, r.add.channelId, channelId1, timestamp = 0 unixms))
+      assert(paymentRelayed.copy(timestamp = 0 unixms) == ChannelPaymentRelayed(r.add.amountMsat, r.payload.amountToForward, r.add.paymentHash, r.add.channelId, channelId1, timestamp = 0 unixms))
     }
   }
 
@@ -461,30 +461,30 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 400000 msat, -5000 msat)))
 
     val channels1 = getOutgoingChannels(true)
-    assert(channels1.size === 2)
-    assert(channels1.head.channelUpdate === channelUpdate_ab)
-    assert(channels1.head.toChannelBalance === Relayer.ChannelBalance(a, channelUpdate_ab.shortChannelId, 0 msat, 300000 msat, isPublic = false, isEnabled = true))
-    assert(channels1.last.channelUpdate === channelUpdate_bc)
-    assert(channels1.last.toChannelBalance === Relayer.ChannelBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false, isEnabled = true))
+    assert(channels1.size == 2)
+    assert(channels1.head.channelUpdate == channelUpdate_ab)
+    assert(channels1.head.toChannelBalance == Relayer.ChannelBalance(a, channelUpdate_ab.shortChannelId, 0 msat, 300000 msat, isPublic = false, isEnabled = true))
+    assert(channels1.last.channelUpdate == channelUpdate_bc)
+    assert(channels1.last.toChannelBalance == Relayer.ChannelBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false, isEnabled = true))
 
     channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
     val channels2 = getOutgoingChannels(true)
-    assert(channels2.last.commitments.availableBalanceForReceive === 500000.msat && channels2.last.commitments.availableBalanceForSend === 200000.msat)
+    assert(channels2.last.commitments.availableBalanceForReceive == 500000.msat && channels2.last.commitments.availableBalanceForSend == 200000.msat)
 
     channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     channelRelayer ! WrappedLocalChannelDown(LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c))
     val channels3 = getOutgoingChannels(true)
-    assert(channels3.size === 1 && channels3.head.commitments.availableBalanceForSend === 100000.msat)
+    assert(channels3.size == 1 && channels3.head.commitments.availableBalanceForSend == 100000.msat)
 
     channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     val channels4 = getOutgoingChannels(true)
     assert(channels4.isEmpty)
     val channels5 = getOutgoingChannels(false)
-    assert(channels5.size === 1)
+    assert(channels5.size == 1)
 
     channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     val channels6 = getOutgoingChannels(true)
-    assert(channels6.size === 1)
+    assert(channels6.size == 1)
 
     // Simulate a chain re-org that changes the shortChannelId:
     channelRelayer ! WrappedShortChannelIdAssigned(ShortChannelIdAssigned(null, channelId_ab, ShortChannelId(42), Some(channelUpdate_ab.shortChannelId)))
@@ -492,8 +492,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     // We should receive the updated channel update containing the new shortChannelId:
     channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, ShortChannelId(42), a, None, channelUpdate_ab.copy(shortChannelId = ShortChannelId(42)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     val channels7 = getOutgoingChannels(true)
-    assert(channels7.size === 1)
-    assert(channels7.head.channelUpdate.shortChannelId === ShortChannelId(42))
+    assert(channels7.size == 1)
+    assert(channels7.head.channelUpdate.shortChannelId == ShortChannelId(42))
   }
 
 }

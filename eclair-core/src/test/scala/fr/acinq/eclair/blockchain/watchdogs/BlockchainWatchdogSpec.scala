@@ -53,8 +53,8 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       // eventListener.expectMessageType[DangerousBlocksSkew]
     )
     eventListener.expectNoMessage(100 millis)
-    // assert(events.map(_.recentHeaders.source).toSet === Set("bitcoinheaders.net", "blockcypher.com", "blockstream.info", "mempool.space"))
-    assert(events.map(_.recentHeaders.source).toSet === Set("bitcoinheaders.net", "blockstream.info", "mempool.space"))
+    // assert(events.map(_.recentHeaders.source).toSet == Set("bitcoinheaders.net", "blockcypher.com", "blockstream.info", "mempool.space"))
+    assert(events.map(_.recentHeaders.source).toSet == Set("bitcoinheaders.net", "blockstream.info", "mempool.space"))
     testKit.stop(watchdog)
   }
 
@@ -70,8 +70,8 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       // eventListener.expectMessageType[DangerousBlocksSkew]
     )
     eventListener.expectNoMessage(100 millis)
-    // assert(events.map(_.recentHeaders.source).toSet === Set("blockcypher.com", "blockstream.info", "mempool.space"))
-    assert(events.map(_.recentHeaders.source).toSet === Set("blockstream.info", "mempool.space"))
+    // assert(events.map(_.recentHeaders.source).toSet == Set("blockcypher.com", "blockstream.info", "mempool.space"))
+    assert(events.map(_.recentHeaders.source).toSet == Set("blockstream.info", "mempool.space"))
     testKit.stop(watchdog)
   }
 
@@ -82,21 +82,21 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     val watchdog = testKit.spawn(BlockchainWatchdog(nodeParamsTestnet, 1 second, blockTimeout))
 
     watchdog ! WrappedCurrentBlockHeight(BlockHeight(500000))
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
-    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
+    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
     eventListener.expectNoMessage(100 millis)
 
     // If we don't receive blocks, we check blockchain sources.
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
-    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
+    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
     eventListener.expectNoMessage(100 millis)
 
     // And we keep checking blockchain sources until we receive a block.
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
-    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight === BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
+    // assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockHeight == BlockHeight(500000))
     eventListener.expectNoMessage(100 millis)
   }
 
@@ -123,7 +123,7 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
         // eventListener.expectMessageType[DangerousBlocksSkew]
       )
       eventListener.expectNoMessage(100 millis)
-      assert(events.map(_.recentHeaders.source).toSet === Set("blockstream.info", "mempool.space"))
+      assert(events.map(_.recentHeaders.source).toSet == Set("blockstream.info", "mempool.space"))
       testKit.stop(watchdog)
     } else {
       cancel("Tor daemon is not up and running")

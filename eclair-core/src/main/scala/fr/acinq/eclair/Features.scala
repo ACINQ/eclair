@@ -278,7 +278,6 @@ object Features {
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
     AnchorOutputs -> (StaticRemoteKey :: Nil),
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
-    DualFunding -> (AnchorOutputsZeroFeeHtlcTx :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil)
   )

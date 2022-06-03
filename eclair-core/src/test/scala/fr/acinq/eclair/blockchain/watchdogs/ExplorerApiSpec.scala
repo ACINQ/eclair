@@ -36,10 +36,10 @@ class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       val sender = testKit.createTestProbe[LatestHeaders]()
       api ! CheckLatestHeaders(sender.ref)
       val latestHeaders = sender.expectMessageType[LatestHeaders]
-      assert(latestHeaders.currentBlockHeight === BlockHeight(630450))
+      assert(latestHeaders.currentBlockHeight == BlockHeight(630450))
       assert(latestHeaders.blockHeaders.nonEmpty)
       assert(latestHeaders.blockHeaders.forall(_.blockHeight > BlockHeight(630450)))
-      assert(latestHeaders.source === explorer.name)
+      assert(latestHeaders.source == explorer.name)
     }
   }
 

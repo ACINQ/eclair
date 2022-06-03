@@ -124,9 +124,9 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     expectMsg(Some(Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999)))
 
     val address = Await.result(promiseOnionAddress.future, 3 seconds)
-    assert(address === Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999))
+    assert(address == Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999))
 
-    assert(readString(PkFilePath) === "ED25519-V3:private-key")
+    assert(readString(PkFilePath) == "ED25519-V3:private-key")
   }
 
   test("v2/v3 compatibility check against tor version") {
@@ -159,7 +159,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
 
     assert(intercept[TorException] {
       Await.result(promiseOnionAddress.future, 3 seconds)
-    } === TorException("cannot use authentication 'password', supported methods are 'COOKIE,SAFECOOKIE'"))
+    } == TorException("cannot use authentication 'password', supported methods are 'COOKIE,SAFECOOKIE'"))
   }
 
   test("invalid server hash") {
@@ -190,7 +190,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
 
     assert(intercept[TorException] {
       Await.result(promiseOnionAddress.future, 3 seconds)
-    } === TorException("unexpected server hash"))
+    } == TorException("unexpected server hash"))
   }
 
 
@@ -227,7 +227,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
 
     assert(intercept[TorException] {
       Await.result(promiseOnionAddress.future, 3 seconds)
-    } === TorException("server returned error: 515 Authentication failed: Safe cookie response did not match expected value."))
+    } == TorException("server returned error: 515 Authentication failed: Safe cookie response did not match expected value."))
   }
 
   test("ADD_ONION failure") {
@@ -272,7 +272,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
 
     assert(intercept[TorException] {
       Await.result(promiseOnionAddress.future, 3 seconds)
-    } === TorException("server returned error: 513 Invalid argument"))
+    } == TorException("server returned error: 513 Invalid argument"))
   }
 
 

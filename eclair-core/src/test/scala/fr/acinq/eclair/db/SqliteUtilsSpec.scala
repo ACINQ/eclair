@@ -40,9 +40,9 @@ class SqliteUtilsSpec extends AnyFunSuite {
     using(conn.createStatement()) { statement =>
       val results = statement.executeQuery("SELECT * FROM utils_test ORDER BY id")
       assert(results.next())
-      assert(results.getLong("id") === 1)
+      assert(results.getLong("id") == 1)
       assert(results.next())
-      assert(results.getLong("id") === 2)
+      assert(results.getLong("id") == 2)
       assert(!results.next())
     }
 
@@ -54,9 +54,9 @@ class SqliteUtilsSpec extends AnyFunSuite {
     using(conn.createStatement()) { statement =>
       val results = statement.executeQuery("SELECT * FROM utils_test ORDER BY id")
       assert(results.next())
-      assert(results.getLong("id") === 1)
+      assert(results.getLong("id") == 1)
       assert(results.next())
-      assert(results.getLong("id") === 2)
+      assert(results.getLong("id") == 2)
       assert(!results.next())
     }
 
@@ -68,13 +68,13 @@ class SqliteUtilsSpec extends AnyFunSuite {
     using(conn.createStatement()) { statement =>
       val results = statement.executeQuery("SELECT * FROM utils_test ORDER BY id")
       assert(results.next())
-      assert(results.getLong("id") === 1)
+      assert(results.getLong("id") == 1)
       assert(results.next())
-      assert(results.getLong("id") === 2)
+      assert(results.getLong("id") == 2)
       assert(results.next())
-      assert(results.getLong("id") === 3)
+      assert(results.getLong("id") == 3)
       assert(results.next())
-      assert(results.getLong("id") === 4)
+      assert(results.getLong("id") == 4)
       assert(!results.next())
     }
   }

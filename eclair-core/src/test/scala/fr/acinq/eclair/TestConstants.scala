@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -71,7 +71,7 @@ object TestConstants {
   )
 
   object Alice {
-    val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
+    val seed: ByteVector32 = ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3") // 02aaaa...
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
@@ -214,7 +214,7 @@ object TestConstants {
   }
 
   object Bob {
-    val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(2))
+    val seed: ByteVector32 = ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492") // 02bbbb...
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 

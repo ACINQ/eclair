@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.blockchain
 
+import fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxIn, TxOut}
-import fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits._
@@ -32,6 +32,7 @@ class DummyOnChainWallet extends OnChainWallet {
 
   import DummyOnChainWallet._
 
+  val funded = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
   var rolledback = Set.empty[Transaction]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
@@ -40,8 +41,11 @@ class DummyOnChainWallet extends OnChainWallet {
 
   override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
-    Future.successful(DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, amount))
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+    val tx = DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, amount)
+    funded += (tx.fundingTx.txid -> tx.fundingTx)
+    Future.successful(tx)
+  }
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 

@@ -60,8 +60,9 @@ object TestDatabases {
 
       def freeze1(input: Origin): Origin = input match {
         case h: Origin.LocalHot => Origin.LocalCold(h.id)
+        case h: Origin.ChannelRelayedHot => Origin.ChannelRelayedCold(h.originChannelId, h.originHtlcId, h.amountIn, h.amountOut)
         case h: Origin.TrampolineRelayedHot => Origin.TrampolineRelayedCold(h.htlcs)
-        case _ => input
+        case c: Origin.Cold => c
       }
 
       def freeze2(input: Commitments): Commitments = input.copy(originChannels = input.originChannels.view.mapValues(o => freeze1(o)).toMap)

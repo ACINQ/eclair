@@ -76,7 +76,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, aliceParams.chainHash, aliceParams.features.initFeatures(), doSync))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
-    assert(localInit.networks === List(Block.RegtestGenesisBlock.hash))
+    assert(localInit.networks == List(Block.RegtestGenesisBlock.hash))
     transport.send(peerConnection, remoteInit)
     transport.expectMsgType[TransportHandler.ReadAck]
     if (doSync) {
@@ -85,7 +85,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       router.expectNoMessage(1 second)
     }
     peer.expectMsg(PeerConnection.ConnectionReady(peerConnection, remoteNodeId, address, outgoing = true, localInit, remoteInit))
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    assert(peerConnection.stateName == PeerConnection.CONNECTED)
   }
 
   test("establish connection") { f =>
@@ -104,7 +104,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = false))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
-    assert(localInit.remoteAddress_opt === Some(fakeIPAddress))
+    assert(localInit.remoteAddress_opt == Some(fakeIPAddress))
   }
 
   test("handle connection closed during authentication") { f =>
@@ -215,7 +215,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val ping = Ping(42, randomBytes(127))
     transport.send(peerConnection, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
-    assert(transport.expectMsgType[Pong].data.size === ping.pongLength)
+    assert(transport.expectMsgType[Pong].data.size == ping.pongLength)
   }
 
   test("send a ping if no message after init") { f =>
@@ -246,7 +246,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val ping = Ping(Int.MaxValue, randomBytes(127))
     transport.send(peerConnection, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
-    assert(transport.expectMsgType[Warning].channelId === Peer.CHANNELID_ZERO)
+    assert(transport.expectMsgType[Warning].channelId == Peer.CHANNELID_ZERO)
     transport.expectNoMessage()
   }
 
@@ -376,14 +376,14 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     router.send(peerConnection, GossipDecision.InvalidAnnouncement(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val warn1 = transport.expectMsgType[Warning]
-    assert(warn1.channelId === Peer.CHANNELID_ZERO)
+    assert(warn1.channelId == Peer.CHANNELID_ZERO)
     assert(new String(warn1.data.toArray).startsWith("invalid announcement, couldn't verify channel"))
 
     // let's assume that one of the sigs were invalid
     router.send(peerConnection, GossipDecision.InvalidSignature(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val warn2 = transport.expectMsgType[Warning]
-    assert(warn2.channelId === Peer.CHANNELID_ZERO)
+    assert(warn2.channelId == Peer.CHANNELID_ZERO)
     assert(new String(warn2.data.toArray).startsWith("invalid announcement sig"))
   }
 
@@ -411,7 +411,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe watch peerConnection
     probe.send(peerConnection, message)
     // The connection is still open for a short while.
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    assert(peerConnection.stateName == PeerConnection.CONNECTED)
     sleep(1 second)
     probe.expectTerminated(peerConnection, max = Duration.Zero)
   }
@@ -422,7 +422,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     probe.send(peerConnection, message)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    assert(peerConnection.stateName == PeerConnection.CONNECTED)
     probe.send(peerConnection, FundingLocked(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
     peerConnection.stateData match {
       case d: PeerConnection.ConnectedData => assert(d.isPersistent)
@@ -481,7 +481,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     )
     for ((address, expected) <- testCases) {
       val isPublicIP = NodeAddress.isPublicIPAddress(address)
-      assert(isPublicIP === expected)
+      assert(isPublicIP == expected)
     }
   }
 

@@ -32,7 +32,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
       val encoded = encodedShortChannelIdsCodec.encode(ids).require
       val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
-      assert(decoded === ids)
+      assert(decoded == ids)
     }
 
     {
@@ -40,25 +40,25 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       val ids = EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
       val encoded = encodedShortChannelIdsCodec.encode(ids).require
       val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
-      assert(decoded === ids)
+      assert(decoded == ids)
     }
 
     {
       // encode/decode empty list with encoding 'uncompressed'
       val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty)
       val encoded = encodedShortChannelIdsCodec.encode(ids).require
-      assert(encoded.bytes === hex"00")
+      assert(encoded.bytes == hex"00")
       val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
-      assert(decoded === ids)
+      assert(decoded == ids)
     }
 
     {
       // encode/decode empty list with encoding 'zlib'
       val ids = EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List.empty)
       val encoded = encodedShortChannelIdsCodec.encode(ids).require
-      assert(encoded.bytes === hex"00") // NB: empty list is always encoded with encoding type 'uncompressed'
+      assert(encoded.bytes == hex"00") // NB: empty list is always encoded with encoding type 'uncompressed'
       val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
-      assert(decoded === EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty))
+      assert(decoded == EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty))
     }
   }
 
@@ -70,7 +70,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
     val decoded = queryShortChannelIdsCodec.decode(encoded).require.value
-    assert(decoded === query_short_channel_id)
+    assert(decoded == query_short_channel_id)
   }
 
   test("encode query_short_channel_ids (with optional data)") {
@@ -81,7 +81,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
     val decoded = queryShortChannelIdsCodec.decode(encoded).require.value
-    assert(decoded === query_short_channel_id)
+    assert(decoded == query_short_channel_id)
   }
 
   test("encode query_short_channel_ids (with optional data including unknown data)") {
@@ -96,7 +96,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
     val encoded = queryShortChannelIdsCodec.encode(query_short_channel_id).require
     val decoded = queryShortChannelIdsCodec.decode(encoded).require.value
-    assert(decoded === query_short_channel_id)
+    assert(decoded == query_short_channel_id)
   }
 
   test("encode reply_channel_range (no optional data)") {
@@ -109,7 +109,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
     val encoded = replyChannelRangeCodec.encode(replyChannelRange).require
     val decoded = replyChannelRangeCodec.decode(encoded).require.value
-    assert(decoded === replyChannelRange)
+    assert(decoded == replyChannelRange)
   }
 
   test("encode reply_channel_range (with optional timestamps)") {
@@ -123,7 +123,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
     val encoded = replyChannelRangeCodec.encode(replyChannelRange).require
     val decoded = replyChannelRangeCodec.decode(encoded).require.value
-    assert(decoded === replyChannelRange)
+    assert(decoded == replyChannelRange)
   }
 
   test("encode reply_channel_range (with optional timestamps, checksums, and unknown data)") {
@@ -143,7 +143,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
     val encoded = replyChannelRangeCodec.encode(replyChannelRange).require
     val decoded = replyChannelRangeCodec.decode(encoded).require.value
-    assert(decoded === replyChannelRange)
+    assert(decoded == replyChannelRange)
   }
 
   test("compute checksums correctly (CL test #1)") {

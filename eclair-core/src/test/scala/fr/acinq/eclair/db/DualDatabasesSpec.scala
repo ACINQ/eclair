@@ -25,7 +25,7 @@ class DualDatabasesSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
     assert(db.primary.channels.listLocalChannels().nonEmpty)
-    awaitCond(db.primary.channels.listLocalChannels() === db.secondary.channels.listLocalChannels())
+    awaitCond(db.primary.channels.listLocalChannels() == db.secondary.channels.listLocalChannels())
   }
 
   test("postgres primary") {
@@ -33,7 +33,7 @@ class DualDatabasesSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
     assert(db.primary.channels.listLocalChannels().nonEmpty)
-    awaitCond(db.primary.channels.listLocalChannels() === db.secondary.channels.listLocalChannels())
+    awaitCond(db.primary.channels.listLocalChannels() == db.secondary.channels.listLocalChannels())
   }
 }
 

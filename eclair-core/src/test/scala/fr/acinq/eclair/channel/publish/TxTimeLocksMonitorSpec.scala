@@ -67,8 +67,8 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     monitor ! CheckTx(probe.ref, tx, "relative-delay")
 
     val w = watcher.expectMsgType[WatchParentTxConfirmed]
-    assert(w.txId === parentTx.txid)
-    assert(w.minDepth === 3)
+    assert(w.txId == parentTx.txid)
+    assert(w.minDepth == 3)
     probe.expectNoMessage(100 millis)
 
     w.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx)
@@ -92,7 +92,7 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val w1 = watcher.expectMsgType[WatchParentTxConfirmed]
     val w2 = watcher.expectMsgType[WatchParentTxConfirmed]
     watcher.expectNoMessage(100 millis)
-    assert(Seq(w1, w2).map(w => (w.txId, w.minDepth)).toSet === Set((parentTx1.txid, 3), (parentTx2.txid, 1)))
+    assert(Seq(w1, w2).map(w => (w.txId, w.minDepth)).toSet == Set((parentTx1.txid, 3), (parentTx2.txid, 1)))
     probe.expectNoMessage(100 millis)
 
     w1.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx1)
@@ -121,7 +121,7 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val w1 = watcher.expectMsgType[WatchParentTxConfirmed]
     val w2 = watcher.expectMsgType[WatchParentTxConfirmed]
     watcher.expectNoMessage(100 millis)
-    assert(Seq(w1, w2).map(w => (w.txId, w.minDepth)).toSet === Set((parentTx1.txid, 3), (parentTx2.txid, 6)))
+    assert(Seq(w1, w2).map(w => (w.txId, w.minDepth)).toSet == Set((parentTx1.txid, 3), (parentTx2.txid, 6)))
     probe.expectNoMessage(100 millis)
 
     w1.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx1)

@@ -47,9 +47,9 @@ class CommonCodecsSpec extends AnyFunSuite {
 
     for ((uint, ref) <- expected) {
       val encoded = uint64.encode(uint).require
-      assert(ref === encoded)
+      assert(ref == encoded)
       val decoded = uint64.decode(encoded).require.value
-      assert(uint === decoded)
+      assert(uint == decoded)
     }
   }
 
@@ -60,7 +60,7 @@ class CommonCodecsSpec extends AnyFunSuite {
       UInt64(hex"efffffffffffffff"),
       UInt64(hex"effffffffffffffe")
     )
-    assert(refs.forall(value => uint64.decode(uint64.encode(value).require).require.value === value))
+    assert(refs.forall(value => uint64.decode(uint64.encode(value).require).require.value == value))
   }
 
   test("encode/decode with varint codec") {
@@ -78,9 +78,9 @@ class CommonCodecsSpec extends AnyFunSuite {
 
     for ((uint, ref) <- expected) {
       val encoded = varint.encode(uint).require
-      assert(ref === encoded, ref)
+      assert(ref == encoded, ref)
       val decoded = varint.decode(encoded).require.value
-      assert(uint === decoded, uint)
+      assert(uint == decoded, uint)
     }
   }
 
@@ -121,9 +121,9 @@ class CommonCodecsSpec extends AnyFunSuite {
 
     for ((long, ref) <- expected) {
       val encoded = varintoverflow.encode(long).require
-      assert(ref === encoded, ref)
+      assert(ref == encoded, ref)
       val decoded = varintoverflow.decode(encoded).require.value
-      assert(long === decoded, long)
+      assert(long == decoded, long)
     }
   }
 
@@ -144,21 +144,21 @@ class CommonCodecsSpec extends AnyFunSuite {
       bin"00000001" -> ChannelFlags(announceChannel = true),
     )
     testCases.foreach { case (bin, obj) =>
-      assert(channelflags.decode(bin).require === DecodeResult(obj, BitVector.empty))
-      assert(channelflags.encode(obj).require === bin)
+      assert(channelflags.decode(bin).require == DecodeResult(obj, BitVector.empty))
+      assert(channelflags.encode(obj).require == bin)
     }
 
     // BOLT 2: The receiving node MUST [...] ignore undefined bits in channel_flags.
-    assert(channelflags.decode(bin"11111111").require === DecodeResult(ChannelFlags(announceChannel = true), BitVector.empty))
-    assert(channelflags.decode(bin"11111110").require === DecodeResult(ChannelFlags(announceChannel = false), BitVector.empty))
+    assert(channelflags.decode(bin"11111111").require == DecodeResult(ChannelFlags(announceChannel = true), BitVector.empty))
+    assert(channelflags.decode(bin"11111110").require == DecodeResult(ChannelFlags(announceChannel = false), BitVector.empty))
   }
 
   test("encode/decode with rgb codec") {
     val color = Color(47.toByte, 255.toByte, 142.toByte)
     val bin = rgb.encode(color).require
-    assert(bin === hex"2f ff 8e".toBitVector)
+    assert(bin == hex"2f ff 8e".toBitVector)
     val color2 = rgb.decode(bin).require.value
-    assert(color === color2)
+    assert(color == color2)
   }
 
   test("encode/decode all kind of IPv6 addresses with ipv6address codec") {
@@ -167,7 +167,7 @@ class CommonCodecsSpec extends AnyFunSuite {
       val bin = hex"00000000000000000000ffffae8a0b08".toBitVector
       val ipv6 = Inet6Address.getByAddress(null, bin.toByteArray, null)
       val bin2 = ipv6address.encode(ipv6).require
-      assert(bin === bin2)
+      assert(bin == bin2)
     }
 
     {
@@ -175,7 +175,7 @@ class CommonCodecsSpec extends AnyFunSuite {
       val ipv6 = InetAddresses.forString("1080:0:0:0:8:800:200C:417A").asInstanceOf[Inet6Address]
       val bin = ipv6address.encode(ipv6).require
       val ipv62 = ipv6address.decode(bin).require.value
-      assert(ipv6 === ipv62)
+      assert(ipv6 == ipv62)
     }
   }
 
@@ -184,31 +184,31 @@ class CommonCodecsSpec extends AnyFunSuite {
       val ipv4addr = InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address]
       val nodeaddr = IPv4(ipv4addr, 4231)
       val bin = nodeaddress.encode(nodeaddr).require
-      assert(bin === hex"01 C0 A8 01 2A 10 87".toBitVector)
+      assert(bin == hex"01 C0 A8 01 2A 10 87".toBitVector)
       val nodeaddr2 = nodeaddress.decode(bin).require.value
-      assert(nodeaddr === nodeaddr2)
+      assert(nodeaddr == nodeaddr2)
     }
     {
       val ipv6addr = InetAddress.getByAddress(hex"2001 0db8 0000 85a3 0000 0000 ac1f 8001".toArray).asInstanceOf[Inet6Address]
       val nodeaddr = IPv6(ipv6addr, 4231)
       val bin = nodeaddress.encode(nodeaddr).require
-      assert(bin === hex"02 2001 0db8 0000 85a3 0000 0000 ac1f 8001 1087".toBitVector)
+      assert(bin == hex"02 2001 0db8 0000 85a3 0000 0000 ac1f 8001 1087".toBitVector)
       val nodeaddr2 = nodeaddress.decode(bin).require.value
-      assert(nodeaddr === nodeaddr2)
+      assert(nodeaddr == nodeaddr2)
     }
     {
       val nodeaddr = Tor2("z4zif3fy7fe7bpg3", 4231)
       val bin = nodeaddress.encode(nodeaddr).require
-      assert(bin === hex"03 cf3282ecb8f949f0bcdb 1087".toBitVector)
+      assert(bin == hex"03 cf3282ecb8f949f0bcdb 1087".toBitVector)
       val nodeaddr2 = nodeaddress.decode(bin).require.value
-      assert(nodeaddr === nodeaddr2)
+      assert(nodeaddr == nodeaddr2)
     }
     {
       val nodeaddr = Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 4231)
       val bin = nodeaddress.encode(nodeaddr).require
-      assert(bin === hex"04 6457a1ed0b38a73d56dc866accec93ca6af68bc316568874478dc9399cc1a0b3431b03 1087".toBitVector)
+      assert(bin == hex"04 6457a1ed0b38a73d56dc866accec93ca6af68bc316568874478dc9399cc1a0b3431b03 1087".toBitVector)
       val nodeaddr2 = nodeaddress.decode(bin).require.value
-      assert(nodeaddr === nodeaddr2)
+      assert(nodeaddr == nodeaddr2)
     }
   }
 
@@ -229,8 +229,8 @@ class CommonCodecsSpec extends AnyFunSuite {
       expected_opt match {
         case Some(expected) =>
           val decoded = bytes32.decode(encoded.bits).require.value
-          assert(decoded === expected)
-          assert(expected.bytes === bytes32.encode(decoded).require.bytes)
+          assert(decoded == expected)
+          assert(expected.bytes == bytes32.encode(decoded).require.bytes)
         case None =>
           assert(bytes32.decode(encoded.bits).isFailure)
       }
@@ -255,8 +255,8 @@ class CommonCodecsSpec extends AnyFunSuite {
       expected_opt match {
         case Some(expected) =>
           val decoded = bytes64.decode(encoded.bits).require.value
-          assert(decoded === expected)
-          assert(expected.bytes === bytes64.encode(decoded).require.bytes)
+          assert(decoded == expected)
+          assert(expected.bytes == bytes64.encode(decoded).require.bytes)
         case None =>
           assert(bytes64.decode(encoded.bits).isFailure)
       }
@@ -285,17 +285,17 @@ class CommonCodecsSpec extends AnyFunSuite {
     {
       val alias = "IRATEMONK"
       val bin = c.encode(alias).require
-      assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.length)(0)))
+      assert(bin == BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.length)(0)))
       val alias2 = c.decode(bin).require.value
-      assert(alias === alias2)
+      assert(alias == alias2)
     }
 
     {
       val alias = "this-alias-is-exactly-32-B-long."
       val bin = c.encode(alias).require
-      assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.length)(0)))
+      assert(bin == BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.length)(0)))
       val alias2 = c.decode(bin).require.value
-      assert(alias === alias2)
+      assert(alias == alias2)
     }
 
     {
@@ -314,17 +314,17 @@ class CommonCodecsSpec extends AnyFunSuite {
     for ((codec, expected, bin) <- testCases) {
       val macCodec = prependmac(codec, mac)
       val decoded = macCodec.decode(bin.toBitVector).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
 
       val encoded = macCodec.encode(expected).require.toByteVector
-      assert(encoded === bin)
+      assert(encoded == bin)
     }
   }
 
   test("backward compatibility on feerate codec") {
     val value = 123456
     val feerate = FeeratePerKw(value sat)
-    assert(feeratePerKw.decode(uint32.encode(value).require).require === DecodeResult(feerate, BitVector.empty))
+    assert(feeratePerKw.decode(uint32.encode(value).require).require == DecodeResult(feerate, BitVector.empty))
   }
 
 }

@@ -42,8 +42,8 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     probe.expectMsg(remoteNodeId)
     peer.expectMsg(Peer.Init(Set.empty))
     val connect = peer.expectMsgType[Peer.Connect]
-    assert(connect.nodeId === remoteNodeId)
-    assert(connect.address_opt === None)
+    assert(connect.nodeId == remoteNodeId)
+    assert(connect.address_opt == None)
   }
 
   test("disconnect from peers") {
@@ -58,7 +58,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val unknownNodeId = randomKey().publicKey
     probe.send(switchboard, Peer.Disconnect(unknownNodeId))
-    assert(probe.expectMsgType[Status.Failure].cause.getMessage === s"peer $unknownNodeId not found")
+    assert(probe.expectMsgType[Status.Failure].cause.getMessage == s"peer $unknownNodeId not found")
     probe.send(switchboard, Peer.Disconnect(remoteNodeId))
     peer.expectMsg(Peer.Disconnect(remoteNodeId))
   }
@@ -68,9 +68,9 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     val initConnection = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
-    assert(initConnection.chainHash === nodeParams.chainHash)
-    assert(initConnection.features === expectedFeatures)
-    assert(initConnection.doSync === expectedSync)
+    assert(initConnection.chainHash == nodeParams.chainHash)
+    assert(initConnection.features == expectedFeatures)
+    assert(initConnection.doSync == expectedSync)
   }
 
   test("sync if no whitelist is defined and peer has channels") {
@@ -90,16 +90,16 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     switchboard ! ChannelIdAssigned(TestProbe().ref, remoteNodeId, randomBytes32(), randomBytes32())
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     val initConnection1 = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
-    assert(initConnection1.chainHash === nodeParams.chainHash)
-    assert(initConnection1.features === nodeParams.features.initFeatures())
+    assert(initConnection1.chainHash == nodeParams.chainHash)
+    assert(initConnection1.features == nodeParams.features.initFeatures())
     assert(initConnection1.doSync)
 
     // We don't have channels with our peer, so we won't trigger a sync when connecting.
     switchboard ! LastChannelClosed(peer.ref, remoteNodeId)
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     val initConnection2 = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
-    assert(initConnection2.chainHash === nodeParams.chainHash)
-    assert(initConnection2.features === nodeParams.features.initFeatures())
+    assert(initConnection2.chainHash == nodeParams.chainHash)
+    assert(initConnection2.features == nodeParams.features.initFeatures())
     assert(!initConnection2.doSync)
   }
 

@@ -102,8 +102,8 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     relayer ! RelayForward(add_ab)
 
     val fp = paymentHandler.expectMessageType[FinalPacket]
-    assert(fp.add === add_ab)
-    assert(fp.payload === PaymentOnion.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, None))
+    assert(fp.add == add_ab)
+    assert(fp.payload == PaymentOnion.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, None))
 
     register.expectNoMessage(50 millis)
   }
@@ -117,21 +117,21 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val totalAmount = finalAmount * 3
     val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: Nil
     val Success((trampolineAmount, trampolineExpiry, trampolineOnion)) = OutgoingPaymentPacket.buildTrampolinePacket(paymentHash, trampolineHops, PaymentOnion.createMultiPartPayload(finalAmount, totalAmount, finalExpiry, paymentSecret, None))
-    assert(trampolineAmount === finalAmount)
-    assert(trampolineExpiry === finalExpiry)
+    assert(trampolineAmount == finalAmount)
+    assert(trampolineExpiry == finalExpiry)
     val Success((cmd, _)) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, channelHopFromUpdate(a, b, channelUpdate_ab) :: Nil, PaymentOnion.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32(), trampolineOnion.packet))
-    assert(cmd.amount === finalAmount)
-    assert(cmd.cltvExpiry === finalExpiry)
+    assert(cmd.amount == finalAmount)
+    assert(cmd.cltvExpiry == finalExpiry)
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
 
     relayer ! RelayForward(add_ab)
 
     val fp = paymentHandler.expectMessageType[FinalPacket]
-    assert(fp.add === add_ab)
-    assert(fp.payload.amount === finalAmount)
-    assert(fp.payload.totalAmount === totalAmount)
-    assert(fp.payload.expiry === finalExpiry)
-    assert(fp.payload.paymentSecret === paymentSecret)
+    assert(fp.add == add_ab)
+    assert(fp.payload.amount == finalAmount)
+    assert(fp.payload.totalAmount == totalAmount)
+    assert(fp.payload.expiry == finalExpiry)
+    assert(fp.payload.paymentSecret == paymentSecret)
 
     register.expectNoMessage(50 millis)
   }
@@ -147,9 +147,9 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     relayer ! RelayForward(add_ab)
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
-    assert(fail.id === add_ab.id)
+    assert(fail.id == add_ab.id)
     assert(fail.onionHash == Sphinx.hash(add_ab.onionRoutingPacket))
-    assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5))
+    assert(fail.failureCode == (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5))
 
     register.expectNoMessage(50 millis)
   }
@@ -170,7 +170,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     relayer ! RelayForward(add_ab)
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(fail.id === add_ab.id)
+    assert(fail.id == add_ab.id)
     assert(fail.reason == Right(RequiredNodeFeatureMissing))
 
     register.expectNoMessage(50 millis)

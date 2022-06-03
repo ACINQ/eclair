@@ -20,7 +20,7 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId}%.-11X{txPublishId} - %msg%ex{12}%n</pattern>
+            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%.-9X{nodeId}%.-11X{channelId}%.-11X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId}%.-11X{txPublishId}%.-11X{nodeAlias} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>
 

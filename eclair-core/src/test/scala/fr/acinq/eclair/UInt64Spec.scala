@@ -47,21 +47,21 @@ class UInt64Spec extends AnyFunSuite {
     assert(l1.toString == "9223372036854775808")
     assert(l1.toBigInt == BigInt("9223372036854775808"))
 
-    assert(a.toByteVector === hex"ffffffffffffffff")
-    assert(a.toString === "18446744073709551615") // 2^64 - 1
-    assert(a.toBigInt === BigInt("18446744073709551615"))
+    assert(a.toByteVector == hex"ffffffffffffffff")
+    assert(a.toString == "18446744073709551615") // 2^64 - 1
+    assert(a.toBigInt == BigInt("18446744073709551615"))
 
-    assert(b.toByteVector === hex"fffffffffffffffe")
-    assert(b.toString === "18446744073709551614")
-    assert(b.toBigInt === BigInt("18446744073709551614"))
+    assert(b.toByteVector == hex"fffffffffffffffe")
+    assert(b.toString == "18446744073709551614")
+    assert(b.toBigInt == BigInt("18446744073709551614"))
 
-    assert(c.toByteVector === hex"00000000000002a")
-    assert(c.toString === "42")
-    assert(c.toBigInt === BigInt("42"))
+    assert(c.toByteVector == hex"00000000000002a")
+    assert(c.toString == "42")
+    assert(c.toBigInt == BigInt("42"))
 
-    assert(z.toByteVector === hex"000000000000000")
-    assert(z.toString === "0")
-    assert(z.toBigInt === BigInt("0"))
+    assert(z.toByteVector == hex"000000000000000")
+    assert(z.toString == "0")
+    assert(z.toBigInt == BigInt("0"))
 
     assert(UInt64(hex"ff").toByteVector ==  hex"0000000000000ff")
     assert(UInt64(hex"800").toByteVector == hex"000000000000800")
