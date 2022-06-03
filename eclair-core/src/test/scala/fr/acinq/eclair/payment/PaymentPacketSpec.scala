@@ -368,12 +368,12 @@ object PaymentPacketSpec {
     Sphinx.create(sessionKey, packetPayloadLength, nodes, payloadsBin, Some(associatedData)).get.packet
   }
 
-  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat): Commitments = {
+  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat, channelFeatures: ChannelFeatures = ChannelFeatures()): Commitments = {
     val params = LocalParams(null, null, null, null, None, null, null, 0, isInitiator = true, null, None, null)
     val remoteParams = RemoteParams(randomKey().publicKey, null, null, None, null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null, None)
     val commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(testCapacity, Nil), Nil)
     val channelFlags = ChannelFlags.Private
-    new Commitments(channelId, ChannelConfig.standard, ChannelFeatures(), params, remoteParams, channelFlags, null, null, null, null, 0, 0, Map.empty, null, commitInput, null) {
+    new Commitments(channelId, ChannelConfig.standard, channelFeatures, params, remoteParams, channelFlags, null, null, null, null, 0, 0, Map.empty, null, commitInput, null) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }
