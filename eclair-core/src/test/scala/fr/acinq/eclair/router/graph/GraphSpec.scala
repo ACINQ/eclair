@@ -18,29 +18,16 @@ package fr.acinq.eclair.router.graph
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
-import fr.acinq.eclair.router.graph.Path.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits._
+import TestNodeKeys._
 
 class GraphSpec extends AnyFunSuite {
 
-  val (a, b, c, d, e, f, g, h) = (
-    PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a
-    PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //b
-    PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //c
-    PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), //d
-    PublicKey(hex"02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //e
-    PublicKey(hex"03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc"), //f
-    PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), //g
-    PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5") //h
-  )
 
-  val shortestPathFinder = new ShortestPathFinder()
 
   // +---- D -------+
   // |              |
@@ -241,113 +228,4 @@ class GraphSpec extends AnyFunSuite {
 
   def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
 
-  test("amount with fees larger than channel capacity for C->D") {
-    /*
-    The channel C -> D is just large enough for the payment to go through but when adding the channel fee it becomes too big.
-    A --> B --> C <-> D
-                 \   /
-                  \ /
-                   E
-    This tests that the success probability for the channel C -> D is computed properly and is positive.
-    */
-    val edgeAB = makeEdge(1L, a, b, 10001 msat, 0, capacity = 200000 sat)
-    val edgeBC = makeEdge(2L, b, c, 10000 msat, 0, capacity = 200000 sat)
-    val edgeCD = makeEdge(3L, c, d, 20001 msat, 0, capacity = 100011 sat)
-    val edgeDC = makeEdge(4L, d, c, 1 msat, 0, capacity = 300000 sat)
-    val edgeCE = makeEdge(5L, c, e, 10 msat, 0, capacity = 200000 sat)
-    val edgeDE = makeEdge(6L, d, e, 9 msat, 0, capacity = 200000 sat)
-    val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
-
-    val path :: Nil = shortestPathFinder.yenKshortestPaths(graph, a, e, 100000000 msat,
-      Set.empty, Set.empty, Set.empty, 1,
-      Right(HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20), useLogProbability = true)),
-      BlockHeight(714930), _ => true, includeLocalChannelCost = true)
-    assert(path.path == Seq(edgeAB, edgeBC, edgeCE))
-  }
-
-  test("fees less along C->D->E than C->E") {
-    /*
-    The channel going through C -> D -> E  (fee = 1001 + 1 = 1002) is considered shorter than going
-    through C -> E (fee = 1003) because the fees are less.
-    A --> B --> C <-> D
-                 \   /
-                  \ /
-                   E
-    */
-    val edgeAB = makeEdge(1L, a, b, 10001 msat, 0, capacity = 200000 sat)
-    val edgeBC = makeEdge(2L, b, c, 10000 msat, 0, capacity = 200000 sat)
-    val edgeCD = makeEdge(3L, c, d, 10001 msat, 0, capacity = 200000 sat)
-    val edgeDC = makeEdge(4L, d, c, 10 msat, 0, capacity = 200000 sat)
-    val edgeCE = makeEdge(5L, c, e, 10003 msat, 0, capacity = 200000 sat)
-    val edgeDE = makeEdge(6L, d, e, 1 msat, 0, capacity = 200000 sat)
-    val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
-
-    val paths = shortestPathFinder.yenKshortestPaths(graph, a, e, 90000000 msat,
-      Set.empty, Set.empty, Set.empty, 2,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
-      BlockHeight(714930), _ => true, includeLocalChannelCost = true)
-
-    assert(paths.length == 2)
-    assert(paths(0).path == Seq(edgeAB, edgeBC, edgeCD, edgeDE))
-    assert(paths(1).path == Seq(edgeAB, edgeBC, edgeCE))
-  }
-
-  test("Path C->D->E selected because amount too great for C->E capacity") {
-    /*
-    The channel C -> D -> E is a valid path, but C -> E is not.
-    A --> B --> C <-> D
-                 \   /
-                  \ /
-                   E
-    */
-    val edgeAB = makeEdge(1L, a, b, 10001 msat, 0, capacity = 200000 sat)
-    val edgeBC = makeEdge(2L, b, c, 10000 msat, 0, capacity = 200000 sat)
-    val edgeCD = makeEdge(3L, c, d, 20001 msat, 0, capacity = 200000 sat)
-    val edgeDC = makeEdge(4L, d, c, 10 msat, 0, capacity = 200000 sat)
-    val edgeCE = makeEdge(5L, c, e, 10003 msat, 0, capacity = 10000 sat)
-    val edgeDE = makeEdge(6L, d, e, 1 msat, 0, capacity = 200000 sat)
-    val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
-
-    val paths = shortestPathFinder.yenKshortestPaths(graph, a, e, 90000000 msat,
-      Set.empty, Set.empty, Set.empty, 2,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
-      BlockHeight(714930), _ => true, includeLocalChannelCost = true)
-
-    // Even though paths to find is 2, we only find 1 because that is all the valid paths that there are.
-    assert(paths.length == 1)
-    assert(paths.head.path == Seq(edgeAB, edgeBC, edgeCD, edgeDE))
-  }
-
-  /**
-   * Find all the shortest paths using the example described in
-   * https://en.wikipedia.org/wiki/Yen's_algorithm#Example
-   */
-  test("all shortest paths are found") {
-    // There will be 3 shortest paths.
-    // Edge capacities are set to be the same so that only feeBase will affect the RichWeight.
-    // C --> D --> F
-    //   \   ^   / | \
-    //    \  |  /  |  \
-    //     \ | /   |   \
-    //       E --> G --> H
-    val edgeCD = makeEdge(1L, c, d, 3 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeDF = makeEdge(2L, d, f, 4 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeCE = makeEdge(3L, c, e, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeED = makeEdge(4L, e, d, 1 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeEF = makeEdge(5L, e, f, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeFG = makeEdge(6L, f, g, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeFH = makeEdge(7L, f, h, 1 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeEG = makeEdge(8L, e, g, 3 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeGH = makeEdge(9L, g, h, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val graph = DirectedGraph(Seq(edgeCD, edgeDF, edgeCE, edgeED, edgeEF, edgeFG, edgeFH, edgeEG, edgeGH))
-
-    val paths = shortestPathFinder.yenKshortestPaths(graph, c, h, 10000000 msat,
-      Set.empty, Set.empty, Set.empty, 3,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
-      BlockHeight(714930), _ => true, includeLocalChannelCost = true)
-    assert(paths.length == 3)
-    assert(paths(0).path == Seq(edgeCE, edgeEF, edgeFH))
-    assert(paths(1).path == Seq(edgeCE, edgeEG, edgeGH))
-    assert(paths(2).path == Seq(edgeCD, edgeDF, edgeFH))
-  }
 }

@@ -191,7 +191,7 @@ object RouteCalculation {
 
   /**
    * Find a route in the graph between localNodeId and targetNodeId, returns the route.
-   * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
+   * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the results.
    *
    * @param g               graph of the whole network
    * @param localNodeId     sender node (payer)

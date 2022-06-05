@@ -28,7 +28,6 @@ import scala.collection.mutable
 
 class ShortestPathFinder {
 
-
   /**
    * Yen's algorithm to find the k-shortest (loop-less) paths in a graph, uses dijkstra as search algo. Is guaranteed to
    * terminate finding at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
@@ -87,8 +86,8 @@ class ShortestPathFinder {
           // select the sub-path from the spur node to the target
           val rootPathEdges = prevShortestPath.takeRight(i)
           // we ignore all the paths that we have already fully explored in previous iterations
-          // if for example the spur node is D, and we already found shortest paths ending with A->D->E and B->D->E,
-          // we want to ignore the A->D and B->D edges
+          // if for example, the spur node is D, and we already found shortest paths ending with A->D->E and B->D->E,
+          // then we want to ignore the A->D and B->D edges
           // [...] --> A --+
           //               |
           // [...] --> B --+--> D --> E
@@ -193,7 +192,8 @@ class ShortestPathFinder {
             // will be relayed through that edge is the one in `currentWeight`.
             val neighborWeight = Path.addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, includeLocalChannelCost)
             if (boundaries(neighborWeight)) {
-              val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), 0.0, MilliSatoshi(Long.MaxValue), MilliSatoshi(Long.MaxValue), Double.MaxValue))
+              val richWeight = RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), 0.0, MilliSatoshi(Long.MaxValue), MilliSatoshi(Long.MaxValue), Double.MaxValue)
+              val previousNeighborWeight = bestWeights.getOrElse(neighbor, richWeight)
               // if this path between neighbor and the target has a shorter distance than previously known, we select it
               if (neighborWeight.weight < previousNeighborWeight.weight) {
                 // update the best edge for this vertex
