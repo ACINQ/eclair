@@ -1605,9 +1605,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       sealed trait EmitLocalChannelEvent
       /**
        * This event is for:
-       * - the router: so that it knows about this channel to find routes
-       * - the relayers: so they can learn about the channel scid/alias and route to it
-       * - the peer: so they can "learn the other end's forwarding parameters" (BOLT 7)
+       *  - the router: so that it knows about this channel to find routes
+       *  - the relayers: so they can learn about the channel scid/alias and route to it
+       *  - the peer: so they can "learn the other end's forwarding parameters" (BOLT 7)
        *
        * @param sendToPeer indicates whether we should send the channel_update directly to our peer
        */
