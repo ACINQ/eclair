@@ -19,9 +19,9 @@ package fr.acinq.eclair.router
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
@@ -111,13 +111,10 @@ object Validation {
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.InvalidAnnouncement(c)))
             None
           } else {
-            watcher ! WatchExternalChannelSpent(ctx.self, tx.txid, outputIndex, c.shortChannelId)
-            log.debug("added channel channelId={}", c.shortChannelId)
+            log.debug("validation succesful for shortChannelId={}", c.shortChannelId)
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
-            ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(c, capacity, None, None) :: Nil))
-            db.addChannel(c, tx.txid, capacity)
-            Some(addPublicChannel(d0, nodeParams, c, fundingTxid = tx.txid, capacity = capacity))
+            Some(addPublicChannel(d0, nodeParams, watcher, c, fundingTxid = tx.txid, capacity = capacity))
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
           if (fundingTxStatus.spendingTxConfirmed) {
@@ -160,9 +157,14 @@ object Validation {
     }
   }
 
-  private def addPublicChannel(d: Data, nodeParams: NodeParams, ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  private def addPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val channelId = toLongId(fundingTxid.reverse, outputIndex(ann.shortChannelId))
+    import nodeParams.db.{network => db}
+    val fundingOutputIndex = outputIndex(ann.shortChannelId)
+    val channelId = toLongId(fundingTxid.reverse, fundingOutputIndex)
+    watcher ! WatchExternalChannelSpent(ctx.self, fundingTxid, fundingOutputIndex, ann.shortChannelId)
+    ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(ann, capacity, None, None) :: Nil))
+    db.addChannel(ann, fundingTxid, capacity)
     // if this is a local channel graduating from private to public, we already have data
     val privChan_opt = d.privateChannels.get(channelId)
     log.debug("adding public channel channelId={} realScid={} localChannel={}", channelId, ann.shortChannelId, privChan_opt.isDefined)
@@ -477,7 +479,7 @@ object Validation {
     }
   }
 
-  def handleLocalChannelUpdate(d: Data, nodeParams: NodeParams, lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def handleLocalChannelUpdate(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     import nodeParams.db.{network => db}
     d.resolve(lcu.channelId, lcu.realShortChannelId_opt) match {
@@ -491,7 +493,7 @@ object Validation {
             // since this is a local channel, we can trust the announcement, no need to go through the full
             // verification process and make calls to bitcoin core
             val commitments = lcu.commitments.asInstanceOf[Commitments] // TODO: ugly! a public channel has to have a real commitment
-            val d1 = addPublicChannel(d, nodeParams, ann, fundingTxid = commitments.commitInput.outPoint.txid, capacity = commitments.capacity)
+            val d1 = addPublicChannel(d, nodeParams, watcher, ann, fundingTxid = commitments.commitInput.outPoint.txid, capacity = commitments.capacity)
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(ann.shortChannelId)
             val d2 = handleChannelUpdate(d1, db, nodeParams.routerConf, Left(lcu))
