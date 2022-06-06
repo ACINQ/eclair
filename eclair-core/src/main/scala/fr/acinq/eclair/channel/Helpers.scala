@@ -294,11 +294,9 @@ object Helpers {
 
     /**
      * As funder we trust ourselves to not double spend funding txs: we could always use a zero-confirmation watch,
-     * but we need a scid to send the initial channel_update and remote may not provide an alias (and we don't want to
-     * trust the real scid sent by remote in their channel_ready). So we always wait for one conf, except if the channel
-     * has the zero-conf feature (because presumably the peer will sends an alias in that case).
-     *
-     * @return
+     * but we need a scid to send the initial channel_update and remote may not provide an alias. That's why we always
+     * wait for one conf, except if the channel has the zero-conf feature (because presumably the peer will send an
+     * alias in that case).
      */
     def minDepthFunder(channelFeatures: ChannelFeatures): Long = {
       if (channelFeatures.hasFeature(Features.ZeroConf)) {
