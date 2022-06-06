@@ -73,325 +73,240 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     sendPayment(alice, carol, 100_000 msat, hints = Seq(hint))
   }
 
-  test("a->b->c (b-c private)") { f =>
+  private def internalTest(f: FixtureParam,
+                           deepConfirm: Boolean,
+                           stripAliasFromCarol: Boolean,
+                           bcPublic: Boolean,
+                           bcZeroConf: Boolean,
+                           bcScidAlias: Boolean,
+                           bcHasRealScid: Boolean,
+                           paymentWorksWithoutHint: Boolean,
+                           paymentWorksWithHint_opt: Option[Boolean],
+                           paymentWorksWithRealScidHint_opt: Option[Boolean],
+                          ): Unit = {
     import f._
 
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = false)
+    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm, stripAliasFromCarol = stripAliasFromCarol)
 
     eventually {
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel)
-      // a-b and b-c are in NORMAL and have real scids (the funding tx has reached min_depth)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias) == bcScidAlias)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel == bcPublic)
       assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
       assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined == bcHasRealScid)
+      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined == bcHasRealScid)
     }
 
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
+    if (bcPublic && deepConfirm) {
+      // if channel b-c is public, we wait for alice to learn about it
+      eventually {
+        assert(getRouterData(alice).channels.size == 2)
+      }
+    }
+
+    if (paymentWorksWithoutHint) {
       sendPaymentAliceToCarol(f)
+    } else {
+      intercept[AssertionError] {
+        sendPaymentAliceToCarol(f)
+      }
     }
 
-    // with a routing hint the payment works
-    sendPaymentAliceToCarol(f, useHint = true)
-    // NB: the default hints use bob's alias, even id scid alias isn't enabled, because eclair always sends and understands aliases
-    assert(getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.get.shortChannelId ==
-      getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].localAlias)
+    if (paymentWorksWithHint_opt.contains(true)) {
+      sendPaymentAliceToCarol(f, useHint = true)
+    } else if (paymentWorksWithHint_opt.contains(false)) {
+      intercept[AssertionError] {
+        sendPaymentAliceToCarol(f, useHint = true)
+      }
+    } else {
+      // skipped
+    }
 
-    // if alice uses the real scid instead of the b-c alias, it still works
-    sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
+    if (paymentWorksWithRealScidHint_opt.contains(true)) {
+      // if alice uses the real scid instead of the b-c alias, it still works
+      sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
+    } else if (paymentWorksWithRealScidHint_opt.contains(false)) {
+      intercept[AssertionError] {
+        sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
+      }
+    } else {
+      // skipped
+    }
+  }
+
+  test("a->b->c (b-c private)") { f =>
+    internalTest(f,
+      deepConfirm = true,
+      stripAliasFromCarol = false,
+      bcPublic = false,
+      bcZeroConf = false,
+      bcScidAlias = false,
+      bcHasRealScid = true, // a-b and b-c are in NORMAL and have real scids (the funding tx has reached min_depth)
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
+      paymentWorksWithRealScidHint_opt = Some(true) // if alice uses the real scid instead of the b-c alias, it still works
+    )
+
+    //TODO
+    // NB: the default hints use bob's alias, even id scid alias isn't enabled, because eclair always sends and understands aliases
+    //assert(getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.get.shortChannelId ==
+    //  getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].localAlias)
+
   }
 
   test("a->b->c (b-c scid-alias private)", Tag(ScidAliasBobCarol)) { f =>
-    import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = false)
-
-    eventually {
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel)
-      // a-b and b-c are in NORMAL and have real scids (the funding tx has reached min_depth)
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    // with a routing hint the payment works
-    sendPaymentAliceToCarol(f, useHint = true)
-    // NB: the default hints use bob's alias, even id scid alias isn't enabled, because eclair always sends and understands aliases
-    assert(getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.get.shortChannelId ==
-      getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].localAlias)
-
-    // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
-    }
+    internalTest(f,
+      deepConfirm = true,
+      stripAliasFromCarol = false,
+      bcPublic = false,
+      bcZeroConf = false,
+      bcScidAlias = true,
+      bcHasRealScid = true, // a-b and b-c are in NORMAL and have real scids (the funding tx has reached min_depth)
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
+      paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
+    )
   }
 
   test("a->b->c (b-c zero-conf unconfirmed private)", Tag(ZeroConfBobCarol)) { f =>
-    import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = false)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel)
-      // a-b is in NORMAL, the funding tx has reach min_depth
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      // b-c is in NORMAL too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    // with a routing hint the payment works
-    sendPaymentAliceToCarol(f, useHint = true)
+    internalTest(f,
+      deepConfirm = false,
+      stripAliasFromCarol = false,
+      bcPublic = false,
+      bcZeroConf = true,
+      bcScidAlias = false,
+      bcHasRealScid = false, // a-b has reached min_depth and has a real scid, b-c is in NORMAL state too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
+      paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
+    )
   }
 
   test("a->b->c (b-c zero-conf unconfirmed private, no alias from carol)", Tag(ZeroConfBobCarol)) { f =>
+    internalTest(f,
+      deepConfirm = false,
+      stripAliasFromCarol = true,
+      bcPublic = false,
+      bcZeroConf = true,
+      bcScidAlias = false,
+      bcHasRealScid = false, // a-b has reached min_depth and has a real scid, b-c is in NORMAL state too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = None, // see below
+      paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
+    )
     import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = false, stripAliasFromCarol = true)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel)
-      // a-b is in NORMAL, the funding tx has reach min_depth
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      // b-c is in NORMAL too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    // carol don't have hints, because bob sent her a channel_update with scid=0, which carol couldn't attribute to a channel
+    // carol doesn't have hints, because bob sent her a channel_update with scid=0, which carol couldn't attribute to a channel
     assert(getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.isEmpty)
   }
 
   test("a->b->c (b-c zero-conf scid-alias unconfirmed private, no alias from carol)", Tag(ZeroConfBobCarol), Tag(ScidAliasBobCarol)) { f =>
+    internalTest(f,
+      deepConfirm = false,
+      stripAliasFromCarol = true,
+      bcPublic = false,
+      bcZeroConf = true,
+      bcScidAlias = true,
+      bcHasRealScid = false, // a-b has reached min_depth and has a real scid, b-c is in NORMAL state too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = None, // see below
+      paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
+    )
     import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = false, stripAliasFromCarol = true)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel)
-      // a-b is in NORMAL, the funding tx has reach min_depth
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      // b-c is in NORMAL too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    // carol don't have hints, because bob sent her a channel_update with scid=0, which carol couldn't attribute to a channel
+    // carol doesn't have hints, because bob sent her a channel_update with scid=0, which carol couldn't attribute to a channel
     assert(getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.isEmpty)
   }
 
   test("a->b->c (b-c zero-conf deeply confirmed private)", Tag(ZeroConfBobCarol)) { f =>
-    import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = true)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel)
-      // both channels have real scids because they are deeply confirmed, even the zeroconf channel
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    // with a routing hint the payment works
-    sendPaymentAliceToCarol(f, useHint = true)
-
-    // if alice uses the real scid instead of the b-c alias, it still works
-    // TODO  This actually doesn't work, because the ChannelRelayer relies on the the LocalChannelUpdate event to maintain
-    // TODO  its scid resolution map, and the channel doesn't emit a new one when a real scid is assigned, because we use the
-    // TODO  remote alias for the channel_update, not the real scid. So the channel_update remains the same. We used to
-    // TODO  have the ChannelRelayer also listen to ShortChannelIdAssigned event, but it's doesn't seem worth it here.
-    //sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
+    internalTest(f,
+      deepConfirm = true,
+      stripAliasFromCarol = false,
+      bcPublic = false,
+      bcZeroConf = true,
+      bcScidAlias = false,
+      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
+      paymentWorksWithRealScidHint_opt = None // skipped, see below
+      // TODO  This actually doesn't work, because the ChannelRelayer relies on the the LocalChannelUpdate event to maintain
+      // TODO  its scid resolution map, and the channel doesn't emit a new one when a real scid is assigned, because we use the
+      // TODO  remote alias for the channel_update, not the real scid. So the channel_update remains the same. We used to
+      // TODO  have the ChannelRelayer also listen to ShortChannelIdAssigned event, but it's doesn't seem worth it here.
+    )
   }
 
   test("a->b->c (b-c zero-conf scid-alias deeply confirmed private)", Tag(ZeroConfBobCarol), Tag(ScidAliasBobCarol)) { f =>
-    import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = true)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel)
-      // both channels have real scids because they are deeply confirmed, even the zeroconf channel
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    // with a routing hint the payment works
-    sendPaymentAliceToCarol(f, useHint = true)
-
-    // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
-    }
+    internalTest(f,
+      deepConfirm = true,
+      stripAliasFromCarol = false,
+      bcPublic = false,
+      bcZeroConf = true,
+      bcScidAlias = true,
+      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
+      paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
+    )
   }
 
   test("a->b->c (b-c zero-conf deeply confirmed private, no alias from carol)", Tag(ZeroConfBobCarol)) { f =>
-    import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = true, stripAliasFromCarol = true)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      // both channels have real scids because they are deeply confirmed, even the zeroconf channel
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    // carol is able to give routing hints from bob, because bob has sent a new channel_update using the real scid
-    val Some(hint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
-    // NB: in this convoluted scenario where carol has actually sent her alias but we have stripped it midflight,
-    // she will still understand bob's alias and use it in her routing hint
-    assert(hint.shortChannelId == getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].localAlias)
-    // with a routing hint the payment works
-    sendPaymentAliceToCarol(f, useHint = true)
-
-    // if alice uses the real scid instead of the b-c alias, it still works
-    sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
+    internalTest(f,
+      deepConfirm = true,
+      stripAliasFromCarol = true,
+      bcPublic = false,
+      bcZeroConf = true,
+      bcScidAlias = false,
+      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = Some(true), // carol is able to give routing hints from bob, because bob has sent a new channel_update using the real scid
+      // NB: in this convoluted scenario where carol has actually sent her alias but we have stripped it mid-flight,
+      // she will still understand bob's alias and use it in her routing hint
+      paymentWorksWithRealScidHint_opt = Some(true) // if alice uses the real scid instead of the b-c alias, it still works
+    )
   }
 
   test("a->b->c (b-c zero-conf scid-alias deeply confirmed private, no alias from carol)", Tag(ZeroConfBobCarol), Tag(ScidAliasBobCarol)) { f =>
-    import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = true, stripAliasFromCarol = true)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      // both channels have real scids because they are deeply confirmed, even the zeroconf channel
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    eventually {
-      // carol is able to give routing hints from bob, because bob has sent a new channel_update using the real scid
-      val Some(hint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
-      // NB: in this convoluted scenario where carol has actually sent her alias but we have stripped it midflight,
+    internalTest(f,
+      deepConfirm = true,
+      stripAliasFromCarol = true,
+      bcPublic = false,
+      bcZeroConf = true,
+      bcScidAlias = true,
+      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = Some(true), // carol is able to give routing hints from bob, because bob has sent a new channel_update using the real scid
+      // NB: in this convoluted scenario where carol has actually sent her alias but we have stripped it mid-flight,
       // she will still understand bob's alias and use it in her routing hint
-      assert(hint.shortChannelId == getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].localAlias)
-    }
-    // with a routing hint the payment works
-    sendPaymentAliceToCarol(f, useHint = true)
-
-    // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
-    }
+      paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
+    )
   }
 
   test("a->b->c (b-c zero-conf unconfirmed public)", Tag(ZeroConfBobCarol), Tag(PublicBobCarol)) { f =>
-    import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = false)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      // a-b is in NORMAL, the funding tx has reach min_depth
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      // b-c is in NORMAL too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty)
-    }
-
-    // alice can't find a route to carol because b-c isn't announced
-    intercept[AssertionError] {
-      sendPaymentAliceToCarol(f)
-    }
-
-    // with a routing hint the payment works
-    sendPaymentAliceToCarol(f, useHint = true)
+    internalTest(f,
+      deepConfirm = false,
+      stripAliasFromCarol = false,
+      bcPublic = true,
+      bcZeroConf = true,
+      bcScidAlias = false,
+      bcHasRealScid = false, // a-b has reached min_depth and has a real scid, b-c is in NORMAL state too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
+      paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
+    )
   }
 
   test("a->b->c (b-c zero-conf deeply confirmed public)", Tag(ZeroConfBobCarol), Tag(PublicBobCarol)) { f =>
-    import f._
-
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = true)
-
-    eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(!getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
-      // both channels have real scids because they are deeply confirmed, even the zeroconf channel
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-    }
-
-    // alice eventually learns about public channel b-c
-    eventually {
-      assert(getRouterData(alice).channels.size == 2)
-    }
-
-    // alice can make a payment to carol without routing hints
-    sendPaymentAliceToCarol(f)
+    internalTest(f,
+      deepConfirm = true,
+      stripAliasFromCarol = false,
+      bcPublic = true,
+      bcZeroConf = true,
+      bcScidAlias = false,
+      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
+      paymentWorksWithoutHint = true,
+      paymentWorksWithHint_opt = None, // there is no routing hints for public channels
+      paymentWorksWithRealScidHint_opt = None // there is no routing hints for public channels
+    )
   }
 
 }

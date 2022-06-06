@@ -153,8 +153,8 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       channels.bob2alice.expectNoMessage(100 millis)
 
       // router graph contains a single channel
-      assert(router.stateData.graph.vertexSet() == Set(channels.alice.underlyingActor.nodeParams.nodeId, channels.bob.underlyingActor.nodeParams.nodeId))
-      assert(router.stateData.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate1, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
+      assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(channels.alice.underlyingActor.nodeParams.nodeId, channels.bob.underlyingActor.nodeParams.nodeId))
+      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate1, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
     }
   }
 
