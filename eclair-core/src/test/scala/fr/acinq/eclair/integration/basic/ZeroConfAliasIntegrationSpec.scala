@@ -101,7 +101,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     if (bcPublic && deepConfirm) {
       // if channel b-c is public, we wait for alice to learn about it
       eventually {
-        assert(getRouterData(alice).channels.size == 2)
+        val data = getRouterData(alice)
+        assert(data.channels.size == 2)
+        assert(data.channels.values.forall(pc => pc.update_1_opt.isDefined && pc.update_2_opt.isDefined))
       }
     }
 
@@ -110,6 +112,21 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     } else {
       intercept[AssertionError] {
         sendPaymentAliceToCarol(f)
+      }
+    }
+
+    if (bcZeroConf && stripAliasFromCarol && deepConfirm) {
+      // if b-c is zeroconf but carol doesn't send an alias to bob (we actually stripped it mid-flight), bob will use
+      // scid 0x0x0 for his channel_update, which carol won't be able to attribute to a channel. But when the channel
+      // deeply confirms, bob will start using the real scid for his channel_update and it will work. That is why we
+      // need to wait for carol to receive bob's new channel_update before attempting to use routing hints (because they
+      // use bob's channel_update).
+      eventually {
+        val hint_opt = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
+        assert(hint_opt.isDefined)
+        // NB: in this convoluted scenario, where we are modifying messages on the wire, carol still received bob's
+        // alias and will use it in her routing hint
+        assert(hint_opt.get.shortChannelId == getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].localAlias)
       }
     }
 
@@ -259,8 +276,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
       paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
       paymentWorksWithHint_opt = Some(true), // carol is able to give routing hints from bob, because bob has sent a new channel_update using the real scid
-      // NB: in this convoluted scenario where carol has actually sent her alias but we have stripped it mid-flight,
-      // she will still understand bob's alias and use it in her routing hint
       paymentWorksWithRealScidHint_opt = Some(true) // if alice uses the real scid instead of the b-c alias, it still works
     )
   }
@@ -275,8 +290,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
       paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
       paymentWorksWithHint_opt = Some(true), // carol is able to give routing hints from bob, because bob has sent a new channel_update using the real scid
-      // NB: in this convoluted scenario where carol has actually sent her alias but we have stripped it mid-flight,
-      // she will still understand bob's alias and use it in her routing hint
       paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
     )
   }
