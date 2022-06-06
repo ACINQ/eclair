@@ -540,8 +540,12 @@ object Router {
 
     def fee(includeLocalChannelCost: Boolean): MilliSatoshi = {
       val hopsToPay = if (includeLocalChannelCost) hops else hops.drop(1)
-      val amountToSend = hopsToPay.reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
-      amountToSend - amount
+      val amountToSend = hopsToPay.reverse.foldLeft(amount) {
+        case (amount1, hop) =>
+          val amountToForward = amount1 max hop.params.htlcMinimum
+          amountToForward + hop.fee(amountToForward)
+      }
+      (amountToSend max hops.head.params.htlcMinimum) - amount
     }
 
     /** This method retrieves the channel update that we used when we built the route. */

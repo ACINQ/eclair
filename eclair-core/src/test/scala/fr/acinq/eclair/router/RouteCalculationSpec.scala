@@ -232,14 +232,15 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     )
 
     val graph = DirectedGraph(List(
-      makeEdge(1L, f, g, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 50.msat)),
-      // this channel requires a minimum amount that is larger than what we are sending
+      makeEdge(1L, f, g, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 51.msat)),
+      // This channel requires a minimum amount that is larger than what we are sending so we need to add more fees to be above the minimum amount.
       makeEdge(2L, g, h, 1 msat, 0, minHtlc = DEFAULT_AMOUNT_MSAT + 50.msat),
       makeEdge(3L, h, i, 1 msat, 0)
     ))
 
-    val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
-    assert(route == Failure(RouteNotFound))
+    val Success(route :: Nil) = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+    assert(route2Ids(route) == 1 :: 2 :: 3 :: Nil)
+    assert(route.fee(false) === 51.msat)
   }
 
   test("if there are multiple channels between the same node, select the cheapest") {
@@ -1182,7 +1183,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(result == Failure(RouteNotFound))
   }
 
-  test("cannot find multipart route to neighbor (restricted htlc_minimum_msat)") {
+  test("find multipart route to neighbor (restricted htlc_minimum_msat)") {
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 25 msat, 15, minHtlc = 5000 msat, balance_opt = Some(6000 msat)),
       makeEdge(2L, a, b, 15 msat, 10, minHtlc = 5000 msat, balance_opt = Some(7000 msat)),
@@ -1190,12 +1191,18 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     {
-      val result = findMultiPartRoute(g, a, b, 10000 msat, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
-      assert(result == Failure(RouteNotFound))
+      val Success(route1 :: route2 :: Nil) = findMultiPartRoute(g, a, b, 10000 msat, 10000 msat, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      assert(route2Ids(route1) == 1 :: Nil)
+      println(route1)
+      assert(route1.fee(false) === 2000.msat)
+      assert(route2Ids(route2) == 2 :: Nil)
+      println(route2)
+      assert(route2.fee(false) === 0.msat)
     }
     {
-      val result = findMultiPartRoute(g, a, b, 10000 msat, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
-      assert(result == Failure(RouteNotFound))
+      val Success(routes) = findMultiPartRoute(g, a, b, 10000 msat, 10000 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
+      assert(routes.map(route2Ids) contains (1 :: Nil))
+      assert(routes.map(route2Ids) contains (2 :: Nil))
     }
   }
 

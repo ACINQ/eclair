@@ -249,7 +249,6 @@ object Graph {
           if (current.weight.amount <= edge.capacity &&
             edge.balance_opt.forall(current.weight.amount <= _) &&
             edge.params.htlcMaximum_opt.forall(current.weight.amount <= _) &&
-            current.weight.amount >= edge.params.htlcMinimum &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor)) {
             // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
@@ -299,14 +298,15 @@ object Graph {
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
   private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: BlockHeight, weightRatios: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
-    val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
+    val amountToForward = prev.amount max edge.params.htlcMinimum
+    val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) amountToForward else addEdgeFees(edge, amountToForward)
     val fee = totalAmount - prev.amount
     val totalFees = prev.fees + fee
     val cltv = if (edge.desc.a == sender && !includeLocalChannelCost) CltvExpiryDelta(0) else edge.params.cltvExpiryDelta
     val totalCltv = prev.cltv + cltv
     weightRatios match {
       case Left(weightRatios) =>
-        val hopCost = if (edge.desc.a == sender) 0 msat else nodeFee(weightRatios.hopCost, prev.amount)
+        val hopCost = if (edge.desc.a == sender) 0 msat else nodeFee(weightRatios.hopCost, amountToForward)
         import RoutingHeuristics._
 
         // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
@@ -327,10 +327,10 @@ object Graph {
         val totalWeight = prev.weight + (fee + hopCost).toLong * factor
         RichWeight(totalAmount, prev.length + 1, totalCltv, 1.0, totalFees, 0 msat, totalWeight)
       case Right(heuristicsConstants) =>
-        val hopCost = nodeFee(heuristicsConstants.hopCost, prev.amount)
+        val hopCost = nodeFee(heuristicsConstants.hopCost, amountToForward)
         val totalHopsCost = prev.virtualFees + hopCost
         // If we know the balance of the channel, then we will check separately that it can relay the payment.
-        val successProbability = if (edge.balance_opt.nonEmpty) 1.0 else 1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
+        val successProbability = if (edge.balance_opt.nonEmpty) 1.0 else 1.0 - amountToForward.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
         if (successProbability < 0) {
           throw NegativeProbability(edge, prev, heuristicsConstants)
         }
