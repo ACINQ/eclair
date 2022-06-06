@@ -356,6 +356,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       FundingCreated(randomBytes32(), bin32(0), 3, randomBytes64()),
       FundingSigned(randomBytes32(), randomBytes64()),
       ChannelReady(randomBytes32(), point(2)),
+      ChannelReady(randomBytes32(), point(2), TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId(123456)))),
       UpdateFee(randomBytes32(), FeeratePerKw(2 sat)),
       Shutdown(randomBytes32(), bin(47, 0)),
       ClosingSigned(randomBytes32(), 2 sat, randomBytes64()),
