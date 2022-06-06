@@ -43,7 +43,6 @@ import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.protocol.NodeAddress
 import grizzled.slf4j.Logging
@@ -351,7 +350,6 @@ class Setup(val datadir: File,
         case "safecookie" => TorProtocolHandler.SafeCookie()
       }
       val protocolHandlerProps = TorProtocolHandler.props(
-        version = OnionServiceVersion(config.getString("tor.protocol")),
         authentication = auth,
         privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).toPath,
         virtualPort = config.getInt("server.port"),

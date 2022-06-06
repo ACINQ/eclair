@@ -16,20 +16,19 @@
 
 package fr.acinq.eclair.tor
 
-import java.nio.file.attribute.PosixFilePermissions
-import java.nio.file.{Files, Path, Paths}
-import java.util
-
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import akka.io.Tcp.Connected
 import akka.util.ByteString
-import fr.acinq.eclair.tor.TorProtocolHandler.{Authentication, OnionServiceVersion}
-import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
+import fr.acinq.eclair.tor.TorProtocolHandler.Authentication
+import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor3}
 import scodec.bits.Bases.Alphabets
 import scodec.bits.ByteVector
 
+import java.nio.file.attribute.PosixFilePermissions
+import java.nio.file.{Files, Path, Paths}
+import java.util
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import scala.concurrent.Promise
 import scala.util.Try
 
@@ -40,15 +39,13 @@ case class TorException(private val msg: String) extends RuntimeException(s"Tor 
   *
   * Specification: https://gitweb.torproject.org/torspec.git/tree/control-spec.txt
   *
-  * @param onionServiceVersion v2 or v3
   * @param authentication      Tor controller auth mechanism (password or safecookie)
   * @param privateKeyPath      path to a file that contains a Tor private key
   * @param virtualPort         port for the public hidden service (typically 9735)
   * @param targets             address of our protected server (format [host:]port), 127.0.0.1:[[virtualPort]] if empty
   * @param onionAdded          a Promise to track creation of the endpoint
   */
-class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
-                         authentication: Authentication,
+class TorProtocolHandler(authentication: Authentication,
                          privateKeyPath: Path,
                          virtualPort: Int,
                          targets: Seq[String],
@@ -74,8 +71,8 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
       val methods: String = res.getOrElse("METHODS", throw TorException("auth methods not found"))
       val torVersion = unquote(res.getOrElse("Tor", throw TorException("version not found")))
       log.info(s"Tor version $torVersion")
-      if (!OnionServiceVersion.isCompatible(onionServiceVersion, torVersion)) {
-        throw TorException(s"version $torVersion does not support onion service $onionServiceVersion")
+      if (!isCompatible(torVersion)) {
+        throw TorException(s"unsupported Tor version: $torVersion")
       }
       if (!Authentication.isCompatible(authentication, methods)) {
         throw TorException(s"cannot use authentication '$authentication', supported methods are '$methods'")
@@ -116,10 +113,7 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
       val res = readResponse(data)
       if (ok(res)) {
         val serviceId = processOnionResponse(parseResponse(res))
-        address = Some(onionServiceVersion match {
-          case V2 => Tor2(serviceId, virtualPort)
-          case V3 => Tor3(serviceId, virtualPort)
-        })
+        address = Some(Tor3(serviceId, virtualPort))
         onionAdded.foreach(_.success(address.get))
         log.debug("Onion address: {}", address.get)
       }
@@ -151,10 +145,7 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
     if (privateKeyPath.toFile.exists()) {
       readString(privateKeyPath)
     } else {
-      onionServiceVersion match {
-        case V2 => "NEW:RSA1024"
-        case V3 => "NEW:ED25519-V3"
-      }
+      "NEW:ED25519-V3"
     }
   }
 
@@ -190,48 +181,30 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
 }
 
 object TorProtocolHandler {
-  def props(version: OnionServiceVersion,
-            authentication: Authentication,
+  def props(authentication: Authentication,
             privateKeyPath: Path,
             virtualPort: Int,
             targets: Seq[String] = Seq(),
             onionAdded: Option[Promise[NodeAddress]] = None
            ): Props =
-    Props(new TorProtocolHandler(version, authentication, privateKeyPath, virtualPort, targets, onionAdded))
+    Props(new TorProtocolHandler(authentication, privateKeyPath, virtualPort, targets, onionAdded))
 
   // those are defined in the spec
   private val ServerKey = ByteVector.view("Tor safe cookie authentication server-to-controller hash".getBytes())
   private val ClientKey = ByteVector.view("Tor safe cookie authentication controller-to-server hash".getBytes())
 
-  // @formatter:off
-  sealed trait OnionServiceVersion
-  case object V2 extends OnionServiceVersion
-  case object V3 extends OnionServiceVersion
-  // @formatter:on
 
-  object OnionServiceVersion {
-    def apply(s: String): OnionServiceVersion = s match {
-      case "v2" | "V2" => V2
-      case "v3" | "V3" => V3
-      case _ => throw TorException(s"unknown protocol version `$s`")
-    }
-
-    def isCompatible(onionServiceVersion: OnionServiceVersion, torVersion: String): Boolean =
-      onionServiceVersion match {
-        case V2 => true
-        case V3 => torVersion
-            .split("\\.")
-            .map(_.split('-').head) // remove non-numeric symbols at the end of the last number (rc, beta, alpha, etc.)
-            .map(d => Try(d.toInt).getOrElse(0))
-            .zipAll(List(0, 3, 3, 6), 0, 0) // min version for v3 is 0.3.3.6
-            .foldLeft(Option.empty[Boolean]) { // compare subversion by subversion starting from the left
-              case (Some(res), _) => Some(res) // we stop the comparison as soon as there is a difference
-              case (None, (v, vref)) => if (v > vref) Some(true) else if (v < vref) Some(false) else None
-            }
-            .getOrElse(true) // if version == 0.3.3.6 then result will be None
-
+  private[tor] def isCompatible(torVersion: String): Boolean =
+    torVersion
+      .split("\\.")
+      .map(_.split('-').head) // remove non-numeric symbols at the end of the last number (rc, beta, alpha, etc.)
+      .map(d => Try(d.toInt).getOrElse(0))
+      .zipAll(List(0, 3, 3, 6), 0, 0) // min version for v3 is 0.3.3.6
+      .foldLeft(Option.empty[Boolean]) { // compare subversion by subversion starting from the left
+        case (Some(res), _) => Some(res) // we stop the comparison as soon as there is a difference
+        case (None, (v, vref)) => if (v > vref) Some(true) else if (v < vref) Some(false) else None
       }
-  }
+      .getOrElse(true) // if version == 0.3.3.6 then result will be None
 
   // @formatter:off
   sealed trait Authentication

@@ -4,7 +4,12 @@
 
 ## Major changes
 
-<insert changes>
+Dropped support for version 2 of Tor protocol. That means 
+
+- Eclair can't open control connection to Tor daemon version 0.3.3.5 and earlier anymore
+- Eclair can't create hidden services for Tor protocol v2 with newer versions of Tor daemon
+
+IMPORTANT: You'll need to upgrade your Tor daemon if for some reason you still use Tor v0.3.3.5 or earlier before upgrading to this release. 
 
 ### API changes
 
