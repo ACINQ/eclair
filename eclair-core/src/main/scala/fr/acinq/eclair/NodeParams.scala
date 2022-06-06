@@ -79,6 +79,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean,
                       balanceCheckInterval: FiniteDuration,
+                      blockchainWatchdogTolerance: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration]) {
@@ -498,6 +499,7 @@ object NodeParams extends Logging {
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
       balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
+      blockchainWatchdogTolerance = config.getInt("blockchain-watchdog.tolerance"),
       blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = onionMessageRelayPolicy,
