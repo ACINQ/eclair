@@ -31,7 +31,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
-import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, randomKey, toLongId}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, UInt64, randomKey, toLongId}
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success, Try}
@@ -87,7 +87,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         fundingSatoshis = input.fundingAmount,
         pushMsat = input.pushAmount_opt.getOrElse(0 msat),
         dustLimitSatoshis = input.localParams.dustLimit,
-        maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
+        maxHtlcValueInFlightMsat = UInt64(input.localParams.maxHtlcValueInFlightMsat.toLong),
         channelReserveSatoshis = input.localParams.requestedChannelReserve_opt.get,
         htlcMinimumMsat = input.localParams.htlcMinimum,
         feeratePerKw = input.commitTxFeerate,
@@ -122,7 +122,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val localShutdownScript = if (Features.canUseFeature(d.initFundee.localParams.initFeatures, d.initFundee.remoteInit.features, Features.UpfrontShutdownScript)) d.initFundee.localParams.defaultFinalScriptPubKey else ByteVector.empty
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = d.initFundee.localParams.dustLimit,
-            maxHtlcValueInFlightMsat = d.initFundee.localParams.maxHtlcValueInFlightMsat,
+            maxHtlcValueInFlightMsat = UInt64(d.initFundee.localParams.maxHtlcValueInFlightMsat.toLong),
             channelReserveSatoshis = d.initFundee.localParams.requestedChannelReserve_opt.get,
             minimumDepth = minimumDepth.getOrElse(0),
             htlcMinimumMsat = d.initFundee.localParams.htlcMinimum,

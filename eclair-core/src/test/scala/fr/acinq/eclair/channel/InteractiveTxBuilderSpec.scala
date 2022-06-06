@@ -106,7 +106,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         val channelKeyPath = nodeParams.channelKeyManager.keyPath(localParams, ChannelConfig.standard)
         RemoteParams(
           nodeParams.nodeId,
-          localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
+          localParams.dustLimit, UInt64(localParams.maxHtlcValueInFlightMsat.toLong), None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
           nodeParams.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey,
           nodeParams.channelKeyManager.revocationPoint(channelKeyPath).publicKey,
           nodeParams.channelKeyManager.paymentPoint(channelKeyPath).publicKey,

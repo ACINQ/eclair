@@ -311,7 +311,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat == UInt64.MaxValue)
+    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat == initialState.commitments.capacity.toMilliSatoshi)
     assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat == UInt64(150000000))
     val add = CMD_ADD_HTLC(sender.ref, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
     bob ! add
@@ -324,7 +324,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat == UInt64.MaxValue)
+    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat == initialState.commitments.capacity.toMilliSatoshi)
     assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat == UInt64(150000000))
     val add = CMD_ADD_HTLC(sender.ref, 75500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
     bob ! add
@@ -341,8 +341,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat == UInt64(150000000))
-    assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat == UInt64.MaxValue)
+    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat == 150000000.msat)
+    assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat == UInt64(initialState.commitments.capacity.toMilliSatoshi.toLong))
     val add = CMD_ADD_HTLC(sender.ref, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
     alice ! add
     val error = HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000 msat)

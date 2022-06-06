@@ -458,7 +458,7 @@ object NodeParams extends Logging {
         dustLimit = dustLimitSatoshis,
         maxRemoteDustLimit = Satoshi(config.getLong("channel.max-remote-dust-limit-satoshis")),
         htlcMinimum = htlcMinimum,
-        maxHtlcValueInFlightMsat = UInt64(config.getLong("channel.max-htlc-value-in-flight-msat")),
+        maxHtlcValueInFlightMsat = MilliSatoshi(config.getLong("channel.max-htlc-value-in-flight-msat")),
         maxAcceptedHtlcs = maxAcceptedHtlcs,
         reserveToFundingRatio = config.getDouble("channel.reserve-to-funding-ratio"),
         maxReserveToFundingRatio = config.getDouble("channel.max-reserve-to-funding-ratio"),
