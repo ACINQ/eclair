@@ -9,7 +9,6 @@ import org.scalatest.TestData
 import org.scalatest.concurrent.IntegrationPatience
 import scodec.bits.HexStringSyntax
 
-
 /**
  * This test checks the integration between Channel and Router (events, etc.)
  */
