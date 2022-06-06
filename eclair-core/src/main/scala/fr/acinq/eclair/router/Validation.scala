@@ -111,7 +111,7 @@ object Validation {
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.InvalidAnnouncement(c)))
             None
           } else {
-            log.debug("validation succesful for shortChannelId={}", c.shortChannelId)
+            log.debug("validation successful for shortChannelId={}", c.shortChannelId)
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
             Some(addPublicChannel(d0, nodeParams, watcher, c, fundingTxid = tx.txid, capacity = capacity))
@@ -167,7 +167,6 @@ object Validation {
     db.addChannel(ann, fundingTxid, capacity)
     // if this is a local channel graduating from private to public, we already have data
     val privChan_opt = d.privateChannels.get(channelId)
-    log.debug("adding public channel channelId={} realScid={} localChannel={}", channelId, ann.shortChannelId, privChan_opt.isDefined)
     val pubChan = PublicChannel(
       ann = ann,
       fundingTxid = fundingTxid,
@@ -176,6 +175,7 @@ object Validation {
       update_2_opt = privChan_opt.flatMap(_.update_2_opt),
       meta_opt = privChan_opt.map(_.meta)
     )
+    log.debug("adding public channel channelId={} realScid={} localChannel={} publicChannel={}", channelId, ann.shortChannelId, privChan_opt.isDefined, pubChan)
     // if this is a local channel graduating from private to public, we need to update the graph because the edge
     // identifiers change from alias to real scid, and we can also populate the metadata
     val graph1 = d.privateChannels.get(pubChan.channelId) match {
@@ -211,7 +211,7 @@ object Validation {
       graphWithBalances = graph1
     )
     // in case this was our first local channel, we make a node announcement
-    if (!d.nodes.contains(nodeParams.nodeId)) {
+    if (!d.nodes.contains(nodeParams.nodeId) && isRelatedTo(ann, nodeParams.nodeId)) {
       log.info("first local channel validated, announcing local node")
       val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures())
       handleNodeAnnouncement(d1, nodeParams.db.network, Set(LocalGossip), nodeAnn)
@@ -465,6 +465,7 @@ object Validation {
       case Some(realScid) => Map(realScid -> scia.channelId, scia.localAlias -> scia.channelId)
       case None => Map(scia.localAlias -> scia.channelId)
     }
+    log.debug("handleShortChannelIdAssigned scia={} mappings={}", scia, mappings)
     val d1 = d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ mappings)
     d1.resolve(scia.channelId, scia.realShortChannelId_opt) match {
       case Some(_) =>
@@ -482,13 +483,16 @@ object Validation {
   def handleLocalChannelUpdate(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     import nodeParams.db.{network => db}
+    log.debug("handleLocalChannelUpdate lcu={}", lcu)
     d.resolve(lcu.channelId, lcu.realShortChannelId_opt) match {
-      case Some(_: PublicChannel) =>
+      case Some(publicChannel: PublicChannel) =>
         // this a known public channel, we can process the channel_update
+        log.debug("this is a known public channel, processing channel_update publicChannel={}", publicChannel)
         handleChannelUpdate(d, db, nodeParams.routerConf, Left(lcu))
       case Some(privateChannel: PrivateChannel) =>
         lcu.channelAnnouncement_opt match {
           case Some(ann) =>
+            log.debug("private channel graduating to public privateChannel={}", privateChannel)
             // channel is graduating from private to public
             // since this is a local channel, we can trust the announcement, no need to go through the full
             // verification process and make calls to bitcoin core
@@ -496,9 +500,11 @@ object Validation {
             val d1 = addPublicChannel(d, nodeParams, watcher, ann, fundingTxid = commitments.commitInput.outPoint.txid, capacity = commitments.capacity)
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(ann.shortChannelId)
+            log.debug("processing channel_update")
             val d2 = handleChannelUpdate(d1, db, nodeParams.routerConf, Left(lcu))
             d2
           case None =>
+            log.debug("this is a known private channel, processing channel_update privateChannel={}", privateChannel)
             // this is a known unannounced channel, we can process the channel_update
             handleChannelUpdate(d, db, nodeParams.routerConf, Left(lcu))
         }

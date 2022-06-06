@@ -32,7 +32,6 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer
@@ -41,7 +40,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTra
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
@@ -114,22 +113,19 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }
   }
 
-  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int): Unit = {
+  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, privateChannels: Int, publicChannels: Int, privateUpdates: Int, publicUpdates: Int): Unit = {
     val sender = TestProbe()
     subset.foreach {
       case (node, setup) =>
         withClue(node) {
           awaitAssert({
-            sender.send(setup.router, Router.GetNodes)
-            assert(sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes)
-          }, max = 10 seconds, interval = 1 second)
-          awaitAssert({
-            sender.send(setup.router, Router.GetChannels)
-            sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
-          }, max = 10 seconds, interval = 1 second)
-          awaitAssert({
-            sender.send(setup.router, Router.GetChannelUpdates)
-            sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
+            sender.send(setup.router, Router.GetRouterData)
+            val data = sender.expectMsgType[Router.Data]
+            assert(data.nodes.size == nodes)
+            assert(data.privateChannels.size == privateChannels)
+            assert(data.channels.size == publicChannels)
+            assert(data.privateChannels.values.flatMap(pc => pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).size == privateUpdates)
+            assert(data.channels.values.flatMap(pc => pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).size == publicUpdates)
           }, max = 10 seconds, interval = 1 second)
         }
     }
@@ -141,8 +137,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
-    awaitAnnouncements(nodes.view.filterKeys(key => List("A", "B").contains(key)).toMap, 6, 8, 18)
-    awaitAnnouncements(nodes.view.filterKeys(key => List("C", "D", "E", "G").contains(key)).toMap, 6, 8, 16)
+    awaitAnnouncements(nodes.view.filterKeys(key => List("A", "B").contains(key)).toMap, nodes = 6, privateChannels = 1, publicChannels = 8, privateUpdates = 2, publicUpdates = 16)
+    awaitAnnouncements(nodes.view.filterKeys(key => List("C", "D", "E", "G").contains(key)).toMap, nodes = 6, privateChannels = 0, publicChannels = 8, privateUpdates = 0, publicUpdates = 16)
   }
 
   test("wait for channels balance") {
@@ -153,7 +149,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val routingState = sender.expectMsgType[Router.RoutingState]
     val publicChannels = routingState.channels.filter(pc => Set(pc.ann.nodeId1, pc.ann.nodeId2).contains(nodeId))
     assert(publicChannels.nonEmpty)
-    publicChannels.foreach(pc => assert(pc.meta_opt.map(m => m.balance1 > 0.msat || m.balance2 > 0.msat) == Some(true), pc))
+    publicChannels.foreach(pc => assert(pc.meta_opt.exists(m => m.balance1 > 0.msat || m.balance2 > 0.msat), pc))
   }
 
   test("send an HTLC A->D") {
