@@ -113,6 +113,4 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
       }
     }
   }
-
-  override def close(): Unit = ()
 }

@@ -474,7 +474,4 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     })
   }
-
-  override def close(): Unit = ()
-
 }

@@ -21,9 +21,7 @@ import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 
-import java.io.Closeable
-
-trait ChannelsDb extends Closeable {
+trait ChannelsDb {
 
   def addOrUpdateChannel(data: PersistentChannelData): Unit
 

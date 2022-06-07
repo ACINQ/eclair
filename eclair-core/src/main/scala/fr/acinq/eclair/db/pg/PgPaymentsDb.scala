@@ -406,7 +406,4 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       }
     }
   }
-
-  override def close(): Unit = ()
-
 }

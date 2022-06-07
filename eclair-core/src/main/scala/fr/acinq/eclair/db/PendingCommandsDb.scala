@@ -22,8 +22,6 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
 
-import java.io.Closeable
-
 /**
  * This database stores CMD_FULFILL_HTLC and CMD_FAIL_HTLC that we have received from downstream
  * (either directly via UpdateFulfillHtlc or by extracting the value from the
@@ -36,7 +34,7 @@ import java.io.Closeable
  * to handle all corner cases.
  *
  */
-trait PendingCommandsDb extends Closeable {
+trait PendingCommandsDb {
 
   def addSettlementCommand(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit
 

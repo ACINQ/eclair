@@ -22,11 +22,10 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
 
-import java.io.Closeable
 import java.util.UUID
 import scala.util.Try
 
-trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
+trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb
 
 trait IncomingPaymentsDb {
 

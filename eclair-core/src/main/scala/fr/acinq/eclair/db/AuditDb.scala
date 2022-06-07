@@ -18,15 +18,13 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
-import fr.acinq.eclair.{TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.{PathFindingExperimentMetrics, PaymentReceived, PaymentRelayed, PaymentSent}
 
-import java.io.Closeable
-
-trait AuditDb extends Closeable {
+trait AuditDb {
 
   def add(channelLifecycle: ChannelEvent): Unit
 
