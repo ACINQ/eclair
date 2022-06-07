@@ -28,6 +28,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import scala.concurrent.duration.DurationInt
 
 class BalanceEstimateSpec extends AnyFunSuite {
+
   def isValid(balance: BalanceEstimate): Boolean = {
     balance.low >= 0.msat &&
       balance.low <= balance.high &&
@@ -201,7 +202,8 @@ class BalanceEstimateSpec extends AnyFunSuite {
       makeEdge(b, c, 6L, 150 sat),
     ))
 
-    val balances = BalancesEstimates.baseline(g, 1 day)
-    assert(balances.get(makeEdge(a, b, 1L, 100 sat)).canSend(55000 msat) === 0.5 +- 0.01)
+    val graphWithBalances = GraphWithBalanceEstimates(g, 1 day)
+    assert(graphWithBalances.canSend(55000 msat, makeEdge(a, b, 1L, 100 sat)) === 0.5 +- 0.01)
   }
+
 }

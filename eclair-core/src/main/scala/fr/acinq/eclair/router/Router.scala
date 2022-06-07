@@ -103,7 +103,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(
+    val data = Data(
       initNodes, initChannels,
       Stash(Map.empty, Map.empty),
       rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty),
@@ -111,9 +111,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       privateChannels = Map.empty,
       scid2PrivateChannels = Map.empty,
       excludedChannels = Set.empty,
-      graph = graph,
-      balances = BalancesEstimates.baseline(graph, nodeParams.routerConf.balanceEstimateHalfLife),
-      sync = Map.empty))
+      graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
+      sync = Map.empty)
+    startWith(NORMAL, data)
   }
 
   when(NORMAL) {
@@ -262,21 +262,13 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(RouteCouldRelay(route), d) =>
-      val (balances1, _) = route.hops.foldRight((d.balances, route.amount)) {
-        case (hop, (balances, amount)) =>
-          (balances.channelCouldSend(hop, amount), amount + hop.fee(amount))
-      }
-      stay() using d.copy(balances = balances1)
+      stay() using d.copy(graphWithBalances = d.graphWithBalances.routeCouldRelay(route))
 
     case Event(RouteDidRelay(route), d) =>
-      val (balances1, _) = route.hops.foldRight((d.balances, route.amount)) {
-        case (hop, (balances, amount)) =>
-          (balances.channelDidSend(hop, amount), amount + hop.fee(amount))
-      }
-      stay() using d.copy(balances = balances1)
+      stay() using d.copy(graphWithBalances = d.graphWithBalances.routeDidRelay(route))
 
     case Event(ChannelCouldNotRelay(amount, hop), d) =>
-      stay() using d.copy(balances = d.balances.channelCouldNotSend(hop, amount))
+      stay() using d.copy(graphWithBalances = d.graphWithBalances.channelCouldNotSend(hop, amount))
   }
 
   initialize()
@@ -454,13 +446,13 @@ object Router {
       override def htlcMinimum: MilliSatoshi = 0 msat
       override def htlcMaximum_opt: Option[MilliSatoshi] = Some(htlcMaximum)
     }
-    // @formatter:on
 
     def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&
         a.relayFees == b.relayFees &&
         (ignoreHtlcSize || (a.htlcMinimum == b.htlcMinimum && a.htlcMaximum_opt == b.htlcMaximum_opt))
   }
+  // @formatter:on
 
   /**
    * A directed hop between two connected nodes using a specific channel.
@@ -651,11 +643,9 @@ object Router {
                   privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
                   scid2PrivateChannels: Map[ShortChannelId, ByteVector32], // scid to channel_id, only to be used for private channels
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                  graph: DirectedGraph,
-                  balances: BalancesEstimates,
+                  graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  ) {
-
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
       channels.get(scid) match {

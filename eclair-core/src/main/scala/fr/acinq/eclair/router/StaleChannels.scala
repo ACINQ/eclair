@@ -53,14 +53,14 @@ object StaleChannels {
       staleChannelsToRemove += ChannelDesc(ca.ann.shortChannelId, ca.ann.nodeId2, ca.ann.nodeId1)
     })
 
-    val graph1 = d.graph.removeEdges(staleChannelsToRemove)
+    val graphWithBalances1 = d.graphWithBalances.removeEdges(staleChannelsToRemove)
     staleNodes.foreach {
       nodeId =>
         log.info("pruning nodeId={} (stale)", nodeId)
         db.removeNode(nodeId)
         ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    d.copy(nodes = d.nodes -- staleNodes, channels = channels1, graph = graph1)
+    d.copy(nodes = d.nodes -- staleNodes, channels = channels1, graphWithBalances = graphWithBalances1)
   }
 
   def isStale(u: ChannelUpdate): Boolean = isStale(u.timestamp)

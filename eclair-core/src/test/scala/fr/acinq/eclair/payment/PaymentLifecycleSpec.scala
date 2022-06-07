@@ -468,7 +468,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))
 
     // payment lifecycle will ask the router to temporarily exclude this channel from its route calculations
-    routerForwarder.expectMsgType[ChannelCouldNotRelay]
+    assert(routerForwarder.expectMsgType[ChannelCouldNotRelay].hop.shortChannelId == update_bc.shortChannelId)
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_bc.shortChannelId, b, c)))
     routerForwarder.forward(routerFixture.router)
     // payment lifecycle forwards the embedded channelUpdate to the router
@@ -551,7 +551,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val failure = TemporaryChannelFailure(update_bc)
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))
     // we should temporarily exclude that channel
-    routerForwarder.expectMsgType[ChannelCouldNotRelay]
+    assert(routerForwarder.expectMsgType[ChannelCouldNotRelay].hop.shortChannelId == update_bc.shortChannelId)
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_bc.shortChannelId, b, c)))
     routerForwarder.expectMsg(update_bc)
 
@@ -627,7 +627,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val failureOnion = Sphinx.FailurePacket.wrap(Sphinx.FailurePacket.create(sharedSecrets1(1)._1, failure), sharedSecrets1.head._1)
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))))
 
-    routerForwarder.expectMsgType[RouteCouldRelay]
+    assert(routerForwarder.expectMsgType[RouteCouldRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, update_bc).map(_.shortChannelId))
     routerForwarder.expectMsg(channelUpdate_cd_disabled)
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_cd.shortChannelId, c, d)))
   }
@@ -702,7 +702,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(metrics.fees == 730.msat)
     metricsListener.expectNoMessage()
 
-    routerForwarder.expectMsgType[RouteDidRelay]
+    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, update_bc, update_cd).map(_.shortChannelId))
   }
 
   test("payment succeeded to a channel with fees=0") { routerFixture =>
@@ -757,7 +757,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(metrics.fees == 0.msat)
     metricsListener.expectNoMessage()
 
-    routerForwarder.expectMsgType[RouteDidRelay]
+    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, channelUpdate_bh).map(_.shortChannelId))
   }
 
   test("filter errors properly") { _ =>
@@ -830,7 +830,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(nodeParams.db.payments.getOutgoingPayment(id) === None)
     eventListener.expectNoMessage(100 millis)
 
-    routerForwarder.expectMsgType[RouteDidRelay]
+    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.nextNodeId) == Seq(b, c, d))
   }
 
   test("send to route (no retry on error") { _ =>
