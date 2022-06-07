@@ -225,7 +225,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     mockServer.close()
   }
 
-  test("select peer address for reconnection") { _ =>
+  test("select peer address for reconnection") { () =>
     val nodeParams = mock[NodeParams]
     val clearnet = NodeAddress.fromParts("1.2.3.4", 9735).get
     val tor = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get

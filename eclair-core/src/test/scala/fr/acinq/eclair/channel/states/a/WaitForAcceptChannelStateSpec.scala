@@ -148,7 +148,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOrigin.expectMsgType[Status.Failure]
   }
 
-  test("recv AcceptChannel (anchor outputs channel type without enabling the feature)") { _ =>
+  test("recv AcceptChannel (anchor outputs channel type without enabling the feature)") { () =>
     val setup = init(Alice.nodeParams, Bob.nodeParams, wallet = new NoOpOnChainWallet())
     import setup._
 

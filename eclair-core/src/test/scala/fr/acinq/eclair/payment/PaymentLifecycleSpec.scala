@@ -97,7 +97,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       result)
   }
 
-  test("send to route") { _ =>
+  test("send to route") { () =>
     val payFixture = createPaymentLifecycle(recordMetrics = false)
     import payFixture._
     import cfg._
@@ -733,7 +733,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     metricsListener.expectNoMessage()
   }
 
-  test("filter errors properly") { _ =>
+  test("filter errors properly") { () =>
     val failures = Seq(
       LocalFailure(defaultAmountMsat, Nil, RouteNotFound),
       RemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
@@ -749,7 +749,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(filtered == expected)
   }
 
-  test("ignore failed nodes/channels") { _ =>
+  test("ignore failed nodes/channels") { () =>
     val route_abcd = channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil
     val testCases = Seq(
       // local failures -> ignore first channel if there is one
@@ -804,7 +804,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     eventListener.expectNoMessage(100 millis)
   }
 
-  test("send to route (no retry on error") { _ =>
+  test("send to route (no retry on error") { () =>
     val payFixture = createPaymentLifecycle()
     import payFixture._
     import cfg._
