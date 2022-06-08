@@ -86,13 +86,13 @@ class SqliteUtilsSpec extends AnyFunSuite {
 
     // first start : write to file
     val db1 = Databases.sqlite(datadir, Some(jdbcUrlPath))
-    db1.channels.close()
+    db1.channels.sqlite.close()
 
     assert(Files.readString(jdbcUrlPath.toPath).trim == "sqlite")
 
     // 2nd start : no-op
     val db2 = Databases.sqlite(datadir, Some(jdbcUrlPath))
-    db2.channels.close()
+    db2.channels.sqlite.close()
 
     // we modify the file
     Files.writeString(jdbcUrlPath.toPath, "postgres")

@@ -267,6 +267,4 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
       }
     }
   }
-
-  override def close(): Unit = ()
 }

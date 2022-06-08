@@ -88,7 +88,4 @@ class SqlitePendingCommandsDb(val sqlite: Connection) extends PendingCommandsDb 
         .toSeq
     }
   }
-
-  // used by mobile apps
-  override def close(): Unit = sqlite.close()
 }

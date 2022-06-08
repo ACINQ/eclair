@@ -396,10 +396,6 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
         }.toSeq
     }
   }
-
-  // used by mobile apps
-  override def close(): Unit = sqlite.close()
-
 }
 
 object SqlitePaymentsDb {

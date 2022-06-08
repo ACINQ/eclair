@@ -155,6 +155,4 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
       }
     }
   }
-
-  override def close(): Unit = ()
 }

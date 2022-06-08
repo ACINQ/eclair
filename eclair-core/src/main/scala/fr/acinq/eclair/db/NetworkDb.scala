@@ -22,10 +22,9 @@ import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
-import java.io.Closeable
 import scala.collection.immutable.SortedMap
 
-trait NetworkDb extends Closeable {
+trait NetworkDb {
 
   def addNode(n: NodeAnnouncement): Unit
 

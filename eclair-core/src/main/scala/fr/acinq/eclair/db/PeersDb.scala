@@ -20,9 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol.NodeAddress
 
-import java.io.Closeable
-
-trait PeersDb extends Closeable {
+trait PeersDb {
 
   def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress): Unit
 

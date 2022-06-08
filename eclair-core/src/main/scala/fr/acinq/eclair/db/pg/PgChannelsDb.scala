@@ -252,6 +252,4 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       }
     }
   }
-
-  override def close(): Unit = ()
 }
