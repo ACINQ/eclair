@@ -24,6 +24,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.Assertions
+import org.scalatest.concurrent.Eventually.eventually
 
 import java.net.InetAddress
 import java.util.UUID
@@ -162,8 +163,10 @@ object MinimalNodeFixture extends Assertions {
     watch1.replyTo ! WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx)
     watch2.replyTo ! WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx)
 
-    waitReady(node1, channelId)
-    waitReady(node2, channelId)
+    eventually {
+      assert(getChannelState(node1, channelId) == NORMAL)
+      assert(getChannelState(node2, channelId) == NORMAL)
+    }
 
     val data1After = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val data2After = getChannelData(node2, channelId).asInstanceOf[DATA_NORMAL]
