@@ -345,14 +345,21 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
-    case Event(msg: ChannelReady, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      log.info(s"received their ChannelReady, deferring message")
-      stay() using d.copy(deferred = Some(msg)) // no need to store, they will re-send if we get disconnected
+    case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      if (channelReady.alias_opt.isDefined &&
+        d.commitments.localParams.isInitiator &&
+        !d.commitments.channelFeatures.features.contains(Features.ZeroConf)) {
+        log.info("this chanel isn't zero-conf, but we are funder and they sent an early channel_ready with an alias: no need to wait for confirmations")
+        // we set a new zero-conf watch which will trigger instantly, the original watch will trigger later and be ignored
+        blockchain ! WatchFundingConfirmed(self, d.commitments.commitInput.outPoint.txid, 0)
+      } else {
+        log.info("received their channel_ready, deferring message")
+      }
+      stay() using d.copy(deferred = Some(channelReady)) // no need to store, they will re-send if we get disconnected
 
     case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx), d@DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _, deferred, _)) =>
       Try(Transaction.correctlySpends(commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
         case Success(_) =>
-          log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
           blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
           if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
           context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, fundingTx))
@@ -364,9 +371,11 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             // If we are using zero-conf then the transaction may not have been confirmed yet, that's why the block
             // height is zero. In some cases (e.g. we were down for some time) the tx may actually have confirmed, in
             // that case we will have a real scid even if the channel is zero-conf
+            log.info("skipping funding tx confirmation")
             None
           }
           else {
+            log.info(s"channel was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
             Some(ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
           }
           // the alias will use in our channel_update message, the goal is to be able to use our channel
