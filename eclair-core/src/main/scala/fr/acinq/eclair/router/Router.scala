@@ -103,7 +103,17 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, scid2PrivateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    val data = Data(
+      initNodes, initChannels,
+      Stash(Map.empty, Map.empty),
+      rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty),
+      awaiting = Map.empty,
+      privateChannels = Map.empty,
+      scid2PrivateChannels = Map.empty,
+      excludedChannels = Set.empty,
+      graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
+      sync = Map.empty)
+    startWith(NORMAL, data)
   }
 
   when(NORMAL) {
@@ -251,6 +261,14 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
       stay() using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
 
+    case Event(RouteCouldRelay(route), d) =>
+      stay() using d.copy(graphWithBalances = d.graphWithBalances.routeCouldRelay(route))
+
+    case Event(RouteDidRelay(route), d) =>
+      stay() using d.copy(graphWithBalances = d.graphWithBalances.routeDidRelay(route))
+
+    case Event(ChannelCouldNotRelay(amount, hop), d) =>
+      stay() using d.copy(graphWithBalances = d.graphWithBalances.channelCouldNotSend(hop, amount))
   }
 
   initialize()
@@ -302,7 +320,8 @@ object Router {
                         encodingType: EncodingType,
                         channelRangeChunkSize: Int,
                         channelQueryChunkSize: Int,
-                        pathFindingExperimentConf: PathFindingExperimentConf) {
+                        pathFindingExperimentConf: PathFindingExperimentConf,
+                        balanceEstimateHalfLife: FiniteDuration) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
   }
@@ -428,6 +447,11 @@ object Router {
       override def htlcMinimum: MilliSatoshi = 0 msat
       override def htlcMaximum_opt: Option[MilliSatoshi] = Some(htlcMaximum)
     }
+
+    def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
+      a.cltvExpiryDelta == b.cltvExpiryDelta &&
+        a.relayFees == b.relayFees &&
+        (ignoreHtlcSize || (a.htlcMinimum == b.htlcMinimum && a.htlcMaximum_opt == b.htlcMaximum_opt))
   }
   // @formatter:on
 
@@ -527,6 +551,10 @@ object Router {
 
     def printChannels(): String = hops.map(_.shortChannelId).mkString("->")
 
+    def stopAt(nodeId: PublicKey): Route = {
+      val amountAtStop = hops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
+      Route(amountAtStop, hops.takeWhile(_.nodeId != nodeId))
+    }
   }
 
   case class RouteResponse(routes: Seq[Route]) {
@@ -616,10 +644,9 @@ object Router {
                   privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
                   scid2PrivateChannels: Map[ShortChannelId, ByteVector32], // scid to channel_id, only to be used for private channels
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                  graph: DirectedGraph,
+                  graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  ) {
-
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
       channels.get(scid) match {
@@ -645,4 +672,13 @@ object Router {
   def isRelatedTo(c: ChannelAnnouncement, nodeId: PublicKey) = nodeId == c.nodeId1 || nodeId == c.nodeId2
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[PublicChannel]): Boolean = channels.exists(c => isRelatedTo(c.ann, nodeId))
+
+  /** We know that this route could relay because we have tried it but the payment was eventually cancelled */
+  case class RouteCouldRelay(route: Route)
+
+  /** We have relayed using this route. */
+  case class RouteDidRelay(route: Route)
+
+  /** We have tried to relay this amount from this channel and it failed. */
+  case class ChannelCouldNotRelay(amount: MilliSatoshi, hop: ChannelHop)
 }

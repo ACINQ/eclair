@@ -186,7 +186,8 @@ object TestConstants {
             maxParts = 10,
           ),
           experimentName = "alice-test-experiment",
-          experimentPercentage = 100)))
+          experimentPercentage = 100))),
+        balanceEstimateHalfLife = 1 day,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -325,7 +326,8 @@ object TestConstants {
             maxParts = 10,
           ),
           experimentName = "bob-test-experiment",
-          experimentPercentage = 100)))
+          experimentPercentage = 100))),
+        balanceEstimateHalfLife = 1 day,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,

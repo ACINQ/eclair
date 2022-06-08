@@ -617,7 +617,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
-      val g = sender.expectMsgType[Data].graph
+      val g = sender.expectMsgType[Data].graphWithBalances.graph
       val edge_ab = g.getEdge(ChannelDesc(scid_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
@@ -640,7 +640,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
-      val g = sender.expectMsgType[Data].graph
+      val g = sender.expectMsgType[Data].graphWithBalances.graph
       val edge_ab = g.getEdge(ChannelDesc(scid_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
@@ -658,7 +658,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
-      val g = sender.expectMsgType[Data].graph
+      val g = sender.expectMsgType[Data].graphWithBalances.graph
       val edge_ab = g.getEdge(ChannelDesc(scid_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
@@ -676,7 +676,7 @@ class RouterSpec extends BaseRouterSpec {
       val channel_ag = data.privateChannels(channelId_ag_private)
       assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) == balances)
       // And the graph should be updated too.
-      val edge_ag = data.graph.getEdge(ChannelDesc(scid_ag_private, a, g)).get
+      val edge_ag = data.graphWithBalances.graph.getEdge(ChannelDesc(scid_ag_private, a, g)).get
       assert(edge_ag.capacity == channel_ag.capacity)
       assert(edge_ag.balance_opt == Some(33000000 msat))
     }
