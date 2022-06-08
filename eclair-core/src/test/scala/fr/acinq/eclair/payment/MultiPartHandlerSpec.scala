@@ -182,7 +182,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(pr2.relativeExpiry == 60.seconds)
   }
 
-  test("Invoice generation with trampoline support") { _ =>
+  test("Invoice generation with trampoline support") { () =>
     val sender = TestProbe()
 
     {

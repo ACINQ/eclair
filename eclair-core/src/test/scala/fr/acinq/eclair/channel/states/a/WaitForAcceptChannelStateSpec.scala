@@ -148,7 +148,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOrigin.expectMsgType[Status.Failure]
   }
 
-  test("recv AcceptChannel (anchor outputs channel type without enabling the feature)") { _ =>
+  test("recv AcceptChannel (anchor outputs channel type without enabling the feature)") { () =>
     val setup = init(Alice.nodeParams, Bob.nodeParams, wallet = new NoOpOnChainWallet())
     import setup._
 
@@ -282,7 +282,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOrigin.expectNoMessage()
   }
 
-  test("recv AcceptChannel (upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv AcceptChannel (upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.upfrontShutdownScript_opt.contains(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].localParams.defaultFinalScriptPubKey))
@@ -292,7 +292,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOrigin.expectNoMessage()
   }
 
-  test("recv AcceptChannel (empty upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv AcceptChannel (empty upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.upfrontShutdownScript_opt.contains(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].localParams.defaultFinalScriptPubKey))
@@ -303,7 +303,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOrigin.expectNoMessage()
   }
 
-  test("recv AcceptChannel (invalid upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv AcceptChannel (invalid upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val accept1 = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.fromValidHex("deadbeef"))))

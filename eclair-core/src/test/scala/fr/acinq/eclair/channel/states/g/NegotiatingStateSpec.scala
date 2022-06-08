@@ -175,7 +175,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     testClosingSignedDifferentFees(f)
   }
 
-  test("recv ClosingSigned (theirCloseFee != ourCloseFee, anchor outputs, upfront shutdown scripts)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv ClosingSigned (theirCloseFee != ourCloseFee, anchor outputs, upfront shutdown scripts)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     testClosingSignedDifferentFees(f)
   }
 
@@ -242,7 +242,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     testClosingSignedSameFees(f)
   }
 
-  test("recv ClosingSigned (theirCloseFee == ourCloseFee, upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv ClosingSigned (theirCloseFee == ourCloseFee, upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     testClosingSignedSameFees(f)
   }
 

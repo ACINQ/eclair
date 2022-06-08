@@ -360,7 +360,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(routeRequest.ignore.channels.map(_.shortChannelId) == Set(channelUpdateBE1.shortChannelId))
   }
 
-  test("update routing hints") { _ =>
+  test("update routing hints") { () =>
     val routingHints = Seq(
       Seq(ExtraHop(a, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ExtraHop(b, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24))),
       Seq(ExtraHop(a, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144)))

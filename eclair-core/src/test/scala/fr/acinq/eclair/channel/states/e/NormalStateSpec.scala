@@ -2438,7 +2438,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NORMAL)
   }
 
-  test("recv CMD_CLOSE (with a script that does not match our upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv CMD_CLOSE (with a script that does not match our upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val sender = TestProbe()
     val shutdownScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
@@ -2446,7 +2446,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, InvalidFinalScript]]
   }
 
-  test("recv CMD_CLOSE (with a script that does match our upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv CMD_CLOSE (with a script that does match our upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val sender = TestProbe()
     val shutdownScript = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey
@@ -2458,7 +2458,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
   }
 
-  test("recv CMD_CLOSE (upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv CMD_CLOSE (upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val sender = TestProbe()
     alice ! CMD_CLOSE(sender.ref, None, None)
@@ -2611,7 +2611,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }
   }
 
-  test("recv Shutdown (with a script that does not match the upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv Shutdown (with a script that does not match the upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     bob ! Shutdown(ByteVector32.Zeroes, Script.write(Script.pay2wpkh(randomKey().publicKey)))
 

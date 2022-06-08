@@ -245,7 +245,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     println(res.total)
   }
 
-  test("tx pruning") { _ =>
+  test("tx pruning") { () =>
     val txids = (for (_ <- 0 until 20) yield randomBytes32()).toList
     val knownTxids = Set(txids(1), txids(3), txids(4), txids(6), txids(9), txids(12), txids(13))
 

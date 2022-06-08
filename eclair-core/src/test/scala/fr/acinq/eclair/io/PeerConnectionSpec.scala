@@ -468,7 +468,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsg(message)
   }
 
-  test("filter private IP addresses") { _ =>
+  test("filter private IP addresses") { () =>
     val testCases = Seq(
       NodeAddress.fromParts("127.0.0.1", 9735).get -> false,
       NodeAddress.fromParts("0.0.0.0", 9735).get -> false,

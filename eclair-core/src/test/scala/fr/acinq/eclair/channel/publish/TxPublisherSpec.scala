@@ -334,7 +334,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
   }
 
-  test("update publishing attempts") { _ =>
+  test("update publishing attempts") { () =>
     {
       // No attempts.
       val attempts = PublishAttempts.empty
