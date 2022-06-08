@@ -116,6 +116,12 @@ case class BalanceEstimate private(low: MilliSatoshi,
   private def otherSide: BalanceEstimate =
     BalanceEstimate(maxCapacity - high, highTimestamp, maxCapacity - low, lowTimestamp, capacities, halfLife)
 
+  /**
+   * We tried to send the given amount and received a temporary channel failure. We assume that this failure was caused
+   * by a lack of liquidity: it could also be caused by a violation of max_accepted_htlcs, max_htlc_value_in_flight_msat
+   * or a spamming protection heuristic by the relaying node, but since we have no way of detecting that, our best
+   * strategy is to ignore these cases.
+   */
   def couldNotSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate = {
     if (amount <= low) {
       // the balance is actually below `low`, we discard our previous lower bound
@@ -124,7 +130,7 @@ case class BalanceEstimate private(low: MilliSatoshi,
       // the balance is between `low` and `high` as we expected, we discard our previous upper bound
       copy(high = amount, highTimestamp = timestamp)
     } else {
-      // We already expected not to be able to relay that amount as it above our upper bound. However if the upper bound
+      // We already expected not to be able to relay that amount as it is above our upper bound. However if the upper bound
       // was old enough that replacing it with the current amount decreases the success probability for `high`, then we
       // replace it.
       val updated = copy(high = amount, highTimestamp = timestamp)
@@ -136,17 +142,24 @@ case class BalanceEstimate private(low: MilliSatoshi,
     }
   }
 
+  /**
+   * We tried to send the given amount, it was correctly relayed but failed afterwards, so we know we should be able to
+   * send at least this amount again.
+   */
   def couldSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate =
     otherSide.couldNotSend(maxCapacity - amount, timestamp).otherSide
 
+  /**
+   * We successfully sent the given amount, so we know that some of the liquidity has shifted.
+   */
   def didSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate = {
     val newLow = (low - amount).max(0 msat)
     if (capacities.size == 1) {
       // Special case for single channel as we expect this case to be quite common and we can easily get more precise bounds.
       val newHigh = (high - amount).max(0 msat)
-      // We could shift everything left by amount without changing the timestamps (a) but we may get more information by
-      // ignoring the old high (b) if if has decayed too much. We try both and choose the one that gives the lowest
-      // probability for high.
+      // We could shift everything left by amount without changing the timestamps but we may get more information by
+      // ignoring the old high if it has decayed too much. We try both and choose the one that gives the lowest
+      // probability for the new high.
       val a = copy(low = newLow, high = newHigh)
       val b = copy(low = newLow, high = (maxCapacity - amount).max(0 msat), highTimestamp = timestamp)
       if (a.canSend(newHigh) < b.canSend(newHigh)) {
@@ -159,8 +172,16 @@ case class BalanceEstimate private(low: MilliSatoshi,
     }
   }
 
-  def addEdge(edge: GraphEdge): BalanceEstimate =
-    copy(high = high.max(edge.capacity.toMilliSatoshi), capacities = capacities.updated(edge.desc.shortChannelId, edge.capacity))
+  /**
+   * We successfully received the given amount, so we know that some of the liquidity has shifted.
+   */
+  def didReceive(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate =
+    otherSide.didSend(amount, timestamp).otherSide
+
+  def addEdge(edge: GraphEdge): BalanceEstimate = copy(
+    high = high.max(edge.capacity.toMilliSatoshi),
+    capacities = capacities.updated(edge.desc.shortChannelId, edge.capacity)
+  )
 
   def removeEdge(desc: ChannelDesc): BalanceEstimate = {
     val edgeCapacity = capacities.getOrElse(desc.shortChannelId, 0 sat)
@@ -193,10 +214,12 @@ case class BalanceEstimate private(low: MilliSatoshi,
 
     if (amount < low) {
       (l - a * (1.0 - pLow)) / l
-    } else if (amount <= high) {
+    } else if (amount < high) {
       ((h - a) * pLow + (a - l) * pHigh) / (h - l)
-    } else {
+    } else if (h < c) {
       ((c - a) * pHigh) / (c - h)
+    } else {
+      0
     }
   }
 }
@@ -253,7 +276,9 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
       val estimatedProbability = balance.canSend(amount)
       Monitoring.Metrics.remoteEdgeRelaySuccess(estimatedProbability)
     }
-    BalancesEstimates(balances.updatedWith((hop.nodeId, hop.nextNodeId))(_.map(_.didSend(amount, TimestampSecond.now()))), defaultHalfLife)
+    val balances1 = balances.updatedWith((hop.nodeId, hop.nextNodeId))(_.map(_.didSend(amount, TimestampSecond.now())))
+    val balances2 = balances1.updatedWith((hop.nextNodeId, hop.nodeId))(_.map(_.didReceive(amount, TimestampSecond.now())))
+    BalancesEstimates(balances2, defaultHalfLife)
   }
 
 }
