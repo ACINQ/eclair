@@ -2,13 +2,13 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingDeeplyBuriedTriggered
-import fr.acinq.eclair.channel.DATA_NORMAL
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchExternalChannelSpent, WatchExternalChannelSpentTriggered, WatchFundingDeeplyBuriedTriggered}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.channel.{CMD_CLOSE, DATA_NORMAL}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, Shutdown}
 import fr.acinq.eclair.{BlockHeight, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -98,6 +98,9 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
         router.stateData.privateChannels.isEmpty && router.stateData.channels.size == 1
       }
 
+      // router has cleaned up the scid mapping
+      assert(router.stateData.scid2PrivateChannels.isEmpty)
+
       // alice and bob won't send their channel_update directly to each other because the channel has been announced
       // but we can get the update from their data
       awaitCond {
@@ -155,6 +158,26 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       // router graph contains a single channel
       assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(channels.alice.underlyingActor.nodeParams.nodeId, channels.bob.underlyingActor.nodeParams.nodeId))
       assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate1, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
+    }
+    // channel closes
+    channels.alice ! CMD_CLOSE(TestProbe().ref, scriptPubKey = None, feerates = None)
+    channels.alice2bob.expectMsgType[Shutdown]
+    channels.alice2bob.forward(channels.bob)
+    channels.bob2alice.expectMsgType[Shutdown]
+    channels.bob2alice.forward(channels.alice)
+    if (testTags.contains(ChannelStateTestsTags.ChannelsPublic)) {
+      // if the channel was public, the router asked the watcher to watch the funding tx and will be notified
+      val watchSpentBasic = channels.alice2blockchain.expectMsgType[WatchExternalChannelSpent]
+      watchSpentBasic.replyTo ! WatchExternalChannelSpentTriggered(watchSpentBasic.shortChannelId)
+    }
+    // router cleans up the channel
+    awaitAssert {
+      assert(router.stateData.nodes == Map.empty)
+      assert(router.stateData.channels == Map.empty)
+      assert(router.stateData.privateChannels == Map.empty)
+      assert(router.stateData.scid2PrivateChannels == Map.empty)
+      assert(router.stateData.graphWithBalances.graph.edgeSet().isEmpty)
+      //assert(router.stateData.graphWithBalances.graph.vertexSet().isEmpty) // TODO: bug!
     }
   }
 

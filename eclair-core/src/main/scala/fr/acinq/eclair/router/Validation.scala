@@ -178,7 +178,7 @@ object Validation {
     log.debug("adding public channel channelId={} realScid={} localChannel={} publicChannel={}", channelId, ann.shortChannelId, privChan_opt.isDefined, pubChan)
     // if this is a local channel graduating from private to public, we need to update the graph because the edge
     // identifiers change from alias to real scid, and we can also populate the metadata
-    val graph1 = d.privateChannels.get(pubChan.channelId) match {
+    val graph1 = privChan_opt match {
       case Some(privateChannel) =>
         log.debug("updating the graph for shortChannelId={}", pubChan.shortChannelId)
         // mutable variable is simpler here
@@ -201,6 +201,8 @@ object Validation {
       channels = d.channels + (pubChan.shortChannelId -> pubChan),
       // we remove the corresponding unannounced channel that we may have until now
       privateChannels = d.privateChannels - pubChan.channelId,
+      // we also remove the scid -> channelId mappings
+      scid2PrivateChannels = d.scid2PrivateChannels - pubChan.shortChannelId -- privChan_opt.map(_.localAlias),
       // we also add the newly validated channels to the rebroadcast queue
       rebroadcast = d.rebroadcast.copy(
         // we rebroadcast the channel to our peers
@@ -517,23 +519,23 @@ object Validation {
 
   def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
     import lcd.{channelId, remoteNodeId}
+    log.debug("handleLocalChannelDown lcd={}", lcd)
+    val scid2PrivateChannels1 = d.scid2PrivateChannels - lcd.localAlias -- lcd.realShortChannelId_opt
     // a local channel has permanently gone down
     if (lcd.realShortChannelId_opt.exists(d.channels.contains)) {
       // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
       // so let's not do anything here
-      d
+      d.copy(scid2PrivateChannels = scid2PrivateChannels1)
     } else if (d.privateChannels.contains(lcd.channelId)) {
       // the channel was private or public-but-not-yet-announced, let's do the clean up
       val localAlias = d.privateChannels(channelId).localAlias
       log.info("removing private local channel and channel_update for channelId={} localAlias={}", channelId, localAlias)
-      val desc1 = ChannelDesc(localAlias, localNodeId, remoteNodeId)
-      val desc2 = ChannelDesc(localAlias, remoteNodeId, localNodeId)
       // we remove the corresponding updates from the graph
       val graphWithBalances1 = d.graphWithBalances
-        .removeEdge(desc1)
-        .removeEdge(desc2)
+        .removeEdge(ChannelDesc(localAlias, localNodeId, remoteNodeId))
+        .removeEdge(ChannelDesc(localAlias, remoteNodeId, localNodeId))
       // and we remove the channel and channel_update from our state
-      d.copy(privateChannels = d.privateChannels - channelId, graphWithBalances = graphWithBalances1)
+      d.copy(privateChannels = d.privateChannels - channelId, scid2PrivateChannels = scid2PrivateChannels1, graphWithBalances = graphWithBalances1)
     } else {
       d
     }

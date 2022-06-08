@@ -1636,13 +1636,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       }
       emitEvent_opt.foreach {
         case EmitLocalChannelUpdate(reason, d, sendToPeer) =>
-          log.info(s"emitting channel update: reason=$reason enabled=${d.channelUpdate.channelFlags.isEnabled} sendToPeer=${sendToPeer} realScid=${d.realShortChannelId_opt} channel_update={} channel_announcement={}", d.channelUpdate, d.channelAnnouncement.map(_ => "yes").getOrElse("no"))
+          log.info(s"emitting channel update event: reason=$reason enabled=${d.channelUpdate.channelFlags.isEnabled} sendToPeer=${sendToPeer} realScid=${d.realShortChannelId_opt} channel_update={} channel_announcement={}", d.channelUpdate, d.channelAnnouncement.map(_ => "yes").getOrElse("no"))
           val lcu = LocalChannelUpdate(self, d.channelId, d.realShortChannelId_opt, d.localAlias, d.commitments.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.commitments)
           context.system.eventStream.publish(lcu)
           if (sendToPeer) {
             send(d.channelUpdate)
           }
         case EmitLocalChannelDown(d) =>
+          log.debug(s"emitting channel down event")
           val lcd = LocalChannelDown(self, d.channelId, d.realShortChannelId_opt, d.localAlias, d.commitments.remoteParams.nodeId)
           context.system.eventStream.publish(lcd)
       }
