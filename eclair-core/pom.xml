@@ -272,6 +272,11 @@
         <!-- MONITORING -->
         <dependency>
             <groupId>io.kamon</groupId>
+            <artifactId>kamon-prometheus_${scala.version.short}</artifactId>
+            <version>2.5.3</version>
+        </dependency>
+        <dependency>
+            <groupId>io.kamon</groupId>
             <artifactId>kamon-core_${scala.version.short}</artifactId>
             <version>${kamon.version}</version>
         </dependency>
