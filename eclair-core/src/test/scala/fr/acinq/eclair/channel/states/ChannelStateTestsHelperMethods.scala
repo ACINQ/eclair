@@ -178,6 +178,10 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, channelFlags.announceChannel)
 
+    // those features can only be enabled with AnchorOutputsZeroFeeHtlcTxs, this is to prevent incompatible test configurations
+    if (tags.contains(ChannelStateTestsTags.ZeroConf)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), "invalid test configuration")
+    if (tags.contains(ChannelStateTestsTags.ScidAlias)) assert(channelType.features.contains(Features.ScidAlias), "invalid test configuration")
+
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceParams = Alice.channelParams
       .modify(_.initFeatures).setTo(aliceInitFeatures)

@@ -613,9 +613,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CurrentFeerates, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
-    case Event(WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, _), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
+    case Event(WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, fundingTx), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
       val realShortChannelId = ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=$realShortChannelId")
+      if (d.realShortChannelId_opt.isEmpty) {
+        // this is a zero-conf channel and it is the first time we know for sure that the funding tx has been confirmed
+        context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
+      }
       if (!d.realShortChannelId_opt.contains(realShortChannelId)) {
         log.info(s"setting final real scid: old=${d.realShortChannelId_opt.getOrElse("empty")} new=$realShortChannelId")
         // we announce the new shortChannelId

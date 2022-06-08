@@ -361,8 +361,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       Try(Transaction.correctlySpends(commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
         case Success(_) =>
           blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-          if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
-          context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, fundingTx))
+          if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
           val channelKeyPath = keyManager.keyPath(d.commitments.localParams, commitments.channelConfig)
           val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
           deferred.foreach(self ! _)
@@ -376,6 +375,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           }
           else {
             log.info(s"channel was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
+            context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
             Some(ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
           }
           // the alias will use in our channel_update message, the goal is to be able to use our channel
