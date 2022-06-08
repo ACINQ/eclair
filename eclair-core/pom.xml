@@ -270,26 +270,11 @@
             <version>1.5.0</version>
         </dependency>
         <!-- MONITORING -->
-        <dependency>
-            <groupId>io.prometheus</groupId>
-            <artifactId>simpleclient</artifactId>
-            <version>0.15.0</version>
-        </dependency>
-        <dependency>
-            <groupId>io.prometheus</groupId>
-            <artifactId>simpleclient_hotspot</artifactId>
-            <version>0.15.0</version>
-        </dependency>
-        <dependency>
-            <groupId>io.prometheus</groupId>
-            <artifactId>simpleclient_httpserver</artifactId>
-            <version>0.15.0</version>
-        </dependency>
-        <dependency>
-            <groupId>io.prometheus</groupId>
-            <artifactId>simpleclient_pushgateway</artifactId>
-            <version>0.15.0</version>
-        </dependency>
+        <dependency> 
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-prometheus_2.13</artifactId>
+            <version>2.5.3</version>
+        </dependency>     
         <dependency>
             <groupId>io.kamon</groupId>
             <artifactId>kamon-core_${scala.version.short}</artifactId>
