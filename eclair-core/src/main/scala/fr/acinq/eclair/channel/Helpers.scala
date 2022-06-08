@@ -203,14 +203,7 @@ object Helpers {
     channelAnnouncement_opt.map(_.shortChannelId) // we use the real "final" scid when it is publicly announced
       .orElse(remoteAlias_opt) // otherwise the remote alias
       .orElse(realShortChannelId_opt) // if we don't have a remote alias, we use the real scid (which could change because the funding tx possibly has less than 6 confs here)
-      .getOrElse {
-        // Our model requires a channel_update in DATA_NORMAL. But if we are in zero-conf and our peer
-        // does not send an alias, then we have neither a remote alias, nor a real scid. This should never happen, so
-        // we default to a ShortChannelId(0) which should never be used.
-        log.warning("no real scid and no alias!! this should never happen")
-        ShortChannelId(0)
-      }
-      //.getOrElse(throw new RuntimeException("this is a zero-conf channel and remote hasn't provided an alias")) // if we don't have a real scid, it means this is a zero-conf channel and our peer must have sent an alias
+      .getOrElse(throw new RuntimeException("this is a zero-conf channel and no alias was provided in channel_ready")) // if we don't have a real scid, it means this is a zero-conf channel and our peer must have sent an alias
   }
 
   def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, realShortChannelId_opt = d.realShortChannelId_opt, remoteAlias_opt = d.remoteAlias_opt)

@@ -419,8 +419,6 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_CHANNEL_READY)(handleExceptions {
     case Event(channelReady: ChannelReady, d@DATA_WAIT_FOR_CHANNEL_READY(commitments, realShortChannelId_opt, localAlias, _)) =>
-      // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
-      blockchain ! WatchFundingDeeplyBuried(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
       val remoteAlias_opt = channelReady.alias_opt
       remoteAlias_opt.foreach { remoteAlias =>
         log.info("received remoteAlias={}", remoteAlias)
@@ -433,6 +431,8 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, nodeParams.channelConf.expiryDelta, d.commitments.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
+      // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
+      blockchain ! WatchFundingDeeplyBuried(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
       goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)), realShortChannelId_opt = realShortChannelId_opt, buried = false, None, initialChannelUpdate, localAlias = localAlias, remoteAlias_opt = remoteAlias_opt, None, None, None) storing()
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_CHANNEL_READY) if d.commitments.announceChannel =>

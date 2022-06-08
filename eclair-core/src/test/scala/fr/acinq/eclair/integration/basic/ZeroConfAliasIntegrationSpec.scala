@@ -44,7 +44,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     fixture.cleanup()
   }
 
-  private def createChannels(f: FixtureParam)(deepConfirm: Boolean, stripAliasFromCarol: Boolean = false): (ByteVector32, ByteVector32) = {
+  private def createChannels(f: FixtureParam)(deepConfirm: Boolean): (ByteVector32, ByteVector32) = {
     import f._
 
     alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol), deepConfirm = deepConfirm))
@@ -52,11 +52,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol), deepConfirm = deepConfirm))
 
     connect(alice, bob)
-    connect(bob, carol, mutate21 = {
-      case channelReady: ChannelReady if stripAliasFromCarol =>
-        channelReady.modify(_.tlvStream.records).using(_.filter { case _: ChannelReadyTlv.ShortChannelIdTlv => false; case _ => true })
-      case other => other
-    })
+    connect(bob, carol)
 
     val channelId_ab = openChannel(alice, bob, 100_000 sat).channelId
     val channelId_bc = openChannel(bob, carol, 100_000 sat).channelId
@@ -75,7 +71,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
   private def internalTest(f: FixtureParam,
                            deepConfirm: Boolean,
-                           stripAliasFromCarol: Boolean,
                            bcPublic: Boolean,
                            bcZeroConf: Boolean,
                            bcScidAlias: Boolean,
@@ -86,7 +81,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
                           ): Unit = {
     import f._
 
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm, stripAliasFromCarol = stripAliasFromCarol)
+    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm)
 
     eventually {
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
@@ -115,21 +110,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       }
     }
 
-    if (bcZeroConf && stripAliasFromCarol && deepConfirm) {
-      // if b-c is zeroconf but carol doesn't send an alias to bob (we actually stripped it mid-flight), bob will use
-      // scid 0x0x0 for his channel_update, which carol won't be able to attribute to a channel. But when the channel
-      // deeply confirms, bob will start using the real scid for his channel_update and it will work. That is why we
-      // need to wait for carol to receive bob's new channel_update before attempting to use routing hints (because they
-      // use bob's channel_update).
-      eventually {
-        val hint_opt = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
-        assert(hint_opt.isDefined)
-        // NB: in this convoluted scenario, where we are modifying messages on the wire, carol still received bob's
-        // alias and will use it in her routing hint
-        assert(hint_opt.get.shortChannelId == getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].localAlias)
-      }
-    }
-
     if (paymentWorksWithHint_opt.contains(true)) {
       sendPaymentAliceToCarol(f, useHint = true)
     } else if (paymentWorksWithHint_opt.contains(false)) {
@@ -155,7 +135,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   test("a->b->c (b-c private)") { f =>
     internalTest(f,
       deepConfirm = true,
-      stripAliasFromCarol = false,
       bcPublic = false,
       bcZeroConf = false,
       bcScidAlias = false,
@@ -175,7 +154,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   test("a->b->c (b-c scid-alias private)", Tag(ScidAliasBobCarol)) { f =>
     internalTest(f,
       deepConfirm = true,
-      stripAliasFromCarol = false,
       bcPublic = false,
       bcZeroConf = false,
       bcScidAlias = true,
@@ -189,7 +167,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   test("a->b->c (b-c zero-conf unconfirmed private)", Tag(ZeroConfBobCarol)) { f =>
     internalTest(f,
       deepConfirm = false,
-      stripAliasFromCarol = false,
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = false,
@@ -200,44 +177,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     )
   }
 
-  test("a->b->c (b-c zero-conf unconfirmed private, no alias from carol)", Tag(ZeroConfBobCarol)) { f =>
-    internalTest(f,
-      deepConfirm = false,
-      stripAliasFromCarol = true,
-      bcPublic = false,
-      bcZeroConf = true,
-      bcScidAlias = false,
-      bcHasRealScid = false, // a-b has reached min_depth and has a real scid, b-c is in NORMAL state too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
-      paymentWorksWithHint_opt = None, // see below
-      paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
-    )
-    import f._
-    // carol doesn't have hints, because bob sent her a channel_update with scid=0, which carol couldn't attribute to a channel
-    assert(getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.isEmpty)
-  }
-
-  test("a->b->c (b-c zero-conf scid-alias unconfirmed private, no alias from carol)", Tag(ZeroConfBobCarol), Tag(ScidAliasBobCarol)) { f =>
-    internalTest(f,
-      deepConfirm = false,
-      stripAliasFromCarol = true,
-      bcPublic = false,
-      bcZeroConf = true,
-      bcScidAlias = true,
-      bcHasRealScid = false, // a-b has reached min_depth and has a real scid, b-c is in NORMAL state too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
-      paymentWorksWithHint_opt = None, // see below
-      paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
-    )
-    import f._
-    // carol doesn't have hints, because bob sent her a channel_update with scid=0, which carol couldn't attribute to a channel
-    assert(getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.isEmpty)
-  }
-
   test("a->b->c (b-c zero-conf deeply confirmed private)", Tag(ZeroConfBobCarol)) { f =>
     internalTest(f,
       deepConfirm = true,
-      stripAliasFromCarol = false,
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = false,
@@ -255,7 +197,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   test("a->b->c (b-c zero-conf scid-alias deeply confirmed private)", Tag(ZeroConfBobCarol), Tag(ScidAliasBobCarol)) { f =>
     internalTest(f,
       deepConfirm = true,
-      stripAliasFromCarol = false,
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = true,
@@ -266,38 +207,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     )
   }
 
-  test("a->b->c (b-c zero-conf deeply confirmed private, no alias from carol)", Tag(ZeroConfBobCarol)) { f =>
-    internalTest(f,
-      deepConfirm = true,
-      stripAliasFromCarol = true,
-      bcPublic = false,
-      bcZeroConf = true,
-      bcScidAlias = false,
-      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
-      paymentWorksWithHint_opt = Some(true), // carol is able to give routing hints from bob, because bob has sent a new channel_update using the real scid
-      paymentWorksWithRealScidHint_opt = Some(true) // if alice uses the real scid instead of the b-c alias, it still works
-    )
-  }
-
-  test("a->b->c (b-c zero-conf scid-alias deeply confirmed private, no alias from carol)", Tag(ZeroConfBobCarol), Tag(ScidAliasBobCarol)) { f =>
-    internalTest(f,
-      deepConfirm = true,
-      stripAliasFromCarol = true,
-      bcPublic = false,
-      bcZeroConf = true,
-      bcScidAlias = true,
-      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
-      paymentWorksWithHint_opt = Some(true), // carol is able to give routing hints from bob, because bob has sent a new channel_update using the real scid
-      paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
-    )
-  }
-
   test("a->b->c (b-c zero-conf unconfirmed public)", Tag(ZeroConfBobCarol), Tag(PublicBobCarol)) { f =>
     internalTest(f,
       deepConfirm = false,
-      stripAliasFromCarol = false,
       bcPublic = true,
       bcZeroConf = true,
       bcScidAlias = false,
@@ -311,7 +223,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   test("a->b->c (b-c zero-conf deeply confirmed public)", Tag(ZeroConfBobCarol), Tag(PublicBobCarol)) { f =>
     internalTest(f,
       deepConfirm = true,
-      stripAliasFromCarol = false,
       bcPublic = true,
       bcZeroConf = true,
       bcScidAlias = false,

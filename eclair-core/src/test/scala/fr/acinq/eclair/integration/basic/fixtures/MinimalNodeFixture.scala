@@ -99,6 +99,12 @@ object MinimalNodeFixture extends Assertions {
     )
   }
 
+  /**
+   * Connect node1 to node2, using a real [[PeerConnection]] and a fake transport layer.
+   *
+   * @param mutate12 a method to alter messages from node1 to node2 mid-flight for testing purposes
+   * @param mutate21 a method to alter messages from node2 to node1 mid-flight for testing purposes
+   */
   def connect(node1: MinimalNodeFixture, node2: MinimalNodeFixture, mutate12: Any => Any = identity, mutate21: Any => Any = identity)(implicit system: ActorSystem): ConnectionResult.Connected = {
     val sender = TestProbe("sender")
 

@@ -138,13 +138,11 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)
-    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
-    // edge case: we have neither a real scid nor an alias, we use a fake scid
-    assert(initialChannelUpdate.shortChannelId == ShortChannelId(0))
-    assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
-    assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    bob2alice.expectNoMessage(200 millis)
-    awaitCond(alice.stateName == NORMAL)
+    awaitCond(alice.stateName == CLOSING)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].desc == "commit-tx")
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishTx].desc == "local-anchor")
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].desc == "local-main-delayed")
+    alice2blockchain.expectMsgType[WatchTxConfirmed]
   }
 
   test("recv ChannelReady (public)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
