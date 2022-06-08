@@ -16,12 +16,13 @@
 
 package fr.acinq.eclair
 
-import akka.actor.ActorRef
-import akka.event.DiagnosticLoggingAdapter
+import akka.actor.{ActorRef, ActorSystem}
+import akka.event.{DiagnosticLoggingAdapter, EventStream}
 import akka.testkit.{TestActor, TestProbe}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.LightningMessage
+import org.scalatest.concurrent.Eventually.eventually
 
 import java.io.File
 import java.net.ServerSocket
@@ -90,5 +91,22 @@ object TestUtils {
   }
 
   def realScid(l: Long): RealShortChannelId = ShortChannelId(l).toReal
+
+  /**
+   * Subscribing to [[EventStream]] is asynchronous, which can lead to race conditions.
+   *
+   * We use a dummy event subscription and poll until we receive a message, and rely on the fact that
+   * [[EventStream]] is an actor which means that all previous subscriptions have been taken into account.
+   */
+  def waitEventStreamSynced(eventStream: EventStream)(implicit system: ActorSystem): Unit = {
+    val listener = TestProbe()
+    case class DummyEvent()
+    eventStream.subscribe(listener.ref, classOf[DummyEvent])
+    eventually {
+      eventStream.publish(DummyEvent())
+      assert(listener.msgAvailable)
+    }
+
+  }
 
 }
