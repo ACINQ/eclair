@@ -699,18 +699,17 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       // we cancel the timer that would have made us send the enabled update after reconnection (flappy channel protection)
       cancelTimer(Reconnected.toString)
       // if we have pending unsigned htlcs, then we cancel them and generate an update with the disabled flag set, that will be returned to the sender in a temporary channel failure
-      val d1 = if (d.commitments.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
+      if (d.commitments.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.debug("updating channel_update announcement (reason=disabled)")
         val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
         // NB: the htlcs stay() in the commitments.localChange, they will be cleaned up after reconnection
         d.commitments.localChanges.proposed.collect {
           case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
         }
-        d.copy(channelUpdate = channelUpdate1)
+        goto(OFFLINE) using d.copy(channelUpdate = channelUpdate1) storing()
       } else {
-        d
+        goto(OFFLINE) using d
       }
-      goto(OFFLINE) using d1
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
 
@@ -1788,7 +1787,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       // then we update the state and replay the request
       self forward c
       // we use goto() to fire transitions
-      goto(stateName) using d.copy(channelUpdate = channelUpdate1)
+      goto(stateName) using d.copy(channelUpdate = channelUpdate1) storing()
     } else {
       // channel is already disabled, we reply to the request
       val error = ChannelUnavailable(d.channelId)
