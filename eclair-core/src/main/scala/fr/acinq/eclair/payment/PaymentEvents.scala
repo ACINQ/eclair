@@ -251,11 +251,13 @@ object PaymentFailure {
 
 }
 
-case class PathFindingExperimentMetrics(amount: MilliSatoshi,
+case class PathFindingExperimentMetrics(paymentHash: ByteVector32,
+                                        amount: MilliSatoshi,
                                         fees: MilliSatoshi,
                                         status: String,
                                         duration: FiniteDuration,
                                         timestamp: TimestampMilli,
                                         isMultiPart: Boolean,
                                         experimentName: String,
-                                        recipientNodeId: PublicKey)
+                                        recipientNodeId: PublicKey,
+                                        routingHints_opt: Option[Seq[Seq[ExtraHop]]])

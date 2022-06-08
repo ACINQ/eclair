@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair._
@@ -28,6 +28,7 @@ import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgAuditDb
 import fr.acinq.eclair.db.pg.PgUtils.{getVersion, setVersion}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
+import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
@@ -704,6 +705,96 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
+  test("migrate postgres audit database v10 -> current") {
+    forAllDbs {
+      case dbs: TestPgDatabases =>
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // simulate existing v10 db
+            using(connection.createStatement()) { statement =>
+              statement.executeUpdate("CREATE SCHEMA audit")
+
+              statement.executeUpdate("CREATE TABLE audit.sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+
+              statement.executeUpdate("CREATE TABLE audit.channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON audit.sent(timestamp)")
+              statement.executeUpdate("CREATE INDEX received_timestamp_idx ON audit.received(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON audit.relayed(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON audit.relayed(payment_hash)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON audit.relayed_trampoline(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
+              statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON audit.channel_errors(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON audit.channel_updates(channel_id)")
+              statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON audit.channel_updates(node_id)")
+              statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON audit.channel_updates(timestamp)")
+              statement.executeUpdate("CREATE INDEX metrics_status_idx ON audit.path_finding_metrics(status)")
+              statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON audit.path_finding_metrics(timestamp)")
+              statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON audit.path_finding_metrics(is_mpp)")
+              statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
+              statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
+              statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
+
+              setVersion(statement, "audit", 10)
+            }
+
+            using(connection.prepareStatement("INSERT INTO audit.path_finding_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setLong(1, 214000)
+              statement.setLong(2, 345)
+              statement.setString(3, "FAILURE")
+              statement.setLong(4, 520)
+              statement.setTimestamp(5, TimestampSecond(1651053434L).toSqlTimestamp)
+              statement.setBoolean(6, true)
+              statement.setString(7, "experiment-a")
+              statement.setString(8, "03271338633d2d37b285dae4df40b413d8c6c791fbee7797bc5dc70812196d7d5c")
+              statement.executeUpdate()
+            }
+            using(connection.prepareStatement("INSERT INTO audit.path_finding_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setLong(1, 35000)
+              statement.setLong(2, 43)
+              statement.setString(3, "SUCCESS")
+              statement.setLong(4, 2043)
+              statement.setTimestamp(5, TimestampSecond(1651054567L).toSqlTimestamp)
+              statement.setBoolean(6, false)
+              statement.setString(7, "experiment-b")
+              statement.setString(8, "030c3f19d742ca294a55c00376b3b355c3c90d61c6b6b39554dbc7ac19b141c14f")
+              statement.executeUpdate()
+            }
+          },
+          dbName = PgAuditDb.DB_NAME,
+          targetVersion = PgAuditDb.CURRENT_VERSION,
+          postCheck = connection => {
+            val migratedDb = dbs.audit
+            using(connection.createStatement()) { statement => assert(getVersion(statement, "audit").contains(PgAuditDb.CURRENT_VERSION)) }
+            using(connection.prepareStatement(s"SELECT amount_msat, status, experiment_name, recipient_node_id FROM audit.path_finding_metrics ORDER BY timestamp")) { statement =>
+              val result = statement.executeQuery()
+              assert(result.next())
+              assert(result.getLong(1) == 214000)
+              assert(result.getString(2) == "FAILURE")
+              assert(result.getString(3) == "experiment-a")
+              assert(result.getString(4) == "03271338633d2d37b285dae4df40b413d8c6c791fbee7797bc5dc70812196d7d5c")
+              assert(result.next())
+              assert(result.getLong(1) == 35000)
+              assert(result.getString(2) == "SUCCESS")
+              assert(result.getString(3) == "experiment-b")
+              assert(result.getString(4) == "030c3f19d742ca294a55c00376b3b355c3c90d61c6b6b39554dbc7ac19b141c14f")
+              assert(!result.next())
+            }
+          }
+        )
+      case _: TestSqliteDatabases => ()
+    }
+  }
+
   test("ignore invalid values in the DB") {
     forAllDbs { dbs =>
       val db = dbs.audit
@@ -760,7 +851,43 @@ class AuditDbSpec extends AnyFunSuite {
 
   test("add experiment metrics") {
     forAllDbs { dbs =>
-      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(100000000 msat, 3000 msat, status = "SUCCESS", 37 millis, TimestampMilli.now(), isMultiPart = false, "my-test-experiment", randomKey().publicKey))
+      val isPg = dbs.isInstanceOf[TestPgDatabases]
+      val hints = Some(Seq(Seq(ExtraHop(
+        PublicKey(hex"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e"),
+        ShortChannelId(1),
+        1000 msat,
+        100,
+        CltvExpiryDelta(144)
+      ), ExtraHop(
+        PublicKey(hex"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7"),
+        ShortChannelId(2),
+        900 msat,
+        200,
+        CltvExpiryDelta(12)
+      )), Seq(ExtraHop(
+        PublicKey(hex"026ec3e3438308519a75ca4496822a6c1e229174fbcaadeeb174704c377112c331"),
+        ShortChannelId(3),
+        800 msat,
+        300,
+        CltvExpiryDelta(78)
+      ))))
+      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(randomBytes32(), 100000000 msat, 3000 msat, status = "SUCCESS", 37 millis, TimestampMilli.now(), isMultiPart = false, "my-test-experiment", randomKey().publicKey, hints))
+
+      val table = if (isPg) "audit.path_finding_metrics" else "path_finding_metrics"
+      val hint_column = if (isPg) ", routing_hints" else ""
+      using(dbs.connection.prepareStatement(s"SELECT amount_msat, status, fees_msat, duration_ms, experiment_name $hint_column FROM $table")) { statement =>
+        val result = statement.executeQuery()
+        assert(result.next())
+        assert(result.getLong(1) == 100000000)
+        assert(result.getString(2) == "SUCCESS")
+        assert(result.getLong(3) == 3000)
+        assert(result.getLong(4) == 37)
+        assert(result.getString(5) == "my-test-experiment")
+        if (isPg) {
+          assert(result.getString(6) == "[[{\"nodeId\": \"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e\", \"feeBase\": 1000, \"shortChannelId\": \"0x0x1\", \"cltvExpiryDelta\": 144, \"feeProportionalMillionths\": 100}, {\"nodeId\": \"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7\", \"feeBase\": 900, \"shortChannelId\": \"0x0x2\", \"cltvExpiryDelta\": 12, \"feeProportionalMillionths\": 200}], [{\"nodeId\": \"026ec3e3438308519a75ca4496822a6c1e229174fbcaadeeb174704c377112c331\", \"feeBase\": 800, \"shortChannelId\": \"0x0x3\", \"cltvExpiryDelta\": 78, \"feeProportionalMillionths\": 300}]]")
+        }
+        assert(!result.next())
+      }
     }
   }
 
