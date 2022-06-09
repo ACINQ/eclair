@@ -1601,16 +1601,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       }
 
       sealed trait EmitLocalChannelEvent
-      /**
+      /*
        * This event is for:
-       *  - the router: so that it knows about this channel to find routes
-       *  - the relayers: so they can learn about the channel scid/alias and route to it
+       *  - the router: so it knows about this channel to find routes
+       *  - the relayer: so it learns about the channel real scid/alias and can route to it
        *  - the peer: so they can "learn the other end's forwarding parameters" (BOLT 7)
-       *
-       * @param sendToPeer indicates whether we should send the channel_update directly to our peer
        */
       case class EmitLocalChannelUpdate(reason: String, d: DATA_NORMAL, sendToPeer: Boolean) extends EmitLocalChannelEvent
-      /**
+      /*
        * When a channel that could previously be used to relay payments starts closing, we advertise the fact that this
        * channel can't be used for payments anymore. If the channel is private we don't really need to tell the
        * counterparty because it is already aware that the channel is being closed
