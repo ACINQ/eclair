@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestUtils.realScid
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate, RealScidStatus, ShortIds}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
@@ -390,7 +390,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.routes.head.hops.last.nextNodeId == h)
 
     val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, alias_ag_private, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
-    sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, Some(scid_ag_private), alias_ag_private, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
+    sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, scids_ag_private, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
   }
@@ -411,7 +411,7 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, RouteRequest(a, b, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
     val commitments1 = CommitmentsSpec.makeCommitments(10000000 msat, 20000000 msat, a, b, announceChannel = true)
-    sender.send(router, LocalChannelUpdate(sender.ref, null, Some(scid_ab), alias_ab, b, Some(chan_ab), update_ab, commitments1))
+    sender.send(router, LocalChannelUpdate(sender.ref, null, scids_ab, b, Some(chan_ab), update_ab, commitments1))
     sender.send(router, RouteRequest(a, b, 12000000 msat, Long.MaxValue.msat, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(BalanceTooLow))
     sender.send(router, RouteRequest(a, b, 12000000 msat, Long.MaxValue.msat, allowMultiPart = true, routeParams = DEFAULT_ROUTE_PARAMS))
@@ -624,7 +624,7 @@ class RouterSpec extends BaseRouterSpec {
       // When the local channel comes back online, it will send a LocalChannelUpdate to the router.
       val balances = Set[Option[MilliSatoshi]](Some(10000 msat), Some(15000 msat))
       val commitments = CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, b, announceChannel = true)
-      sender.send(router, LocalChannelUpdate(sender.ref, null, Some(scid_ab), alias_ab, b, Some(chan_ab), update_ab, commitments))
+      sender.send(router, LocalChannelUpdate(sender.ref, null, scids_ab, b, Some(chan_ab), update_ab, commitments))
       sender.send(router, GetRoutingState)
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
@@ -647,7 +647,7 @@ class RouterSpec extends BaseRouterSpec {
       // Then we update the balance without changing the contents of the channel update; the graph should still be updated.
       val balances = Set[Option[MilliSatoshi]](Some(11000 msat), Some(14000 msat))
       val commitments = CommitmentsSpec.makeCommitments(11000 msat, 14000 msat, a, b, announceChannel = true)
-      sender.send(router, LocalChannelUpdate(sender.ref, null, Some(scid_ab), alias_ab, b, Some(chan_ab), update_ab, commitments))
+      sender.send(router, LocalChannelUpdate(sender.ref, null, scids_ab, b, Some(chan_ab), update_ab, commitments))
       sender.send(router, GetRoutingState)
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
@@ -665,7 +665,7 @@ class RouterSpec extends BaseRouterSpec {
       // When HTLCs are relayed through the channel, balance changes are sent to the router.
       val balances = Set[Option[MilliSatoshi]](Some(12000 msat), Some(13000 msat))
       val commitments = CommitmentsSpec.makeCommitments(12000 msat, 13000 msat, a, b, announceChannel = true)
-      sender.send(router, AvailableBalanceChanged(sender.ref, null, Some(scid_ab), alias_ab, commitments))
+      sender.send(router, AvailableBalanceChanged(sender.ref, null, scids_ab, commitments))
       sender.send(router, GetRoutingState)
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
@@ -683,7 +683,7 @@ class RouterSpec extends BaseRouterSpec {
       // Private channels should also update the graph when HTLCs are relayed through them.
       val balances = Set(33000000 msat, 5000000 msat)
       val commitments = CommitmentsSpec.makeCommitments(33000000 msat, 5000000 msat, a, g, announceChannel = false)
-      sender.send(router, AvailableBalanceChanged(sender.ref, channelId_ag_private, None, alias_ag_private, commitments))
+      sender.send(router, AvailableBalanceChanged(sender.ref, channelId_ag_private, scids_ab, commitments))
       sender.send(router, Router.GetRouterData)
       val data = sender.expectMsgType[Data]
       val channel_ag = data.privateChannels(channelId_ag_private)

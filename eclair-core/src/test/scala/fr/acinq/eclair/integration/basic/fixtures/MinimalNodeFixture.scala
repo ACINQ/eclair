@@ -160,7 +160,7 @@ object MinimalNodeFixture extends Assertions {
     node.wallet.funded(fundingTxid)
   }
 
-  def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): Option[RealShortChannelId] = {
+  def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): Option[RealScidStatus.Temporary] = {
     assert(getChannelState(node1, channelId) == WAIT_FOR_FUNDING_CONFIRMED)
     val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
     val fundingTx = data1Before.fundingTx.get
@@ -184,14 +184,14 @@ object MinimalNodeFixture extends Assertions {
       // hasn't been confirmed yet and doesn't have a real scid
       None
     } else {
-      assert(data1After.realShortChannelId_opt.isDefined && data2After.realShortChannelId_opt.isDefined)
-      assert(data1After.realShortChannelId_opt.get == data2After.realShortChannelId_opt.get)
-      assert(!data1After.buried && !data2After.buried)
-      Some(data1After.realShortChannelId_opt.get)
+      val realScid1 = data1After.shortIds.real.asInstanceOf[RealScidStatus.Temporary]
+      val realScid2 = data2After.shortIds.real.asInstanceOf[RealScidStatus.Temporary]
+      assert(realScid1 == realScid2)
+      Some(realScid1)
     }
   }
 
-  def confirmChannelDeep(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealShortChannelId = {
+  def confirmChannelDeep(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealScidStatus.Final = {
     assert(getChannelState(node1, channelId) == NORMAL)
     val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val fundingTxid = data1Before.commitments.commitInput.outPoint.txid
@@ -208,10 +208,10 @@ object MinimalNodeFixture extends Assertions {
 
     val data1After = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val data2After = getChannelData(node2, channelId).asInstanceOf[DATA_NORMAL]
-    assert(data1After.realShortChannelId_opt.get == data2After.realShortChannelId_opt.get)
-    assert(data1After.buried && data2After.buried)
-
-    data1After.realShortChannelId_opt.get
+    val realScid1 = data1After.shortIds.real.asInstanceOf[RealScidStatus.Final]
+    val realScid2 = data2After.shortIds.real.asInstanceOf[RealScidStatus.Final]
+    assert(realScid1 == realScid2)
+    realScid1
   }
 
   /** Utility method to make sure that the channel has processed all previous messages */

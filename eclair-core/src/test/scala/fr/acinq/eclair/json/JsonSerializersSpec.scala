@@ -306,6 +306,20 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     JsonSerializers.serialization.write(map)(JsonSerializers.formats) shouldBe s"""{"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff":"ok","8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3":"cannot execute command=CMD_UPDATE_RELAY_FEE in state=CLOSING","74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8":"channel 74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8 not found"}"""
   }
 
+  test("serialize short ids") {
+    val testCases = Map(
+      ShortIds(real = RealScidStatus.Unknown, localAlias = ShortChannelId("1x2x3").toAlias, remoteAlias_opt = Some(ShortChannelId("7x7x7"))) ->
+      """{"real":{"status":"unknown"},"localAlias":"1x2x3","remoteAlias":"7x7x7"}""",
+      ShortIds(real = RealScidStatus.Temporary(ShortChannelId("500000x42x1").toReal), localAlias = ShortChannelId("1x2x3").toAlias, remoteAlias_opt = None) ->
+      """{"real":{"status":"temporary","realScid":"500000x42x1"},"localAlias":"1x2x3"}""",
+      ShortIds(real = RealScidStatus.Final(ShortChannelId("500000x42x1").toReal), localAlias = ShortChannelId("1x2x3").toAlias, remoteAlias_opt = None) ->
+        """{"real":{"status":"final","realScid":"500000x42x1"},"localAlias":"1x2x3"}""",
+    )
+    for ((obj, json) <- testCases) {
+      JsonSerializers.serialization.write(obj)(JsonSerializers.formats) shouldBe json
+    }
+  }
+
   /** utility method that strips line breaks in the expected json */
   def assertJsonEquals(actual: String, expected: String) = {
     val cleanedExpected = expected

@@ -54,18 +54,18 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(privateChannel.update_1_opt.isDefined)
     assert(privateChannel.update_2_opt.isEmpty)
     // alice will only have a real scid if this is not a zeroconf channel
-    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isEmpty == f.testTags.contains(ChannelStateTestsTags.ZeroConf))
-    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].remoteAlias_opt.isDefined)
+    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.toOption.isEmpty == f.testTags.contains(ChannelStateTestsTags.ZeroConf))
+    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.remoteAlias_opt.isDefined)
     // alice uses bob's alias for her channel update
-    assert(privateChannel.update_1_opt.get.shortChannelId != privateChannel.localAlias)
-    assert(privateChannel.update_1_opt.get.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].remoteAlias_opt.get)
+    assert(privateChannel.update_1_opt.get.shortChannelId != privateChannel.shortIds.localAlias)
+    assert(privateChannel.update_1_opt.get.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.remoteAlias_opt.get)
 
     // alice and bob send their channel_updates using remote alias when they go to NORMAL state
     val aliceChannelUpdate1 = channels.alice2bob.expectMsgType[ChannelUpdate]
     val bobChannelUpdate1 = channels.bob2alice.expectMsgType[ChannelUpdate]
     // alice's channel_update uses bob's alias, and vice versa
-    assert(aliceChannelUpdate1.shortChannelId == channels.bob.stateData.asInstanceOf[DATA_NORMAL].localAlias)
-    assert(bobChannelUpdate1.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].localAlias)
+    assert(aliceChannelUpdate1.shortChannelId == channels.bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.localAlias)
+    assert(bobChannelUpdate1.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.localAlias)
     // channel_updates are handled by the peer connection and sent to the router
     val peerConnection = TestProbe()
     router ! PeerRoutingMessage(peerConnection.ref, channels.bob.underlyingActor.nodeParams.nodeId, bobChannelUpdate1)

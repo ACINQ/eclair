@@ -46,17 +46,10 @@ case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, tempora
 
 /**
  * This event will be sent whenever a new scid is assigned to the channel, be it a real, local alias or remote alias.
- *
- * @param realShortChannelId_opt  the real scid, it can change in case of a reorg before the channel reaches 6 conf
- * @param localAlias              we must remember the alias that we sent to our peer because we use it to:
- *                                - identify incoming [[ChannelUpdate]]
- *                                - route outgoing payments to that channel
- * @param remoteAlias_opt         we only remember the last alias received from our peer, we use this to generate
- *                                routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
  */
-case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[RealShortChannelId], localAlias: LocalAlias, remoteAlias_opt: Option[ShortChannelId], remoteNodeId: PublicKey) extends ChannelEvent
+case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey) extends ChannelEvent
 
-case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[RealShortChannelId], localAlias: LocalAlias, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends ChannelEvent {
+case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends ChannelEvent {
   /**
    * We always map the local alias because we must always be able to route based on it
    * However we only map the real scid if option_scid_alias (TODO: rename to option_scid_privacy) is disabled
@@ -64,16 +57,16 @@ case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, realSh
   def scidsForRouting: Seq[ShortChannelId] = {
     commitments match {
       case c: Commitments =>
-        val realScid_opt = if (c.channelFeatures.hasFeature(Features.ScidAlias)) None else realShortChannelId_opt
-        realScid_opt.toSeq :+ localAlias
-      case _ => Seq(localAlias) // TODO: ugly
+        val realScid_opt = if (c.channelFeatures.hasFeature(Features.ScidAlias)) None else shortIds.real.toOption
+        realScid_opt.toSeq :+ shortIds.localAlias
+      case _ => Seq(shortIds.localAlias) // TODO: ugly
     }
   }
 }
 
 case class ChannelUpdateParametersChanged(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, channelUpdate: ChannelUpdate) extends ChannelEvent
 
-case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[RealShortChannelId], localAlias: LocalAlias, remoteNodeId: PublicKey) extends ChannelEvent
+case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey) extends ChannelEvent
 
 case class ChannelStateChanged(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, previousState: ChannelState, currentState: ChannelState, commitments_opt: Option[AbstractCommitments]) extends ChannelEvent
 
@@ -89,7 +82,7 @@ case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey
 case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction) extends ChannelEvent
 
 // NB: this event is only sent when the channel is available.
-case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[RealShortChannelId], localAlias: LocalAlias, commitments: AbstractCommitments) extends ChannelEvent
+case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, commitments: AbstractCommitments) extends ChannelEvent
 
 case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: PersistentChannelData) extends ChannelEvent
 

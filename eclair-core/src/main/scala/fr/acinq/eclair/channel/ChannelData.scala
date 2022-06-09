@@ -427,16 +427,32 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
 final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
-                                             realShortChannelId_opt: Option[RealShortChannelId],
-                                             localAlias: LocalAlias,
+                                             shortIds: ShortIds,
                                              lastSent: ChannelReady) extends PersistentChannelData
+sealed trait RealScidStatus { def toOption: Option[RealShortChannelId] }
+object RealScidStatus {
+  case class Temporary(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
+  case class Final(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
+  case object Unknown extends RealScidStatus { override def toOption: Option[RealShortChannelId] = None }
+}
+
+/**
+ * Short identifiers for the channel
+ *
+ * @param real            the real scid, it may change if a reorg happens before the channel reaches 6 conf
+ * @param localAlias      we must remember the alias that we sent to our peer because we use it to:
+ *                          - identify incoming [[ChannelUpdate]]
+ *                          - route outgoing payments to that channel
+ * @param remoteAlias_opt we only remember the last alias received from our peer, we use this to generate
+ *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
+ */
+case class ShortIds(real: RealScidStatus,
+                    localAlias: LocalAlias,
+                    remoteAlias_opt: Option[ShortChannelId])
 final case class DATA_NORMAL(commitments: Commitments,
-                             realShortChannelId_opt: Option[RealShortChannelId],
-                             buried: Boolean,
+                             shortIds: ShortIds,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
-                             localAlias: LocalAlias,
-                             remoteAlias_opt: Option[ShortChannelId],
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
                              closingFeerates: Option[ClosingFeerates]) extends PersistentChannelData

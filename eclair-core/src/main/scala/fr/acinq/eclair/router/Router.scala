@@ -342,7 +342,7 @@ object Router {
     }
     def apply(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2
-      if (u.channelFlags.isNode1) ChannelDesc(pc.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.localAlias, pc.nodeId2, pc.nodeId1)
+      if (u.channelFlags.isNode1) ChannelDesc(pc.shortIds.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.shortIds.localAlias, pc.nodeId2, pc.nodeId1)
     }
   }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
@@ -379,7 +379,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(localAlias: LocalAlias, channelId: ByteVector32, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
+  case class PrivateChannel(channelId: ByteVector32, shortIds: ShortIds, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -404,7 +404,7 @@ object Router {
         case (Some(localUpdate), Some(remoteUpdate)) =>
           // this is tricky: for incoming payments we need the *remote alias*, we can find it in the channel_update that we sent them
           Some(ExtraHop(remoteNodeId, localUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta))
-        case (_, Some(remoteUpdate)) if remoteUpdate.shortChannelId != localAlias =>
+        case (_, Some(remoteUpdate)) if remoteUpdate.shortChannelId != shortIds.localAlias =>
           // they are using a real scid (otherwise it would match our local alias, we can use it in the routing hint)
           Some(ExtraHop(remoteNodeId, remoteUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta))
         case _ => None

@@ -173,7 +173,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     // the zero-conf watch confirms instantly
     alice ! WatchFundingConfirmedTriggered(BlockHeight(0), 0, fundingTx)
     awaitCond(alice.stateName == WAIT_FOR_CHANNEL_READY)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real == RealScidStatus.Unknown)
   }
 
   test("recv WatchFundingConfirmedTriggered (fundee)") { f =>

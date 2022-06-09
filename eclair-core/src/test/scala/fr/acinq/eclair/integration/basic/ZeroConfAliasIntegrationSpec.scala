@@ -4,7 +4,7 @@ import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ScidAlias, ZeroConf}
-import fr.acinq.eclair.channel.DATA_NORMAL
+import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
 import fr.acinq.eclair.payment.PaymentSent
 import fr.acinq.eclair.testutils.FixtureSpec
@@ -74,7 +74,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
                            bcPublic: Boolean,
                            bcZeroConf: Boolean,
                            bcScidAlias: Boolean,
-                           bcHasRealScid: Boolean,
                            paymentWorksWithoutHint: Boolean,
                            paymentWorksWithHint_opt: Option[Boolean],
                            paymentWorksWithRealScidHint_opt: Option[Boolean],
@@ -87,10 +86,13 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias) == bcScidAlias)
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel == bcPublic)
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined == bcHasRealScid)
-      assert(getChannelData(carol, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.isDefined == bcHasRealScid)
+      if (deepConfirm) {
+        assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      } else if (bcZeroConf) {
+        assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)
+      } else {
+        assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
+      }
     }
 
     if (bcPublic && deepConfirm) {
@@ -122,10 +124,10 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
     if (paymentWorksWithRealScidHint_opt.contains(true)) {
       // if alice uses the real scid instead of the b-c alias, it still works
-      sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
+      sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.get))
     } else if (paymentWorksWithRealScidHint_opt.contains(false)) {
       intercept[AssertionError] {
-        sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].realShortChannelId_opt.get))
+        sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.get))
       }
     } else {
       // skipped
@@ -138,7 +140,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = false,
       bcZeroConf = false,
       bcScidAlias = false,
-      bcHasRealScid = true, // a-b and b-c are in NORMAL and have real scids (the funding tx has reached min_depth)
       paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = Some(true) // if alice uses the real scid instead of the b-c alias, it still works
@@ -157,7 +158,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = false,
       bcZeroConf = false,
       bcScidAlias = true,
-      bcHasRealScid = true, // a-b and b-c are in NORMAL and have real scids (the funding tx has reached min_depth)
       paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
@@ -170,7 +170,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = false,
-      bcHasRealScid = false, // a-b has reached min_depth and has a real scid, b-c is in NORMAL state too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
       paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
@@ -183,7 +182,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = false,
-      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
       paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = None // skipped, see below
@@ -200,7 +198,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = true,
-      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
       paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
@@ -213,7 +210,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = true,
       bcZeroConf = true,
       bcScidAlias = false,
-      bcHasRealScid = false, // a-b has reached min_depth and has a real scid, b-c is in NORMAL state too, but the funding tx isn't confirmed (zero-conf): it doesn't have a real scid
       paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
@@ -226,7 +222,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = true,
       bcZeroConf = true,
       bcScidAlias = false,
-      bcHasRealScid = true, // both channels have real scids because they are deeply confirmed, even the zeroconf channel
       paymentWorksWithoutHint = true,
       paymentWorksWithHint_opt = None, // there is no routing hints for public channels
       paymentWorksWithRealScidHint_opt = None // there is no routing hints for public channels

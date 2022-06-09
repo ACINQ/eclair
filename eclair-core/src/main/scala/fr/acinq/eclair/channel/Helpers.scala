@@ -199,14 +199,14 @@ object Helpers {
    *    - min_depth > 0 : use real scid (may change if reorg between min_depth and 6 conf)
    *    - min_depth = 0 (zero-conf) : unsupported
    */
-  def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], realShortChannelId_opt: Option[ShortChannelId], remoteAlias_opt: Option[ShortChannelId])(implicit log: DiagnosticLoggingAdapter): ShortChannelId = {
+  def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], shortIds: ShortIds)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = {
     channelAnnouncement_opt.map(_.shortChannelId) // we use the real "final" scid when it is publicly announced
-      .orElse(remoteAlias_opt) // otherwise the remote alias
-      .orElse(realShortChannelId_opt) // if we don't have a remote alias, we use the real scid (which could change because the funding tx possibly has less than 6 confs here)
+      .orElse(shortIds.remoteAlias_opt) // otherwise the remote alias
+      .orElse(shortIds.real.toOption) // if we don't have a remote alias, we use the real scid (which could change because the funding tx possibly has less than 6 confs here)
       .getOrElse(throw new RuntimeException("this is a zero-conf channel and no alias was provided in channel_ready")) // if we don't have a real scid, it means this is a zero-conf channel and our peer must have sent an alias
   }
 
-  def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, realShortChannelId_opt = d.realShortChannelId_opt, remoteAlias_opt = d.remoteAlias_opt)
+  def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds)
 
   /**
    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by

@@ -20,6 +20,7 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
@@ -128,7 +129,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   test("relay with new real scid after reorg") { f =>
     import f._
-    import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
 
     // initial channel update
     val lcu1 = createLocalUpdate(channelId1)
@@ -140,7 +140,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     // reorg happens
     val realScid1AfterReorg = ShortChannelId(111112).toReal
-    val lcu2 = createLocalUpdate(channelId1).copy(realShortChannelId_opt = Some(realScid1AfterReorg))
+    val lcu2 = createLocalUpdate(channelId1).modify(_.shortIds.real).setTo(RealScidStatus.Final(realScid1AfterReorg))
     val payload2 = RelayLegacyPayload(realScid1AfterReorg, outgoingAmount, outgoingExpiry)
     val r2 = createValidIncomingPacket(payload2)
     channelRelayer ! WrappedLocalChannelUpdate(lcu2)
@@ -148,7 +148,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     // both old and new real scids work
     channelRelayer ! Relay(r1)
     expectFwdAdd(register, lcu1.channelId, outgoingAmount, outgoingExpiry)
-      // new real scid works
+    // new real scid works
     channelRelayer ! Relay(r2)
     expectFwdAdd(register, lcu2.channelId, outgoingAmount, outgoingExpiry)
   }
@@ -231,7 +231,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val payload = RelayLegacyPayload(realScid1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(payload)
     val u = createLocalUpdate(channelId1)
-    val d = LocalChannelDown(null, channelId = channelIds(realScid1), Some(realScid1.toReal), null, outgoingNodeId)
+    val d = LocalChannelDown(null, channelId1, createShortIds(channelId1), outgoingNodeId)
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! WrappedLocalChannelDown(d)
@@ -372,7 +372,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val channelId = randomBytes32()
       val update = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey(), remoteNodeId, shortChannelId, CltvExpiryDelta(10), 100 msat, 1000 msat, 100, capacity.toMilliSatoshi)
       val commitments = PaymentPacketSpec.makeCommitments(channelId, availableBalanceForSend, testCapacity = capacity)
-      LocalChannelUpdate(null, channelId, Some(shortChannelId), null, remoteNodeId, None, update, commitments)
+      val shortIds = ShortIds(real = RealScidStatus.Final(shortChannelId), localAlias = ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+      LocalChannelUpdate(null, channelId, shortIds, remoteNodeId, None, update, commitments)
     }
 
     val (a, b) = (randomKey().publicKey, randomKey().publicKey)
@@ -515,8 +516,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
     val channelId_ab = randomBytes32()
     val channelId_bc = randomBytes32()
-    val alias_ab = ShortChannelId.generateLocalAlias()
-    val alias_bc = ShortChannelId.generateLocalAlias()
+    val shortIds_ab = ShortIds(RealScidStatus.Final(channelUpdate_ab.shortChannelId.toReal), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+    val shortIds_bc = ShortIds(RealScidStatus.Final(channelUpdate_bc.shortChannelId.toReal), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
     val a = PaymentPacketSpec.a
 
     val sender = TestProbe[Relayer.OutgoingChannels]()
@@ -527,8 +528,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       channels
     }
 
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, Some(channelUpdate_ab.shortChannelId.toReal), alias_ab, a, None, channelUpdate_ab, makeCommitments(channelId_ab, -2000 msat, 300000 msat)))
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_bc, Some(channelUpdate_bc.shortChannelId.toReal), alias_bc, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 400000 msat, -5000 msat)))
+    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, shortIds_ab, a, None, channelUpdate_ab, makeCommitments(channelId_ab, -2000 msat, 300000 msat)))
+    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_bc, shortIds_bc, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 400000 msat, -5000 msat)))
 
     val channels1 = getOutgoingChannels(true)
     assert(channels1.size == 2)
@@ -537,22 +538,22 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     assert(channels1.last.channelUpdate == channelUpdate_bc)
     assert(channels1.last.toChannelBalance == Relayer.ChannelBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false, isEnabled = true))
 
-    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_bc, Some(channelUpdate_bc.shortChannelId.toReal), alias_ab, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
+    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_bc, shortIds_ab, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
     val channels2 = getOutgoingChannels(true)
     assert(channels2.last.commitments.availableBalanceForReceive == 500000.msat && channels2.last.commitments.availableBalanceForSend == 200000.msat)
 
-    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_ab, Some(channelUpdate_ab.shortChannelId.toReal), alias_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
-    channelRelayer ! WrappedLocalChannelDown(LocalChannelDown(null, channelId_bc, Some(channelUpdate_bc.shortChannelId.toReal), alias_ab, c))
+    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_ab, shortIds_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    channelRelayer ! WrappedLocalChannelDown(LocalChannelDown(null, channelId_bc, shortIds_ab, c))
     val channels3 = getOutgoingChannels(true)
     assert(channels3.size == 1 && channels3.head.commitments.availableBalanceForSend == 100000.msat)
 
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, Some(channelUpdate_ab.shortChannelId.toReal), alias_ab, a, None, channelUpdate_ab.copy(channelFlags = ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, shortIds_ab, a, None, channelUpdate_ab.copy(channelFlags = ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     val channels4 = getOutgoingChannels(true)
     assert(channels4.isEmpty)
     val channels5 = getOutgoingChannels(false)
     assert(channels5.size == 1)
 
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, Some(channelUpdate_ab.shortChannelId.toReal), alias_ab, a, None, channelUpdate_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, shortIds_ab, a, None, channelUpdate_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     val channels6 = getOutgoingChannels(true)
     assert(channels6.size == 1)
   }
@@ -590,13 +591,18 @@ object ChannelRelayerSpec {
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
   }
 
-  def createLocalUpdate(channelId: ByteVector32, channelUpdateScid_opt: Option[ShortChannelId] = None, balance: MilliSatoshi = 10000000 msat, capacity: Satoshi = 500000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat, timestamp: TimestampSecond = 0 unixsec, feeBaseMsat: MilliSatoshi = 1000 msat, feeProportionalMillionths: Long = 100, optionScidAlias: Boolean = false): LocalChannelUpdate = {
+  def createShortIds(channelId: ByteVector32) = {
     val realScid = channelIds.collectFirst { case (realScid: RealShortChannelId, cid) if cid == channelId => realScid }.get
     val localAlias = channelIds.collectFirst { case (localAlias: LocalAlias, cid) if cid == channelId => localAlias }.get
-    val channelUpdateScid = channelUpdateScid_opt.getOrElse(realScid)
+    ShortIds(real = RealScidStatus.Final(realScid), localAlias, remoteAlias_opt = None)
+  }
+
+  def createLocalUpdate(channelId: ByteVector32, channelUpdateScid_opt: Option[ShortChannelId] = None, balance: MilliSatoshi = 10000000 msat, capacity: Satoshi = 500000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat, timestamp: TimestampSecond = 0 unixsec, feeBaseMsat: MilliSatoshi = 1000 msat, feeProportionalMillionths: Long = 100, optionScidAlias: Boolean = false): LocalChannelUpdate = {
+    val shortIds = createShortIds(channelId)
+    val channelUpdateScid = channelUpdateScid_opt.getOrElse(shortIds.real.toOption.get)
     val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, channelUpdateScid, timestamp, ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, feeBaseMsat, feeProportionalMillionths, Some(capacity.toMilliSatoshi))
     val channelFeatures = if (optionScidAlias) ChannelFeatures(ScidAlias) else ChannelFeatures()
     val commitments = PaymentPacketSpec.makeCommitments(channelId, testAvailableBalanceForSend = balance, testCapacity = capacity, channelFeatures = channelFeatures)
-    LocalChannelUpdate(null, channelId, realShortChannelId_opt = Some(realScid), localAlias = localAlias, outgoingNodeId, None, update, commitments)
+    LocalChannelUpdate(null, channelId, shortIds, outgoingNodeId, None, update, commitments)
   }
 }
