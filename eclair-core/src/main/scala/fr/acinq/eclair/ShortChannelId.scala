@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair
 
-sealed trait RealShortChannelId extends ShortChannelId
-sealed trait LocalAlias extends ShortChannelId
+trait RealShortChannelId extends ShortChannelId
+trait LocalAlias extends ShortChannelId
 
 /**
  * A short channel id uniquely identifies a channel by the coordinates of its funding tx output in the blockchain.
