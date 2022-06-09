@@ -61,7 +61,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     val walletPassword = Random.alphanumeric.take(8).mkString
     sender.send(bitcoincli, BitcoinReq("encryptwallet", walletPassword))
-    sender.expectMsgType[JString]
+    sender.expectMsgType[JString](60 seconds)
     restartBitcoind(sender)
 
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
