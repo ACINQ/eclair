@@ -291,11 +291,11 @@ object Helpers {
      * wait for one conf, except if the channel has the zero-conf feature (because presumably the peer will send an
      * alias in that case).
      */
-    def minDepthFunder(channelFeatures: ChannelFeatures): Long = {
+    def minDepthFunder(channelFeatures: ChannelFeatures): Option[Long] = {
       if (channelFeatures.hasFeature(Features.ZeroConf)) {
-        0
+        None
       } else {
-        1
+        Some(1)
       }
     }
 
@@ -306,14 +306,14 @@ object Helpers {
      * @param fundingSatoshis funding amount of the channel
      * @return number of confirmations needed
      */
-    def minDepthFundee(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingSatoshis: Satoshi): Long = fundingSatoshis match {
-      case _ if channelFeatures.hasFeature(Features.ZeroConf) => 0 // zero-conf stay zero-conf, whatever the funding amount is
-      case funding if funding <= Channel.MAX_FUNDING => channelConf.minDepthBlocks
+    def minDepthFundee(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
+      case _ if channelFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
+      case funding if funding <= Channel.MAX_FUNDING => Some(channelConf.minDepthBlocks)
       case funding =>
         val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
         val scalingFactor = 15
         val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
-        channelConf.minDepthBlocks.max(blocksToReachFunding)
+        Some(channelConf.minDepthBlocks.max(blocksToReachFunding))
     }
 
     def makeFundingInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {

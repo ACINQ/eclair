@@ -214,6 +214,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
 
+    val eventListener = TestProbe()
+    systemA.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, commitTxFeerate, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
@@ -230,14 +233,18 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     bob2alice.forward(alice)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     alice2blockchain.expectMsgType[WatchFundingSpent]
-    val aliceWatchFundingConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     bob2blockchain.expectMsgType[WatchFundingSpent]
-    val bobWatchFundingConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! fundingConfirmedEvent(aliceWatchFundingConfirmed, fundingTx)
-    bob ! fundingConfirmedEvent(bobWatchFundingConfirmed, fundingTx)
+    val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
+    if (!channelType.features.contains(Features.ZeroConf)) {
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
+      eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
+      alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    }
+    eventually(assert(alice.stateName == WAIT_FOR_CHANNEL_READY))
+    eventually(assert(bob.stateName == WAIT_FOR_CHANNEL_READY))
     alice2blockchain.expectMsgType[WatchFundingLost]
     bob2blockchain.expectMsgType[WatchFundingLost]
     alice2bob.expectMsgType[ChannelReady]
@@ -258,13 +265,6 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     fundingTx
-  }
-
-  /** This simulates the behavior of our watcher: it replies to zero-conf watches with a zero block height. */
-  def fundingConfirmedEvent(watch: WatchFundingConfirmed, fundingTx: Transaction) = if (watch.minDepth == 0) {
-    WatchFundingConfirmedTriggered(BlockHeight(0), 0, fundingTx)
-  } else {
-    WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
   }
 
   def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(replyTo, UUID.randomUUID())

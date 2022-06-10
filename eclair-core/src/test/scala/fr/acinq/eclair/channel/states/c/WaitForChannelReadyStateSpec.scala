@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -68,14 +68,17 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2blockchain.expectMsgType[WatchFundingSpent]
-      val aliceWatchFundingConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob2blockchain.expectMsgType[WatchFundingSpent]
-      val bobWatchFundingConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-      alice ! fundingConfirmedEvent(aliceWatchFundingConfirmed, fundingTx)
-      bob ! fundingConfirmedEvent(bobWatchFundingConfirmed, fundingTx)
+      if (!test.tags.contains(ChannelStateTestsTags.ZeroConf)) {
+        alice2blockchain.expectMsgType[WatchFundingConfirmed]
+        bob2blockchain.expectMsgType[WatchFundingConfirmed]
+        awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+        awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+        val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+        alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+        bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      }
       alice2blockchain.expectMsgType[WatchFundingLost]
       bob2blockchain.expectMsgType[WatchFundingLost]
       alice2bob.expectMsgType[ChannelReady]
