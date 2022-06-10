@@ -39,7 +39,6 @@ import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
-import kamon.context.Context
 
 import java.util.UUID
 import scala.collection.immutable.SortedMap
@@ -395,15 +394,14 @@ object Router {
     /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
     def toIncomingExtraHop: Option[ExtraHop] = {
       // we want the incoming channel_update
-      val (localUpdate_opt, remoteUpdate_opt) = if (localNodeId == nodeId1) (update_1_opt, update_2_opt) else (update_2_opt, update_1_opt)
-      (localUpdate_opt, remoteUpdate_opt) match {
-        case (Some(localUpdate), Some(remoteUpdate)) =>
-          // this is tricky: for incoming payments we need the *remote alias*, we can find it in the channel_update that we sent them
-          Some(ExtraHop(remoteNodeId, localUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta))
-        case (_, Some(remoteUpdate)) if remoteUpdate.shortChannelId != shortIds.localAlias =>
-          // they are using a real scid (otherwise it would match our local alias, we can use it in the routing hint)
-          Some(ExtraHop(remoteNodeId, remoteUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta))
-        case _ => None
+      val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
+      // for incoming payments we preferably use the *remote alias*, otherwise the real scid if we have it
+      val scid_opt = shortIds.remoteAlias_opt.orElse(shortIds.real.toOption)
+      // we override the remote update's scid, because it contains either the real scid or our local alias
+      scid_opt.flatMap { scid =>
+        remoteUpdate_opt.map {remoteUpdate =>
+          ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
+          }
         }
     }
   }

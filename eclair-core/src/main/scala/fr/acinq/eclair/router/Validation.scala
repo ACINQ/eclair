@@ -503,12 +503,13 @@ object Validation {
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(ann.shortChannelId)
             log.debug("processing channel_update")
-            val d2 = handleChannelUpdate(d1, db, nodeParams.routerConf, Left(lcu))
-            d2
+            handleChannelUpdate(d1, db, nodeParams.routerConf, Left(lcu))
           case None =>
             log.debug("this is a known private channel, processing channel_update privateChannel={}", privateChannel)
-            // this is a known unannounced channel, we can process the channel_update
-            handleChannelUpdate(d, db, nodeParams.routerConf, Left(lcu))
+            // this a known private channel, we update the short ids (may have the remote_alias)
+            val d1 = d.copy(privateChannels = d.privateChannels + (privateChannel.channelId -> privateChannel.copy(shortIds = lcu.shortIds)))
+            // then we can process the channel_update
+            handleChannelUpdate(d1, db, nodeParams.routerConf, Left(lcu))
         }
       case None =>
         // should never happen, we log a warning and handle the update, it will be rejected since there is no related channel
