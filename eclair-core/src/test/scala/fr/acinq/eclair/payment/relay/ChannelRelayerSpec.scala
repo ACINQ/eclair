@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Features.ScidAlias
 import fr.acinq.eclair.TestConstants.emptyOnionPacket
-import fr.acinq.eclair.TestUtils.realScid
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
@@ -139,7 +139,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdAdd(register, lcu1.channelId, outgoingAmount, outgoingExpiry)
 
     // reorg happens
-    val realScid1AfterReorg = ShortChannelId(111112).toReal
+    val realScid1AfterReorg = RealShortChannelId(111112)
     val lcu2 = createLocalUpdate(channelId1).modify(_.shortIds.real).setTo(RealScidStatus.Final(realScid1AfterReorg))
     val payload2 = RelayLegacyPayload(realScid1AfterReorg, outgoingAmount, outgoingExpiry)
     val r2 = createValidIncomingPacket(payload2)
@@ -379,12 +379,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val (a, b) = (randomKey().publicKey, randomKey().publicKey)
 
     val channelUpdates = Map(
-      ShortChannelId(11111) -> dummyLocalUpdate(realScid(11111), a, 100000000 msat, 200000 sat),
-      ShortChannelId(12345) -> dummyLocalUpdate(realScid(12345), a, 10000000 msat, 200000 sat),
-      ShortChannelId(22222) -> dummyLocalUpdate(realScid(22222), a, 10000000 msat, 100000 sat),
-      ShortChannelId(22223) -> dummyLocalUpdate(realScid(22223), a, 9000000 msat, 50000 sat),
-      ShortChannelId(33333) -> dummyLocalUpdate(realScid(33333), a, 100000 msat, 50000 sat),
-      ShortChannelId(44444) -> dummyLocalUpdate(realScid(44444), b, 1000000 msat, 10000 sat),
+      ShortChannelId(11111) -> dummyLocalUpdate(RealShortChannelId(11111), a, 100000000 msat, 200000 sat),
+      ShortChannelId(12345) -> dummyLocalUpdate(RealShortChannelId(12345), a, 10000000 msat, 200000 sat),
+      ShortChannelId(22222) -> dummyLocalUpdate(RealShortChannelId(22222), a, 10000000 msat, 100000 sat),
+      ShortChannelId(22223) -> dummyLocalUpdate(RealShortChannelId(22223), a, 9000000 msat, 50000 sat),
+      ShortChannelId(33333) -> dummyLocalUpdate(RealShortChannelId(33333), a, 100000 msat, 50000 sat),
+      ShortChannelId(44444) -> dummyLocalUpdate(RealShortChannelId(44444), b, 1000000 msat, 10000 sat),
     )
 
     channelUpdates.values.foreach(u => channelRelayer ! WrappedLocalChannelUpdate(u))
@@ -516,8 +516,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
     val channelId_ab = randomBytes32()
     val channelId_bc = randomBytes32()
-    val shortIds_ab = ShortIds(RealScidStatus.Final(channelUpdate_ab.shortChannelId.toReal), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
-    val shortIds_bc = ShortIds(RealScidStatus.Final(channelUpdate_bc.shortChannelId.toReal), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+    val shortIds_ab = ShortIds(RealScidStatus.Final(RealShortChannelId(channelUpdate_ab.shortChannelId.toLong)), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+    val shortIds_bc = ShortIds(RealScidStatus.Final(RealShortChannelId(channelUpdate_bc.shortChannelId.toLong)), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
     val a = PaymentPacketSpec.a
 
     val sender = TestProbe[Relayer.OutgoingChannels]()
@@ -568,11 +568,11 @@ object ChannelRelayerSpec {
   val outgoingExpiry: CltvExpiry = CltvExpiry(400000)
   val outgoingNodeId: PublicKey = randomKey().publicKey
 
-  val realScid1: RealShortChannelId = ShortChannelId(111111).toReal
-  val realScId2: RealShortChannelId = ShortChannelId(222222).toReal
+  val realScid1: RealShortChannelId = RealShortChannelId(111111)
+  val realScId2: RealShortChannelId = RealShortChannelId(222222)
 
-  val localAlias1: LocalAlias = ShortChannelId(111000).toAlias
-  val localAlias2: LocalAlias = ShortChannelId(222000).toAlias
+  val localAlias1: Alias = Alias(111000)
+  val localAlias2: Alias = Alias(222000)
 
   val remoteAlias1: ShortChannelId = ShortChannelId(111999)
 
@@ -593,7 +593,7 @@ object ChannelRelayerSpec {
 
   def createShortIds(channelId: ByteVector32) = {
     val realScid = channelIds.collectFirst { case (realScid: RealShortChannelId, cid) if cid == channelId => realScid }.get
-    val localAlias = channelIds.collectFirst { case (localAlias: LocalAlias, cid) if cid == channelId => localAlias }.get
+    val localAlias = channelIds.collectFirst { case (localAlias: Alias, cid) if cid == channelId => localAlias }.get
     ShortIds(real = RealScidStatus.Final(realScid), localAlias, remoteAlias_opt = None)
   }
 

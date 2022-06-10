@@ -308,12 +308,12 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
 
   test("serialize short ids") {
     val testCases = Map(
-      ShortIds(real = RealScidStatus.Unknown, localAlias = ShortChannelId("1x2x3").toAlias, remoteAlias_opt = Some(ShortChannelId("7x7x7"))) ->
-      """{"real":{"status":"unknown"},"localAlias":"1x2x3","remoteAlias":"7x7x7"}""",
-      ShortIds(real = RealScidStatus.Temporary(ShortChannelId("500000x42x1").toReal), localAlias = ShortChannelId("1x2x3").toAlias, remoteAlias_opt = None) ->
-      """{"real":{"status":"temporary","realScid":"500000x42x1"},"localAlias":"1x2x3"}""",
-      ShortIds(real = RealScidStatus.Final(ShortChannelId("500000x42x1").toReal), localAlias = ShortChannelId("1x2x3").toAlias, remoteAlias_opt = None) ->
-        """{"real":{"status":"final","realScid":"500000x42x1"},"localAlias":"1x2x3"}""",
+      ShortIds(real = RealScidStatus.Unknown, localAlias = Alias(0x4455), remoteAlias_opt = Some(Alias(0x88888888L))) ->
+        """{"real":{"status":"unknown"},"localAlias":"0x4455","remoteAlias":"0x88888888"}""",
+      ShortIds(real = RealScidStatus.Temporary(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
+        """{"real":{"status":"temporary","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
+      ShortIds(real = RealScidStatus.Final(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
+        """{"real":{"status":"final","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
     )
     for ((obj, json) <- testCases) {
       JsonSerializers.serialization.write(obj)(JsonSerializers.formats) shouldBe json

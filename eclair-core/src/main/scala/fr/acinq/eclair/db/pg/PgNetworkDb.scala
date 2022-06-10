@@ -224,12 +224,13 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
       })")) {
         statement =>
           shortChannelIds
+            .map(_.toLong)
             .grouped(batchSize)
             .foreach {
               group =>
-                val padded = group.toArray.padTo(batchSize, ShortChannelId(0L))
+                val padded = group.toArray.padTo(batchSize, 0L)
                 for (i <- 0 until batchSize) {
-                  statement.setLong(1 + i, padded(i).toLong) // index for jdbc parameters starts at 1
+                  statement.setLong(1 + i, padded(i)) // index for jdbc parameters starts at 1
                 }
                 statement.executeUpdate()
             }

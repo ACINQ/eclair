@@ -24,7 +24,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, LocalAlias, MilliSatoshi, RealShortChannelId, ShortChannelId, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, Alias, MilliSatoshi, RealShortChannelId, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -447,8 +447,8 @@ object RealScidStatus {
  *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
  */
 case class ShortIds(real: RealScidStatus,
-                    localAlias: LocalAlias,
-                    remoteAlias_opt: Option[ShortChannelId])
+                    localAlias: Alias,
+                    remoteAlias_opt: Option[Alias])
 final case class DATA_NORMAL(commitments: Commitments,
                              shortIds: ShortIds,
                              channelAnnouncement: Option[ChannelAnnouncement],

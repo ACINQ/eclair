@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Transa
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, RealScidStatus, ShortIds}
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, LocalAlias, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, channel}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, UnspecifiedShortChannelId, Alias, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, channel}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -130,11 +130,11 @@ object CommonCodecs {
   // number of bytes we can just skip to the next field
   val listofnodeaddresses: Codec[List[NodeAddress]] = variableSizeBytes(uint16, list(nodeaddress))
 
-  val shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
+  val shortchannelid: Codec[ShortChannelId] = int64.xmap(l => UnspecifiedShortChannelId(l), s => s.toLong)
 
-  val realshortchannelid: Codec[RealShortChannelId] = shortchannelid.narrow[RealShortChannelId](scid => Attempt.successful(scid.toReal), scid => scid)
+  val realshortchannelid: Codec[RealShortChannelId] = shortchannelid.narrow[RealShortChannelId](scid => Attempt.successful(RealShortChannelId(scid.toLong)), scid => scid)
 
-  val localalias: Codec[LocalAlias] = shortchannelid.narrow[LocalAlias](scid => Attempt.successful(scid.toAlias), scid => scid)
+  val alias: Codec[Alias] = shortchannelid.narrow[Alias](scid => Attempt.successful(Alias(scid.toLong)), scid => scid)
 
   val realShortChannelIdStatus: Codec[RealScidStatus] = discriminated[RealScidStatus].by(uint8)
     .typecase(0, provide(RealScidStatus.Unknown))
@@ -143,8 +143,8 @@ object CommonCodecs {
 
   val shortids: Codec[ShortIds] = (
     ("real" | realShortChannelIdStatus) ::
-      ("localAlias" | discriminated[LocalAlias].by(uint16).typecase(1, localalias)) :: // forward-compatible with listOfN(uint16, localalias) in case we want to store a list of local aliases later
-      ("remoteAlias_opt" | optional(bool8, shortchannelid))
+      ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) :: // forward-compatible with listOfN(uint16, aliashortchannelid) in case we want to store a list of local aliases later
+      ("remoteAlias_opt" | optional(bool8, alias))
     ).as[ShortIds]
 
   val privateKey: Codec[PrivateKey] = Codec[PrivateKey](

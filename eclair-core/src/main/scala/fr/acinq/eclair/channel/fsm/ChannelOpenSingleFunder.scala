@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelReadyTlv, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
-import fr.acinq.eclair.{BlockHeight, Features, ShortChannelId, ToMilliSatoshiConversion, randomKey, toLongId}
+import fr.acinq.eclair.{BlockHeight, Features, Alias, RealShortChannelId, ShortChannelId, ToMilliSatoshiConversion, randomKey, toLongId}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
@@ -376,7 +376,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           else {
             log.info(s"channel was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
             context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
-            RealScidStatus.Temporary(ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
+            RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
           }
           // the alias will use in our channel_update message, the goal is to be able to use our channel
           // as soon as it reaches NORMAL state, and before it is announced on the network

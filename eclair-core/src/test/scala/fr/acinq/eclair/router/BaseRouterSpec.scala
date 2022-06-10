@@ -73,12 +73,12 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val node_g = makeNodeAnnouncement(priv_g, "node-G", Color(30, 10, -50), Nil, Features.empty)
   val node_h = makeNodeAnnouncement(priv_h, "node-H", Color(30, 10, -50), Nil, Features.empty)
 
-  val scid_ab = ShortChannelId(BlockHeight(420000), 1, 0).toReal
-  val scid_bc = ShortChannelId(BlockHeight(420000), 2, 0).toReal
-  val scid_cd = ShortChannelId(BlockHeight(420000), 3, 0).toReal
-  val scid_ef = ShortChannelId(BlockHeight(420000), 4, 0).toReal
-  val scid_ag_private = ShortChannelId(BlockHeight(420000), 5, 0).toReal
-  val scid_gh = ShortChannelId(BlockHeight(420000), 6, 0).toReal
+  val scid_ab = RealShortChannelId(BlockHeight(420000), 1, 0)
+  val scid_bc = RealShortChannelId(BlockHeight(420000), 2, 0)
+  val scid_cd = RealShortChannelId(BlockHeight(420000), 3, 0)
+  val scid_ef = RealShortChannelId(BlockHeight(420000), 4, 0)
+  val scid_ag_private = RealShortChannelId(BlockHeight(420000), 5, 0)
+  val scid_gh = RealShortChannelId(BlockHeight(420000), 6, 0)
 
   val channelId_ag_private = randomBytes32()
 

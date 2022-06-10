@@ -142,7 +142,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       } else {
         outputIndex = outputIndex + 1
       }
-      output += ShortChannelId(height, txIndex, outputIndex).toReal
+      output += RealShortChannelId(height, txIndex, outputIndex)
     }
     output.toList
   }
@@ -190,7 +190,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
 
   test("split short channel ids correctly (basic tests") {
 
-    def id(blockHeight: Int, txIndex: Int = 0, outputIndex: Int = 0) = ShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex).toReal
+    def id(blockHeight: Int, txIndex: Int = 0, outputIndex: Int = 0) = RealShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex)
 
     // no ids to split
     {
@@ -358,7 +358,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
   }
 
   test("encode maximum size reply_channel_range") {
-    val scids = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => ShortChannelId(i).toReal).toList
+    val scids = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => RealShortChannelId(i)).toList
     val timestamps = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => Timestamps(i.unixsec, (i + 1).unixsec)).toList
     val checksums = (1 to Sync.MAXIMUM_CHUNK_SIZE).map(i => Checksums(i, i + 1)).toList
     val reply = ReplyChannelRange(Block.RegtestGenesisBlock.hash, BlockHeight(0), 100, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, scids), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, timestamps)), Some(EncodedChecksums(checksums)))

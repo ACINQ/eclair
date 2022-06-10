@@ -245,7 +245,7 @@ object MinimalNodeFixture extends Assertions {
     val blockHeight = txId.take(3).toInt(signed = false)
     val txIndex = txId.takeRight(2).toInt(signed = false)
     val outputIndex = 0 // funding txs created by the dummy wallet used in tests only have one output
-    ShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex).toReal
+    RealShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex)
   }
 
   /** All known funding txs (we don't evaluate immediately because new ones could be created) */
@@ -259,7 +259,7 @@ object MinimalNodeFixture extends Assertions {
     case watch: ZmqWatcher.WatchFundingConfirmed =>
       val realScid = if (watch.minDepth == 0) {
         // special case for zero-conf channels, this is what the real watcher does
-        ShortChannelId(BlockHeight(0), 0, 0).toReal
+        RealShortChannelId(BlockHeight(0), 0, 0)
       } else {
         deterministicShortId(watch.txId)
       }

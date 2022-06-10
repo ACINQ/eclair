@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, SatoshiL
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.DataLossProtect
 import fr.acinq.eclair.RealShortChannelId
-import fr.acinq.eclair.TestUtils.realScid
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
@@ -356,7 +356,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       FundingCreated(randomBytes32(), bin32(0), 3, randomBytes64()),
       FundingSigned(randomBytes32(), randomBytes64()),
       ChannelReady(randomBytes32(), point(2)),
-      ChannelReady(randomBytes32(), point(2), TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId(123456)))),
+      ChannelReady(randomBytes32(), point(2), TlvStream(ChannelReadyTlv.ShortChannelIdTlv(Alias(123456)))),
       UpdateFee(randomBytes32(), FeeratePerKw(2 sat)),
       Shutdown(randomBytes32(), bin(47, 0)),
       ClosingSigned(randomBytes32(), 2 sat, randomBytes64()),
@@ -366,19 +366,19 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       UpdateFailMalformedHtlc(randomBytes32(), 2, randomBytes32(), 1111),
       CommitSig(randomBytes32(), randomBytes64(), randomBytes64() :: randomBytes64() :: randomBytes64() :: Nil),
       RevokeAndAck(randomBytes32(), scalar(0), point(1)),
-      ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(bin(7, 9)), Block.RegtestGenesisBlock.hash, realScid(1), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey),
+      ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(bin(7, 9)), Block.RegtestGenesisBlock.hash, RealShortChannelId(1), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey),
       NodeAnnouncement(randomBytes64(), Features(DataLossProtect -> Optional), 1 unixsec, randomKey().publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil),
       ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(3), 4 msat, 5 msat, 6, None),
-      AnnouncementSignatures(randomBytes32(), realScid(42), randomBytes64(), randomBytes64()),
+      AnnouncementSignatures(randomBytes32(), RealShortChannelId(42), randomBytes64(), randomBytes64()),
       GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, 100000 unixsec, 1500),
-      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))), TlvStream.empty),
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream.empty),
       QueryChannelRange(Block.RegtestGenesisBlock.blockId,
         BlockHeight(100000),
         1500,
         TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL) :: Nil, unknownTlv :: Nil)),
       ReplyChannelRange(Block.RegtestGenesisBlock.blockId,
         BlockHeight(100000), 1500, 1,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
         TlvStream(
           EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))) :: EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3))) :: Nil,
           unknownTlv :: Nil)
@@ -411,13 +411,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   test("non-reg encoding type") {
     val refs = Map(
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))), TlvStream.empty),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream.empty),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001601789c636000833e08659309a65c971d0100126e02e3"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(realScid(142), realScid(15465), realScid(4564676))), TlvStream.empty),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream.empty),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4010400010204"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1, 2, 4)))),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1, 2, 4)))),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001601789c636000833e08659309a65c971d0100126e02e3010c01789c6364620100000e0008"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(realScid(142), realScid(15465), realScid(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
     )
 
     refs.forall {
@@ -439,28 +439,28 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))) ->
         hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000088b800000064010103",
       ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(756230), 1500, 1,
-        EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))), None, None) ->
+        EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), None, None) ->
         hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000b8a06000005dc01001900000000000000008e0000000000003c69000000000045a6c4",
       ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(1600), 110, 1,
-        EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(realScid(142), realScid(15465), realScid(265462))), None, None) ->
+        EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(265462))), None, None) ->
         hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000006400000006e01001601789c636000833e08659309a65878be010010a9023a",
       ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(122334), 1500, 1,
-        EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(12355), realScid(489686), realScid(4645313))),
+        EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(12355), RealShortChannelId(489686), RealShortChannelId(4645313))),
         Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
         Some(EncodedChecksums(List(Checksums(1111, 2222), Checksums(3333, 4444), Checksums(5555, 6666))))) ->
         hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060001ddde000005dc01001900000000000000304300000000000778d6000000000046e1c1011900000282c1000e77c5000778ad00490ab00000b57800955bff031800000457000008ae00000d050000115c000015b300001a0a",
       ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(122334), 1500, 1,
-        EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(realScid(12355), realScid(489686), realScid(4645313))),
+        EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(12355), RealShortChannelId(489686), RealShortChannelId(4645313))),
         Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
         Some(EncodedChecksums(List(Checksums(1111, 2222), Checksums(3333, 4444), Checksums(5555, 6666))))) ->
         hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060001ddde000005dc01001801789c63600001036730c55e710d4cbb3d3c080017c303b1012201789c63606a3ac8c0577e9481bd622d8327d7060686ad150c53a3ff0300554707db031800000457000008ae00000d050000115c000015b300001a0a",
-      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(142), realScid(15465), realScid(4564676))), TlvStream.empty) ->
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream.empty) ->
         hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4",
-      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(realScid(4564), realScid(178622), realScid(4564676))), TlvStream.empty) ->
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(4564), RealShortChannelId(178622), RealShortChannelId(4564676))), TlvStream.empty) ->
         hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001c12b608a69e73e30edbaec0800203b040e",
-      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(12232), realScid(15556), realScid(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4)))) ->
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(12232), RealShortChannelId(15556), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4)))) ->
         hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060019000000000000002fc80000000000003cc4000000000045a6c4010c01789c6364620100000e0008",
-      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(realScid(14200), realScid(46645), realScid(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4)))) ->
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(14200), RealShortChannelId(46645), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4)))) ->
         hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001f30a30c5b0cd144cb92e3b020017c6034a010c01789c6364620100000e0008"
     )
 

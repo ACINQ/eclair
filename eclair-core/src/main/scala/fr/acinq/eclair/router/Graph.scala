@@ -18,12 +18,11 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc, Satoshi, SatoshiLong}
-import fr.acinq.eclair.RealShortChannelId
-import fr.acinq.eclair._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import fr.acinq.eclair.{RealShortChannelId, _}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
@@ -311,8 +310,15 @@ object Graph {
         import RoutingHeuristics._
 
         // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
-        val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
-        val ageFactor = normalize(channelBlockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
+        val ageFactor = edge.desc.shortChannelId match {
+          case real: RealShortChannelId =>
+            val channelBlockHeight = ShortChannelId.coordinates(real).blockHeight
+            normalize(channelBlockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
+          // for local channels or route hints we don't easily have access to the channel block height, but we want to
+          // give them the best score anyway
+          case _: Alias => 1
+          case _: UnspecifiedShortChannelId => 1
+        }
 
         // Every edge is weighted by channel capacity, larger channels add less weight
         val edgeMaxCapacity = edge.capacity.toMilliSatoshi

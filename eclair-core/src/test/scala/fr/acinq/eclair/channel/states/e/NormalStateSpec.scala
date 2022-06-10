@@ -3423,7 +3423,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // funding tx coordinates (unknown before)
     val (blockHeight, txIndex) = (BlockHeight(400000), 42)
     alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
-    val realShortChannelId = ShortChannelId(blockHeight, txIndex, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
+    val realShortChannelId = RealShortChannelId(blockHeight, txIndex, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     assert(annSigs.shortChannelId == realShortChannelId)
     // alice updates her internal state
@@ -3440,7 +3440,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // new funding tx coordinates (there was a reorg)
     val (blockHeight1, txIndex1) = (blockHeight + 10, txIndex + 10)
     alice ! WatchFundingDeeplyBuriedTriggered(blockHeight1, txIndex1, null)
-    val newRealShortChannelId = ShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
+    val newRealShortChannelId = RealShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     assert(annSigs.shortChannelId == newRealShortChannelId)
     // update data with real short channel id
@@ -3471,7 +3471,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // zero-conf channel : the funding tx isn't confirmed
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)
     alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42000), 42, null)
-    val realShortChannelId = ShortChannelId(BlockHeight(42000), 42, 0)
+    val realShortChannelId = RealShortChannelId(BlockHeight(42000), 42, 0)
     // update data with real short channel id
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
     // private channel: we prefer the remote alias, so there is no change in the channel_update, and we don't send a new one
@@ -3490,7 +3490,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // new funding tx coordinates (there was a reorg)
     val (blockHeight1, txIndex1) = (blockHeight + 10, txIndex + 10)
     alice ! WatchFundingDeeplyBuriedTriggered(blockHeight1, txIndex1, null)
-    val newRealShortChannelId = ShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
+    val newRealShortChannelId = RealShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
     // update data with real short channel id
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(newRealShortChannelId))
     // private channel: we prefer the remote alias, so there is no change in the channel_update, and we don't send a new one

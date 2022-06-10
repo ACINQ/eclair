@@ -36,7 +36,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, LocalAlias, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature, channel}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Alias, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature, channel}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -445,7 +445,7 @@ object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessag
 
 // @formatter:off
 /** this is cosmetic, just to not have a '_opt' field in json, which will only appear if the option is defined anyway */
-private case class ShortIdsJson(real: RealScidStatus, localAlias: LocalAlias, remoteAlias: Option[ShortChannelId])
+private case class ShortIdsJson(real: RealScidStatus, localAlias: Alias, remoteAlias: Option[ShortChannelId])
 object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real, s.localAlias, s.remoteAlias_opt))
 // @formatter:on
 

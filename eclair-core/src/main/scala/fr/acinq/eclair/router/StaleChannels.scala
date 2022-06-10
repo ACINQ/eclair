@@ -21,7 +21,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.{ChannelDesc, Data, PublicChannel, hasChannels}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.{BlockHeight, ShortChannelId, TimestampSecond, TxCoordinates}
+import fr.acinq.eclair.{BlockHeight, RealShortChannelId, ShortChannelId, TimestampSecond, TxCoordinates}
 
 import scala.collection.mutable
 import scala.concurrent.duration._

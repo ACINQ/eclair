@@ -22,7 +22,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong, Transaction, TxOut}
-import fr.acinq.eclair.TestUtils.realScid
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate, RealScidStatus, ShortIds}
 import fr.acinq.eclair.crypto.TransportHandler
@@ -35,7 +35,7 @@ import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, nodeFee, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, nodeFee, randomKey}
 import scodec.bits._
 
 import scala.concurrent.duration._
@@ -55,7 +55,7 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // valid channel announcement, no stashing
-      val chan_ac = channelAnnouncement(ShortChannelId(BlockHeight(420000), 5, 0), priv_a, priv_c, priv_funding_a, priv_funding_c)
+      val chan_ac = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 5, 0), priv_a, priv_c, priv_funding_a, priv_funding_c)
       val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, chan_ac.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac))
@@ -85,7 +85,7 @@ class RouterSpec extends BaseRouterSpec {
       // valid channel announcement, stashing while validating channel announcement
       val priv_u = randomKey()
       val priv_funding_u = randomKey()
-      val chan_uc = channelAnnouncement(ShortChannelId(BlockHeight(420000), 100, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
+      val chan_uc = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 100, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
       val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, Features.empty)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_uc))
@@ -130,7 +130,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // invalid signatures
       val invalid_node_b = node_b.copy(timestamp = node_b.timestamp + 10)
-      val invalid_chan_ac = channelAnnouncement(ShortChannelId(BlockHeight(420000), 101, 1), priv_a, priv_c, priv_funding_a, priv_funding_c).copy(nodeId1 = randomKey().publicKey)
+      val invalid_chan_ac = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 101, 1), priv_a, priv_c, priv_funding_a, priv_funding_c).copy(nodeId1 = randomKey().publicKey)
       val invalid_update_ab = update_ab.copy(cltvExpiryDelta = CltvExpiryDelta(21), timestamp = update_ab.timestamp + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, invalid_node_b))
       peerConnection.expectMsg(TransportHandler.ReadAck(invalid_node_b))
@@ -150,7 +150,7 @@ class RouterSpec extends BaseRouterSpec {
       // pruned channel
       val priv_v = randomKey()
       val priv_funding_v = randomKey()
-      val chan_vc = channelAnnouncement(ShortChannelId(BlockHeight(420000), 102, 0), priv_v, priv_c, priv_funding_v, priv_funding_c)
+      val chan_vc = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 102, 0), priv_v, priv_c, priv_funding_v, priv_funding_c)
       nodeParams.db.network.addToPruned(chan_vc.shortChannelId :: Nil)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_vc))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_vc))
@@ -191,7 +191,7 @@ class RouterSpec extends BaseRouterSpec {
       // invalid announcement + reject stashed
       val priv_y = randomKey()
       val priv_funding_y = randomKey() // a-y will have an invalid script
-      val chan_ay = channelAnnouncement(realScid(42002), priv_a, priv_y, priv_funding_a, priv_funding_y)
+      val chan_ay = channelAnnouncement(RealShortChannelId(42002), priv_a, priv_y, priv_funding_a, priv_funding_y)
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures())
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ay))
@@ -213,7 +213,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // validation failure
       val priv_x = randomKey()
-      val chan_ax = channelAnnouncement(realScid(42001), priv_a, priv_x, priv_funding_a, randomKey())
+      val chan_ax = channelAnnouncement(RealShortChannelId(42001), priv_a, priv_x, priv_funding_a, randomKey())
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ax))
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_ax)
       watcher.send(router, ValidateResult(chan_ax, Left(new RuntimeException("funding tx not found"))))
@@ -228,7 +228,7 @@ class RouterSpec extends BaseRouterSpec {
       // funding tx spent (funding tx not confirmed)
       val priv_z = randomKey()
       val priv_funding_z = randomKey()
-      val chan_az = channelAnnouncement(realScid(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
+      val chan_az = channelAnnouncement(RealShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_az)
       watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = false))))
@@ -243,7 +243,7 @@ class RouterSpec extends BaseRouterSpec {
       // funding tx spent (funding tx confirmed)
       val priv_z = randomKey()
       val priv_funding_z = randomKey()
-      val chan_az = channelAnnouncement(realScid(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
+      val chan_az = channelAnnouncement(RealShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_az)
       watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
@@ -286,7 +286,7 @@ class RouterSpec extends BaseRouterSpec {
   test("handle bad signature for ChannelAnnouncement") { fixture =>
     import fixture._
     val peerConnection = TestProbe()
-    val channelId_ac = ShortChannelId(BlockHeight(420000), 105, 0)
+    val channelId_ac = RealShortChannelId(BlockHeight(420000), 105, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val buggy_chan_ac = chan_ac.copy(nodeSignature1 = chan_ac.nodeSignature2)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, buggy_chan_ac))
@@ -524,7 +524,7 @@ class RouterSpec extends BaseRouterSpec {
     val targetNodeId = randomKey().publicKey
 
     {
-      val invoiceRoutingHint = ExtraHop(b, ShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
+      val invoiceRoutingHint = ExtraHop(b, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
       val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(scid_ab, invoiceRoutingHint.shortChannelId))
       val amount = 10_000.msat
       // the amount affects the way we estimate the channel capacity of the hinted channel
@@ -539,7 +539,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(route.hops.last.params == ChannelRelayParams.FromHint(invoiceRoutingHint, RoutingHeuristics.CAPACITY_CHANNEL_LOW + nodeFee(invoiceRoutingHint.feeBase, invoiceRoutingHint.feeProportionalMillionths, RoutingHeuristics.CAPACITY_CHANNEL_LOW)))
     }
     {
-      val invoiceRoutingHint = ExtraHop(h, ShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
+      val invoiceRoutingHint = ExtraHop(h, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
       val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(scid_ag_private, scid_gh, invoiceRoutingHint.shortChannelId))
       val amount = RoutingHeuristics.CAPACITY_CHANNEL_LOW * 2
       // the amount affects the way we estimate the channel capacity of the hinted channel
@@ -584,7 +584,7 @@ class RouterSpec extends BaseRouterSpec {
   test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
     import fixture._
     val blockHeight = BlockHeight(400000) - 2020
-    val channelId = ShortChannelId(blockHeight, 5, 0)
+    val channelId = RealShortChannelId(blockHeight, 5, 0)
     val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val oldTimestamp = TimestampSecond.now() - 14.days - 1.day
     val staleUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 5 msat, timestamp = oldTimestamp)

@@ -20,12 +20,11 @@ import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, ScriptWitness, Transaction}
-import fr.acinq.eclair.RealShortChannelId
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
@@ -230,7 +229,7 @@ case class FundingSigned(channelId: ByteVector32,
 case class ChannelReady(channelId: ByteVector32,
                          nextPerCommitmentPoint: PublicKey,
                          tlvStream: TlvStream[ChannelReadyTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-  val alias_opt: Option[ShortChannelId] = tlvStream.get[ShortChannelIdTlv].map(_.alias)
+  val alias_opt: Option[Alias] = tlvStream.get[ShortChannelIdTlv].map(_.alias)
 }
 
 case class Shutdown(channelId: ByteVector32,

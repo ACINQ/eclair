@@ -90,8 +90,6 @@ object TestUtils {
     seedFile
   }
 
-  def realScid(l: Long): RealShortChannelId = ShortChannelId(l).toReal
-
   /**
    * Subscribing to [[EventStream]] is asynchronous, which can lead to race conditions.
    *

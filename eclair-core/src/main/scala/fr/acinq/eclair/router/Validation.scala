@@ -202,7 +202,7 @@ object Validation {
       // we remove the corresponding unannounced channel that we may have until now
       privateChannels = d.privateChannels - pubChan.channelId,
       // we also remove the scid -> channelId mappings
-      scid2PrivateChannels = d.scid2PrivateChannels - pubChan.shortChannelId -- privChan_opt.map(_.shortIds.localAlias),
+      scid2PrivateChannels = d.scid2PrivateChannels - pubChan.shortChannelId.toLong -- privChan_opt.map(_.shortIds.localAlias.toLong),
       // we also add the newly validated channels to the rebroadcast queue
       rebroadcast = d.rebroadcast.copy(
         // we rebroadcast the channel to our peers
@@ -420,7 +420,7 @@ object Validation {
         }
       case None if db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u) =>
         // only public channels are pruned
-        val realShortChannelId = u.shortChannelId.toReal
+        val realShortChannelId = RealShortChannelId(u.shortChannelId.toLong)
         // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
         // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
         // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
@@ -464,8 +464,8 @@ object Validation {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     // NB: we don't map remote aliases because they are decided by our peer and could overlap with ours
     val mappings = scia.shortIds.real.toOption match {
-      case Some(realScid) => Map(realScid -> scia.channelId, scia.shortIds.localAlias -> scia.channelId)
-      case None => Map(scia.shortIds.localAlias -> scia.channelId)
+      case Some(realScid) => Map(realScid.toLong -> scia.channelId, scia.shortIds.localAlias.toLong -> scia.channelId)
+      case None => Map(scia.shortIds.localAlias.toLong -> scia.channelId)
     }
     log.debug("handleShortChannelIdAssigned scia={} mappings={}", scia, mappings)
     val d1 = d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ mappings)
@@ -520,7 +520,7 @@ object Validation {
   def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
     import lcd.{channelId, remoteNodeId}
     log.debug("handleLocalChannelDown lcd={}", lcd)
-    val scid2PrivateChannels1 = d.scid2PrivateChannels - lcd.shortIds.localAlias -- lcd.shortIds.real.toOption
+    val scid2PrivateChannels1 = d.scid2PrivateChannels - lcd.shortIds.localAlias.toLong -- lcd.shortIds.real.toOption.map(_.toLong)
     // a local channel has permanently gone down
     if (lcd.shortIds.real.toOption.exists(d.channels.contains)) {
       // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel

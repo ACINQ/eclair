@@ -111,7 +111,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipDropped(ann).increment()
                   d
-                case u: ChannelUpdate if d.channels.get(u.shortChannelId.toReal).exists(_.getChannelUpdateSameSideAs(u).contains(u)) =>
+                case u: ChannelUpdate if d.channels.get(RealShortChannelId(u.shortChannelId.toLong)).exists(_.getChannelUpdateSameSideAs(u).contains(u)) =>
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipDropped(ann).increment()
                   d
@@ -281,7 +281,7 @@ object FrontRouter {
       case ChannelUpdatesReceived(updates) =>
         log.debug("adding/updating {} channel_updates", updates.size)
         val channels1 = updates.foldLeft(d.channels) {
-          case (channels, u) => channels.get(u.shortChannelId.toReal) match {
+          case (channels, u) => channels.get(RealShortChannelId(u.shortChannelId.toLong)) match {
             case Some(c) => channels + (c.ann.shortChannelId -> c.updateChannelUpdateSameSideAs(u))
             case None => channels
           }
@@ -310,7 +310,7 @@ object FrontRouter {
       case n: NodeAnnouncement => d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins))
       case c: ChannelAnnouncement => d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> origins))
       case u: ChannelUpdate =>
-        if (d.channels.contains(u.shortChannelId.toReal)) {
+        if (d.channels.contains(RealShortChannelId(u.shortChannelId.toLong))) {
           d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins))
         } else {
           d.rebroadcast // private channel, we don't rebroadcast the channel_update

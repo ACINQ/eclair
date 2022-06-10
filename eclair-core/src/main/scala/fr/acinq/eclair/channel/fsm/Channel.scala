@@ -614,7 +614,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(c: CurrentFeerates, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
     case Event(WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, fundingTx), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
-      val finalRealShortId = RealScidStatus.Final(ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt))
+      val finalRealShortId = RealScidStatus.Final(RealShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt))
       val shortIds1 = d.shortIds.copy(real = finalRealShortId)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=${finalRealShortId.realScid}")
       if (d.shortIds.real == RealScidStatus.Unknown) {

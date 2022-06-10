@@ -24,7 +24,6 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
-import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
@@ -294,9 +293,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
 object Router {
 
-  val shortChannelIdKey = Context.key[ShortChannelId]("shortChannelId", ShortChannelId(0))
-  val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
-
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
   case class SearchBoundaries(maxFeeFlat: MilliSatoshi,
@@ -364,7 +360,7 @@ object Router {
     val nodeId1: PublicKey = ann.nodeId1
     val nodeId2: PublicKey = ann.nodeId2
     def shortChannelId: RealShortChannelId = ann.shortChannelId
-    def channelId: ByteVector32 = toLongId(fundingTxid.reverse, outputIndex(ann.shortChannelId))
+    def channelId: ByteVector32 = toLongId(fundingTxid.reverse, ann.shortChannelId.outputIndex)
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (u.channelFlags.isNode1) update_1_opt else update_2_opt
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (u.channelFlags.isNode1) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
@@ -655,18 +651,18 @@ object Router {
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[GossipOrigin]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
                   privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
-                  scid2PrivateChannels: Map[ShortChannelId, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
+                  scid2PrivateChannels: Map[Long, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  ) {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
-      channels.get(scid.toReal) match {
+      channels.get(RealShortChannelId(scid.toLong)) match {
         case Some(publicChannel) => Some(publicChannel)
         case None =>
           // maybe it's an alias or a real scid
-          scid2PrivateChannels.get(scid).flatMap(privateChannels.get) match {
+          scid2PrivateChannels.get(scid.toLong).flatMap(privateChannels.get) match {
             case Some(privateChannel) => Some(privateChannel)
             case None => None
           }

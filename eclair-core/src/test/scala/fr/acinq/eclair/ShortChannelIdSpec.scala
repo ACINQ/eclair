@@ -26,22 +26,22 @@ class ShortChannelIdSpec extends AnyFunSuite {
 
   test("handle values from 0 to 0xffffffffffff") {
     val expected = Map(
-      TxCoordinates(BlockHeight(0), 0, 0) -> ShortChannelId(0),
-      TxCoordinates(BlockHeight(42000), 27, 3) -> ShortChannelId(0x0000a41000001b0003L),
-      TxCoordinates(BlockHeight(1258612), 63, 0) -> ShortChannelId(0x13347400003f0000L),
-      TxCoordinates(BlockHeight(0xffffff), 0x000000, 0xffff) -> ShortChannelId(0xffffff000000ffffL),
-      TxCoordinates(BlockHeight(0x000000), 0xffffff, 0xffff) -> ShortChannelId(0x000000ffffffffffL),
-      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0x0000) -> ShortChannelId(0xffffffffffff0000L),
-      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0xffff) -> ShortChannelId(0xffffffffffffffffL)
+      TxCoordinates(BlockHeight(0), 0, 0) -> RealShortChannelId(0),
+      TxCoordinates(BlockHeight(42000), 27, 3) -> RealShortChannelId(0x0000a41000001b0003L),
+      TxCoordinates(BlockHeight(1258612), 63, 0) -> RealShortChannelId(0x13347400003f0000L),
+      TxCoordinates(BlockHeight(0xffffff), 0x000000, 0xffff) -> RealShortChannelId(0xffffff000000ffffL),
+      TxCoordinates(BlockHeight(0x000000), 0xffffff, 0xffff) -> RealShortChannelId(0x000000ffffffffffL),
+      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0x0000) -> RealShortChannelId(0xffffffffffff0000L),
+      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0xffff) -> RealShortChannelId(0xffffffffffffffffL)
     )
     for ((coord, shortChannelId) <- expected) {
-      assert(shortChannelId == ShortChannelId(coord.blockHeight, coord.txIndex, coord.outputIndex))
+      assert(shortChannelId == RealShortChannelId(coord.blockHeight, coord.txIndex, coord.outputIndex))
       assert(coord == ShortChannelId.coordinates(shortChannelId))
     }
   }
 
   test("human readable format as per spec") {
-    assert(ShortChannelId(0x0000a41000001b0003L).toString == "42000x27x3")
+    assert(RealShortChannelId(0x0000a41000001b0003L).toString == "42000x27x3")
   }
 
   test("parse a short channel it") {
@@ -60,9 +60,10 @@ class ShortChannelIdSpec extends AnyFunSuite {
 
   test("scids key space") {
 
-    val alias = ShortChannelId.generateLocalAlias()
-    val realScid = alias.toReal
-    val scid = ShortChannelId(realScid.toLong)
+    val id = 123456
+    val alias = Alias(id)
+    val realScid = RealShortChannelId(id)
+    val scid = ShortChannelId(id)
 
     val m = Map(alias -> "alias", realScid -> "real", scid -> "unknown")
 

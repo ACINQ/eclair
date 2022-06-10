@@ -219,7 +219,7 @@ object Sync {
   /**
    * Filters channels that we want to send to nodes asking for a channel range
    */
-  def keep(firstBlock: BlockHeight, numberOfBlocks: Long, id: ShortChannelId): Boolean = {
+  def keep(firstBlock: BlockHeight, numberOfBlocks: Long, id: RealShortChannelId): Boolean = {
     val height = id.blockHeight
     height >= firstBlock && height < (firstBlock + numberOfBlocks)
   }

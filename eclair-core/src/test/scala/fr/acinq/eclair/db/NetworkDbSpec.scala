@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, 
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.TestDatabases._
-import fr.acinq.eclair.TestUtils.realScid
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
@@ -30,7 +29,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.collection.{SortedMap, mutable}
@@ -82,7 +81,7 @@ class NetworkDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.network
       val sig = ByteVector64.Zeroes
-      val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, realScid(42), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+      val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(42), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
       val txid = ByteVector32.fromValidHex("0001" * 16)
       db.addChannel(c, txid, Satoshi(42))
       assert(db.listChannels() == SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
@@ -105,9 +104,9 @@ class NetworkDbSpec extends AnyFunSuite {
     val b = generatePubkeyHigherThan(a)
     val c = generatePubkeyHigherThan(b)
 
-    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, realScid(42), a.publicKey, b.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
-    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, realScid(43), a.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
-    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, realScid(44), b.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(42), a.publicKey, b.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(43), a.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(44), b.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
 
     val txid_1 = randomBytes32()
     val txid_2 = randomBytes32()
@@ -195,7 +194,7 @@ class NetworkDbSpec extends AnyFunSuite {
     }
   }
 
-  val shortChannelIds: Seq[ShortChannelId] = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+  val shortChannelIds: Seq[RealShortChannelId] = (42 to (5000 + 42)).map(i => RealShortChannelId(i))
 
   test("remove many channels") {
     forAllDbs { dbs =>
@@ -205,7 +204,7 @@ class NetworkDbSpec extends AnyFunSuite {
       val pub = priv.publicKey
       val capacity = 10000 sat
 
-      val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id.toReal, pub, pub, pub, pub, sig, sig, sig, sig))
+      val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
       val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
       val updates = shortChannelIds.map(id => template.copy(shortChannelId = id))
       val txid = randomBytes32()
@@ -223,9 +222,9 @@ class NetworkDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.network
 
-      db.addToPruned(shortChannelIds.map(_.toReal))
+      db.addToPruned(shortChannelIds)
       shortChannelIds.foreach { id => assert(db.isPruned(id)) }
-      db.removeFromPruned(realScid(5))
+      db.removeFromPruned(RealShortChannelId(5))
       assert(!db.isPruned(ShortChannelId(5)))
     }
   }
@@ -382,7 +381,7 @@ object NetworkDbSpec {
   val channelTestCases: Seq[ChannelTestCase] = for (_ <- 0 until 10) yield {
     val a = randomKey()
     val b = generatePubkeyHigherThan(a)
-    val channel = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(Random.nextInt(1_000_000)).toReal, a.publicKey, a.publicKey, randomKey().publicKey, randomKey().publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val channel = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(Random.nextInt(1_000_000)), a.publicKey, a.publicKey, randomKey().publicKey, randomKey().publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val channel_update_1_opt = if (Random.nextBoolean()) {
       Some(Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, channel.shortChannelId, CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, Random.nextBoolean()))
     } else None

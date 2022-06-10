@@ -143,11 +143,12 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
     val batchSize = 100
     using(sqlite.prepareStatement(s"DELETE FROM channels WHERE short_channel_id IN (${List.fill(batchSize)("?").mkString(",")})")) { statement =>
       shortChannelIds
+        .map(_.toLong)
         .grouped(batchSize)
         .foreach { group =>
-          val padded = group.toArray.padTo(batchSize, ShortChannelId(0L))
+          val padded = group.toArray.padTo(batchSize, 0L)
           for (i <- 0 until batchSize) {
-            statement.setLong(1 + i, padded(i).toLong) // index for jdbc parameters starts at 1
+            statement.setLong(1 + i, padded(i)) // index for jdbc parameters starts at 1
           }
           statement.executeUpdate()
         }
