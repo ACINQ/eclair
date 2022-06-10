@@ -115,7 +115,7 @@ object BlockchainWatchdog {
               case h if h.isEmpty => 0
               case _ => blockHeaders.map(_.blockHeight).max - blockHeight
             }
-            if (missingBlocks >= nodeParams.blockchainWatchdogTolerance) {
+            if (missingBlocks >= nodeParams.blockchainWatchdogThreshold) {
               context.log.warn("{}: we are {} blocks late: we may be eclipsed from the bitcoin network", source, missingBlocks)
               context.system.eventStream ! EventStream.Publish(DangerousBlocksSkew(headers))
               context.system.eventStream ! EventStream.Publish(NotifyNodeOperator(NotificationsLogger.Warning, s"we are $missingBlocks late according to $source: we may be eclipsed from the bitcoin network, check your bitcoind node."))
