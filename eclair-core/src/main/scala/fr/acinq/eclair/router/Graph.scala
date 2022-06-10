@@ -311,9 +311,7 @@ object Graph {
 
         // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
         val ageFactor = edge.desc.shortChannelId match {
-          case real: RealShortChannelId =>
-            val channelBlockHeight = ShortChannelId.coordinates(real).blockHeight
-            normalize(channelBlockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
+          case real: RealShortChannelId => normalize(real.blockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
           // for local channels or route hints we don't easily have access to the channel block height, but we want to
           // give them the best score anyway
           case _: Alias => 1

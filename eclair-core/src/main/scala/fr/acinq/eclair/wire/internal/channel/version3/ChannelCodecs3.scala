@@ -410,7 +410,7 @@ private[channel] object ChannelCodecs3 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
-    .typecase(0x10, Codecs.DATA_WAIT_FOR_CHANNEL_READY_Codec)
+    .typecase(0x0a, Codecs.DATA_WAIT_FOR_CHANNEL_READY_Codec)
     .typecase(0x09, Codecs.DATA_NORMAL_Codec)
     .typecase(0x08, Codecs.DATA_SHUTDOWN_Codec)
     .typecase(0x07, Codecs.DATA_NORMAL_COMPAT_07_Codec)

@@ -19,10 +19,10 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction}
-import fr.acinq.eclair.{BlockHeight, Features, Alias, RealShortChannelId, ShortChannelId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
+import fr.acinq.eclair.{BlockHeight, Features, ShortChannelId}
 
 /**
  * Created by PM on 17/08/2016.
@@ -51,15 +51,18 @@ case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, sh
 
 case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends ChannelEvent {
   /**
-   * We always map the local alias because we must always be able to route based on it
-   * However we only map the real scid if option_scid_alias (TODO: rename to option_scid_privacy) is disabled
+   * We always include the local alias because we must always be able to route based on it.
+   * However we only include the real scid if option_scid_alias is disabled, because we otherwise want to hide it.
    */
   def scidsForRouting: Seq[ShortChannelId] = {
-    commitments match {
-      case c: Commitments =>
-        val realScid_opt = if (c.channelFeatures.hasFeature(Features.ScidAlias)) None else shortIds.real.toOption
-        realScid_opt.toSeq :+ shortIds.localAlias
-      case _ => Seq(shortIds.localAlias) // TODO: ugly
+    val canUseRealScid = commitments match {
+      case c: Commitments => !c.channelFeatures.hasFeature(Features.ScidAlias)
+      case _ => false
+    }
+    if (canUseRealScid) {
+      shortIds.real.toOption.toSeq :+ shortIds.localAlias
+    } else {
+      Seq(shortIds.localAlias)
     }
   }
 }

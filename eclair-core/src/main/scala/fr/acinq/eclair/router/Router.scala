@@ -399,10 +399,10 @@ object Router {
       val scid_opt = shortIds.remoteAlias_opt.orElse(shortIds.real.toOption)
       // we override the remote update's scid, because it contains either the real scid or our local alias
       scid_opt.flatMap { scid =>
-        remoteUpdate_opt.map {remoteUpdate =>
+        remoteUpdate_opt.map { remoteUpdate =>
           ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
-          }
         }
+      }
     }
   }
   // @formatter:on

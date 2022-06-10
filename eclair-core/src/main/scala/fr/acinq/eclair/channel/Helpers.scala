@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.channel.fsm.Channel
@@ -35,7 +36,6 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{RealShortChannelId, _}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -196,17 +196,17 @@ object Helpers {
    *    - before channel announcement: use remote_alias
    *    - after channel announcement: use real scid
    *  - no remote_alias from peer
-   *    - min_depth > 0 : use real scid (may change if reorg between min_depth and 6 conf)
-   *    - min_depth = 0 (zero-conf) : unsupported
+   *    - min_depth > 0: use real scid (may change if reorg between min_depth and 6 conf)
+   *    - min_depth = 0 (zero-conf): spec violation, our peer MUST send an alias when using zero-conf
    */
-  def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], shortIds: ShortIds)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = {
+  def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], shortIds: ShortIds): ShortChannelId = {
     channelAnnouncement_opt.map(_.shortChannelId) // we use the real "final" scid when it is publicly announced
       .orElse(shortIds.remoteAlias_opt) // otherwise the remote alias
       .orElse(shortIds.real.toOption) // if we don't have a remote alias, we use the real scid (which could change because the funding tx possibly has less than 6 confs here)
       .getOrElse(throw new RuntimeException("this is a zero-conf channel and no alias was provided in channel_ready")) // if we don't have a real scid, it means this is a zero-conf channel and our peer must have sent an alias
   }
 
-  def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds)
+  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds)
 
   /**
    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by
