@@ -255,7 +255,7 @@ class Setup(val datadir: File,
       })
       _ <- feeratesRetrieved.future
 
-      bitcoinClient = config.getBoolean("bitcoind.batching") match {
+      bitcoinClient = config.getBoolean("bitcoind.batch-requests") match {
         case true =>
           new BitcoinCoreClient(new BatchingBitcoinJsonRPCClient(bitcoin))
         case _ =>

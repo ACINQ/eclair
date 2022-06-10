@@ -499,7 +499,7 @@ object NodeParams extends Logging {
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
       balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
-      blockchainWatchdogTolerance = config.getInt("blockchain-watchdog.tolerance"),
+      blockchainWatchdogTolerance = config.getInt("blockchain-watchdog.missing-blocks-threshold"),
       blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = onionMessageRelayPolicy,
