@@ -24,7 +24,7 @@ import scala.collection.immutable.SortedMap
 import scala.collection.mutable
 
 /**
- * A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors
+ * A graph data structure that uses an adjacency list to store the incoming edges of the neighbors
  */
 case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
 

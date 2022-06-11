@@ -22,7 +22,6 @@ import fr.acinq.eclair.router.Router.{AssistedChannel, ChannelDesc, ChannelRelay
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair._
 
-
 /**
  * Representation of an edge of the graph
  *
