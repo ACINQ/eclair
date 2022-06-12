@@ -31,9 +31,10 @@ class GraphEdgeSpec extends AnyFunSuite{
   test("construct from public channel") {
 
     val feeBaseMsat = 50000 msat
+    val feeProportionalMillionths = 100
     val key1 = randomKey()
     val key2 = generatePubkeyHigherThan(key1)
-    val channelUpdate: ChannelUpdate = createChannelUpdate(feeBaseMsat, key1, key2)
+    val channelUpdate: ChannelUpdate = createChannelUpdate(feeBaseMsat, key1, key2, feeProportionalMillionths)
 
     val transactionId = randomBytes32()
     val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1),
@@ -44,16 +45,17 @@ class GraphEdgeSpec extends AnyFunSuite{
 
     assert(graphEdge.capacity == (100000 sat))
     assert(graphEdge.maxHtlcAmount(10000 msat) == (99990000 msat))
-    assert(graphEdge.fee(100 msat ) == feeBaseMsat)
+    assert(graphEdge.fee(20000 msat ) == feeBaseMsat + (2 msat))
     assert(graphEdge.balance_opt.isEmpty)
   }
 
   test("construct from private channel") {
 
     val feeBaseMsat = 50000 msat
+    val feeProportionalMillionths = 100
     val key1 = randomKey()
     val key2 = generatePubkeyHigherThan(key1)
-    val channelUpdate: ChannelUpdate = createChannelUpdate(feeBaseMsat, key1, key2)
+    val channelUpdate: ChannelUpdate = createChannelUpdate(feeBaseMsat, key1, key2, feeProportionalMillionths)
 
     val channelId_ag_private = randomBytes32()
     val scid_ag_private = ShortChannelId(BlockHeight(420000), 5, 0)
@@ -63,7 +65,7 @@ class GraphEdgeSpec extends AnyFunSuite{
 
     assert(graphEdge.capacity == (3 sat))
     assert(graphEdge.maxHtlcAmount(1000 msat) == (0 msat))
-    assert(graphEdge.fee(100 msat ) == feeBaseMsat)
+    assert(graphEdge.fee(20000 msat ) == feeBaseMsat + (2 msat))
     assert(graphEdge.balance_opt.contains(1000 msat))
   }
 
@@ -72,20 +74,21 @@ class GraphEdgeSpec extends AnyFunSuite{
     val feeBaseMsat = 50000 msat
     val key1 = randomKey()
     val key2 = generatePubkeyHigherThan(key1)
-    val extraHop4 = ExtraHop(key2.publicKey, ShortChannelId(4), 50.sat.toMilliSatoshi, 0, CltvExpiryDelta(42))
+    val feeProportionalMillionths = 100
+    val extraHop4 = ExtraHop(key2.publicKey, ShortChannelId(4), feeBaseMsat, feeProportionalMillionths, CltvExpiryDelta(42))
     val assistedChannel = AssistedChannel(key1.publicKey, ChannelRelayParams.FromHint(extraHop4, 100050.sat.toMilliSatoshi))
 
     val graphEdge = GraphEdge(assistedChannel)
 
     assert(graphEdge.capacity == (100051 sat))
     assert(graphEdge.maxHtlcAmount(1000 msat) == (100049000 msat))
-    assert(graphEdge.fee(100 msat ) == feeBaseMsat)
+    assert(graphEdge.fee(20000 msat ) == feeBaseMsat + (2 msat))
     assert(graphEdge.balance_opt.contains(100050000 msat))
   }
 
-  private def createChannelUpdate(feeBaseMsat: MilliSatoshi, key1: Crypto.PrivateKey, key2: Crypto.PrivateKey): ChannelUpdate = {
+  private def createChannelUpdate(feeBaseMsat: MilliSatoshi, key1: Crypto.PrivateKey, key2: Crypto.PrivateKey, feeProportionalMillionths: Long): ChannelUpdate = {
     Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, key1, key2.publicKey,
-      ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, feeBaseMsat, 100, 500000000L msat)
+      ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, feeBaseMsat, feeProportionalMillionths, 500000000L msat)
   }
 
 }

@@ -19,13 +19,20 @@ package fr.acinq.eclair.router.graph.path
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 
 /**
- * We use heuristics to calculate the weight of an edge based on channel age, cltv delta, capacity and a virtual hop cost to keep routes short.
- * We favor older channels, with bigger capacity and small cltv delta.
+ * Heuristics are used to calculate the weight of an edge based on
+ * channel age, cltv delta, capacity, and a virtual hop cost, to keep routes short.
+ * Channels that are older, have smaller cltv delta, have bigger capacity, and have lower hop cost, are favored.
+ * The sum of the four weights must be one.
  */
-case class WeightRatios(baseFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopCost: RelayFees) {
-  require(baseFactor + cltvDeltaFactor + ageFactor + capacityFactor == 1, "The sum of heuristics ratios must be 1")
-  require(baseFactor >= 0.0, "ratio-base must be nonnegative")
-  require(cltvDeltaFactor >= 0.0, "ratio-cltv must be nonnegative")
-  require(ageFactor >= 0.0, "ratio-channel-age must be nonnegative")
-  require(capacityFactor >= 0.0, "ratio-channel-capacity must be nonnegative")
+case class WeightRatios(baseWeight: Double, cltvDeltaWeight: Double, ageWeight: Double, capacityWeight: Double, hopCost: RelayFees) {
+  require(baseWeight + cltvDeltaWeight + ageWeight + capacityWeight == 1, "The sum of heuristics ratios must be 1")
+  require(baseWeight >= 0.0, "ratio-base must be nonnegative")
+  require(cltvDeltaWeight >= 0.0, "ratio-cltv must be nonnegative")
+  require(ageWeight >= 0.0, "ratio-channel-age must be nonnegative")
+  require(capacityWeight >= 0.0, "ratio-channel-capacity must be nonnegative")
+
+  def calculateWeightedFactor(cltvFactor: Double, ageFactor: Double, capFactor: Double): Double = {
+    this.baseWeight + (cltvFactor * this.cltvDeltaWeight) + (ageFactor * this.ageWeight) + (capFactor * this.capacityWeight)
+  }
+
 }

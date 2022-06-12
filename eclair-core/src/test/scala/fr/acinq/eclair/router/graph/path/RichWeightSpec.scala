@@ -16,17 +16,20 @@
 
 package fr.acinq.eclair.router.graph.path
 
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, Crypto, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.eclair.db.NetworkDbSpec.generatePubkeyHigherThan
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{BitcoinDefaultWalletException, BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.router.Router.PublicChannel
+import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.router.graph.path
+import fr.acinq.eclair.router.graph.path.Path.NegativeProbability
 import fr.acinq.eclair.router.graph.structure.GraphEdge
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import org.scalatest.funsuite.AnyFunSuite
+
+import scala.collection.Seq
 
 class RichWeightSpec extends AnyFunSuite {
 
@@ -40,7 +43,7 @@ class RichWeightSpec extends AnyFunSuite {
   )
 
   private val HEURISTICS_CONSTANTS_HIGH_FAILURE_COST = HeuristicsConstants(
-    lockedFundsRisk = 0.0,
+    lockedFundsRisk = 0.1,
     failureCost = RelayFees(10000 msat, 1000),
     hopCost = RelayFees(0 msat, 0),
     useLogProbability = true,
@@ -56,7 +59,8 @@ class RichWeightSpec extends AnyFunSuite {
   test("construct RichWeight from edge and WeightRatios") {
     val key1 = randomKey()
     val senderKey = generatePubkeyHigherThan(key1)
-    val edge = createGraphEdge(senderKey)
+
+    val edge = createGraphEdge(senderKey, 1000 sat)
     val prevWeight = new RichWeight(5 msat, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees = 10 msat, virtualFees = 0 msat, weight = 10)
     val currentBlockHeight = new BlockHeight(7)
     val totalAmount = 1000 msat
@@ -74,7 +78,7 @@ class RichWeightSpec extends AnyFunSuite {
 
     val key1 = randomKey()
     val senderKey = generatePubkeyHigherThan(key1)
-    val edge = createGraphEdge(senderKey)
+    val edge = createGraphEdge(senderKey, 100000 sat)
     val prevWeight = new RichWeight(5 msat, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees = 10 msat, virtualFees = 0 msat, weight = 10)
     val totalAmount = 1000 msat
     val fee = 10 msat
@@ -86,27 +90,156 @@ class RichWeightSpec extends AnyFunSuite {
     val richWeight2: RichWeight = RichWeight(edge, prevWeight, totalAmount, fee, totalFees, cltv, totalCltv, HEURISTICS_CONSTANTS_HIGH_FAILURE_COST)
     val richWeight3: RichWeight = RichWeight(edge, prevWeight, totalAmount, fee, totalFees, cltv, totalCltv, HEURISTICS_CONSTANTS_HIGH_RISK)
 
-    assert(richWeight1.toString == "RichWeight(1000 msat,3,CltvExpiryDelta(40),0.9899999505,100 msat,0 msat,1110.1010606060631)")
-    assert(richWeight2.toString == "RichWeight(1000 msat,3,CltvExpiryDelta(40),0.9899999505,100 msat,0 msat,20.000500050012793)")
-    assert(richWeight3.toString == "RichWeight(1000 msat,3,CltvExpiryDelta(40),0.9899999505,100 msat,0 msat,20.0002)")
+    assert(richWeight1.weight == 1110.1010606060631)
+    assert(richWeight2.weight == 220.0005000500128)
+    assert(richWeight3.weight == 20.0002)
   }
 
-  private def createGraphEdge(key2: PrivateKey): GraphEdge = {
-    val feeBaseMsat = 50000 msat
+  test("calculateAgeFactor") {
+    val edge = createGraphEdge(randomKey(), 1000 sat)
+
+    assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(-100)) == 0.99999) // should negative BlockHeight be allowed?
+    assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(0)) == 0.99999)
+    assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(1)) == 0.9999809741248098)
+    assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(10)) == 0.9998097412480974)
+    assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(23400)) == 0.5547945205479452)
+    assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(50000)) == 0.0487062404870624)
+    assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(100000)) == 1.0E-5)
+    assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(1000000000)) == 1.0E-5)
+  }
+
+  test("calculateCapacityFactor") {
+    val edge1 = createGraphEdge(randomKey(), 10 sat)
+    assert(RichWeight.calculateCapacityFactor(edge1) == 0.99999)
+
+    val edge2 = createGraphEdge(randomKey(), 100000 sat)
+    assert(RichWeight.calculateCapacityFactor(edge2) == 0.99999)
+
+    val edge3 = createGraphEdge(randomKey(), 10000000 sat)
+    assert(RichWeight.calculateCapacityFactor(edge3) == 0.9009009009009009)
+
+    val edge4 = createGraphEdge(randomKey(), 100000000 sat)
+    assert(RichWeight.calculateCapacityFactor(edge4) == 9.99999999995449E-6)
+
+    val edge5 = createGraphEdge(randomKey(), 1000000000 sat)
+    assert(RichWeight.calculateCapacityFactor(edge5) == 9.99999999995449E-6)
+  }
+
+  test("calculateCltvFactor") {
+
+    val result = Seq(
+      (10 sat, CltvExpiryDelta(10)),
+      (10 sat, CltvExpiryDelta(100)),
+      (10 sat, CltvExpiryDelta(1000)),
+
+      (1000000 sat, CltvExpiryDelta(10)),
+      (1000000 sat, CltvExpiryDelta(100)),
+      (1000000 sat, CltvExpiryDelta(1000)),
+
+      (1000000 sat, CltvExpiryDelta(5)),
+      (1000000 sat, CltvExpiryDelta(50000)),
+      ).map(v => checkCltvFactor(v._1, v._2))
+
+    assertResult(
+      "4.982561036372695E-4, 0.04534130543099153, 0.49377179870453414, " +
+      "4.982561036372695E-4, 0.04534130543099153, 0.49377179870453414, " +
+      "1.0E-5, 0.99999") {
+      result.mkString(", ")
+    }
+  }
+
+  private def checkCltvFactor(capacity: Satoshi, cltvExpiryDelta: CltvExpiryDelta): Double = {
+    val edge = createGraphEdge(randomKey(), capacity, cltvExpiryDelta)
+    RichWeight.calculateCltvFactor(edge)
+  }
+
+  test("calculateSuccessProbability when edge.balance_opt.nonEmpty ") {
+    val result = Seq(
+      (100 sat, CltvExpiryDelta(10), 50 msat, Some(ChannelMeta(34000 msat, 42000 msat)), HEURISTICS_CONSTANTS_TYPICAL),
+      (10 sat, CltvExpiryDelta(10), 500 msat, Some(ChannelMeta(1 msat, 0 msat)), HEURISTICS_CONSTANTS_TYPICAL)
+    ).map(v => checkSuccessProbability(v._1, v._2, v._3, v._4, v._5))
+
+    assertResult(
+      "1.0, 1.0") {
+      result.mkString(", ")
+    }
+  }
+
+  test("calculateSuccessProbability when success probability negative ") {
+
+    // negatvie probability when ratio of prevAmount / capacity > 1
+    val prevAmount = 10001000 msat
+    val capacity = 10000 sat
+
+    val prev = new RichWeight(prevAmount, length = 2, CltvExpiryDelta(5), successProbability = 0.99,
+                              fees = 10 msat, virtualFees = 0 msat, weight = 10)
+    val htlcMin = 7_000_000 msat
+    val htlcMax = 500_000_000 msat
+
+    val edge = createGraphEdge(randomKey(), capacity, CltvExpiryDelta(10), 100, htlcMin, htlcMax,
+      None, None, None)
+
+    val thrown = intercept[NegativeProbability] {
+      RichWeight.calculateSuccessProbability(edge, prev, HEURISTICS_CONSTANTS_TYPICAL)
+    }
+    assert(thrown == NegativeProbability(edge, prev, HEURISTICS_CONSTANTS_TYPICAL))
+  }
+
+  test("calculateSuccessProbability") {
+    val result = Seq(
+      (100 sat, CltvExpiryDelta(10), 50 msat, None, HEURISTICS_CONSTANTS_TYPICAL),
+      (100 sat, CltvExpiryDelta(100), 50000 msat, None, HEURISTICS_CONSTANTS_TYPICAL),
+      (100 sat, CltvExpiryDelta(10000), 100000 msat, None, HEURISTICS_CONSTANTS_TYPICAL),
+
+      (10000 sat, CltvExpiryDelta(10), 500 msat, None, HEURISTICS_CONSTANTS_TYPICAL),
+      (10000 sat, CltvExpiryDelta(100), 5000 msat, None,  HEURISTICS_CONSTANTS_TYPICAL),
+      (10000 sat, CltvExpiryDelta(10000), 9800000 msat, None,  HEURISTICS_CONSTANTS_TYPICAL),
+      (10000 sat, CltvExpiryDelta(10000), 10000000 msat, None,  HEURISTICS_CONSTANTS_TYPICAL),
+    ).map(v => checkSuccessProbability(v._1, v._2, v._3, v._4, v._5))
+
+    assertResult("0.9995, 0.5, 0.0, 0.99995, 0.9995, 0.020000000000000018, 0.0") {
+      result.mkString(", ")
+    }
+  }
+
+  private def checkSuccessProbability(capacity: Satoshi, cltvExpiryDelta: CltvExpiryDelta, prevAmount: MilliSatoshi,
+                                      meta: Option[ChannelMeta], heuristicsConstants: HeuristicsConstants): Double = {
+    val prev = new RichWeight(prevAmount, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees = 10 msat, virtualFees = 0 msat, weight = 10)
+    val htlcMin = 7_000_000 msat
+    val htlcMax = 500_000_000 msat
+    val feePropertionalMillionsth = 100
     val key1 = randomKey()
 
-    val channelUpdate: ChannelUpdate = createChannelUpdate(feeBaseMsat, key1, key2)
+    val edge = createGraphEdge(key1, capacity, cltvExpiryDelta, feePropertionalMillionsth, htlcMin, htlcMax,
+      None, None, meta)
+
+    RichWeight.calculateSuccessProbability(edge, prev, heuristicsConstants)
+  }
+
+  private def createGraphEdge(senderKey: PrivateKey, capacity: Satoshi,
+                              cltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(5), feeProportionalMillionths: Long = 100,
+                              htlcMin: MilliSatoshi = 7_000_000 msat, htlcMax: MilliSatoshi = 500_000_000L msat,
+                              update_1: Option[ChannelUpdate] = None,
+                              update_2: Option[ChannelUpdate] = None,
+                              meta: Option[ChannelMeta] = None): GraphEdge = {
+    val feeBaseMsat = 50000 msat
+    val localKey = randomKey()
+
+    val channelUpdate: ChannelUpdate =
+      createChannelUpdate(feeBaseMsat, localKey, senderKey, cltvExpiryDelta, feeProportionalMillionths, htlcMin, htlcMax)
 
     val transactionId = randomBytes32()
     val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1),
-      key1.publicKey, key2.publicKey, key1.publicKey, key2.publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
-    val publicChannel = PublicChannel(channelAnnouncement, transactionId, 100000 sat, None, None, None)
+      localKey.publicKey, senderKey.publicKey, localKey.publicKey, senderKey.publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val publicChannel = PublicChannel(channelAnnouncement, transactionId, capacity, update_1, update_2, meta)
 
     GraphEdge(channelUpdate, publicChannel)
   }
 
-  private def createChannelUpdate(feeBaseMsat: MilliSatoshi, key1: Crypto.PrivateKey, key2: Crypto.PrivateKey): ChannelUpdate = {
+  private def createChannelUpdate(feeBaseMsat: MilliSatoshi, key1: Crypto.PrivateKey, key2: Crypto.PrivateKey,
+                                  cltvExpiryDelta: CltvExpiryDelta, feeProportionalMillionths: Long,
+                                  htlcMin: MilliSatoshi, htlcMax: MilliSatoshi): ChannelUpdate = {
     Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, key1, key2.publicKey,
-      ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, feeBaseMsat, 100, 500000000L msat)
+      ShortChannelId(42), cltvExpiryDelta, htlcMin, feeBaseMsat, feeProportionalMillionths, htlcMax)
   }
 }

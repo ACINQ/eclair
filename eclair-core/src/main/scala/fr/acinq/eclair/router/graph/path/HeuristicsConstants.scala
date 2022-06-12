@@ -19,8 +19,8 @@ package fr.acinq.eclair.router.graph.path
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 
 /**
- * We use heuristics to calculate the weight of an edge in a path.
- * The fee for a failed attempt and the fee per hop are never actually spent, they are used to incentivize shorter
+ * Heuristics to calculate the weight of an edge in a path.
+ * The fee for a failed attempt, and the fee per hop are never actually spent, they are used to incentivize shorter
  * paths or a path with higher success probability.
  *
  * @param lockedFundsRisk cost of having funds locked in htlc in msat per msat per block

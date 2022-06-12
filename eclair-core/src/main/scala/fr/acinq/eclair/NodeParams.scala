@@ -355,10 +355,10 @@ object NodeParams extends Logging {
         maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
       heuristics = if (config.getBoolean("use-ratios")) {
         Left(WeightRatios(
-          baseFactor = config.getDouble("ratios.base"),
-          cltvDeltaFactor = config.getDouble("ratios.cltv"),
-          ageFactor = config.getDouble("ratios.channel-age"),
-          capacityFactor = config.getDouble("ratios.channel-capacity"),
+          baseWeight = config.getDouble("ratios.base"),
+          cltvDeltaWeight = config.getDouble("ratios.cltv"),
+          ageWeight = config.getDouble("ratios.channel-age"),
+          capacityWeight = config.getDouble("ratios.channel-capacity"),
           hopCost = getRelayFees(config.getConfig("hop-cost")),
         ))
       } else {

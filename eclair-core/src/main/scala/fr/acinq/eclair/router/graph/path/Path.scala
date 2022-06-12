@@ -43,6 +43,7 @@ object Path {
    * @param currentBlockHeight      the height of the chain tip (latest block).
    * @param weightRatios            ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
+   * @return the weight of the new path that results from adding the specified edge
    */
   def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: BlockHeight,
                     weightRatios: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {

@@ -70,9 +70,11 @@ package object eclair {
    * @param paymentAmount   payment amount in millisatoshi
    * @return the fee that a node should be paid to forward an HTLC of 'paymentAmount' millisatoshis
    */
-  def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
+  def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi =
+    baseFee + (paymentAmount * proportionalFee) / 1000000
 
-  def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
+  def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi =
+    nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
 
   /**
    * @param address   base58 of bech32 address
