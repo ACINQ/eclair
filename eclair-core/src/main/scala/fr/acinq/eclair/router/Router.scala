@@ -36,7 +36,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.graph.structure.DirectedGraph
-import fr.acinq.eclair.router.graph.Path.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.graph.path.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
 

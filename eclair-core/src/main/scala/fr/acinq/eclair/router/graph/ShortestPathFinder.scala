@@ -21,7 +21,8 @@ import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta}
 import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router.ChannelDesc
-import fr.acinq.eclair.router.graph.Path.{HeuristicsConstants, InfiniteLoop, NodeComparator, RichWeight, WeightRatios, WeightedNode, WeightedPath, addEdgeWeight}
+import fr.acinq.eclair.router.graph.path.{HeuristicsConstants, Path, RichWeight, WeightRatios}
+import fr.acinq.eclair.router.graph.path.Path.{InfiniteLoop, NodeComparator, WeightedNode, WeightedPath}
 import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
 
 import scala.collection.mutable

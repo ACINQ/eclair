@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.router.graph
+package fr.acinq.eclair.router.graph.path
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, Crypto, SatoshiLong}
@@ -22,70 +22,28 @@ import fr.acinq.eclair.db.NetworkDbSpec.generatePubkeyHigherThan
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
-import fr.acinq.eclair.router.graph.Path.{HeuristicsConstants, RichWeight, WeightRatios}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.router.graph.path
 import fr.acinq.eclair.router.graph.structure.GraphEdge
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 class PathSpec extends AnyFunSuite {
 
-  private val NO_WEIGHT_RATIOS: WeightRatios = WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))
+  private val WEIGHT_RATIOS: WeightRatios = path.WeightRatios(1, 0, 0, 0, RelayFees(10 msat, 1))
 
-  private val HEURISTICS_CONSTANTS_TYPICAL = HeuristicsConstants(
-    lockedFundsRisk = 0.0,
-    failureCost = RelayFees(1000 msat, 500),
-    hopCost = RelayFees(0 msat, 0),
-    useLogProbability = false,
-  )
-
-  private val HEURISTICS_CONSTANTS_HIGH_FAILURE_COST = HeuristicsConstants(
-    lockedFundsRisk = 0.0,
-    failureCost = RelayFees(10000 msat, 1000),
-    hopCost = RelayFees(0 msat, 0),
-    useLogProbability = true,
-  )
-
-  private val HEURISTICS_CONSTANTS_HIGH_RISK = HeuristicsConstants(
-    lockedFundsRisk = 1e-7,
-    failureCost = RelayFees(0 msat, 0),
-    hopCost = RelayFees(0 msat, 0),
-    useLogProbability = true,
-  )
-
-  test("construct RichWeight from edge and WeightRatios") {
+  test("addEdgeWeight with and without channelCost") {
     val key1 = randomKey()
     val senderKey = generatePubkeyHigherThan(key1)
     val edge = createGraphEdge(senderKey)
     val prevWeight = new RichWeight(5 msat, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees = 10 msat, virtualFees = 0 msat, weight = 10)
     val currentBlockHeight = new BlockHeight(7)
-    val totalAmount = 1000 msat
-    val fee = 10 msat
-    val totalCltv = CltvExpiryDelta(40)
-    val weightRatios = NO_WEIGHT_RATIOS
-    val totalFees = 100 msat
-    val richWeight: RichWeight = RichWeight(senderKey.publicKey, edge, prevWeight, currentBlockHeight, totalAmount, fee, totalFees, totalCltv, weightRatios)
 
-    assert(richWeight.toString == "RichWeight(1000 msat,3,CltvExpiryDelta(40),1.0,100 msat,0 msat,20.0)")
-    assert(richWeight.weight == 20.0)
-  }
+    val edgeWeightWithChannelCost = Path.addEdgeWeight(senderKey.publicKey, edge, prevWeight, currentBlockHeight, Left(WEIGHT_RATIOS), includeLocalChannelCost = true)
+    val edgeWeightWithoutChannelCost = Path.addEdgeWeight(senderKey.publicKey, edge, prevWeight, currentBlockHeight, Left(WEIGHT_RATIOS), includeLocalChannelCost = false)
 
-  test("construct RichWeight from edge and HeuristicsConstants") {
-
-    val key1 = randomKey()
-    val senderKey = generatePubkeyHigherThan(key1)
-    val edge = createGraphEdge(senderKey)
-    val prevWeight = new RichWeight(5 msat, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees = 10 msat, virtualFees = 0 msat, weight = 10)
-    val totalAmount = 1000 msat
-    val fee = 10 msat
-    val cltv = CltvExpiryDelta(2)
-    val totalCltv = CltvExpiryDelta(40)
-    val totalFees = 100 msat
-
-    val richWeight: RichWeight = RichWeight(edge, prevWeight, totalAmount, fee, totalFees, cltv, totalCltv, HEURISTICS_CONSTANTS_TYPICAL)
-
-    assert(richWeight.toString == "RichWeight(1000 msat,3,CltvExpiryDelta(40),0.9899999505,100 msat,0 msat,1110.1010606060631)")
-    assert(richWeight.weight == 1110.1010606060631)
+    assert(edgeWeightWithChannelCost.toString ==    "RichWeight(50005 msat,3,CltvExpiryDelta(10),1.0,50010 msat,0 msat,50020.0)")
+    assert(edgeWeightWithoutChannelCost.toString == "RichWeight(50005 msat,3,CltvExpiryDelta(10),1.0,50010 msat,0 msat,50020.0)")
   }
 
   private def createGraphEdge(key2: PrivateKey): GraphEdge = {

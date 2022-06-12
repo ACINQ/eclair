@@ -23,11 +23,12 @@ import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.graph.structure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.graph.Path.{HeuristicsConstants, RichWeight, WeightRatios}
+import fr.acinq.eclair.router.graph.path.{HeuristicsConstants, RichWeight, WeightRatios}
 import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.graph.{Path, ShortestPathFinder}
+import fr.acinq.eclair.router.graph.{ShortestPathFinder}
+import fr.acinq.eclair.router.graph.path.Path
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, ShortChannelIdSpec, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, randomKey}

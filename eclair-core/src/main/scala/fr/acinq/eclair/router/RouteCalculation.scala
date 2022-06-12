@@ -25,10 +25,12 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.router.graph.structure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.graph.structure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.graph.Path.{InfiniteLoop, NegativeProbability, RichWeight}
+import fr.acinq.eclair.router.graph.path.Path.{InfiniteLoop, NegativeProbability}
+import fr.acinq.eclair.router.graph.path.RichWeight
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.graph.{Path, RoutingHeuristics, ShortestPathFinder}
+import fr.acinq.eclair.router.graph.path.Path
+import fr.acinq.eclair.router.graph.{RoutingHeuristics, ShortestPathFinder}
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec

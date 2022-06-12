@@ -20,11 +20,11 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.RouteCalculationSpec.makeEdge
-import fr.acinq.eclair.router.graph.Path.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.graph.structure.DirectedGraph
 import fr.acinq.eclair.MilliSatoshiLong
 import org.scalatest.funsuite.AnyFunSuite
 import TestNodeKeys._
+import fr.acinq.eclair.router.graph.path.{HeuristicsConstants, WeightRatios}
 
 class ShortestPathFinderSpec extends AnyFunSuite {
 
@@ -98,7 +98,7 @@ class ShortestPathFinderSpec extends AnyFunSuite {
 
     val paths = shortestPathFinder.yenKshortestPaths(graph, a, e, 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      Left(path.WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
 
     // Even though paths to find is 2, we only find 1 because that is all the valid paths that there are.
@@ -131,7 +131,7 @@ class ShortestPathFinderSpec extends AnyFunSuite {
 
     val paths = shortestPathFinder.yenKshortestPaths(graph, c, h, 10000000 msat,
       Set.empty, Set.empty, Set.empty, 3,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      Left(path.WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.length == 3)
     assert(paths.head.path == Seq(edgeCE, edgeEF, edgeFH))
