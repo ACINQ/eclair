@@ -31,8 +31,8 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelReadyTlv, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
-import fr.acinq.eclair.{Features, RealShortChannelId, ShortChannelId, ToMilliSatoshiConversion, randomKey, toLongId}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
+import fr.acinq.eclair.{Features, RealShortChannelId, ToMilliSatoshiConversion, randomKey, toLongId}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
@@ -261,7 +261,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
                   blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, fundingMinDepth)
                   goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
                 case None =>
-                  val (shortIds, channelReady) = skipFundingConfirmation(commitments, None, emitEvent = true)
+                  val (shortIds, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown, remoteAlias_opt = None, emitEvent = true)
                   goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments, shortIds, channelReady) storing() sending Seq(fundingSigned, channelReady)
               }
           }
@@ -323,7 +323,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
               blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, fundingMinDepth)
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx()
             case None =>
-              val (shortIds, channelReady) = skipFundingConfirmation(commitments, None, emitEvent = true)
+              val (shortIds, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown, remoteAlias_opt = None, emitEvent = true)
               goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments, shortIds, channelReady) storing() sending channelReady calling publishFundingTx()
           }
       }
@@ -358,7 +358,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       if (remoteChannelReady.alias_opt.isDefined && d.commitments.localParams.isInitiator) {
         log.info("this chanel isn't zero-conf, but we are funder and they sent an early channel_ready with an alias: no need to wait for confirmations")
         // No need to emit ShortChannelIdAssigned: we will emit it when handling their channel_ready in WAIT_FOR_CHANNEL_READY
-        val (shortIds, localChannelReady) = skipFundingConfirmation(d.commitments, remoteChannelReady.alias_opt, emitEvent = false)
+        val (shortIds, localChannelReady) = acceptFundingTx(d.commitments, RealScidStatus.Unknown, remoteAlias_opt = remoteChannelReady.alias_opt, emitEvent = false)
         self ! remoteChannelReady
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored
         goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(d.commitments, shortIds, localChannelReady) storing() sending localChannelReady
@@ -371,21 +371,11 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
       Try(Transaction.correctlySpends(commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
         case Success(_) =>
           log.info(s"channelId=${d.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
-          blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
           if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
           context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
-          val channelKeyPath = keyManager.keyPath(d.commitments.localParams, commitments.channelConfig)
-          val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-          // this is the real scid, it might change when the funding tx gets deeply buried (if there was a reorg in the meantime)
-          val shortChannelId = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
-          // the alias will use in our peer's channel_update message, the goal is to be able to use our channel as soon
-          // as it reaches NORMAL state, and before it is announced on the network
-          val localAlias = ShortChannelId.generateLocalAlias()
-          // we announce our identifiers as early as we can
-          val shortIds = ShortIds(shortChannelId, localAlias, d.deferred.flatMap(_.alias_opt))
-          context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortIds, remoteNodeId))
-          // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
-          val channelReady = ChannelReady(d.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(localAlias)))
+
+          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
+          val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus, remoteAlias_opt = d.deferred.flatMap(_.alias_opt), emitEvent = true)
           deferred.foreach(self ! _)
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments, shortIds, channelReady) storing() sending channelReady
         case Failure(t) =>
