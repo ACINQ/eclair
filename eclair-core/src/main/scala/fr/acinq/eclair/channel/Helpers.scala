@@ -304,7 +304,7 @@ object Helpers {
      * we make sure the cumulative block reward largely exceeds the channel size.
      *
      * @param fundingSatoshis funding amount of the channel
-     * @return number of confirmations needed
+     * @return number of confirmations needed, if any
      */
     def minDepthFundee(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
       case _ if channelFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is

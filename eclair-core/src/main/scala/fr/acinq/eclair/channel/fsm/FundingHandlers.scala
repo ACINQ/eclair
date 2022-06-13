@@ -19,12 +19,12 @@ package fr.acinq.eclair.channel.fsm
 import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
-import fr.acinq.eclair.BlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse, WatchFundingSpent}
+import fr.acinq.eclair.{Alias, BlockHeight, ShortChannelId}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse, WatchFundingLost, WatchFundingSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT, FUNDING_TIMEOUT_FUNDEE}
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
-import fr.acinq.eclair.wire.protocol.Error
+import fr.acinq.eclair.wire.protocol.{ChannelReady, ChannelReadyTlv, Error, TlvStream}
 
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
@@ -58,6 +58,17 @@ trait FundingHandlers extends CommonHandlers {
     blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, knownSpendingTxs)
     // TODO: implement this? (not needed if we use a reasonable min_depth)
     //blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks, BITCOIN_FUNDING_LOST)
+  }
+
+  /** When using 0-conf, we don't wait for the funding tx to confirm and instantly send channel_ready. */
+  def skipFundingConfirmation(commitments: Commitments, remoteAlias_opt: Option[Alias], emitEvent: Boolean): (ShortIds, ChannelReady) = {
+    blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
+    val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
+    val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+    val shortIds = ShortIds(RealScidStatus.Unknown, ShortChannelId.generateLocalAlias(), remoteAlias_opt)
+    if (emitEvent) context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds, remoteNodeId))
+    val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias)))
+    (shortIds, channelReady)
   }
 
   /**
