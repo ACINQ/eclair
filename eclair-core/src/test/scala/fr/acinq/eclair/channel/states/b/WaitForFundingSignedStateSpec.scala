@@ -100,10 +100,11 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    awaitCond(alice.stateName == WAIT_FOR_CHANNEL_READY)
+    // alice doesn't watch for the funding tx to confirm
     alice2blockchain.expectMsgType[WatchFundingSpent]
-    val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(watchConfirmed.minDepth == 0) // zeroconf
+    alice2blockchain.expectMsgType[WatchFundingLost]
+    alice2blockchain.expectNoMessage(100 millis)
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
   }
 

@@ -429,10 +429,14 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
 final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
                                              shortIds: ShortIds,
                                              lastSent: ChannelReady) extends PersistentChannelData
+
 sealed trait RealScidStatus { def toOption: Option[RealShortChannelId] }
 object RealScidStatus {
+  /** The funding transaction has been confirmed but hasn't reached min_depth, we must be ready for a reorg. */
   case class Temporary(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
+  /** The funding transaction has been deeply confirmed. */
   case class Final(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
+  /** We don't know the status of the funding transaction. */
   case object Unknown extends RealScidStatus { override def toOption: Option[RealShortChannelId] = None }
 }
 
@@ -441,7 +445,7 @@ object RealScidStatus {
  *
  * @param real            the real scid, it may change if a reorg happens before the channel reaches 6 conf
  * @param localAlias      we must remember the alias that we sent to our peer because we use it to:
- *                          - identify incoming [[ChannelUpdate]]
+ *                          - identify incoming [[ChannelUpdate]] at the connection level
  *                          - route outgoing payments to that channel
  * @param remoteAlias_opt we only remember the last alias received from our peer, we use this to generate
  *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]

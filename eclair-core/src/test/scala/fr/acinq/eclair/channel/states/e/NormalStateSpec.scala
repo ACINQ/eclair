@@ -3468,7 +3468,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // we create a new listener that registers after alice has published the funding tx
     val listener = TestProbe()
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
-    // zero-conf channel : the funding tx isn't confirmed
+    // zero-conf channel: the funding tx isn't confirmed
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)
     alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42000), 42, null)
     val realShortChannelId = RealShortChannelId(BlockHeight(42000), 42, 0)

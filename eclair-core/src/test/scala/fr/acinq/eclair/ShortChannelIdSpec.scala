@@ -20,11 +20,9 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import scala.util.Try
 
-
-
 class ShortChannelIdSpec extends AnyFunSuite {
 
-  test("handle values from 0 to 0xffffffffffff") {
+  test("handle real short channel ids from 0 to 0xffffffffffff") {
     val expected = Map(
       TxCoordinates(BlockHeight(0), 0, 0) -> RealShortChannelId(0),
       TxCoordinates(BlockHeight(42000), 27, 3) -> RealShortChannelId(0x0000a41000001b0003L),
@@ -44,7 +42,7 @@ class ShortChannelIdSpec extends AnyFunSuite {
     assert(RealShortChannelId(0x0000a41000001b0003L).toString == "42000x27x3")
   }
 
-  test("parse a short channel it") {
+  test("parse a short channel id") {
     assert(ShortChannelId("42000x27x3").toLong == 0x0000a41000001b0003L)
   }
 
@@ -58,17 +56,18 @@ class ShortChannelIdSpec extends AnyFunSuite {
     assert(Try(ShortChannelId("42000x")).isFailure)
   }
 
-  test("scids key space") {
-
+  test("compare different types of short channel ids") {
     val id = 123456
     val alias = Alias(id)
     val realScid = RealShortChannelId(id)
     val scid = ShortChannelId(id)
-
+    assert(alias == realScid)
+    assert(realScid == scid)
     val m = Map(alias -> "alias", realScid -> "real", scid -> "unknown")
-
     // all scids are in the same key space
     assert(m.size == 1)
-
+    // Values outside of the range [0;0xffffffffffff] can be used for aliases.
+    Seq(-561L, 0xffffffffffffffffL, 0x2affffffffffffffL).foreach(id => assert(Alias(id) == UnspecifiedShortChannelId(id)))
   }
+
 }

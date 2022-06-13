@@ -257,7 +257,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
       assert(data.shortIds.localAlias == ShortChannelId(123456789L))
       assert(data.shortIds.real == RealScidStatus.Temporary(RealShortChannelId(123456789L)))
       val binMigrated = channelDataCodec.encode(data).require.toHex
-      assert(binMigrated.startsWith("0010")) // NB: 01 -> 10
+      assert(binMigrated.startsWith("000a")) // NB: 01 -> 0a
     }
 
     {

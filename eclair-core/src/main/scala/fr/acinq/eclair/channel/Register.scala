@@ -49,7 +49,7 @@ class Register extends Actor with ActorLogging {
 
     case scidAssigned: ShortChannelIdAssigned =>
       // We map all known scids (real or alias) to the channel_id. The relayer is in charge of deciding whether a real
-      // scid can be used or not for routing (see option_scid_privacy), but the register is neutral.
+      // scid can be used or not for routing (see option_scid_alias), but the register is neutral.
       val m = (scidAssigned.shortIds.real.toOption.toSeq :+ scidAssigned.shortIds.localAlias).map(_ -> scidAssigned.channelId).toMap
       context become main(channels, shortIds ++ m, channelsTo)
 

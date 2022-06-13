@@ -39,7 +39,7 @@ case class UnspecifiedShortChannelId(private val id: Long) extends ShortChannelI
   override def toLong: Long = id
   override def toString: String = toCoordinatesString // for backwards compatibility, because ChannelUpdate have an unspecified scid
 }
-case class RealShortChannelId private (private val id: Long) extends ShortChannelId {
+case class RealShortChannelId private(private val id: Long) extends ShortChannelId {
   override def toLong: Long = id
   override def toString: String = toCoordinatesString
   def blockHeight: BlockHeight = ShortChannelId.blockHeight(this)

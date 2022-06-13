@@ -17,9 +17,7 @@
 package fr.acinq.eclair.channel.states.c
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Script, Transaction}
-import fr.acinq.eclair.Features.ZeroConf
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
@@ -28,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITC
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReady, ChannelReadyTlv, Error, FundingCreated, FundingSigned, Init, OpenChannel}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReady, Error, FundingCreated, FundingSigned, Init, OpenChannel, TlvStream}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -82,22 +80,21 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     }
   }
 
-  test("recv ChannelReady (funder)") { f =>
+  test("recv ChannelReady (funder, with remote alias)") { f =>
     import f._
     // make bob send a ChannelReady msg
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
-    val channelReady = bob2alice.expectMsgType[ChannelReady]
-    assert(channelReady.alias_opt.isDefined)
+    val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
+    assert(bobChannelReady.alias_opt.isDefined)
     // test starts here
     bob2alice.forward(alice)
-    // alice keeps bob's channel_ready for later processing
-    eventually {
-      assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].deferred.contains(channelReady))
-    }
-    // and alice also creates a zero-conf watch
-    val aliceWatchFundingConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(aliceWatchFundingConfirmed.minDepth == 0)
+    // alice stops waiting for confirmations since bob is accepting the channel
+    alice2blockchain.expectMsgType[WatchFundingLost]
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
+    assert(aliceChannelReady.alias_opt.nonEmpty)
+    awaitAssert(assert(alice.stateName == NORMAL))
   }
 
   test("recv ChannelReady (funder, no remote alias)") { f =>
@@ -105,31 +102,13 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     // make bob send a ChannelReady msg
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
-    val channelReadyNoAlias = bob2alice.expectMsgType[ChannelReady]
-      .modify(_.tlvStream.records).using(_.filter { case _: ChannelReadyTlv.ShortChannelIdTlv => false; case _ => true })
+    val channelReadyNoAlias = bob2alice.expectMsgType[ChannelReady].copy(tlvStream = TlvStream.empty)
     // test starts here
     bob2alice.forward(alice, channelReadyNoAlias)
     // alice keeps bob's channel_ready for later processing
     eventually {
       assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].deferred.contains(channelReadyNoAlias))
     }
-    alice2blockchain.expectNoMessage()
-  }
-
-  test("recv ChannelReady (funder, zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
-    import f._
-    // make bob send a ChannelReady msg
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
-    val channelReady = bob2alice.expectMsgType[ChannelReady]
-    assert(channelReady.alias_opt.isDefined)
-    // test starts here
-    bob2alice.forward(alice)
-    // alice keeps bob's channel_ready for later processing
-    eventually {
-      assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].deferred.contains(channelReady))
-    }
-    // and alice also doesn't creates a zero-conf watch because the channel is already zero-conf
     alice2blockchain.expectNoMessage()
   }
 
@@ -163,17 +142,6 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val channelReady = alice2bob.expectMsgType[ChannelReady]
     // we always send an alias
     assert(channelReady.alias_opt.isDefined)
-  }
-
-  test("recv WatchFundingConfirmedTriggered (funder, early ChannelReady from fundee)") { f =>
-    import f._
-    // the channel isn't zero-conf, but bob (fundee) has sent an early channel_ready so alice created a zero-conf watch
-    assert(!alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.channelFeatures.hasFeature(ZeroConf))
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    // the zero-conf watch confirms instantly
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(0), 0, fundingTx)
-    awaitCond(alice.stateName == WAIT_FOR_CHANNEL_READY)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real == RealScidStatus.Unknown)
   }
 
   test("recv WatchFundingConfirmedTriggered (fundee)") { f =>
