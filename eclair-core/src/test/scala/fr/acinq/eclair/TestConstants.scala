@@ -194,6 +194,7 @@ object TestConstants {
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
       balanceCheckInterval = 1 hour,
+      blockchainWatchdogThreshold = 6,
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
@@ -334,6 +335,7 @@ object TestConstants {
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
       balanceCheckInterval = 1 hour,
+      blockchainWatchdogThreshold = 6,
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
