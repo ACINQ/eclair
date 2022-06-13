@@ -18,10 +18,8 @@ package fr.acinq.eclair.payment
 
 import akka.Done
 import akka.actor.ActorRef
-import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
@@ -31,12 +29,11 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.{Upstream, buildCommand}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
-import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.Transactions.{ClaimRemoteDelayedOutputTx, InputInfo}
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits.ByteVector
@@ -479,7 +476,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     nodeParams.db.channels.addOrUpdateChannel(upstreamChannel)
     nodeParams.db.channels.addOrUpdateChannel(downstreamChannel)
-    assert(Closing.isClosed(downstreamChannel, None) == None)
+    assert(Closing.isClosed(downstreamChannel, None).isEmpty)
 
     val (_, postRestart) = f.createRelayer(nodeParams)
     sender.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
@@ -594,115 +591,6 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.origin_2))
     register.expectNoMessage(100 millis) // the payment has already been fulfilled upstream
     eventListener.expectNoMessage(100 millis)
-  }
-
-  test("relayed non-standard->standard HTLC is retained") { f =>
-    import f._
-
-    val relayedPaymentHash = randomBytes32()
-    val trampolineRelayedPaymentHash = randomBytes32()
-    val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_1, 0L) :: Nil)
-    val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
-    val relayedHtlc1Out = buildHtlcOut(50L, channelId_ab_2, trampolineRelayedPaymentHash)
-    val nonRelayedHtlc2In = buildHtlcIn(1L, channelId_ab_1, relayedPaymentHash)
-
-    // @formatter:off
-    val pluginParams = new CustomCommitmentsPlugin {
-      override def name = "test with incoming HTLC from remote"
-      override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(
-        PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None),
-        PostRestartHtlcCleaner.IncomingHtlc(nonRelayedHtlc2In.add, None)
-      )
-      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
-    }
-    // @formatter:on
-
-    val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedHtlc1Out), Map(50L -> trampolineRelayed))
-    nodeParams1.db.channels.addOrUpdateChannel(c)
-
-    val channel = TestProbe()
-    f.createRelayer(nodeParams1)
-    register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
-
-    // @formatter:off
-    val cs: AbstractCommitments = new AbstractCommitments {
-      def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = None
-      def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = {
-        if (htlcId == 0L) Some(relayedHtlc1In.add)
-        else if (htlcId == 1L) Some(nonRelayedHtlc2In.add)
-        else None
-      }
-      def localNodeId: PublicKey = randomExtendedPrivateKey.publicKey
-      def remoteNodeId: PublicKey = randomExtendedPrivateKey.publicKey
-      def capacity: Satoshi = Long.MaxValue.sat
-      def availableBalanceForReceive: MilliSatoshi = Long.MaxValue.msat
-      def availableBalanceForSend: MilliSatoshi = 0.msat
-      def originChannels: Map[Long, Origin] = Map.empty
-      def channelId: ByteVector32 = channelId_ab_1
-      def announceChannel: Boolean = false
-    }
-    // @formatter:on
-
-    // Non-standard channel goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channelId_ab_1, system.deadLetters, a, OFFLINE, NORMAL, Some(cs)))
-    channel.expectMsg(CMD_FAIL_HTLC(1L, Right(TemporaryNodeFailure), commit = true))
-    channel.expectNoMessage(100 millis)
-  }
-
-  test("relayed standard->non-standard HTLC is retained") { f =>
-    import f._
-
-    val relayedPaymentHash = randomBytes32()
-    val trampolineRelayedPaymentHash = randomBytes32()
-    val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_2, 0L) :: Nil)
-    val relayedHtlcIn = buildHtlcIn(0L, channelId_ab_2, trampolineRelayedPaymentHash)
-    val nonRelayedHtlcIn = buildHtlcIn(1L, channelId_ab_2, relayedPaymentHash)
-
-    // @formatter:off
-    val pluginParams = new CustomCommitmentsPlugin {
-      override def name = "test with outgoing HTLC to remote"
-      override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List.empty
-      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
-    }
-    // @formatter:on
-
-    val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedHtlcIn, nonRelayedHtlcIn), Map.empty)
-    nodeParams1.db.channels.addOrUpdateChannel(c)
-
-    val channel = TestProbe()
-    f.createRelayer(nodeParams1)
-    register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
-
-    // Standard channel goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, c.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(c.commitments)))
-    channel.expectMsg(CMD_FAIL_HTLC(1L, Right(TemporaryNodeFailure), commit = true))
-    channel.expectNoMessage(100 millis)
-  }
-
-  test("non-standard HTLC CMD_FAIL in relayDb is retained") { f =>
-    import f._
-
-    val trampolineRelayedPaymentHash = randomBytes32()
-    val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
-
-    // @formatter:off
-    val pluginParams = new CustomCommitmentsPlugin {
-      override def name = "test with incoming HTLC from remote"
-      override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None))
-      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
-    }
-    // @formatter:on
-
-    val cmd1 = CMD_FAIL_HTLC(id = 0L, reason = Left(ByteVector.empty), replyTo_opt = None)
-    val cmd2 = CMD_FAIL_HTLC(id = 1L, reason = Left(ByteVector.empty), replyTo_opt = None)
-    val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    nodeParams1.db.pendingCommands.addSettlementCommand(channelId_ab_1, cmd1)
-    nodeParams1.db.pendingCommands.addSettlementCommand(channelId_ab_1, cmd2)
-    f.createRelayer(nodeParams1)
-    register.expectNoMessage(100 millis)
-    awaitCond(Seq(cmd1) == nodeParams1.db.pendingCommands.listSettlementCommands(channelId_ab_1))
   }
 
 }
