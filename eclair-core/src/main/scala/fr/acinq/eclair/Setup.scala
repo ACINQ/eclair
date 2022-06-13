@@ -157,6 +157,7 @@ class Setup(val datadir: File,
       }
       case "password" => BitcoinJsonRPCAuthMethod.UserPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
+
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       rpcAuthMethod = rpcAuthMethod,
       host = config.getString("bitcoind.host"),
@@ -253,7 +254,13 @@ class Setup(val datadir: File,
       })
       _ <- feeratesRetrieved.future
 
-      bitcoinClient = new BitcoinCoreClient(new BatchingBitcoinJsonRPCClient(bitcoin))
+      bitcoinClient = config.getBoolean("bitcoind.batch-requests") match {
+        case true =>
+          new BitcoinCoreClient(new BatchingBitcoinJsonRPCClient(bitcoin))
+        case _ =>
+          new BitcoinCoreClient(bitcoin)
+      }
+
       watcher = {
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
