@@ -26,7 +26,7 @@ sealed trait ShortChannelId extends Ordered[ShortChannelId] {
   override def hashCode(): Int = toLong.hashCode()
   override def equals(obj: Any): Boolean = obj match {
     case scid: ShortChannelId => this.toLong.equals(scid.toLong)
-    case _ => super.equals(obj)
+    case _ => false
   }
   def toCoordinatesString: String = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)
