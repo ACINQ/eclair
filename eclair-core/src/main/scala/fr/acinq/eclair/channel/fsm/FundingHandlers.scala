@@ -60,14 +60,14 @@ trait FundingHandlers extends CommonHandlers {
     //blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks, BITCOIN_FUNDING_LOST)
   }
   
-  def acceptFundingTx(commitments: Commitments, realScidStatus: RealScidStatus, remoteAlias_opt: Option[Alias], emitEvent: Boolean): (ShortIds, ChannelReady) = {
+  def acceptFundingTx(commitments: Commitments, realScidStatus: RealScidStatus): (ShortIds, ChannelReady) = {
     blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
     val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
     // the alias will use in our peer's channel_update message, the goal is to be able to use our channel as soon
     // as it reaches NORMAL state, and before it is announced on the network
-    val shortIds = ShortIds(realScidStatus, ShortChannelId.generateLocalAlias(), remoteAlias_opt)
-    if (emitEvent) context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds, remoteNodeId))
+    val shortIds = ShortIds(realScidStatus, ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+    context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds, remoteNodeId))
     // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
     val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias)))
     (shortIds, channelReady)
