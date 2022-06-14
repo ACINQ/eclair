@@ -32,7 +32,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, TestUtils, TimestampMilli, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -737,7 +737,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection / reconnection
     disconnect(alice, bob)
     // we wait 1s so the new channel_update doesn't have the same timestamp
-    Thread.sleep(1_000)
+    TestUtils.waitFor(1 second)
     reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
@@ -762,7 +762,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection / reconnection
     disconnect(alice, bob)
     // we wait 1s so the new channel_update doesn't have the same timestamp
-    Thread.sleep(1_000)
+    TestUtils.waitFor(1 second)
     reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
@@ -785,7 +785,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we get disconnected again
     disconnect(alice, bob)
     // we wait 1s so the new channel_update doesn't have the same timestamp
-    Thread.sleep(1_000)
+    TestUtils.waitFor(1 second)
     reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]

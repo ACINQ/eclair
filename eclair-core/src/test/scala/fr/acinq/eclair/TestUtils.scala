@@ -23,11 +23,13 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.LightningMessage
 import org.scalatest.concurrent.Eventually.eventually
+import org.scalatest.concurrent.PatienceConfiguration
 
 import java.io.File
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.UUID
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 object TestUtils {
 
@@ -104,7 +106,13 @@ object TestUtils {
       eventStream.publish(DummyEvent())
       assert(listener.msgAvailable)
     }
+  }
 
+  def waitFor(duration: FiniteDuration): Unit = {
+    val now = TimestampMilli.now()
+    eventually(PatienceConfiguration.Timeout(duration * 2), PatienceConfiguration.Interval(50 millis)) {
+      assert(TimestampMilli.now() - now > duration)
+    }
   }
 
 }
