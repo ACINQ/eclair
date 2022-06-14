@@ -42,13 +42,29 @@ eclair.sh -with-kanela
 Your eclair node will start exporting monitoring data to Kamon.
 You can then start creating dashboards, graphs and alerts directly on Kamon's website.
 
-## Enabling monitoring with a different backend
+## Enabling monitoring with Prometheus
 
 Kamon supports many other monitoring [backends](https://kamon.io/docs/latest/reporters/).
 This can be useful for nodes that don't want to export any data to third-party servers.
 
-No specific work has been done yet in eclair to support these backends. If you'd like to use them,
-don't hesitate to ask around or send a PR.
+Eclair currently supports exporting metrics to [Prometheus](https://kamon.io/docs/latest/reporters/prometheus/).
+To enable monitoring with Prometheus, add the following to your `eclair.conf`:
+
+```config
+eclair.enable-kamon=true
+
+kamon {
+  prometheus {
+    start-embedded-http-server = yes
+    embedded-server {
+      hostname = 0.0.0.0
+      port = <port to expose to prometheus>
+    }
+  }
+}
+```
+
+You should then configure your Prometheus process to scrape metrics from the exposed http server.
 
 ## Example metrics
 
