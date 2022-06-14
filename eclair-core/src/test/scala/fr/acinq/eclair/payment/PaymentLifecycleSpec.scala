@@ -40,6 +40,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.BaseRouterSpec.{channelAnnouncement, channelHopFromUpdate}
 import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Router.ChannelRelayParams.FromAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
@@ -590,10 +591,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // payment lifecycle forwards the embedded channelUpdate to the router
     routerForwarder.expectMsg(channelUpdate_bc_modified)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending)) // 1 failure but not final, the payment is still PENDING
-    val extraEdges1 = Bolt11Invoice.toExtraEdges(Seq(
-      ExtraHop(b, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, channelUpdate_bc_modified.cltvExpiryDelta),
-      ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
-    ), d)
+    val extraEdges1 = Seq(
+      extraEdges(0).copy(params = FromAnnouncement(channelUpdate_bc_modified)),
+      extraEdges(1)
+    )
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(extraEdges = extraEdges1))
     routerForwarder.forward(routerFixture.router)
 

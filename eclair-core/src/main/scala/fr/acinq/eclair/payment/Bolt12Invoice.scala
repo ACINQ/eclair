@@ -61,7 +61,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   override val description: Either[String, ByteVector32] = Left(records.get[Description].get.description)
 
-  override val extraEdges: Seq[GraphEdge] = ??? // TODO
+  override val extraEdges: Seq[GraphEdge] = Seq.empty // TODO: the blinded paths need to be converted to graph edges
 
   override val createdAt: TimestampSecond = records.get[CreatedAt].get.timestamp
 

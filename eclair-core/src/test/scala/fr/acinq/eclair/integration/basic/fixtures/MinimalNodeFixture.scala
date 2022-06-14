@@ -22,6 +22,7 @@ import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
@@ -277,7 +278,7 @@ object MinimalNodeFixture extends Assertions {
     val invoice = sender.expectMsgType[Bolt11Invoice]
 
     val routeParams = node1.nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
-    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, assistedRoutes = hints, blockUntilComplete = true))
+    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, extraEdges = hints.flatMap(Bolt11Invoice.toExtraEdges(_, node2.nodeParams.nodeId)), blockUntilComplete = true))
     sender.expectMsgType[PaymentSent]
   }
 
