@@ -17,12 +17,12 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
+import fr.acinq.eclair.{RealShortChannelId, _}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{RealShortChannelId, _}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
@@ -457,14 +457,17 @@ object Graph {
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
-      def apply(ac: AssistedChannel): GraphEdge = GraphEdge(
-        desc = ChannelDesc(ac.shortChannelId, ac.nodeId, ac.nextNodeId),
-        params = ac.params,
-        // Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount
-        capacity = ac.params.htlcMaximum.truncateToSatoshi + 1.sat,
-        // we assume channels provided as hints have enough balance to handle the payment
-        balance_opt = Some(ac.params.htlcMaximum)
-      )
+      def apply(ac: AssistedChannel): GraphEdge = {
+        val maxBtc = 21e6.btc
+        GraphEdge(
+          desc = ChannelDesc(ac.shortChannelId, ac.nodeId, ac.nextNodeId),
+          params = ac.params,
+          // Bolt 11 routing hints don't include the channel's capacity, so we assume it's big enough
+          capacity = maxBtc.toSatoshi,
+          // we assume channels provided as hints have enough balance to handle the payment
+          balance_opt = Some(maxBtc.toMilliSatoshi)
+        )
+      }
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */

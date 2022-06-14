@@ -446,11 +446,11 @@ object Router {
       override def htlcMaximum_opt: Option[MilliSatoshi] = channelUpdate.htlcMaximumMsat
     }
     /** We learnt about this channel from hints in an invoice */
-    case class FromHint(extraHop: Bolt11Invoice.ExtraHop, htlcMaximum: MilliSatoshi) extends ChannelRelayParams {
+    case class FromHint(extraHop: Bolt11Invoice.ExtraHop) extends ChannelRelayParams {
       override def cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
       override def relayFees: Relayer.RelayFees = extraHop.relayFees
       override def htlcMinimum: MilliSatoshi = 0 msat
-      override def htlcMaximum_opt: Option[MilliSatoshi] = Some(htlcMaximum)
+      override def htlcMaximum_opt: Option[MilliSatoshi] = None
     }
 
     def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
