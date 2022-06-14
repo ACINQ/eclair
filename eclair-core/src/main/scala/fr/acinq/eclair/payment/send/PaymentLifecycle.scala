@@ -24,13 +24,14 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
+import fr.acinq.eclair.router.Router.ChannelRelayParams.FromAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion._
@@ -56,7 +57,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
       log.debug("sending {} to route {}", c.finalPayload.amount, c.printRoute())
       c.route.fold(
-        hops => router ! FinalizeRoute(c.finalPayload.amount, hops, c.assistedRoutes, paymentContext = Some(cfg.paymentContext)),
+        hops => router ! FinalizeRoute(c.finalPayload.amount, hops, c.extraEdges, paymentContext = Some(cfg.paymentContext)),
         route => self ! RouteResponse(route :: Nil)
       )
       if (cfg.storeInDb) {
@@ -66,7 +67,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
     case Event(c: SendPaymentToNode, WaitingForRequest) =>
       log.debug("sending {} to {}", c.finalPayload.amount, c.targetNodeId)
-      router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
+      router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.extraEdges, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
       }
@@ -138,7 +139,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     data.c match {
       case sendPaymentToNode: SendPaymentToNode =>
         val ignore1 = PaymentFailure.updateIgnored(failure, data.ignore)
-        router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.finalPayload.amount, sendPaymentToNode.maxFee, data.c.assistedRoutes, ignore1, sendPaymentToNode.routeParams, paymentContext = Some(cfg.paymentContext))
+        router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.finalPayload.amount, sendPaymentToNode.maxFee, data.c.extraEdges, ignore1, sendPaymentToNode.routeParams, paymentContext = Some(cfg.paymentContext))
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.c, data.failures :+ failure, ignore1)
       case _: SendPaymentToRoute =>
         log.error("unexpected retry during SendPaymentToRoute")
@@ -225,7 +226,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
         val failure = RemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route), e)
         if (Announcements.checkSig(failureMessage.update, nodeId)) {
-          val assistedRoutes1 = handleUpdate(nodeId, failureMessage, d)
+          val extraEdges1 = handleUpdate(nodeId, failureMessage, d)
           val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
           // let's try again, router will have updated its state
           c match {
@@ -233,7 +234,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
             case c: SendPaymentToNode =>
-              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
+              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, extraEdges1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
           }
         } else {
@@ -244,7 +245,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
             case c: SendPaymentToNode =>
-              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
+              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.extraEdges, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore + nodeId)
           }
         }
@@ -260,7 +261,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
    *
    * @return updated routing hints if applicable.
    */
-  private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[Seq[ExtraHop]] = {
+  private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[GraphEdge] = {
     // TODO: properly handle updates to channels provided as routing hints in the invoice
     data.route.getChannelUpdateForNode(nodeId) match {
       case Some(u) if u.shortChannelId != failure.update.shortChannelId =>
@@ -286,21 +287,17 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     router ! failure.update
     // we return updated assisted routes: they take precedence over the router's routing table
     if (failure.update.channelFlags.isEnabled) {
-      data.c.assistedRoutes.map(_.map {
-        case extraHop: ExtraHop if extraHop.shortChannelId == failure.update.shortChannelId => extraHop.copy(
-          cltvExpiryDelta = failure.update.cltvExpiryDelta,
-          feeBase = failure.update.feeBaseMsat,
-          feeProportionalMillionths = failure.update.feeProportionalMillionths
-        )
-        case extraHop => extraHop
-      })
+      data.c.extraEdges.map {
+        case edge if edge.desc.shortChannelId == failure.update.shortChannelId => edge.copy(params = FromAnnouncement(failure.update))
+        case edge => edge
+      }
     } else {
       // if the channel is disabled, we temporarily exclude it: this is necessary because the routing hint doesn't contain
       // channel flags to indicate that it's disabled
-      data.c.assistedRoutes.flatMap(r => RouteCalculation.toChannelDescs(r, data.c.targetNodeId))
+      data.c.extraEdges.map(_.desc)
         .find(_.shortChannelId == failure.update.shortChannelId)
         .foreach(desc => router ! ExcludeChannel(desc)) // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
-      data.c.assistedRoutes
+      data.c.extraEdges
     }
   }
 
@@ -353,7 +350,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
       request match {
         case SendPaymentToNode(_, _, _, _, _, routeParams) =>
-          val hints_opt = cfg.invoice.flatMap(invoice => if (invoice.routingInfo.isEmpty) None else Some(invoice.routingInfo))
+          val hints_opt = cfg.invoice.flatMap {
+            case invoice: Bolt11Invoice if invoice.routingInfo.nonEmpty => Some(invoice.routingInfo)
+            case _ => None
+          }
           context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, routeParams.experimentName, cfg.recipientNodeId, hints_opt))
         case SendPaymentToRoute(_, _, _, _) => ()
       }
@@ -380,7 +380,7 @@ object PaymentLifecycle {
     // @formatter:off
     def replyTo: ActorRef
     def finalPayload: FinalPayload
-    def assistedRoutes: Seq[Seq[ExtraHop]]
+    def extraEdges: Seq[GraphEdge]
     def targetNodeId: PublicKey
     def maxAttempts: Int
     // @formatter:on
@@ -395,7 +395,7 @@ object PaymentLifecycle {
   case class SendPaymentToRoute(replyTo: ActorRef,
                                 route: Either[PredefinedRoute, Route],
                                 finalPayload: FinalPayload,
-                                assistedRoutes: Seq[Seq[ExtraHop]] = Nil) extends SendPayment {
+                                extraEdges: Seq[GraphEdge] = Nil) extends SendPayment {
     require(route.fold(!_.isEmpty, _.hops.nonEmpty), "payment route must not be empty")
 
     val targetNodeId: PublicKey = route.fold(_.targetNodeId, _.hops.last.nextNodeId)
@@ -412,18 +412,18 @@ object PaymentLifecycle {
   /**
    * Send a payment to a given node. A path-finding algorithm will run to find a suitable payment route.
    *
-   * @param targetNodeId   target node (may be the final recipient when using source-routing, or the first trampoline
-   *                       node when using trampoline).
-   * @param finalPayload   onion payload for the target node.
-   * @param maxAttempts    maximum number of retries.
-   * @param assistedRoutes routing hints (usually from a Bolt 11 invoice).
-   * @param routeParams    parameters to fine-tune the routing algorithm.
+   * @param targetNodeId target node (may be the final recipient when using source-routing, or the first trampoline
+   *                     node when using trampoline).
+   * @param finalPayload onion payload for the target node.
+   * @param maxAttempts  maximum number of retries.
+   * @param extraEdges   routing hints (usually from a Bolt 11 invoice).
+   * @param routeParams  parameters to fine-tune the routing algorithm.
    */
   case class SendPaymentToNode(replyTo: ActorRef,
                                targetNodeId: PublicKey,
                                finalPayload: FinalPayload,
                                maxAttempts: Int,
-                               assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                               extraEdges: Seq[GraphEdge] = Nil,
                                routeParams: RouteParams) extends SendPayment {
     require(finalPayload.amount > 0.msat, s"amount must be > 0")
 

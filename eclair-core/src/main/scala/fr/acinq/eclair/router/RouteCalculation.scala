@@ -25,7 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight, RoutingHeuristics}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import kamon.tag.TagSet
@@ -44,9 +44,7 @@ object RouteCalculation {
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.route.targetNodeId, fr.amount)).toMap
-      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ac)).toSet
-      val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
+      val g = fr.extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       fr.route match {
         case PredefinedNodeRoute(hops) =>
@@ -75,10 +73,7 @@ object RouteCalculation {
                   case c.nodeId2 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId2, c.nodeId1))
                   case _ => None
                 }
-                case None => assistedChannels.get(shortChannelId).flatMap(c => currentNode match {
-                  case c.nodeId => Some(ChannelDesc(shortChannelId, c.nodeId, c.nextNodeId))
-                  case _ => None
-                })
+                case None => fr.extraEdges.find(_.desc.shortChannelId == shortChannelId).map(_.desc)
               }
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
                 case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.params))
@@ -104,17 +99,12 @@ object RouteCalculation {
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      // we convert extra routing info provided in the invoice to fake channel_update
-      // it takes precedence over all other channel_updates we know
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount))
-        .filterNot { case (_, ac) => ac.nodeId == r.source } // we ignore routing hints for our own channels, we have more accurate information
-        .toMap
-      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ac)).toSet
+      val extraEdges = r.extraEdges.filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
-      log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", extraEdges.map(_.desc.shortChannelId).mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
       log.info("finding routes with params={}, multiPart={}", params, r.allowMultiPart)
       log.info("local channels to recipient: {}", d.graphWithBalances.graph.getEdgesBetween(r.source, r.target).map(e => s"${e.desc.shortChannelId} (${e.balance_opt}/${e.capacity})").mkString(", "))
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
@@ -145,20 +135,6 @@ object RouteCalculation {
       }
       d
     }
-  }
-
-  def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey, amount: MilliSatoshi): Map[ShortChannelId, AssistedChannel] = {
-    // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
-    // The invoice doesn't explicitly specify the channel's htlcMaximumMsat, but we can safely assume that the channel
-    // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
-    // We also need to make sure the channel isn't excluded by our heuristics.
-    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW)
-    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
-    extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
-      case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
-        val nextAmount = amount + nodeFee(extraHop.relayFees, amount)
-        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(nextNodeId, Router.ChannelRelayParams.FromHint(extraHop, nextAmount))))
-    }._2
   }
 
   def toChannelDescs(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Seq[ChannelDesc] = {

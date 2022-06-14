@@ -319,9 +319,9 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The B -> E channel is private and provided in the invoice routing hints.
     val routingHint = ExtraHop(b, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, assistedRoutes = List(List(routingHint)))
+    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(List(routingHint)))
     sender.send(payFsm, payment)
-    assert(router.expectMsgType[RouteRequest].assistedRoutes.head.head == routingHint)
+    assert(router.expectMsgType[RouteRequest].extraEdges.head.head == routingHint)
     val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil)
     router.send(payFsm, RouteResponse(Seq(route)))
     childPayFsm.expectMsgType[SendPaymentToRoute]
@@ -332,7 +332,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(finalAmount, channelUpdate))))))
     // We update the routing hints accordingly before requesting a new route.
-    assert(router.expectMsgType[RouteRequest].assistedRoutes.head.head == ExtraHop(b, channelUpdate.shortChannelId, 250 msat, 150, CltvExpiryDelta(24)))
+    assert(router.expectMsgType[RouteRequest].extraEdges.head.head == ExtraHop(b, channelUpdate.shortChannelId, 250 msat, 150, CltvExpiryDelta(24)))
   }
 
   test("retry with ignored routing hints (temporary channel failure)") { f =>
@@ -340,9 +340,9 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The B -> E channel is private and provided in the invoice routing hints.
     val routingHint = ExtraHop(b, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, assistedRoutes = List(List(routingHint)))
+    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(List(routingHint)))
     sender.send(payFsm, payment)
-    assert(router.expectMsgType[RouteRequest].assistedRoutes.head.head == routingHint)
+    assert(router.expectMsgType[RouteRequest].extraEdges.head.head == routingHint)
     val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil)
     router.send(payFsm, RouteResponse(Seq(route)))
     childPayFsm.expectMsgType[SendPaymentToRoute]
@@ -356,7 +356,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, TemporaryChannelFailure(channelUpdateBE1))))))
     // We update the routing hints accordingly before requesting a new route and ignore the channel.
     val routeRequest = router.expectMsgType[RouteRequest]
-    assert(routeRequest.assistedRoutes.head.head == routingHint)
+    assert(routeRequest.extraEdges.head.head == routingHint)
     assert(routeRequest.ignore.channels.map(_.shortChannelId) == Set(channelUpdateBE1.shortChannelId))
   }
 

@@ -18,6 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
 import scodec.bits.ByteVector
 
@@ -39,7 +40,7 @@ trait Invoice {
 
   val description: Either[String, ByteVector32]
 
-  val routingInfo: Seq[Seq[Bolt11Invoice.ExtraHop]]
+  val extraEdges: Seq[GraphEdge]
 
   val relativeExpiry: FiniteDuration
 

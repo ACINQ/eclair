@@ -121,7 +121,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send.recipientAmount == 123.msat)
     assert(send.paymentHash == ByteVector32.Zeroes)
     assert(send.invoice == invoice0)
-    assert(send.assistedRoutes == Seq.empty)
+    assert(send.extraEdges == Seq.empty)
 
     // with assisted routes
     val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
@@ -134,7 +134,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send1.recipientAmount == 123.msat)
     assert(send1.paymentHash == ByteVector32.Zeroes)
     assert(send1.invoice == invoice1)
-    assert(send1.assistedRoutes == hints)
+    assert(send1.extraEdges == hints)
 
     // with finalCltvExpiry
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"

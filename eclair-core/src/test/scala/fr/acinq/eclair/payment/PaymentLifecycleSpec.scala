@@ -570,12 +570,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
     ))
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), 5, assistedRoutes = assistedRoutes, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), 5, extraEdges = assistedRoutes, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
     val WaitingForRoute(_, Nil, _) = paymentFSM.stateData
-    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(assistedRoutes = assistedRoutes))
+    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(extraEdges = assistedRoutes))
     routerForwarder.forward(routerFixture.router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, cmd1, Nil, sharedSecrets1, _, _) = paymentFSM.stateData
@@ -594,7 +594,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       ExtraHop(b, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, channelUpdate_bc_modified.cltvExpiryDelta),
       ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
     ))
-    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(assistedRoutes = assistedRoutes1))
+    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(extraEdges = assistedRoutes1))
     routerForwarder.forward(routerFixture.router)
 
     // router answers with a new route, taking into account the new update
@@ -611,11 +611,11 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // we build an assisted route for channel cd
     val assistedRoutes = Seq(Seq(ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)))
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), 1, assistedRoutes = assistedRoutes, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), 1, extraEdges = assistedRoutes, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
-    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(assistedRoutes = assistedRoutes))
+    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(extraEdges = assistedRoutes))
     routerForwarder.forward(routerFixture.router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, cmd1, Nil, sharedSecrets1, _, _) = paymentFSM.stateData

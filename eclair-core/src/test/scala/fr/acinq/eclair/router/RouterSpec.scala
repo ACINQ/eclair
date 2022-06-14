@@ -359,7 +359,7 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
-    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil), routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, extraEdges = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil), routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: x :: y :: Nil)
     assert(res.routes.head.hops.last.nextNodeId == z)

@@ -32,10 +32,9 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Bolt11Invoice
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
@@ -391,7 +390,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
     /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
-    def toIncomingExtraHop: Option[ExtraHop] = {
+    def toIncomingExtraHop: Option[Bolt11Invoice.ExtraHop] = {
       // we want the incoming channel_update
       val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
       // for incoming payments we preferably use the *remote alias*, otherwise the real scid if we have it
@@ -399,7 +398,7 @@ object Router {
       // we override the remote update's scid, because it contains either the real scid or our local alias
       scid_opt.flatMap { scid =>
         remoteUpdate_opt.map { remoteUpdate =>
-          ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
+          Bolt11Invoice.ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
         }
       }
     }
@@ -522,7 +521,7 @@ object Router {
                           target: PublicKey,
                           amount: MilliSatoshi,
                           maxFee: MilliSatoshi,
-                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                          extraEdges: Seq[GraphEdge] = Nil,
                           ignore: Ignore = Ignore.empty,
                           routeParams: RouteParams,
                           allowMultiPart: Boolean = false,
@@ -531,7 +530,7 @@ object Router {
 
   case class FinalizeRoute(amount: MilliSatoshi,
                            route: PredefinedRoute,
-                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                           extraEdges: Seq[GraphEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
   /**

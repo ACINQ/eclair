@@ -43,6 +43,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator._
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
@@ -118,9 +119,9 @@ trait Eclair {
 
   def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32]
 
-  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[Bolt11Invoice.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
+  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[GraphEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[Bolt11Invoice.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
+  def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[GraphEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
   def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32] = None, trampolineFees_opt: Option[MilliSatoshi] = None, trampolineExpiryDelta_opt: Option[CltvExpiryDelta] = None, trampolineNodes_opt: Seq[PublicKey] = Nil)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
 
@@ -288,8 +289,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[Bolt11Invoice.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] =
-    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, assistedRoutes, includeLocalChannelCost, ignoreNodeIds, ignoreShortChannelIds, maxFee_opt)
+  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[GraphEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] =
+    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, extraEdges, includeLocalChannelCost, ignoreNodeIds, ignoreShortChannelIds, maxFee_opt)
 
   private def getRouteParams(pathFindingExperimentName_opt: Option[String]): Either[IllegalArgumentException, RouteParams] = {
     pathFindingExperimentName_opt match {
@@ -301,14 +302,14 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[Bolt11Invoice.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
+  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[GraphEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(routeParams) =>
         val maxFee = maxFee_opt.getOrElse(routeParams.getMaxFee(amount))
         for {
           ignoredChannels <- getChannelDescs(ignoreShortChannelIds.toSet)
           ignore = Ignore(ignoreNodeIds.toSet, ignoredChannels)
-          response <- (appKit.router ? RouteRequest(sourceNodeId, targetNodeId, amount, maxFee, assistedRoutes, ignore = ignore, routeParams = routeParams.copy(includeLocalChannelCost = includeLocalChannelCost))).mapTo[RouteResponse]
+          response <- (appKit.router ? RouteRequest(sourceNodeId, targetNodeId, amount, maxFee, extraEdges, ignore = ignore, routeParams = routeParams.copy(includeLocalChannelCost = includeLocalChannelCost))).mapTo[RouteResponse]
         } yield response
       case Left(t) => Future.failed(t)
     }
@@ -342,7 +343,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         externalId_opt match {
           case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
           case _ if invoice.isExpired() => Left(new IllegalArgumentException("invoice has expired"))
-          case _ => Right(SendPaymentToNode(amount, invoice, maxAttempts, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = routeParams))
+          case _ => Right(SendPaymentToNode(amount, invoice, maxAttempts, externalId_opt, extraEdges = invoice.extraEdges, routeParams = routeParams))
         }
       case Left(t) => Left(t)
     }

@@ -584,7 +584,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
     assert(outgoingPayment.additionalTlvs == Nil)
-    assert(outgoingPayment.assistedRoutes == hints)
+    assert(outgoingPayment.extraEdges == hints)
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
@@ -624,7 +624,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.finalPayload.expiry == outgoingExpiry)
     assert(outgoingPayment.finalPayload.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.assistedRoutes == hints)
+    assert(outgoingPayment.extraEdges == hints)
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
@@ -680,7 +680,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
     assert(outgoingPayment.additionalTlvs == Seq(OnionPaymentPayloadTlv.TrampolineOnion(nextTrampolinePacket)))
-    assert(outgoingPayment.assistedRoutes == Nil)
+    assert(outgoingPayment.extraEdges == Nil)
   }
 
   def validateRelayEvent(e: TrampolinePaymentRelayed): Unit = {

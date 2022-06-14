@@ -20,7 +20,11 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
+import fr.acinq.eclair.router.Graph.RoutingHeuristics
+import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.Router.AssistedChannel
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, nodeFee, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -85,6 +89,22 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   def fallbackAddress(): Option[String] = tags.collectFirst { case f: Bolt11Invoice.FallbackAddress => Bolt11Invoice.FallbackAddress.toAddress(f, prefix) }
 
   lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfo => t.path }
+
+  def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ShortChannelId, AssistedChannel] = {
+    // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
+    // The invoice doesn't explicitly specify the channel's htlcMaximumMsat, but we can safely assume that the channel
+    // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
+    // We also need to make sure the channel isn't excluded by our heuristics.
+    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW)
+    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
+    extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
+      case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
+        val nextAmount = amount + nodeFee(extraHop.relayFees, amount)
+        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(nextNodeId, Router.ChannelRelayParams.FromHint(extraHop, nextAmount))))
+    }._2
+  }
+
+  lazy val extraEdges: Seq[GraphEdge] = routingInfo.flatMap(path => toAssistedChannels(path, nodeId, ???).values.map(GraphEdge(_)))
 
   lazy val relativeExpiry: FiniteDuration = FiniteDuration(tags.collectFirst { case expiry: Bolt11Invoice.Expiry => expiry.toLong }.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
 
@@ -336,7 +356,6 @@ object Bolt11Invoice {
   case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta) {
     def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
   }
-
 
   /**
    * Routing Info
