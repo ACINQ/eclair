@@ -108,11 +108,6 @@ object TestUtils {
     }
   }
 
-  def waitFor(duration: FiniteDuration): Unit = {
-    val now = TimestampMilli.now()
-    eventually(PatienceConfiguration.Timeout(duration * 2), PatienceConfiguration.Interval(50 millis)) {
-      assert(TimestampMilli.now() - now > duration)
-    }
-  }
+  def waitFor(duration: FiniteDuration): Unit = Thread.sleep(duration.toMillis)
 
 }
