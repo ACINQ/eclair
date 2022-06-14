@@ -24,7 +24,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.Assertions
 import org.scalatest.concurrent.Eventually.eventually
 
@@ -178,17 +178,10 @@ object MinimalNodeFixture extends Assertions {
 
     val data1After = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val data2After = getChannelData(node2, channelId).asInstanceOf[DATA_NORMAL]
-
-    if ((blockHeight, txIndex) == (BlockHeight(0), 0)) {
-      // special case for zero-conf channels, the watcher answers with a special 0/0 coordinates when the funding tx
-      // hasn't been confirmed yet and doesn't have a real scid
-      None
-    } else {
-      val realScid1 = data1After.shortIds.real.asInstanceOf[RealScidStatus.Temporary]
-      val realScid2 = data2After.shortIds.real.asInstanceOf[RealScidStatus.Temporary]
-      assert(realScid1 == realScid2)
-      Some(realScid1)
-    }
+    val realScid1 = data1After.shortIds.real.asInstanceOf[RealScidStatus.Temporary]
+    val realScid2 = data2After.shortIds.real.asInstanceOf[RealScidStatus.Temporary]
+    assert(realScid1 == realScid2)
+    Some(realScid1)
   }
 
   def confirmChannelDeep(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealScidStatus.Final = {
@@ -257,12 +250,7 @@ object MinimalNodeFixture extends Assertions {
    */
   def watcherAutopilot(knownFundingTxs: () => Iterable[Transaction], deepConfirm: Boolean = true): TestActor.AutoPilot = (_, msg) => msg match {
     case watch: ZmqWatcher.WatchFundingConfirmed =>
-      val realScid = if (watch.minDepth == 0) {
-        // special case for zero-conf channels, this is what the real watcher does
-        RealShortChannelId(BlockHeight(0), 0, 0)
-      } else {
-        deterministicShortId(watch.txId)
-      }
+      val realScid = deterministicShortId(watch.txId)
       val fundingTx = knownFundingTxs().find(_.txid == watch.txId)
         .getOrElse(throw new RuntimeException(s"unknown fundingTxId=${watch.txId}, known=${knownFundingTxs().map(_.txid).mkString(",")}"))
       watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)

@@ -92,14 +92,17 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     import f._
     // we have a real scid at this stage, because this isn't a zero-conf channel
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
-    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    val initialChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    assert(initialChannelUpdate == alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
     // we have a real scid, but the channel is not announced so alice uses bob's alias
     assert(initialChannelUpdate.shortChannelId == channelReady.alias_opt.get)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    bob2alice.expectNoMessage(200 millis)
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    bob2alice.expectNoMessage(100 millis)
     awaitCond(alice.stateName == NORMAL)
   }
 
@@ -110,12 +113,14 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)
-    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    val initialChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    assert(initialChannelUpdate == alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
     // the channel is not announced but bob didn't send an alias so we use the real scid
     assert(initialChannelUpdate.shortChannelId == realScid)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    bob2alice.expectNoMessage(200 millis)
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    bob2alice.expectNoMessage(100 millis)
     awaitCond(alice.stateName == NORMAL)
   }
 
@@ -123,14 +128,17 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     import f._
     // zero-conf channel: we don't have a real scid
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real == RealScidStatus.Unknown)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real == RealScidStatus.Unknown)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
-    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    val initialChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    assert(initialChannelUpdate == alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
     // the channel is not announced so alice uses bob's alias (we have a no real scid anyway)
     assert(initialChannelUpdate.shortChannelId == channelReady.alias_opt.get)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    bob2alice.expectNoMessage(200 millis)
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    bob2alice.expectNoMessage(100 millis)
     awaitCond(alice.stateName == NORMAL)
   }
 
@@ -138,6 +146,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     import f._
     // zero-conf channel: we don't have a real scid
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real == RealScidStatus.Unknown)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real == RealScidStatus.Unknown)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)
@@ -153,14 +162,18 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     // we have a real scid at this stage, because this isn't a zero-conf channel
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.channelFlags.announceChannel)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.channelFlags.announceChannel)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
-    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    val initialChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    assert(initialChannelUpdate == alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
     // we have a real scid, but it is not the final one (less than 6 confirmations) so alice uses bob's alias
     assert(initialChannelUpdate.shortChannelId == channelReady.alias_opt.get)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    bob2alice.expectNoMessage(200 millis)
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    bob2alice.expectNoMessage(100 millis)
     awaitCond(alice.stateName == NORMAL)
   }
 
@@ -168,14 +181,17 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     import f._
     // zero-conf channel: we don't have a real scid
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real == RealScidStatus.Unknown)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds.real == RealScidStatus.Unknown)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
-    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    val initialChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    assert(initialChannelUpdate == alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
     // the channel is not announced, so alice uses bob's alias (we have a no real scid anyway)
     assert(initialChannelUpdate.shortChannelId == channelReady.alias_opt.get)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    bob2alice.expectNoMessage(200 millis)
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    bob2alice.expectNoMessage(100 millis)
     awaitCond(alice.stateName == NORMAL)
   }
 

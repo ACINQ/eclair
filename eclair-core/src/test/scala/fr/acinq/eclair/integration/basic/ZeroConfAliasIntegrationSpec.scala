@@ -8,8 +8,8 @@ import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
 import fr.acinq.eclair.payment.PaymentSent
 import fr.acinq.eclair.testutils.FixtureSpec
-import fr.acinq.eclair.wire.protocol.{ChannelReady, ChannelReadyTlv}
 import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId}
+import org.scalatest.OptionValues.convertOptionToValuable
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatest.{Tag, TestData}
 import scodec.bits.HexStringSyntax
@@ -76,11 +76,10 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
                            bcScidAlias: Boolean,
                            paymentWorksWithoutHint: Boolean,
                            paymentWorksWithHint_opt: Option[Boolean],
-                           paymentWorksWithRealScidHint_opt: Option[Boolean],
-                          ): Unit = {
+                           paymentWorksWithRealScidHint_opt: Option[Boolean]): Unit = {
     import f._
 
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm)
+    val (_, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm)
 
     eventually {
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
@@ -96,7 +95,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     }
 
     if (bcPublic && deepConfirm) {
-      // if channel b-c is public, we wait for alice to learn about it
+      // if channel bob-carol is public, we wait for alice to learn about it
       eventually {
         val data = getRouterData(alice)
         assert(data.channels.size == 2)
@@ -112,68 +111,79 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       }
     }
 
-    if (paymentWorksWithHint_opt.contains(true)) {
-      sendPaymentAliceToCarol(f, useHint = true)
-    } else if (paymentWorksWithHint_opt.contains(false)) {
-      intercept[AssertionError] {
+    paymentWorksWithHint_opt match {
+      case Some(true) => sendPaymentAliceToCarol(f, useHint = true)
+      case Some(false) => intercept[AssertionError] {
         sendPaymentAliceToCarol(f, useHint = true)
       }
-    } else {
-      // skipped
+      case None => // skipped
     }
 
-    if (paymentWorksWithRealScidHint_opt.contains(true)) {
-      // if alice uses the real scid instead of the b-c alias, it still works
-      sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.get))
-    } else if (paymentWorksWithRealScidHint_opt.contains(false)) {
-      intercept[AssertionError] {
-        sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.get))
+    paymentWorksWithRealScidHint_opt match {
+      // if alice uses the real scid instead of the bob-carol alias, it still works
+      case Some(true) => sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.value))
+      case Some(false) => intercept[AssertionError] {
+        sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.value))
       }
-    } else {
-      // skipped
+      case None => // skipped
     }
   }
 
   test("a->b->c (b-c private)") { f =>
+    import f._
+
     internalTest(f,
       deepConfirm = true,
       bcPublic = false,
       bcZeroConf = false,
       bcScidAlias = false,
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because bob-carol isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
-      paymentWorksWithRealScidHint_opt = Some(true) // if alice uses the real scid instead of the b-c alias, it still works
+      paymentWorksWithRealScidHint_opt = Some(true) // if alice uses the real scid instead of the bob-carol alias, it still works
     )
 
-    //TODO
-    // NB: the default hints use bob's alias, even id scid alias isn't enabled, because eclair always sends and understands aliases
-    //assert(getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.get.shortChannelId ==
-    //  getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].localAlias)
-
+    // Bob and Carol understand scid aliases even when the feature isn't enabled.
+    val carolHint = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.value
+    val bobAlias = getRouterData(bob).privateChannels.values.head.shortIds.localAlias
+    assert(carolHint.shortChannelId == bobAlias)
   }
 
   test("a->b->c (b-c scid-alias private)", Tag(ScidAliasBobCarol)) { f =>
+    import f._
+
     internalTest(f,
       deepConfirm = true,
       bcPublic = false,
       bcZeroConf = false,
       bcScidAlias = true,
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because bob-carol isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
-      paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
+      paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the bob-carol alias, it doesn't work due to option_scid_alias
     )
+
+    // Carol must use Bob's scid alias in her routing hints.
+    val carolHint = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.value
+    val bobAlias = getRouterData(bob).privateChannels.values.head.shortIds.localAlias
+    assert(carolHint.shortChannelId == bobAlias)
   }
 
   test("a->b->c (b-c zero-conf unconfirmed private)", Tag(ZeroConfBobCarol)) { f =>
+    import f._
+
     internalTest(f,
       deepConfirm = false,
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = false,
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because bob-carol isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
-      paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
+      paymentWorksWithRealScidHint_opt = None // there is no real scid for bob-carol yet
     )
+
+    // Carol uses Bob's scid alias until the channel confirms.
+    val carolHint = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.value
+    val bobAlias = getRouterData(bob).privateChannels.values.collectFirst { case pc if pc.remoteNodeId == carol.nodeParams.nodeId => pc.shortIds.localAlias }.value
+    assert(carolHint.shortChannelId == bobAlias)
   }
 
   test("a->b->c (b-c zero-conf deeply confirmed private)", Tag(ZeroConfBobCarol)) { f =>
@@ -182,13 +192,14 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = false,
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because bob-carol isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
-      paymentWorksWithRealScidHint_opt = None // skipped, see below
-      // TODO  This actually doesn't work, because the ChannelRelayer relies on the the LocalChannelUpdate event to maintain
-      // TODO  its scid resolution map, and the channel doesn't emit a new one when a real scid is assigned, because we use the
-      // TODO  remote alias for the channel_update, not the real scid. So the channel_update remains the same. We used to
-      // TODO  have the ChannelRelayer also listen to ShortChannelIdAssigned event, but it's doesn't seem worth it here.
+      // TODO: we should be able to send payments with the real scid in the routing hint, but this currently doesn't work,
+      //  because the ChannelRelayer relies on the the LocalChannelUpdate event to maintain its scid resolution map, and
+      //  the channel doesn't emit a new one when a real scid is assigned, because we use the remote alias for the
+      //  channel_update, not the real scid. So the channel_update remains the same. We used to have the ChannelRelayer
+      //  also listen to ShortChannelIdAssigned event, but it's doesn't seem worth it here.
+      paymentWorksWithRealScidHint_opt = None
     )
   }
 
@@ -198,7 +209,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = false,
       bcZeroConf = true,
       bcScidAlias = true,
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because bob-carol isn't announced
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
     )
@@ -210,9 +221,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcPublic = true,
       bcZeroConf = true,
       bcScidAlias = false,
-      paymentWorksWithoutHint = false, // alice can't find a route to carol because b-c isn't announced
+      paymentWorksWithoutHint = false, // alice can't find a route to carol because bob-carol isn't announced yet
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
-      paymentWorksWithRealScidHint_opt = None // there is no real scid for b-c yet
+      paymentWorksWithRealScidHint_opt = None // there is no real scid for bob-carol yet
     )
   }
 

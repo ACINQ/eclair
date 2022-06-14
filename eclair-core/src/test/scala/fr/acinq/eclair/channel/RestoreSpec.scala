@@ -213,11 +213,11 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
         .modify(_.relayParams.privateChannelFees.feeBase).setTo(765 msat),
       Alice.nodeParams
         .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345),
-      //      Alice.nodeParams
-      //        .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
-      //      Alice.nodeParams
-      //        .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345)
-      //        .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
+      Alice.nodeParams
+        .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
+      Alice.nodeParams
+        .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345)
+        .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
     ) foreach { newConfig =>
 
       val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)

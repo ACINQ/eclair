@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Transa
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, RealScidStatus, ShortIds}
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, UnspecifiedShortChannelId, Alias, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, channel}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, UnspecifiedShortChannelId}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -138,8 +138,8 @@ object CommonCodecs {
 
   val realShortChannelIdStatus: Codec[RealScidStatus] = discriminated[RealScidStatus].by(uint8)
     .typecase(0, provide(RealScidStatus.Unknown))
-    .typecase(1, realshortchannelid.as[channel.RealScidStatus.Temporary])
-    .typecase(2, realshortchannelid.as[channel.RealScidStatus.Final])
+    .typecase(1, realshortchannelid.as[RealScidStatus.Temporary])
+    .typecase(2, realshortchannelid.as[RealScidStatus.Final])
 
   val shortids: Codec[ShortIds] = (
     ("real" | realShortChannelIdStatus) ::
