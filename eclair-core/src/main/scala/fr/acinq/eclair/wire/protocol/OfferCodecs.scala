@@ -17,11 +17,10 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.Offers._
+import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, TimestampSecond, UInt64}
@@ -189,6 +188,8 @@ object OfferCodecs {
       Attempt.failure(MissingRequiredTlv(UInt64(8)))
     } else if (tlvs.get[Description].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(10)))
+    } else if (tlvs.get[Paths].isEmpty) {
+      Attempt.failure(MissingRequiredTlv(UInt64(16)))
     } else if (tlvs.get[NodeIdXOnly].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(30)))
     } else if (tlvs.get[CreatedAt].isEmpty) {

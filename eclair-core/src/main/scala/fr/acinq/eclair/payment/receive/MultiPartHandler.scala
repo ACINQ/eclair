@@ -91,16 +91,15 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           }
           case None => p.payload.paymentPreimage match {
             case Some(paymentPreimage) if nodeParams.features.hasFeature(Features.KeySend) =>
-              val amount = Some(p.payload.totalAmount)
+              val amount = p.payload.totalAmount
               val paymentHash = Crypto.sha256(paymentPreimage)
-              val desc = Left("Donation")
               val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
                 Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               } else {
                 Features[InvoiceFeature](Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               }
               // Insert a fake invoice and then restart the incoming payment handler
-              val invoice = DummyInvoice(amount, TimestampSecond.now(), nodeParams.privateKey.publicKey, paymentHash, p.payload.paymentSecret, None, desc, Nil, FiniteDuration(Bolt11Invoice.DEFAULT_EXPIRY_SECONDS, TimeUnit.SECONDS), nodeParams.channelConf.minFinalExpiryDelta, features)
+              val invoice = DummyInvoice(amount, TimestampSecond.now(), nodeParams.privateKey.publicKey, paymentHash, p.payload.paymentSecret, nodeParams.channelConf.minFinalExpiryDelta, features)
               log.debug("generated fake invoice={} from amount={} (KeySend)", invoice.toString, amount)
               db.addIncomingPayment(invoice, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p

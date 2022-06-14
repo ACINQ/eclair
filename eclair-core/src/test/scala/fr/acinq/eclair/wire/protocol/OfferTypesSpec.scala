@@ -21,14 +21,14 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, VariableLengthOnion}
 import fr.acinq.eclair.wire.protocol.OfferCodecs.invoiceRequestTlvCodec
-import fr.acinq.eclair.wire.protocol.Offers._
+import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.{Features, MilliSatoshiLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.util.Success
 
-class OffersSpec extends AnyFunSuite {
+class OfferTypesSpec extends AnyFunSuite {
   val nodeId = ByteVector32(hex"4b9a1fa8e006f1e3937f65f66c408e6da8e1ca728ea43222a7381df1cc449605")
 
   test("sign and check offer") {
@@ -275,7 +275,7 @@ class OffersSpec extends AnyFunSuite {
         val genericTlvStream: Codec[TlvStream[GenericTlv]] = list(TlvCodecs.genericTlv).xmap(tlvs => TlvStream(tlvs), tlvs => tlvs.records.toList)
         val tlvs = genericTlvStream.decode(tlvStream.bits).require.value
         assert(tlvs.records.size == tlvCount)
-        val root = Offers.rootHash(tlvs, genericTlvStream)
+        val root = OfferTypes.rootHash(tlvs, genericTlvStream)
         assert(root == expectedRoot)
     }
   }

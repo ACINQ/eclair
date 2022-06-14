@@ -21,8 +21,8 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceTlvCodec}
-import fr.acinq.eclair.wire.protocol.Offers._
-import fr.acinq.eclair.wire.protocol.{Offers, TlvStream}
+import fr.acinq.eclair.wire.protocol.OfferTypes._
+import fr.acinq.eclair.wire.protocol.{OfferTypes, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
 import scodec.bits.ByteVector
 
@@ -102,7 +102,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   // It is assumed that the request is valid for this offer.
   def isValidFor(offer: Offer, request: InvoiceRequest): Boolean = {
-    Offers.xOnlyPublicKey(nodeId) == offer.nodeIdXOnly.xOnly &&
+    OfferTypes.xOnlyPublicKey(nodeId) == offer.nodeIdXOnly.xOnly &&
       checkSignature() &&
       offerId.contains(request.offerId) &&
       request.chain == chain &&
@@ -126,7 +126,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
   }
 
   def checkSignature(): Boolean = {
-    verifySchnorr(signatureTag("signature"), rootHash(Offers.removeSignature(records), invoiceTlvCodec), signature, Offers.xOnlyPublicKey(nodeId))
+    verifySchnorr(signatureTag("signature"), rootHash(OfferTypes.removeSignature(records), invoiceTlvCodec), signature, OfferTypes.xOnlyPublicKey(nodeId))
   }
 
   def withNodeId(nodeId: PublicKey): Bolt12Invoice = Bolt12Invoice(records, Some(nodeId))

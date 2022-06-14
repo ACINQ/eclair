@@ -47,7 +47,7 @@ object OnionMessagePayloadTlv {
    * In order to pay a Bolt 12 offer, we must send an onion message to request an invoice corresponding to that offer.
    * The creator of the offer will send us an invoice back through our blinded reply path.
    */
-  case class InvoiceRequest(request: Offers.InvoiceRequest) extends OnionMessagePayloadTlv
+  case class InvoiceRequest(request: OfferTypes.InvoiceRequest) extends OnionMessagePayloadTlv
 
   /**
    * When receiving an invoice request, we must send an onion message back containing an invoice corresponding to the
@@ -59,7 +59,7 @@ object OnionMessagePayloadTlv {
    * This message may be used when we receive an invalid invoice or invoice request.
    * It contains information helping senders figure out why their message was invalid.
    */
-  case class InvoiceError(error: Offers.InvoiceError) extends OnionMessagePayloadTlv
+  case class InvoiceError(error: OfferTypes.InvoiceError) extends OnionMessagePayloadTlv
 
 }
 

@@ -18,11 +18,14 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.payment.DummyInvoice.dummyInvoiceCodec
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
+import scodec.Codec
 import scodec.bits.ByteVector
 
+import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 
@@ -81,20 +84,49 @@ object Invoice {
   def fromString(input: String): Try[Invoice] = {
     if (input.toLowerCase.startsWith("lni")) {
       Bolt12Invoice.fromString(input)
+    } else if (input.startsWith("lnd")) {
+      DummyInvoice.fromString(input)
     } else {
       Bolt11Invoice.fromString(input)
     }
   }
 }
 
-case class DummyInvoice(amount_opt: Option[MilliSatoshi],
+/** Dummy invoice used for unsolicited payments
+ */
+case class DummyInvoice(amount: MilliSatoshi,
                         createdAt: TimestampSecond,
                         nodeId: PublicKey,
                         paymentHash: ByteVector32,
                         paymentSecret: Option[ByteVector32],
-                        paymentMetadata: Option[ByteVector],
-                        description: Either[String, ByteVector32],
-                        extraEdges: Seq[Invoice.ExtraEdge],
-                        relativeExpiry: FiniteDuration,
                         minFinalCltvExpiryDelta: CltvExpiryDelta,
-                        features: Features[InvoiceFeature]) extends Invoice
+                        features: Features[InvoiceFeature]) extends Invoice {
+  override val amount_opt: Option[MilliSatoshi] = Some(amount)
+  override val paymentMetadata: Option[ByteVector] = None
+  override val description: Either[String, ByteVector32] = Left("Donation")
+  override val extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty
+  override val relativeExpiry: FiniteDuration = FiniteDuration(Bolt11Invoice.DEFAULT_EXPIRY_SECONDS, TimeUnit.SECONDS)
+
+  override def toString: String = {
+    "lnd" + dummyInvoiceCodec.encode(this).require.bytes.toBase64
+  }
+}
+
+object DummyInvoice {
+
+  import fr.acinq.eclair.wire.protocol.CommonCodecs._
+  import scodec.codecs._
+
+  private val dummyInvoiceCodec: Codec[DummyInvoice] = (
+    ("amount" | millisatoshi) ::
+      ("createdAt" | timestampSecond) ::
+      ("nodeId" | publicKey) ::
+      ("paymentHash" | bytes32) ::
+      ("paymentSecret" | optional(bool8, bytes32)) ::
+      ("minFinalCltvExpiryDelta" | cltvExpiryDelta) ::
+      ("features" | bytes.xmap[Features[InvoiceFeature]](Features(_).invoiceFeatures(), _.toByteVector))).as[DummyInvoice]
+
+  def fromString(input: String): Try[DummyInvoice] = Try {
+    dummyInvoiceCodec.decodeValue(ByteVector.fromValidBase64(input.stripPrefix("lnd")).bits).require
+  }
+}

@@ -16,12 +16,9 @@
 
 package fr.acinq.eclair
 
-import akka.actor.ActorRef
-import akka.actor.typed.scaladsl.AskPattern.Askable
-import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
-import akka.actor.typed
-import akka.actor.typed.scaladsl.AskPattern.schedulerFromActorSystem
-import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
+import akka.actor.{ActorRef, typed}
+import akka.actor.typed.scaladsl.AskPattern.{Askable, schedulerFromActorSystem}
+import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, ClassicSchedulerOps}
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -50,7 +47,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
-import fr.acinq.eclair.wire.protocol.Offers.Offer
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector

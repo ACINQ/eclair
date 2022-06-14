@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
-import fr.acinq.eclair.wire.protocol.Offers.Offer
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 

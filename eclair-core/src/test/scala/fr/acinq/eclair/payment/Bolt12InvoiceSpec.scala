@@ -22,8 +22,8 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, VariableLengthOnion}
 import fr.acinq.eclair.payment.Bolt12Invoice.signatureTag
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, invoiceTlvCodec}
-import fr.acinq.eclair.wire.protocol.Offers._
-import fr.acinq.eclair.wire.protocol.{GenericTlv, Offers, TlvStream}
+import fr.acinq.eclair.wire.protocol.OfferTypes._
+import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferTypes, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, TimestampSecond, TimestampSecondLong, UInt64, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -34,7 +34,7 @@ import scala.util.Success
 class Bolt12InvoiceSpec extends AnyFunSuite {
 
   def signInvoice(invoice: Bolt12Invoice, key: PrivateKey): Bolt12Invoice = {
-    val tlvs = Offers.removeSignature(invoice.records)
+    val tlvs = OfferTypes.removeSignature(invoice.records)
     val signature = signSchnorr(Bolt12Invoice.signatureTag("signature"), rootHash(tlvs, invoiceTlvCodec), key)
     val signedInvoice = Bolt12Invoice(tlvs.copy(records = tlvs.records ++ Seq(Signature(signature))), None)
     assert(signedInvoice.checkSignature())

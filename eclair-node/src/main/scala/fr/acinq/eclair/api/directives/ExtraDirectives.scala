@@ -27,7 +27,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.payment.Bolt11Invoice
-import fr.acinq.eclair.wire.protocol.Offers.Offer
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
 
 import scala.concurrent.Future

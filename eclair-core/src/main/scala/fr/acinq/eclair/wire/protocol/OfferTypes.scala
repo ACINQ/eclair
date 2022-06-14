@@ -34,7 +34,7 @@ import scala.util.Try
  * Lightning Bolt 12 offers
  * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
  */
-object Offers {
+object OfferTypes {
 
   sealed trait Bolt12Tlv extends Tlv
 

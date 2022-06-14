@@ -25,10 +25,13 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
 import fr.acinq.eclair.channel.{ChannelStateChanged, NORMAL}
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
+import fr.acinq.eclair.db.OutgoingPaymentStatus.Succeeded
 import fr.acinq.eclair.message.OnionMessages
-import fr.acinq.eclair.payment.Bolt12Invoice
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentEvent}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.perHopPayloadCodec
-import fr.acinq.eclair.wire.protocol.Offers.Offer
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.Invoice
 import fr.acinq.eclair.wire.protocol.TlvStream
 import fr.acinq.eclair.{EclairImpl, Features, MilliSatoshiLong, PayOfferResponse, randomBytes32}
@@ -73,6 +76,25 @@ class OffersIntegrationSpec extends IntegrationSpec {
         if (eventListener.expectMsgType[ChannelStateChanged](60 seconds).currentState == NORMAL) count = count + 1
       }
     }
+  }
+
+  test("simple bolt11 payment") {
+    val alice = new EclairImpl(nodes("A"))
+    val bob = new EclairImpl(nodes("B"))
+
+    val preimage = randomBytes32()
+    val invoice = Await.result(alice.receive(Left("simple bolt11 invoice"), Some(100000 msat), None, None, Some(preimage)), 10 seconds)
+
+    bob.send(None,100000 msat, invoice)
+
+    Thread.sleep(2000)
+
+    val probe = TestProbe()
+    bob.sentInfo(Right(invoice.paymentHash)).pipeTo(probe.ref)
+
+    val response = probe.expectMsgType[Seq[OutgoingPayment]](1 minute)
+    val OutgoingPaymentStatus.Succeeded(preimageReceived, _, _, _) = response.head.status
+    assert(preimageReceived === preimage)
   }
 
   test("simple offer") {

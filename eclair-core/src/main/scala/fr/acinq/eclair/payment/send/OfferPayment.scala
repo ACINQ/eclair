@@ -28,7 +28,7 @@ import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentFailed, PaymentSent}
-import fr.acinq.eclair.wire.protocol.Offers.{InvoiceRequest, Offer}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol.{OnionMessage, OnionMessagePayloadTlv}
 import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, TimestampSecond, randomBytes32, randomKey}
