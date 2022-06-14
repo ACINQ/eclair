@@ -115,7 +115,7 @@ object ChannelTypes {
     ).flatten
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
-    override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zero_conf" else ""}"
+    override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
     override def features: Set[InitFeature] = featureBits.activated.keySet

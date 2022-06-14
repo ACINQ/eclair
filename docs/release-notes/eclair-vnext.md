@@ -4,7 +4,64 @@
 
 ## Major changes
 
-Dropped support for version 2 of Tor protocol. That means 
+### Add support for channel aliases and zeroconf channels
+
+:information_source: Those features are only supported for channels of type `AnchorOutputsZeroFeeHtlcTx`, which is the
+newest channel type and the one enabled by default. If you are opening a channel with a node that doesn't run Eclair,
+make sure they support `option_anchors_zero_fee_htlc_tx`.
+
+#### Channel aliases
+
+Channel aliases offer a way to use arbitrary channel identifiers for routing. This feature improves privacy by not
+leaking the funding transaction of the channel during payments.
+
+This feature is enabled by default, but your peer has to support it too.
+
+#### Zeroconf channels
+
+Zeroconf channels make it possible to use a newly created channel before the funding tx is confirmed on the blockchain.
+
+:warning: Zeroconf requires the fundee to trust the funder. For this reason it is disabled by default, and you should
+only enable it on a peer-by-peer basis.
+
+##### Enabling through features
+
+Below is how to enable zeroconf with a given peer in `eclair.conf`. With this config, your node will _accept_ zeroconf channels from node `03864e...`.
+
+```eclair.conf
+override-init-features = [
+  {
+    nodeid = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
+    features = {
+      // these features need to be enabled
+      var_onion_optin = mandatory
+      payment_secret = mandatory
+      option_channel_type = optional
+      // dependencies of zeroconf
+      option_static_remotekey = optional
+      option_anchors_zero_fee_htlc_tx = optional
+      option_scid_alias = optional
+      // enable zeroconf
+      option_zeroconf = optional
+    }
+  }
+]
+```
+
+Note that, as funder, Eclair will happily use an unconfirmed channel if the peer sends an early `channel_ready`, even if the `option_zeroconf` feature isn't enabled, as long as the peer provides a channel alias.
+
+##### Enabling through channel type
+
+You can enable `option_scid_alias` and `option_zeroconf` features by requesting them in the channel type, even if those options aren't enabled in your features.
+
+Below is how you would request a zeroconf channel thhrough the command-line interface:
+```shell
+$ ./eclair-cli open --nodeId=03864e... --fundingSatoshis=100000 --channelType=anchor_outputs_zero_fee_htlc_tx+zeroconf
+```
+
+### Remove support for Tor v2
+
+Dropped support for version 2 of Tor protocol. That means: 
 
 - Eclair can't open control connection to Tor daemon version 0.3.3.5 and earlier anymore
 - Eclair can't create hidden services for Tor protocol v2 with newer versions of Tor daemon
