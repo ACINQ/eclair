@@ -206,7 +206,10 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     val trampolinePacket_opt = if (r.invoice.features.hasFeature(Features.TrampolinePaymentPrototype)) {
       OutgoingPaymentPacket.buildTrampolinePacket(r.paymentHash, trampolineRoute, finalPayload)
     } else {
-      OutgoingPaymentPacket.buildTrampolineToLegacyPacket(r.invoice, trampolineRoute, finalPayload)
+      r.invoice match {
+        case invoice: Bolt11Invoice => OutgoingPaymentPacket.buildTrampolineToLegacyPacket(invoice, trampolineRoute, finalPayload)
+        case _ => Failure(new Exception("Trampoline to legacy is only supported for Bolt11 invoices."))
+      }
     }
     trampolinePacket_opt.map {
       case (trampolineAmount, trampolineExpiry, trampolineOnion) => (trampolineAmount, trampolineExpiry, trampolineOnion.packet)

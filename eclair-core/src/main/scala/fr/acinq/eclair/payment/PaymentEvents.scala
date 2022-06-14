@@ -232,7 +232,7 @@ object PaymentFailure {
   }
 
   /** Update the invoice routing hints based on more recent channel updates received. */
-  def updateRoutingHints(failures: Seq[PaymentFailure], routingHints: Seq[GraphEdge]): Seq[GraphEdge] = {
+  def updateExtraEdges(failures: Seq[PaymentFailure], routingHints: Seq[GraphEdge]): Seq[GraphEdge] = {
     // We're only interested in the last channel update received per channel.
     val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
       case (current, failure) => failure match {

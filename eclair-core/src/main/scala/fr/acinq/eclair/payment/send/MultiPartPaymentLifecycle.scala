@@ -117,7 +117,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
-        val assistedRoutes1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.extraEdges)
+        val assistedRoutes1 = PaymentFailure.updateExtraEdges(pf.failures, d.request.extraEdges)
         stay() using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(extraEdges = assistedRoutes1))
       }
 
@@ -139,7 +139,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
-        val extraEdges1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.extraEdges)
+        val extraEdges1 = PaymentFailure.updateExtraEdges(pf.failures, d.request.extraEdges)
         val stillPending = d.pending - pf.id
         val (toSend, maxFee) = remainingToSend(d.request, stillPending.values, d.request.routeParams.includeLocalChannelCost)
         log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)

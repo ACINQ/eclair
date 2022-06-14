@@ -32,7 +32,9 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator}
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Router.ChannelRelayParams.{FromAnnouncement, FromHint}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Announcements, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -318,10 +320,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val routingHint = ExtraHop(b, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(List(routingHint)))
+    val extraEdge = GraphEdge(AssistedChannel(e, FromHint(ExtraHop(b, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta))))
+    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(extraEdge))
     sender.send(payFsm, payment)
-    assert(router.expectMsgType[RouteRequest].extraEdges.head.head == routingHint)
+    assert(router.expectMsgType[RouteRequest].extraEdges.head == extraEdge)
     val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil)
     router.send(payFsm, RouteResponse(Seq(route)))
     childPayFsm.expectMsgType[SendPaymentToRoute]
@@ -332,17 +334,17 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(finalAmount, channelUpdate))))))
     // We update the routing hints accordingly before requesting a new route.
-    assert(router.expectMsgType[RouteRequest].extraEdges.head.head == ExtraHop(b, channelUpdate.shortChannelId, 250 msat, 150, CltvExpiryDelta(24)))
+    assert(router.expectMsgType[RouteRequest].extraEdges.head.params == FromAnnouncement(channelUpdate))
   }
 
   test("retry with ignored routing hints (temporary channel failure)") { f =>
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val routingHint = ExtraHop(b, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(List(routingHint)))
+    val extraEdge = GraphEdge(AssistedChannel(e, FromHint(ExtraHop(b, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta))))
+    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(extraEdge))
     sender.send(payFsm, payment)
-    assert(router.expectMsgType[RouteRequest].extraEdges.head.head == routingHint)
+    assert(router.expectMsgType[RouteRequest].extraEdges.head == extraEdge)
     val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil)
     router.send(payFsm, RouteResponse(Seq(route)))
     childPayFsm.expectMsgType[SendPaymentToRoute]
@@ -356,15 +358,15 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, TemporaryChannelFailure(channelUpdateBE1))))))
     // We update the routing hints accordingly before requesting a new route and ignore the channel.
     val routeRequest = router.expectMsgType[RouteRequest]
-    assert(routeRequest.extraEdges.head.head == routingHint)
+    assert(ChannelRelayParams.areSame(routeRequest.extraEdges.head.params, extraEdge.params, ignoreHtlcSize = true))
     assert(routeRequest.ignore.channels.map(_.shortChannelId) == Set(channelUpdateBE1.shortChannelId))
   }
 
   test("update routing hints") { () =>
-    val routingHints = Seq(
+    val extraEdges = Seq(
       Seq(ExtraHop(a, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ExtraHop(b, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24))),
       Seq(ExtraHop(a, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144)))
-    )
+    ).flatMap(Bolt11Invoice.toExtraEdges(_, c))
 
     def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelUpdate = {
       defaultChannelUpdate.copy(shortChannelId = shortChannelId, feeBaseMsat = feeBase, feeProportionalMillionths = feeProportional, cltvExpiryDelta = cltvExpiryDelta)
@@ -376,11 +378,11 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
         RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48))))),
         UnreadableRemoteFailure(finalAmount, Nil)
       )
-      val routingHints1 = Seq(
+      val extraEdges1 = Seq(
         Seq(ExtraHop(a, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ExtraHop(b, ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48))),
         Seq(ExtraHop(a, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144)))
-      )
-      assert(routingHints1 == PaymentFailure.updateRoutingHints(failures, routingHints))
+      ).flatMap(Bolt11Invoice.toExtraEdges(_, c))
+      assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, extraEdges)).forall{case (e1, e2) => ChannelRelayParams.areSame(e1.params, e2.params, ignoreHtlcSize = true)})
     }
     {
       val failures = Seq(
@@ -389,11 +391,11 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
         RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22))))),
         RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23))))),
       )
-      val routingHints1 = Seq(
+      val extraEdges1 = Seq(
         Seq(ExtraHop(a, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23)), ExtraHop(b, ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21))),
         Seq(ExtraHop(a, ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22)))
-      )
-      assert(routingHints1 == PaymentFailure.updateRoutingHints(failures, routingHints))
+      ).flatMap(Bolt11Invoice.toExtraEdges(_, c))
+      assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, extraEdges)).forall{case (e1, e2) => ChannelRelayParams.areSame(e1.params, e2.params, ignoreHtlcSize = true)})
     }
   }
 
