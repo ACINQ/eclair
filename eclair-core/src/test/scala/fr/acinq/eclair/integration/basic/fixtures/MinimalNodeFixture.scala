@@ -149,9 +149,9 @@ object MinimalNodeFixture extends Assertions {
     sender.expectMsgType[ConnectionResult.Connected]
   }
 
-  def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi)(implicit system: ActorSystem): ChannelOpened = {
+  def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = None)(implicit system: ActorSystem): ChannelOpened = {
     val sender = TestProbe("sender")
-    sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, 0L msat, None, None, None, None))
+    sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, 0L msat, channelType_opt, None, None, None))
     sender.expectMsgType[ChannelOpened]
   }
 
