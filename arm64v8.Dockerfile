@@ -1,4 +1,4 @@
-FROM arm64v8/eclipse-temurin:11-jdk-jammy as BUILD
+FROM eclipse-temurin:11-jdk-jammy as BUILD
 
 # Setup maven, we don't use https://hub.docker.com/_/maven/ as it declare .m2 as volume, we loose all mvn cache
 # We can alternatively do as proposed by https://github.com/carlossg/docker-maven#packaging-a-local-repository-with-the-image
