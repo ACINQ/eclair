@@ -26,6 +26,12 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, ChannelTypeFeature, Features, PermanentChannelFeature, channel}
 import scodec.bits.BitVector
 
+/**
+ * When there is a complex change of types (with some classes removed), it is easier and safer to keep a copy of the
+ * former classes because it saves us from rewriting codecs to decode previously persisted data. To avoid naming
+ * conflicts and prevent those classes from being used elsewhere in the application code, those classes have a
+ * package-restricted visibility.
+ */
 private[channel] object ChannelTypes0 {
 
   // The format of the XxxCommitPublished types was changed in version2 to work with anchor outputs channels.

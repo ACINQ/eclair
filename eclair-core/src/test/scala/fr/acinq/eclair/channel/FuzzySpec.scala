@@ -77,12 +77,14 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.initFeatures)
       val bobInit = Init(Bob.channelParams.initFeatures)
+      val aliceAlias = ShortChannelId.generateLocalAlias()
+      val bobAlias = ShortChannelId.generateLocalAlias()
       aliceRegister ! alice
       bobRegister ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = ChannelFlags.Private, ChannelConfig.standard, ChannelTypes.Standard)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = ChannelFlags.Private, ChannelConfig.standard, ChannelTypes.Standard, aliceAlias)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard, bobAlias)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]

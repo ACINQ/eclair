@@ -208,7 +208,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, commitTxFeerate, fundingTxFeerate, localParams, remote, remoteInit, channelFlags, channelConfig, channelType), Nothing) =>
+    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, commitTxFeerate, fundingTxFeerate, localParams, remote, remoteInit, channelFlags, channelConfig, channelType, localAlias), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = true, temporaryChannelId, commitTxFeerate, Some(fundingTxFeerate)))
       activeConnection = remote
       txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
@@ -241,7 +241,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         ))
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
 
-    case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _, _), Nothing) if !localParams.isInitiator =>
+    case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _, _, _), Nothing) if !localParams.isInitiator =>
       activeConnection = remote
       txPublisher ! SetChannelId(remoteNodeId, inputFundee.temporaryChannelId)
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)

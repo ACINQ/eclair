@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, TestKitBaseClass}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -47,9 +47,11 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
+    val aliceAlias = ShortChannelId.generateLocalAlias()
+    val bobAlias = ShortChannelId.generateLocalAlias()
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, aliceAlias)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType, bobAlias)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]

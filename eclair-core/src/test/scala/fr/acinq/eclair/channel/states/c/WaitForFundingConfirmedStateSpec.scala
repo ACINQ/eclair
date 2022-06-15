@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReady, Error, FundingCreated, FundingSigned, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -52,13 +52,15 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val pushMsat = if (test.tags.contains(ChannelStateTestsTags.NoPushMsat)) 0.msat else TestConstants.pushMsat
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
+    val aliceAlias = ShortChannelId.generateLocalAlias()
+    val bobAlias = ShortChannelId.generateLocalAlias()
 
     within(30 seconds) {
       val listener = TestProbe()
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, aliceAlias)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType, bobAlias)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)

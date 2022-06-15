@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, ShortChannelId, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -62,10 +62,12 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val commitTxFeerate = if (channelType == ChannelTypes.AnchorOutputs || channelType.isInstanceOf[ChannelTypes.AnchorOutputsZeroFeeHtlcTx]) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
+    val aliceAlias = ShortChannelId.generateLocalAlias()
+    val bobAlias = ShortChannelId.generateLocalAlias()
     within(30 seconds) {
       val fundingAmount = if (test.tags.contains(ChannelStateTestsTags.Wumbo)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, commitTxFeerate, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, commitTxFeerate, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, aliceAlias)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType, bobAlias)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
@@ -167,8 +169,10 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     // Bob advertises support for anchor outputs, but Alice doesn't.
     val aliceParams = Alice.channelParams
     val bobParams = Bob.channelParams.copy(initFeatures = Features(Features.StaticRemoteKey -> FeatureSupport.Optional, Features.AnchorOutputs -> FeatureSupport.Optional))
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, Init(bobParams.initFeatures), ChannelFlags.Private, channelConfig, ChannelTypes.AnchorOutputs)
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, Init(bobParams.initFeatures), channelConfig, ChannelTypes.AnchorOutputs)
+    val aliceAlias = ShortChannelId.generateLocalAlias()
+    val bobAlias = ShortChannelId.generateLocalAlias()
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, Init(bobParams.initFeatures), ChannelFlags.Private, channelConfig, ChannelTypes.AnchorOutputs, aliceAlias)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, Init(bobParams.initFeatures), channelConfig, ChannelTypes.AnchorOutputs, bobAlias)
     val open = alice2bob.expectMsgType[OpenChannel]
     assert(open.channelType_opt == Some(ChannelTypes.AnchorOutputs))
     alice2bob.forward(bob, open)

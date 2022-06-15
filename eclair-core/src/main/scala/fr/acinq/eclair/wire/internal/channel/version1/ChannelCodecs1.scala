@@ -18,11 +18,12 @@ package fr.acinq.eclair.wire.internal.channel.version1
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.{Alias, BlockHeight}
+import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.wire.internal.channel.Mutators
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, PublishableTxs}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -237,15 +238,18 @@ private[channel] object ChannelCodecs1 {
         ("fundingTx" | optional(bool8, txCodec)) ::
         ("waitingSince" | int64.as[BlockHeight]) ::
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec))) ::
-        ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+        ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec))))
+      .map(Mutators.AddLocalAlias.mutateDataWaitForFundingConfirmed)
+      .decodeOnly
+      .as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_CHANNEL_READY_21_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | realshortchannelid) ::
-        ("lastSent" | lengthDelimited(channelReadyCodec))).map {
-      case commitments :: shortChannelId :: lastSent :: HNil =>
-        DATA_WAIT_FOR_CHANNEL_READY(commitments, shortIds = ShortIds(real = RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), lastSent = lastSent)
-    }.decodeOnly
+        ("lastSent" | lengthDelimited(channelReadyCodec)))
+      .map(Mutators.AddLocalAlias.mutateDataWaitForChannelReady)
+      .decodeOnly
+      .as[DATA_WAIT_FOR_CHANNEL_READY]
 
     val DATA_NORMAL_22_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
@@ -255,10 +259,10 @@ private[channel] object ChannelCodecs1 {
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
-      case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
-        DATA_NORMAL(commitments, shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates)
-    }.decodeOnly
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates])))
+      .map(Mutators.AddLocalAlias.mutateDataNormal)
+      .decodeOnly
+      .as[DATA_NORMAL]
 
     val DATA_SHUTDOWN_23_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::

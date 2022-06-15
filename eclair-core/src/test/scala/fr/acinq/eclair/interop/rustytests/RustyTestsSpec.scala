@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.Init
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestFeeEstimator, TestKitBaseClass, TestUtils}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId, TestFeeEstimator, TestKitBaseClass, TestUtils}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{BeforeAndAfterAll, Outcome}
@@ -73,11 +73,13 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobNodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayer, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     val aliceInit = Init(Alice.channelParams.initFeatures)
     val bobInit = Init(Bob.channelParams.initFeatures)
+    val aliceAlias = ShortChannelId.generateLocalAlias()
+    val bobAlias = ShortChannelId.generateLocalAlias()
     // alice and bob will both have 1 000 000 sat
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000 sat, 1000000000 msat, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Private, channelConfig, channelType)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000 sat, 1000000000 msat, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Private, channelConfig, channelType, aliceAlias)
     alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, channelConfig, channelType)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, channelConfig, channelType, bobAlias)
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     pipe ! (alice, bob)
     within(30 seconds) {

@@ -159,20 +159,20 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           val origin = sender()
           implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
           createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = true, c.fundingSatoshis).andThen {
-            case Success(localParams) => selfRef ! SpawnChannelInitiator(c, ChannelConfig.standard, channelType, localParams, origin)
+            case Success((localParams, localAlias)) => selfRef ! SpawnChannelInitiator(c, ChannelConfig.standard, channelType, localParams, localAlias, origin)
             case Failure(t) => origin ! Status.Failure(new RuntimeException("channel creation failed", t))
           }
           stay()
         }
 
-      case Event(SpawnChannelInitiator(c, channelConfig, channelType, localParams, origin), d: ConnectedData) =>
+      case Event(SpawnChannelInitiator(c, channelConfig, channelType, localParams, localAlias, origin), d: ConnectedData) =>
         val channel = spawnChannel(Some(origin))
         c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
         val temporaryChannelId = randomBytes32()
         val channelFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingSatoshis, None)
         val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
         log.info(s"requesting a new channel with type=$channelType fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType)
+        channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, localAlias)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(msg: protocol.OpenChannel, d: ConnectedData) =>
@@ -195,7 +195,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
                 val selfRef = self
                 implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
                 createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = false, msg.fundingSatoshis).andThen {
-                  case Success(localParams) => selfRef ! SpawnChannelNonInitiator(msg, ChannelConfig.standard, channelType, localParams)
+                  case Success((localParams, localAlias)) => selfRef ! SpawnChannelNonInitiator(msg, ChannelConfig.standard, channelType, localParams, localAlias)
                   case Failure(_) => selfRef ! Peer.OutgoingMessage(Error(msg.temporaryChannelId, "channel creation failed"), d.peerConnection)
                 }
                 stay()
@@ -210,11 +210,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
             stay()
         }
 
-      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams), d: ConnectedData) =>
+      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams, localAlias), d: ConnectedData) =>
         val channel = spawnChannel(None)
         val temporaryChannelId = open.temporaryChannelId
         log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+        channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType, localAlias)
         channel ! open
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
@@ -383,12 +383,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       s(e)
   }
 
-  def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], channelType: SupportedChannelType, isInitiator: Boolean, fundingAmount: Satoshi)(implicit ec: ExecutionContext): Future[LocalParams] = {
-    if (channelType.paysDirectlyToWallet) {
+  def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], channelType: SupportedChannelType, isInitiator: Boolean, fundingAmount: Satoshi)(implicit ec: ExecutionContext): Future[(LocalParams, Alias)] = {
+    val localParams_f = if (channelType.paysDirectlyToWallet) {
       wallet.getReceivePubkey().map(walletKey => makeChannelParams(nodeParams, initFeatures, Script.write(Script.pay2wpkh(walletKey)), Some(walletKey), isInitiator, fundingAmount))
     } else {
       wallet.getReceiveAddress().map(address => makeChannelParams(nodeParams, initFeatures, Script.write(addressToPublicKeyScript(address, nodeParams.chainHash)), None, isInitiator, fundingAmount))
     }
+    val localAlias_f = Future(ShortChannelId.generateLocalAlias())
+    for {
+      localParams <- localParams_f
+      localAlias <- localAlias_f
+    } yield (localParams, localAlias)
   }
 
   def spawnChannel(origin_opt: Option[ActorRef]): ActorRef = {
@@ -495,8 +500,8 @@ object Peer {
     fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum ${FeeratePerKw.MinimumFeeratePerKw} rate/kw"))
   }
 
-  private case class SpawnChannelInitiator(cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, origin: ActorRef)
-  private case class SpawnChannelNonInitiator(msg: protocol.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
+  private case class SpawnChannelInitiator(cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, localAlias: Alias, origin: ActorRef)
+  private case class SpawnChannelNonInitiator(msg: protocol.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, localAlias: Alias)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse {
@@ -525,6 +530,8 @@ object Peer {
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
 
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
+
+  case class ChannelCreationData(localParams: LocalParams)
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, fundingAmount: Satoshi): LocalParams = {

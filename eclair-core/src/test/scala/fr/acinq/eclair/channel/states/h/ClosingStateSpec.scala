@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, HtlcSuccessTx, HtlcTimeoutTx, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -70,9 +70,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
         val aliceInit = Init(aliceParams.initFeatures)
         val bobInit = Init(bobParams.initFeatures)
-        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
+        val aliceAlias = ShortChannelId.generateLocalAlias()
+        val bobAlias = ShortChannelId.generateLocalAlias()
+        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, aliceAlias)
         alice2blockchain.expectMsgType[SetChannelId]
-        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType, bobAlias)
         bob2blockchain.expectMsgType[SetChannelId]
         alice2bob.expectMsgType[OpenChannel]
         alice2bob.forward(bob)

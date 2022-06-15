@@ -85,7 +85,8 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              remoteInit: Init,
                              channelFlags: ChannelFlags,
                              channelConfig: ChannelConfig,
-                             channelType: SupportedChannelType) {
+                             channelType: SupportedChannelType,
+                             localAlias: Alias) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
 }
 case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
@@ -93,7 +94,8 @@ case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
                              remote: ActorRef,
                              remoteInit: Init,
                              channelConfig: ChannelConfig,
-                             channelType: SupportedChannelType)
+                             channelType: SupportedChannelType,
+                             localAlias: Alias)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
@@ -393,6 +395,7 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32
                                                 remoteFirstPerCommitmentPoint: PublicKey,
                                                 channelConfig: ChannelConfig,
                                                 channelFeatures: ChannelFeatures,
+                                                localAlias: Alias,
                                                 lastSent: OpenChannel) extends TransientChannelData {
   val channelId: ByteVector32 = temporaryChannelId
 }
@@ -406,6 +409,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
                                                channelFlags: ChannelFlags,
                                                channelConfig: ChannelConfig,
                                                channelFeatures: ChannelFeatures,
+                                               localAlias: Alias,
                                                lastSent: AcceptChannel) extends TransientChannelData {
   val channelId: ByteVector32 = temporaryChannelId
 }
@@ -420,10 +424,12 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
                                               channelFlags: ChannelFlags,
                                               channelConfig: ChannelConfig,
                                               channelFeatures: ChannelFeatures,
+                                              localAlias: Alias,
                                               lastSent: FundingCreated) extends TransientChannelData
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
+                                                 localAlias: Alias,
                                                  deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
 final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
