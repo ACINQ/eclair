@@ -33,8 +33,8 @@ class ChannelCodecs3Spec extends AnyFunSuite {
 
   test("basic serialization test (NORMAL)") {
     val data = normal
-    val bin = DATA_NORMAL_Codec.encode(data).require
-    val check = DATA_NORMAL_Codec.decodeValue(bin).require
+    val bin = DATA_NORMAL_09_Codec.encode(data).require
+    val check = DATA_NORMAL_09_Codec.decodeValue(bin).require
     assert(data.commitments.localCommit.spec == check.commitments.localCommit.spec)
     assert(data == check)
   }
@@ -100,10 +100,10 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     assert(codec.decodeValue(codec.encode(remoteParams1).require).require == remoteParams1)
 
     val dataWithoutRemoteShutdownScript = normal.copy(commitments = normal.commitments.copy(remoteParams = remoteParams))
-    assert(DATA_NORMAL_Codec.decode(DATA_NORMAL_Codec.encode(dataWithoutRemoteShutdownScript).require).require.value == dataWithoutRemoteShutdownScript)
+    assert(DATA_NORMAL_09_Codec.decode(DATA_NORMAL_09_Codec.encode(dataWithoutRemoteShutdownScript).require).require.value == dataWithoutRemoteShutdownScript)
 
     val dataWithRemoteShutdownScript = normal.copy(commitments = normal.commitments.copy(remoteParams = remoteParams1))
-    assert(DATA_NORMAL_Codec.decode(DATA_NORMAL_Codec.encode(dataWithRemoteShutdownScript).require).require.value == dataWithRemoteShutdownScript)
+    assert(DATA_NORMAL_09_Codec.decode(DATA_NORMAL_09_Codec.encode(dataWithRemoteShutdownScript).require).require.value == dataWithRemoteShutdownScript)
   }
 
   test("encode/decode optional channel reserve") {
