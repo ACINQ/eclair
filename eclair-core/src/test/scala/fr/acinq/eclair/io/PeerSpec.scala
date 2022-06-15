@@ -464,7 +464,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val channelFactory = new ChannelFactory {
       override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
-        assert(origin_opt == Some(probe.ref))
+        assert(origin_opt.contains(probe.ref))
         channel.ref
       }
     }
