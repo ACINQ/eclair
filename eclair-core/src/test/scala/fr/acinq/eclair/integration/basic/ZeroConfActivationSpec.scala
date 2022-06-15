@@ -76,8 +76,4 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(getChannelData(alice, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
     assert(getChannelData(bob, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
   }
-
-
 }
-
-
