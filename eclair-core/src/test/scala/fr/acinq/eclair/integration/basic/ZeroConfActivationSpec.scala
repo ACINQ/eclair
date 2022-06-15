@@ -58,7 +58,7 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     connect(alice, bob)
     val channelType = AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)
     // bob rejects the channel
-    intercept {
+    intercept[AssertionError] {
       openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
     }
   }
