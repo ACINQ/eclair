@@ -98,44 +98,48 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       }
     }
 
-    if (bcPublic && deepConfirm) {
-      // if channel bob-carol is public, we wait for alice to learn about it
-      eventually {
+    eventually {
+      if (bcPublic && deepConfirm) {
+        // if channel bob-carol is public, we wait for alice to learn about it
         val data = getRouterData(alice)
         assert(data.channels.size == 2)
         assert(data.channels.values.forall(pc => pc.update_1_opt.isDefined && pc.update_2_opt.isDefined))
       }
     }
 
-    if (paymentWorksWithoutHint) {
-      sendPaymentAliceToCarol(f)
-    } else {
-      intercept[AssertionError] {
+    eventually {
+      if (paymentWorksWithoutHint) {
         sendPaymentAliceToCarol(f)
+      } else {
+        intercept[AssertionError] {
+          sendPaymentAliceToCarol(f)
+        }
       }
     }
 
-    paymentWorksWithHint_opt match {
-      case Some(true) => sendPaymentAliceToCarol(f, useHint = true)
-      case Some(false) => intercept[AssertionError] {
-        sendPaymentAliceToCarol(f, useHint = true)
+    eventually {
+      paymentWorksWithHint_opt match {
+        case Some(true) => sendPaymentAliceToCarol(f, useHint = true)
+        case Some(false) => intercept[AssertionError] {
+          sendPaymentAliceToCarol(f, useHint = true)
+        }
+        case None => // skipped
       }
-      case None => // skipped
     }
 
-    paymentWorksWithRealScidHint_opt match {
-      // if alice uses the real scid instead of the bob-carol alias, it still works
-      case Some(true) => sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.value))
-      case Some(false) => intercept[AssertionError] {
-        sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.value))
+    eventually {
+      paymentWorksWithRealScidHint_opt match {
+        // if alice uses the real scid instead of the bob-carol alias, it still works
+        case Some(true) => sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.value))
+        case Some(false) => intercept[AssertionError] {
+          sendPaymentAliceToCarol(f, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.value))
+        }
+        case None => // skipped
       }
-      case None => // skipped
     }
   }
 
   test("a->b->c (b-c private)") { f =>
-    import f._
-
     internalTest(f,
       deepConfirm = true,
       bcPublic = false,
@@ -148,8 +152,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   }
 
   test("a->b->c (b-c scid-alias private)", Tag(ScidAliasBobCarol)) { f =>
-    import f._
-
     internalTest(f,
       deepConfirm = true,
       bcPublic = false,
@@ -162,8 +164,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   }
 
   test("a->b->c (b-c zero-conf unconfirmed private)", Tag(ZeroConfBobCarol)) { f =>
-    import f._
-
     internalTest(f,
       deepConfirm = false,
       bcPublic = false,
