@@ -16,12 +16,11 @@
 
 package fr.acinq
 
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
 import fr.acinq.eclair.crypto.StrongRandom
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 

@@ -164,10 +164,10 @@ object LightningMessageCodecs {
       ("signature" | bytes64) ::
       ("tlvStream" | FundingSignedTlv.fundingSignedTlvCodec)).as[FundingSigned]
 
-  val fundingLockedCodec: Codec[FundingLocked] = (
+  val channelReadyCodec: Codec[ChannelReady] = (
     ("channelId" | bytes32) ::
       ("nextPerCommitmentPoint" | publicKey) ::
-      ("tlvStream" | FundingLockedTlv.fundingLockedTlvCodec)).as[FundingLocked]
+      ("tlvStream" | ChannelReadyTlv.channelReadyTlvCodec)).as[ChannelReady]
 
   val txAddInputCodec: Codec[TxAddInput] = (
     ("channelId" | bytes32) ::
@@ -281,7 +281,7 @@ object LightningMessageCodecs {
 
   val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
     ("channelId" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
+      ("shortChannelId" | realshortchannelid) ::
       ("nodeSignature" | bytes64) ::
       ("bitcoinSignature" | bytes64) ::
       ("tlvStream" | AnnouncementSignaturesTlv.announcementSignaturesTlvCodec)).as[AnnouncementSignatures]
@@ -289,7 +289,7 @@ object LightningMessageCodecs {
   val channelAnnouncementWitnessCodec =
     ("features" | featuresCodec) ::
       ("chainHash" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
+      ("shortChannelId" | realshortchannelid) ::
       ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
       ("bitcoinKey1" | publicKey) ::
@@ -368,10 +368,10 @@ object LightningMessageCodecs {
       .\(0) {
         case a@EncodedShortChannelIds(_, Nil) => a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
         case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
-      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(realshortchannelid)).as[EncodedShortChannelIds])
       .\(1) {
         case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
-      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(realshortchannelid))).as[EncodedShortChannelIds])
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
     ("chainHash" | bytes32) ::
@@ -441,7 +441,7 @@ object LightningMessageCodecs {
     .typecase(33, acceptChannelCodec)
     .typecase(34, fundingCreatedCodec)
     .typecase(35, fundingSignedCodec)
-    .typecase(36, fundingLockedCodec)
+    .typecase(36, channelReadyCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
     .typecase(64, openDualFundedChannelCodec)

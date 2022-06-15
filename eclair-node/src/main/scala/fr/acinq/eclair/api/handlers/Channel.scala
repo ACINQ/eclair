@@ -32,19 +32,28 @@ trait Channel {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
+  val supportedChannelTypes = Set(
+    ChannelTypes.Standard,
+    ChannelTypes.StaticRemoteKey,
+    ChannelTypes.AnchorOutputs,
+    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false),
+    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true),
+    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false),
+    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)
+  ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
+
   val open: Route = postRequest("open") { implicit t =>
     formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, channelType, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
-        val (channelTypeOk, channelType_opt) = channelType match {
-          case Some(str) if str == ChannelTypes.Standard.toString => (true, Some(ChannelTypes.Standard))
-          case Some(str) if str == ChannelTypes.StaticRemoteKey.toString => (true, Some(ChannelTypes.StaticRemoteKey))
-          case Some(str) if str == ChannelTypes.AnchorOutputs.toString => (true, Some(ChannelTypes.AnchorOutputs))
-          case Some(str) if str == ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString => (true, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))
-          case Some(_) => (false, None)
+      (nodeId, fundingSatoshis, pushMsat, channelTypeName_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
+        val (channelTypeOk, channelType_opt) = channelTypeName_opt match {
+          case Some(channelTypeName) => supportedChannelTypes.get(channelTypeName) match {
+            case Some(channelType) => (true, Some(channelType))
+            case None => (false, None) // invalid channel type name
+          }
           case None => (true, None)
         }
         if (!channelTypeOk) {
-          reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be ${ChannelTypes.Standard.toString}, ${ChannelTypes.StaticRemoteKey.toString}, ${ChannelTypes.AnchorOutputs.toString} or ${ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString}"))
+          reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be one of ${supportedChannelTypes.keys.mkString(",")}"))
         } else {
           complete {
             eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt)

@@ -104,10 +104,10 @@ object BlockchainWatchdog {
           case CheckLatestHeaders(blockHeight) =>
             val id = UUID.randomUUID()
             if (headersOverDnsEnabled) {
-              context.spawn(HeadersOverDns(nodeParams.chainHash, blockHeight), s"${HeadersOverDns.Source}-${blockHeight.toLong}-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
+              context.spawn(HeadersOverDns(nodeParams.chainHash, blockHeight), s"${HeadersOverDns.Source}-${blockHeight}-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
             }
             explorers.foreach { explorer =>
-              context.spawn(ExplorerApi(nodeParams.chainHash, blockHeight, explorer), s"${explorer.name}-${blockHeight.toLong}-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
+              context.spawn(ExplorerApi(nodeParams.chainHash, blockHeight, explorer), s"${explorer.name}-${blockHeight}-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
             }
             Behaviors.same
           case headers@LatestHeaders(blockHeight, blockHeaders, source) =>

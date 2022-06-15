@@ -18,13 +18,13 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, Alias, MilliSatoshi, RealShortChannelId, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -53,7 +53,7 @@ case object WAIT_FOR_FUNDING_INTERNAL extends ChannelState
 case object WAIT_FOR_FUNDING_CREATED extends ChannelState
 case object WAIT_FOR_FUNDING_SIGNED extends ChannelState
 case object WAIT_FOR_FUNDING_CONFIRMED extends ChannelState
-case object WAIT_FOR_FUNDING_LOCKED extends ChannelState
+case object WAIT_FOR_CHANNEL_READY extends ChannelState
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
 case object NEGOTIATING extends ChannelState
@@ -85,7 +85,9 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              remoteInit: Init,
                              channelFlags: ChannelFlags,
                              channelConfig: ChannelConfig,
-                             channelType: SupportedChannelType)
+                             channelType: SupportedChannelType) {
+  require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
+}
 case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
                              localParams: LocalParams,
                              remote: ActorRef,
@@ -422,12 +424,37 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
-                                                 deferred: Option[FundingLocked],
+                                                 deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends PersistentChannelData
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
+                                             shortIds: ShortIds,
+                                             lastSent: ChannelReady) extends PersistentChannelData
+
+sealed trait RealScidStatus { def toOption: Option[RealShortChannelId] }
+object RealScidStatus {
+  /** The funding transaction has been confirmed but hasn't reached min_depth, we must be ready for a reorg. */
+  case class Temporary(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
+  /** The funding transaction has been deeply confirmed. */
+  case class Final(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
+  /** We don't know the status of the funding transaction. */
+  case object Unknown extends RealScidStatus { override def toOption: Option[RealShortChannelId] = None }
+}
+
+/**
+ * Short identifiers for the channel
+ *
+ * @param real            the real scid, it may change if a reorg happens before the channel reaches 6 conf
+ * @param localAlias      we must remember the alias that we sent to our peer because we use it to:
+ *                          - identify incoming [[ChannelUpdate]] at the connection level
+ *                          - route outgoing payments to that channel
+ * @param remoteAlias_opt we only remember the last alias received from our peer, we use this to generate
+ *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
+ */
+case class ShortIds(real: RealScidStatus,
+                    localAlias: Alias,
+                    remoteAlias_opt: Option[Alias])
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortChannelId: ShortChannelId,
-                             buried: Boolean,
+                             shortIds: ShortIds,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],

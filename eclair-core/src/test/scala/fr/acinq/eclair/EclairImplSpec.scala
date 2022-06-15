@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair
 
-import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
+import akka.actor.{ActorRef, Status}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import akka.util.Timeout
@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -207,11 +208,11 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     )
 
     val (a, b, c, d, e) = (a_priv.publicKey, b_priv.publicKey, c_priv.publicKey, d_priv.publicKey, e_priv.publicKey)
-    val ann_ab = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1), a, b, a, b, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
-    val ann_ae = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(4), a, e, a, e, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
-    val ann_bc = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(2), b, c, b, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
-    val ann_cd = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(3), c, d, c, d, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
-    val ann_ec = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(7), e, c, e, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_ab = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(1), a, b, a, b, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_ae = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(4), a, e, a, e, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_bc = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(2), b, c, b, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_cd = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(3), c, d, c, d, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_ec = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(7), e, c, e, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
 
     assert(Announcements.isNode1(a, b))
     assert(Announcements.isNode1(b, c))
@@ -231,6 +232,25 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     router.expectMsg(Router.GetChannelsMap)
     router.reply(channels)
     assert(sender.expectMsgType[Iterable[ChannelUpdate]].map(_.shortChannelId).toSet == Set(ShortChannelId(2)))
+  }
+
+  test("open with bad arguments") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    // option_scid_alias is not compatible with public channels
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Status.Failure].cause.getMessage.contains("option_scid_alias is not compatible with public channels"))
+
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    switchboard.expectMsgType[Peer.OpenChannel]
+
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    switchboard.expectMsgType[Peer.OpenChannel]
+
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    switchboard.expectMsgType[Peer.OpenChannel]
   }
 
   test("close and forceclose should work both with channelId and shortChannelId") { f =>
@@ -616,7 +636,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
 
     eclair.channelBalances().pipeTo(sender.ref)
-    relayer.expectMsg(GetOutgoingChannels(enabledOnly=false))
+    relayer.expectMsg(GetOutgoingChannels(enabledOnly = false))
     eclair.usableBalances().pipeTo(sender.ref)
     relayer.expectMsg(GetOutgoingChannels())
   }

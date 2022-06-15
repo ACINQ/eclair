@@ -36,7 +36,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Alias, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature, channel}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -443,10 +443,14 @@ private[json] case class MessageReceivedJson(pathId: Option[ByteVector], encoded
 object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex), m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
 // @formatter:on
 
-case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
-  val reverse: Map[String, Class[_]] = custom.map(_.swap)
+// @formatter:off
+/** this is cosmetic, just to not have a '_opt' field in json, which will only appear if the option is defined anyway */
+private case class ShortIdsJson(real: RealScidStatus, localAlias: Alias, remoteAlias: Option[ShortChannelId])
+object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real, s.localAlias, s.remoteAlias_opt))
+// @formatter:on
 
-  override def typeHintFieldName: String = "type"
+case class CustomTypeHints(custom: Map[Class[_], String], override val typeHintFieldName: String = "type") extends TypeHints {
+  val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
   override val hints: List[Class[_]] = custom.keys.toList
 
@@ -495,7 +499,7 @@ object CustomTypeHints {
       classOf[DATA_WAIT_FOR_FUNDING_INTERNAL],
       classOf[DATA_WAIT_FOR_FUNDING_CREATED],
       classOf[DATA_WAIT_FOR_FUNDING_SIGNED],
-      classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
+      classOf[DATA_WAIT_FOR_CHANNEL_READY],
       classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED],
       classOf[DATA_NORMAL],
       classOf[DATA_SHUTDOWN],
@@ -503,6 +507,12 @@ object CustomTypeHints {
       classOf[DATA_CLOSING],
       classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
     ), typeHintFieldName = "type")
+
+  val realScidStatuses: CustomTypeHints = CustomTypeHints(Map(
+    classOf[RealScidStatus.Unknown.type] -> "unknown",
+    classOf[RealScidStatus.Temporary] -> "temporary",
+    classOf[RealScidStatus.Final] -> "final",
+  ), typeHintFieldName = "status")
 }
 
 object JsonSerializers {
@@ -516,6 +526,7 @@ object JsonSerializers {
     CustomTypeHints.onionMessageEvent +
     CustomTypeHints.channelSources +
     CustomTypeHints.channelStates +
+    CustomTypeHints.realScidStatuses +
     ByteVectorSerializer +
     ByteVector32Serializer +
     ByteVector64Serializer +
@@ -562,6 +573,7 @@ object JsonSerializers {
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
-    OnionMessageReceivedSerializer
+    OnionMessageReceivedSerializer +
+    ShortIdsSerializer
 
 }

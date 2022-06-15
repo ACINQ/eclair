@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.{UnspecifiedShortChannelId, MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
 import java.util.UUID

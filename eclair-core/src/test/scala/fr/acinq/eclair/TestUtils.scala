@@ -16,17 +16,20 @@
 
 package fr.acinq.eclair
 
-import akka.actor.ActorRef
-import akka.event.DiagnosticLoggingAdapter
+import akka.actor.{ActorRef, ActorSystem}
+import akka.event.{DiagnosticLoggingAdapter, EventStream}
 import akka.testkit.{TestActor, TestProbe}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.LightningMessage
+import org.scalatest.concurrent.Eventually.eventually
+import org.scalatest.concurrent.PatienceConfiguration
 
 import java.io.File
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.UUID
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 object TestUtils {
 
@@ -88,5 +91,23 @@ object TestUtils {
     Files.write(seedFile.toPath, seed)
     seedFile
   }
+
+  /**
+   * Subscribing to [[EventStream]] is asynchronous, which can lead to race conditions.
+   *
+   * We use a dummy event subscription and poll until we receive a message, and rely on the fact that
+   * [[EventStream]] is an actor which means that all previous subscriptions have been taken into account.
+   */
+  def waitEventStreamSynced(eventStream: EventStream)(implicit system: ActorSystem): Unit = {
+    val listener = TestProbe()
+    case class DummyEvent()
+    eventStream.subscribe(listener.ref, classOf[DummyEvent])
+    eventually {
+      eventStream.publish(DummyEvent())
+      assert(listener.msgAvailable)
+    }
+  }
+
+  def waitFor(duration: FiniteDuration): Unit = Thread.sleep(duration.toMillis)
 
 }

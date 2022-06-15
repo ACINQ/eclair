@@ -20,31 +20,29 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import scala.util.Try
 
-
-
 class ShortChannelIdSpec extends AnyFunSuite {
 
-  test("handle values from 0 to 0xffffffffffff") {
+  test("handle real short channel ids from 0 to 0xffffffffffff") {
     val expected = Map(
-      TxCoordinates(BlockHeight(0), 0, 0) -> ShortChannelId(0),
-      TxCoordinates(BlockHeight(42000), 27, 3) -> ShortChannelId(0x0000a41000001b0003L),
-      TxCoordinates(BlockHeight(1258612), 63, 0) -> ShortChannelId(0x13347400003f0000L),
-      TxCoordinates(BlockHeight(0xffffff), 0x000000, 0xffff) -> ShortChannelId(0xffffff000000ffffL),
-      TxCoordinates(BlockHeight(0x000000), 0xffffff, 0xffff) -> ShortChannelId(0x000000ffffffffffL),
-      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0x0000) -> ShortChannelId(0xffffffffffff0000L),
-      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0xffff) -> ShortChannelId(0xffffffffffffffffL)
+      TxCoordinates(BlockHeight(0), 0, 0) -> RealShortChannelId(0),
+      TxCoordinates(BlockHeight(42000), 27, 3) -> RealShortChannelId(0x0000a41000001b0003L),
+      TxCoordinates(BlockHeight(1258612), 63, 0) -> RealShortChannelId(0x13347400003f0000L),
+      TxCoordinates(BlockHeight(0xffffff), 0x000000, 0xffff) -> RealShortChannelId(0xffffff000000ffffL),
+      TxCoordinates(BlockHeight(0x000000), 0xffffff, 0xffff) -> RealShortChannelId(0x000000ffffffffffL),
+      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0x0000) -> RealShortChannelId(0xffffffffffff0000L),
+      TxCoordinates(BlockHeight(0xffffff), 0xffffff, 0xffff) -> RealShortChannelId(0xffffffffffffffffL)
     )
     for ((coord, shortChannelId) <- expected) {
-      assert(shortChannelId == ShortChannelId(coord.blockHeight, coord.txIndex, coord.outputIndex))
+      assert(shortChannelId == RealShortChannelId(coord.blockHeight, coord.txIndex, coord.outputIndex))
       assert(coord == ShortChannelId.coordinates(shortChannelId))
     }
   }
 
   test("human readable format as per spec") {
-    assert(ShortChannelId(0x0000a41000001b0003L).toString == "42000x27x3")
+    assert(RealShortChannelId(0x0000a41000001b0003L).toString == "42000x27x3")
   }
 
-  test("parse a short channel it") {
+  test("parse a short channel id") {
     assert(ShortChannelId("42000x27x3").toLong == 0x0000a41000001b0003L)
   }
 
@@ -57,4 +55,19 @@ class ShortChannelIdSpec extends AnyFunSuite {
     assert(Try(ShortChannelId("42000x27")).isFailure)
     assert(Try(ShortChannelId("42000x")).isFailure)
   }
+
+  test("compare different types of short channel ids") {
+    val id = 123456
+    val alias = Alias(id)
+    val realScid = RealShortChannelId(id)
+    val scid = ShortChannelId(id)
+    assert(alias == realScid)
+    assert(realScid == scid)
+    val m = Map(alias -> "alias", realScid -> "real", scid -> "unknown")
+    // all scids are in the same key space
+    assert(m.size == 1)
+    // Values outside of the range [0;0xffffffffffff] can be used for aliases.
+    Seq(-561L, 0xffffffffffffffffL, 0x2affffffffffffffL).foreach(id => assert(Alias(id) == UnspecifiedShortChannelId(id)))
+  }
+
 }

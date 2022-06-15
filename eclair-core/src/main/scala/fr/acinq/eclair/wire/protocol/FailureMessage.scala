@@ -139,9 +139,11 @@ object FailureMessageCodecs {
 
   /**
    * An onion-encrypted failure from an intermediate node:
+   * {{{
    * +----------------+----------------------------------+-----------------+----------------------+-----+
    * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
    * +----------------+----------------------------------+-----------------+----------------------+-----+
+   * }}}
    * with failure message length + pad length = 256
    */
   def failureOnionCodec(mac: Mac32): Codec[FailureMessage] = CommonCodecs.prependmac(

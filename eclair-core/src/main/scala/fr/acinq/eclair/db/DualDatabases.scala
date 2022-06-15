@@ -2,6 +2,7 @@ package fr.acinq.eclair.db
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -113,17 +114,17 @@ case class DualNetworkDb(primary: NetworkDb, secondary: NetworkDb) extends Netwo
     primary.removeChannels(shortChannelIds)
   }
 
-  override def listChannels(): SortedMap[ShortChannelId, Router.PublicChannel] = {
+  override def listChannels(): SortedMap[RealShortChannelId, Router.PublicChannel] = {
     runAsync(secondary.listChannels())
     primary.listChannels()
   }
 
-  override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
+  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = {
     runAsync(secondary.addToPruned(shortChannelIds))
     primary.addToPruned(shortChannelIds)
   }
 
-  override def removeFromPruned(shortChannelId: ShortChannelId): Unit = {
+  override def removeFromPruned(shortChannelId: RealShortChannelId): Unit = {
     runAsync(secondary.removeFromPruned(shortChannelId))
     primary.removeFromPruned(shortChannelId)
   }
