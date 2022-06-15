@@ -47,7 +47,6 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.ClosingTx
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
 import scala.concurrent.ExecutionContext
@@ -164,6 +163,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   extends FSM[ChannelState, ChannelData]
     with FSMDiagnosticActorLogging[ChannelState, ChannelData]
     with ChannelOpenSingleFunder
+    with ChannelOpenDualFunded
     with CommonHandlers
     with FundingHandlers
     with ErrorHandlers {
@@ -208,43 +208,26 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, commitTxFeerate, fundingTxFeerate, localParams, remote, remoteInit, channelFlags, channelConfig, channelType), Nothing) =>
-      context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = true, temporaryChannelId, commitTxFeerate, Some(fundingTxFeerate)))
-      activeConnection = remote
-      txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
-      val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-      val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-      // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
-      // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-      val localShutdownScript = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
-      val open = OpenChannel(nodeParams.chainHash,
-        temporaryChannelId = temporaryChannelId,
-        fundingSatoshis = fundingSatoshis,
-        pushMsat = pushMsat,
-        dustLimitSatoshis = localParams.dustLimit,
-        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-        channelReserveSatoshis = localParams.requestedChannelReserve_opt.getOrElse(0 sat),
-        htlcMinimumMsat = localParams.htlcMinimum,
-        feeratePerKw = commitTxFeerate,
-        toSelfDelay = localParams.toSelfDelay,
-        maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = fundingPubKey,
-        revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-        paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
-        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-        htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
-        firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
-        channelFlags = channelFlags,
-        tlvStream = TlvStream(
-          ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
-          ChannelTlv.ChannelTypeTlv(channelType)
-        ))
-      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
+    case Event(input: INPUT_INIT_CHANNEL_INITIATOR, Nothing) =>
+      context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = true, input.temporaryChannelId, input.commitTxFeerate, Some(input.fundingTxFeerate)))
+      activeConnection = input.remote
+      txPublisher ! SetChannelId(remoteNodeId, input.temporaryChannelId)
+      // We will process the input in the next state differently depending on whether we use dual-funding or not.
+      self ! input
+      if (input.dualFunded) {
+        goto(WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL)
+      } else {
+        goto(WAIT_FOR_INIT_SINGLE_FUNDER_CHANNEL)
+      }
 
-    case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _, _), Nothing) if !localParams.isInitiator =>
-      activeConnection = remote
-      txPublisher ! SetChannelId(remoteNodeId, inputFundee.temporaryChannelId)
-      goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
+    case Event(input: INPUT_INIT_CHANNEL_NON_INITIATOR, Nothing) if !input.localParams.isInitiator =>
+      activeConnection = input.remote
+      txPublisher ! SetChannelId(remoteNodeId, input.temporaryChannelId)
+      if (input.dualFunded) {
+        goto(WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL) using DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(input)
+      } else {
+        goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(input)
+      }
 
     case Event(INPUT_RESTORED(data), _) =>
       log.debug("restoring channel")

@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
-import fr.acinq.eclair.{Features, RealShortChannelId, ToMilliSatoshiConversion, randomKey, toLongId}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, ToMilliSatoshiConversion, randomKey, toLongId}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
@@ -72,8 +72,45 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
                          NORMAL|                                |NORMAL
  */
 
+  when(WAIT_FOR_INIT_SINGLE_FUNDER_CHANNEL)(handleExceptions {
+    case Event(input: INPUT_INIT_CHANNEL_INITIATOR, _) =>
+      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
+      val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
+      // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
+      // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+      val localShutdownScript = if (Features.canUseFeature(input.localParams.initFeatures, input.remoteInit.features, Features.UpfrontShutdownScript)) {
+        input.localParams.defaultFinalScriptPubKey
+      } else {
+        ByteVector.empty
+      }
+      val open = OpenChannel(
+        chainHash = nodeParams.chainHash,
+        temporaryChannelId = input.temporaryChannelId,
+        fundingSatoshis = input.fundingAmount,
+        pushMsat = input.pushAmount_opt.getOrElse(0 msat),
+        dustLimitSatoshis = input.localParams.dustLimit,
+        maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = input.localParams.requestedChannelReserve_opt.getOrElse(0 sat),
+        htlcMinimumMsat = input.localParams.htlcMinimum,
+        feeratePerKw = input.commitTxFeerate,
+        toSelfDelay = input.localParams.toSelfDelay,
+        maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
+        fundingPubkey = fundingPubKey,
+        revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
+        paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
+        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
+        htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+        firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+        channelFlags = input.channelFlags,
+        tlvStream = TlvStream(
+          ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
+          ChannelTlv.ChannelTypeTlv(input.channelType)
+        ))
+      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(input, open) sending open
+  })
+
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
-    case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit, channelConfig, channelType))) =>
+    case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_CHANNEL_NON_INITIATOR(_, _, _, localParams, _, remoteInit, channelConfig, channelType))) =>
       Helpers.validateParamsFundee(nodeParams, channelType, localParams.initFeatures, open, remoteNodeId, remoteInit.features) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
@@ -130,7 +167,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, commitTxFeerate, fundingTxFeerate, localParams, _, remoteInit, _, channelConfig, channelType), open)) =>
+    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, fundingSatoshis, _, commitTxFeerate, fundingTxFeerate, pushMsat_opt, localParams, _, remoteInit, _, channelConfig, channelType), open)) =>
       Helpers.validateParamsFunder(nodeParams, channelType, localParams.initFeatures, remoteInit.features, open, accept) match {
         case Left(t) =>
           channelOpenReplyToUser(Left(LocalError(t)))
@@ -156,7 +193,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
           wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeerate).pipeTo(self)
-          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, commitTxFeerate, accept.firstPerCommitmentPoint, channelConfig, channelFeatures, open)
+          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat_opt.getOrElse(0 msat), commitTxFeerate, accept.firstPerCommitmentPoint, channelConfig, channelFeatures, open)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>

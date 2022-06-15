@@ -70,10 +70,11 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.features).setToIf(test.tags.contains(ChannelStateTestsTags.ChannelType))(Features(ChannelType -> Optional))
-      .modify(_.features).setToIf(test.tags.contains("static_remotekey"))(Features(StaticRemoteKey -> Optional))
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
-      .modify(_.features).setToIf(test.tags.contains("anchor_outputs"))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
-      .modify(_.features).setToIf(test.tags.contains("anchor_outputs_zero_fee_htlc_tx"))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
+      .modify(_.features).setToIf(test.tags.contains(ChannelStateTestsTags.StaticRemoteKey))(Features(StaticRemoteKey -> Optional))
+      .modify(_.features).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Features(Wumbo -> Optional))
+      .modify(_.features).setToIf(test.tags.contains(ChannelStateTestsTags.AnchorOutputs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
+      .modify(_.features).setToIf(test.tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
+      .modify(_.features).setToIf(test.tags.contains(ChannelStateTestsTags.DualFunding))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional))
       .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
@@ -275,7 +276,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val open = createOpenChannelMessage()
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)
-    assert(channel.expectMsgType[INPUT_INIT_FUNDEE].temporaryChannelId == open.temporaryChannelId)
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].temporaryChannelId == open.temporaryChannelId)
     channel.expectMsg(open)
 
     // open_channel messages with the same temporary channel id should simply be ignored
@@ -294,12 +295,12 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection, switchboard)
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
 
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
   }
 
-  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag("wumbo")) { f =>
+  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag(ChannelStateTestsTags.Wumbo)) { f =>
     import f._
 
     val probe = TestProbe()
@@ -308,12 +309,12 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection, switchboard) // Bob doesn't support wumbo, Alice does
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
 
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
   }
 
-  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag("wumbo")) { f =>
+  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag(ChannelStateTestsTags.Wumbo)) { f =>
     import f._
 
     val probe = TestProbe()
@@ -322,9 +323,9 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
 
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
   }
 
   test("don't spawn a channel if we don't support their channel type") { f =>
@@ -370,7 +371,40 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     peerConnection.expectMsg(Error(open.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"))
   }
 
-  test("use their channel type when spawning a channel", Tag("static_remotekey")) { f =>
+  test("don't spawn a dual funded channel if not supported") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+    val open = createOpenDualFundedChannelMessage()
+    peerConnection.send(peer, open)
+    peerConnection.expectMsg(Error(open.temporaryChannelId, "dual funding is not supported"))
+  }
+
+  test("use dual-funding when available", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val probe = TestProbe()
+    // Both peers support option_dual_fund, so it is automatically used.
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 25000 sat, None, None, None, None, None))
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].dualFunded)
+  }
+
+  test("accept dual-funded channels when available", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    // Both peers support option_dual_fund, so it is automatically used.
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
+    assert(peer.stateData.channels.isEmpty)
+    val open = createOpenDualFundedChannelMessage()
+    peerConnection.send(peer, open)
+    awaitCond(peer.stateData.channels.nonEmpty)
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].dualFunded)
+    channel.expectMsg(open)
+  }
+
+  test("use their channel type when spawning a channel", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
 
     // We both support option_static_remotekey but they want to open a standard channel.
@@ -379,30 +413,32 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard)))
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)
-    assert(channel.expectMsgType[INPUT_INIT_FUNDEE].channelType == ChannelTypes.Standard)
+    val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
+    assert(init.channelType == ChannelTypes.Standard)
+    assert(!init.dualFunded)
     channel.expectMsg(open)
   }
 
-  test("use requested channel type when spawning a channel", Tag("static_remotekey")) { f =>
+  test("use requested channel type when spawning a channel", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
 
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
     assert(peer.stateData.channels.isEmpty)
 
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
-    assert(channel.expectMsgType[INPUT_INIT_FUNDER].channelType == ChannelTypes.StaticRemoteKey)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.StaticRemoteKey)
 
     // We can create channels that don't use the features we have enabled.
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, Some(ChannelTypes.Standard), None, None, None))
-    assert(channel.expectMsgType[INPUT_INIT_FUNDER].channelType == ChannelTypes.Standard)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.Standard), None, None, None, None))
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.Standard)
 
     // We can create channels that use features that we haven't enabled.
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, Some(ChannelTypes.AnchorOutputs), None, None, None))
-    assert(channel.expectMsgType[INPUT_INIT_FUNDER].channelType == ChannelTypes.AnchorOutputs)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.AnchorOutputs), None, None, None, None))
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.AnchorOutputs)
   }
 
-  test("use correct on-chain fee rates when spawning a channel (anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("use correct on-chain fee rates when spawning a channel (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
     import f._
 
     val probe = TestProbe()
@@ -412,15 +448,16 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     // We ensure the current network feerate is higher than the default anchor output feerate.
     val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(mempoolMinFee = FeeratePerKw(250 sat)))
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
-    val init = channel.expectMsgType[INPUT_INIT_FUNDER]
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
+    val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.AnchorOutputs)
+    assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     assert(init.fundingTxFeerate == feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
   }
 
-  test("use correct on-chain fee rates when spawning a channel (anchor outputs zero fee htlc)", Tag("anchor_outputs_zero_fee_htlc_tx")) { f =>
+  test("use correct on-chain fee rates when spawning a channel (anchor outputs zero fee htlc)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val probe = TestProbe()
@@ -430,22 +467,24 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     // We ensure the current network feerate is higher than the default anchor output feerate.
     val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(mempoolMinFee = FeeratePerKw(250 sat)))
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
-    val init = channel.expectMsgType[INPUT_INIT_FUNDER]
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
+    val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false))
+    assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     assert(init.fundingTxFeerate == feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
   }
 
-  test("use correct final script if option_static_remotekey is negotiated", Tag("static_remotekey")) { f =>
+  test("use correct final script if option_static_remotekey is negotiated", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
 
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
-    val init = channel.expectMsgType[INPUT_INIT_FUNDER]
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, None, None, None, None, None))
+    val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.StaticRemoteKey)
+    assert(!init.dualFunded)
     assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
     assert(init.localParams.defaultFinalScriptPubKey == Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get)))
   }
@@ -454,7 +493,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     intercept[IllegalArgumentException] {
-      Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, Some(ChannelFlags(announceChannel = true)), None)
+      Peer.OpenChannel(remoteNodeId, 24000 sat, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, Some(ChannelFlags(announceChannel = true)), None)
     }
   }
 
@@ -470,10 +509,10 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     }
     val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref))
     connect(remoteNodeId, peer, peerConnection, switchboard)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 100 msat, None, None, None, None))
-    val init = channel.expectMsgType[INPUT_INIT_FUNDER]
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, Some(100 msat), None, None, None))
+    val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.fundingAmount == 15000.sat)
-    assert(init.pushAmount == 100.msat)
+    assert(init.pushAmount_opt.contains(100.msat))
   }
 
   test("handle final channelId assigned in state DISCONNECTED") { f =>
@@ -543,6 +582,10 @@ object PeerSpec {
 
   def createOpenChannelMessage(openTlv: TlvStream[OpenChannelTlv] = TlvStream.empty): protocol.OpenChannel = {
     protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, ChannelFlags.Private, openTlv)
+  }
+
+  def createOpenDualFundedChannelMessage(): protocol.OpenDualFundedChannel = {
+    protocol.OpenDualFundedChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), TestConstants.feeratePerKw, TestConstants.anchorOutputsFeeratePerKw, 25000 sat, 483 sat, UInt64(100), 1 msat, CltvExpiryDelta(144), 10, 0, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, ChannelFlags.Private)
   }
 
 }

@@ -164,16 +164,16 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](10 seconds)
   }
 
-  def connect(node1: Kit, node2: Kit, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): ChannelOpenResponse.ChannelOpened = {
+  def connect(node1: Kit, node2: Kit, fundingAmount: Satoshi, pushMsat: MilliSatoshi): ChannelOpenResponse.ChannelOpened = {
     val sender = TestProbe()
     connect(node1, node2)
     sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.nodeId,
-      fundingSatoshis = fundingSatoshis,
-      pushMsat = pushMsat,
+      fundingAmount = fundingAmount,
       channelType_opt = None,
-      fundingTxFeeratePerKw_opt = None,
-      channelFlags = None,
+      pushAmount_opt = Some(pushMsat),
+      fundingTxFeerate_opt = None,
+      channelFlags_opt = None,
       timeout_opt = None))
     sender.expectMsgType[ChannelOpenResponse.ChannelOpened](10 seconds)
   }
