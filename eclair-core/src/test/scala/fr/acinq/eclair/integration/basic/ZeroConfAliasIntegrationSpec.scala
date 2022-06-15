@@ -6,7 +6,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ScidAlias, ZeroConf}
 import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
-import fr.acinq.eclair.payment.PaymentSent
+import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId}
 import org.scalatest.OptionValues.convertOptionToValuable
@@ -70,7 +70,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       assert(carolHint.shortChannelId == bobAlias)
       Seq(carolHint.modify(_.shortChannelId).setToIfDefined(overrideHintScid_opt))
     } else Seq.empty
-    sendPayment(alice, carol, 100_000 msat, hints = Seq(hint))
+    sendPayment(alice, carol, 100_000 msat, hints = Bolt11Invoice.toExtraEdges(hint, carol.nodeParams.nodeId))
   }
 
   private def internalTest(f: FixtureParam,
