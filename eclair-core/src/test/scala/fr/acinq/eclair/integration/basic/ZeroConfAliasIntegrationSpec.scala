@@ -63,8 +63,12 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   private def sendPaymentAliceToCarol(f: FixtureParam, useHint: Boolean = false, overrideHintScid_opt: Option[RealShortChannelId] = None): PaymentSent = {
     import f._
     val hint = if (useHint) {
-      val Some(hint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
-      Seq(hint.modify(_.shortChannelId).setToIfDefined(overrideHintScid_opt))
+      val Some(carolHint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
+      // due to how node ids are built, bob < carol so carol is always the node 2
+      val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.shortIds.localAlias
+      // the hint is always using the alias
+      assert(carolHint.shortChannelId == bobAlias)
+      Seq(carolHint.modify(_.shortChannelId).setToIfDefined(overrideHintScid_opt))
     } else Seq.empty
     sendPayment(alice, carol, 100_000 msat, hints = Seq(hint))
   }
@@ -138,14 +142,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcZeroConf = false,
       bcScidAlias = false,
       paymentWorksWithoutHint = false, // alice can't find a route to carol because bob-carol isn't announced
-      paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
+      paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works (and it will use the alias, even if the feature isn't enabled)
       paymentWorksWithRealScidHint_opt = Some(true) // if alice uses the real scid instead of the bob-carol alias, it still works
     )
-
-    // Bob and Carol understand scid aliases even when the feature isn't enabled.
-    val carolHint = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.value
-    val bobAlias = getRouterData(bob).privateChannels.values.head.shortIds.localAlias
-    assert(carolHint.shortChannelId == bobAlias)
   }
 
   test("a->b->c (b-c scid-alias private)", Tag(ScidAliasBobCarol)) { f =>
@@ -160,11 +159,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = Some(false) // if alice uses the real scid instead of the bob-carol alias, it doesn't work due to option_scid_alias
     )
-
-    // Carol must use Bob's scid alias in her routing hints.
-    val carolHint = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.value
-    val bobAlias = getRouterData(bob).privateChannels.values.head.shortIds.localAlias
-    assert(carolHint.shortChannelId == bobAlias)
   }
 
   test("a->b->c (b-c zero-conf unconfirmed private)", Tag(ZeroConfBobCarol)) { f =>
@@ -179,11 +173,6 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       paymentWorksWithHint_opt = Some(true), // with a routing hint the payment works
       paymentWorksWithRealScidHint_opt = None // there is no real scid for bob-carol yet
     )
-
-    // Carol uses Bob's scid alias until the channel confirms.
-    val carolHint = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop.value
-    val bobAlias = getRouterData(bob).privateChannels.values.collectFirst { case pc if pc.remoteNodeId == carol.nodeParams.nodeId => pc.shortIds.localAlias }.value
-    assert(carolHint.shortChannelId == bobAlias)
   }
 
   test("a->b->c (b-c zero-conf deeply confirmed private)", Tag(ZeroConfBobCarol)) { f =>

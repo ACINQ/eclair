@@ -419,7 +419,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
         log.info("received remoteAlias={}", remoteAlias)
         context.system.eventStream.publish(ShortChannelIdAssigned(self, d.commitments.channelId, shortIds = shortIds1, remoteNodeId = remoteNodeId))
       }
-      log.info("shortIds={}", shortIds1)
+      log.info("shortIds: real={} localAlias={} remoteAlias={}", shortIds1.real.toOption.getOrElse("none"), shortIds1.localAlias, shortIds1.remoteAlias_opt.getOrElse("none"))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, shortIds1)
       log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
