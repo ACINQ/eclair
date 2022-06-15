@@ -63,7 +63,15 @@ kamon {
   }
 }
 ```
-
+Note: By default kamon apm reporter will initialize when you enable kamon in eclair.conf. To disable kamon apm-reporter, add following to your `eclair.conf`
+```disable
+eclair.enable-kamon=true
+kamon.modules {
+  apm-reporter {
+    enabled = false
+  }
+} 
+```
 You should then configure your Prometheus process to scrape metrics from the exposed http server.
 
 ## Example metrics
