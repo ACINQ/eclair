@@ -56,29 +56,13 @@ object Helpers {
       remoteParams = data.commitments.remoteParams.copy(initFeatures = remoteInit.features))
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
-      case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = commitments1)
+      case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments1)
       case d: DATA_NORMAL => d.copy(commitments = commitments1)
       case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
       case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
       case d: DATA_CLOSING => d.copy(commitments = commitments1)
       case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
     }
-  }
-
-  /**
-   * Returns the number of confirmations needed to safely handle the funding transaction,
-   * we make sure the cumulative block reward largely exceeds the channel size.
-   *
-   * @param fundingSatoshis funding amount of the channel
-   * @return number of confirmations needed
-   */
-  def minDepthForFunding(channelConf: ChannelConf, fundingSatoshis: Satoshi): Long = fundingSatoshis match {
-    case funding if funding <= Channel.MAX_FUNDING => channelConf.minDepthBlocks
-    case funding =>
-      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
-      val scalingFactor = 15
-      val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
-      channelConf.minDepthBlocks.max(blocksToReachFunding)
   }
 
   def extractShutdownScript(channelId: ByteVector32, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
@@ -164,10 +148,10 @@ object Helpers {
       case None if Features.canUseFeature(localFeatures, remoteFeatures, Features.ChannelType) =>
         // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
         return Left(MissingChannelType(open.temporaryChannelId))
-      case None if channelType != ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures) =>
+      case None if channelType != ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, open.channelFlags.announceChannel) =>
         // If we have overridden the default channel type, but they didn't support explicit channel type negotiation,
         // we need to abort because they expect a different channel type than what we offered.
-        return Left(InvalidChannelType(open.temporaryChannelId, channelType, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures)))
+        return Left(InvalidChannelType(open.temporaryChannelId, channelType, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, open.channelFlags.announceChannel)))
       case _ => // we agree on channel type
     }
 
@@ -202,6 +186,29 @@ object Helpers {
   }
 
   /**
+   * The general rule is that we use remote_alias for our channel_update until the channel is publicly announced, and
+   * then we use the real scid.
+   *
+   * Private channels are handled like public channels that have not yet been announced, there is no special case.
+   *
+   * Decision tree:
+   *  - received remote_alias from peer
+   *    - before channel announcement: use remote_alias
+   *    - after channel announcement: use real scid
+   *  - no remote_alias from peer
+   *    - min_depth > 0: use real scid (may change if reorg between min_depth and 6 conf)
+   *    - min_depth = 0 (zero-conf): spec violation, our peer MUST send an alias when using zero-conf
+   */
+  def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], shortIds: ShortIds): ShortChannelId = {
+    channelAnnouncement_opt.map(_.shortChannelId) // we use the real "final" scid when it is publicly announced
+      .orElse(shortIds.remoteAlias_opt) // otherwise the remote alias
+      .orElse(shortIds.real.toOption) // if we don't have a remote alias, we use the real scid (which could change because the funding tx possibly has less than 6 confs here)
+      .getOrElse(throw new RuntimeException("this is a zero-conf channel and no alias was provided in channel_ready")) // if we don't have a real scid, it means this is a zero-conf channel and our peer must have sent an alias
+  }
+
+  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds)
+
+  /**
    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by
    * other nodes.
    *
@@ -226,7 +233,7 @@ object Helpers {
     remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
   }
 
-  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: ShortChannelId): AnnouncementSignatures = {
+  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
     val features = Features.empty[Feature] // empty features for now
     val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
     val witness = Announcements.generateChannelAnnouncementWitness(
@@ -277,6 +284,37 @@ object Helpers {
   }
 
   object Funding {
+
+    /**
+     * As funder we trust ourselves to not double spend funding txs: we could always use a zero-confirmation watch,
+     * but we need a scid to send the initial channel_update and remote may not provide an alias. That's why we always
+     * wait for one conf, except if the channel has the zero-conf feature (because presumably the peer will send an
+     * alias in that case).
+     */
+    def minDepthFunder(channelFeatures: ChannelFeatures): Option[Long] = {
+      if (channelFeatures.hasFeature(Features.ZeroConf)) {
+        None
+      } else {
+        Some(1)
+      }
+    }
+
+    /**
+     * Returns the number of confirmations needed to safely handle the funding transaction,
+     * we make sure the cumulative block reward largely exceeds the channel size.
+     *
+     * @param fundingSatoshis funding amount of the channel
+     * @return number of confirmations needed, if any
+     */
+    def minDepthFundee(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
+      case _ if channelFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
+      case funding if funding <= Channel.MAX_FUNDING => Some(channelConf.minDepthBlocks)
+      case funding =>
+        val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
+        val scalingFactor = 15
+        val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
+        Some(channelConf.minDepthBlocks.max(blocksToReachFunding))
+    }
 
     def makeFundingInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)

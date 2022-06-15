@@ -24,7 +24,6 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
-import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
@@ -40,7 +39,6 @@ import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
-import kamon.context.Context
 
 import java.util.UUID
 import scala.collection.immutable.SortedMap
@@ -60,6 +58,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: DiagnosticLoggingAdapter = diagLog
 
+  context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
@@ -229,14 +228,17 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, n: NodeAnnouncement), d: Data) =>
       stay() using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
 
-    case Event(u: ChannelUpdate, d: Data) =>
+    case Event(scia: ShortChannelIdAssigned, d) =>
+      stay() using Validation.handleShortChannelIdAssigned(d, nodeParams.nodeId, scia)
+
+    case Event(u: ChannelUpdate, d: Data) => // from payment lifecycle
       stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) => // from network (gossip or peer)
       stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
-    case Event(lcu: LocalChannelUpdate, d: Data) =>
-      stay() using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
+    case Event(lcu: LocalChannelUpdate, d: Data) => // from local channel
+      stay() using Validation.handleLocalChannelUpdate(d, nodeParams, watcher, lcu)
 
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay() using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
@@ -275,20 +277,20 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
   override def mdc(currentMessage: Any): MDC = {
     val category_opt = LogCategory(currentMessage)
-    val remoteNodeId_opt = currentMessage match {
-      case s: SendChannelQuery => Some(s.remoteNodeId)
-      case prm: PeerRoutingMessage => Some(prm.remoteNodeId)
-      case lcu: LocalChannelUpdate => Some(lcu.remoteNodeId)
-      case _ => None
+    val (remoteNodeId_opt, channelId_opt) = currentMessage match {
+      case s: SendChannelQuery => (Some(s.remoteNodeId), None)
+      case prm: PeerRoutingMessage => (Some(prm.remoteNodeId), None)
+      case sca: ShortChannelIdAssigned => (Some(sca.remoteNodeId), Some(sca.channelId))
+      case lcu: LocalChannelUpdate => (Some(lcu.remoteNodeId), Some(lcu.channelId))
+      case lcd: LocalChannelDown => (Some(lcd.remoteNodeId), Some(lcd.channelId))
+      case abc: AvailableBalanceChanged => (Some(abc.commitments.remoteNodeId), Some(abc.channelId))
+      case _ => (None, None)
     }
-    Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt, nodeAlias_opt = Some(nodeParams.alias))
+    Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt, channelId_opt = channelId_opt, nodeAlias_opt = Some(nodeParams.alias))
   }
 }
 
 object Router {
-
-  val shortChannelIdKey = Context.key[ShortChannelId]("shortChannelId", ShortChannelId(0))
-  val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
@@ -335,7 +337,7 @@ object Router {
     }
     def apply(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2
-      if (u.channelFlags.isNode1) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
+      if (u.channelFlags.isNode1) ChannelDesc(pc.shortIds.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.shortIds.localAlias, pc.nodeId2, pc.nodeId1)
     }
   }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
@@ -356,8 +358,8 @@ object Router {
 
     val nodeId1: PublicKey = ann.nodeId1
     val nodeId2: PublicKey = ann.nodeId2
-    def shortChannelId: ShortChannelId = ann.shortChannelId
-    def channelId: ByteVector32 = toLongId(fundingTxid.reverse, outputIndex(ann.shortChannelId))
+    def shortChannelId: RealShortChannelId = ann.shortChannelId
+    def channelId: ByteVector32 = toLongId(fundingTxid.reverse, ann.shortChannelId.outputIndex)
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (u.channelFlags.isNode1) update_1_opt else update_2_opt
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (u.channelFlags.isNode1) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
@@ -372,7 +374,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(shortChannelId: ShortChannelId, channelId: ByteVector32, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
+  case class PrivateChannel(channelId: ByteVector32, shortIds: ShortIds, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -393,9 +395,14 @@ object Router {
     def toIncomingExtraHop: Option[ExtraHop] = {
       // we want the incoming channel_update
       val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
-      remoteUpdate_opt.map { remoteUpdate =>
-          ExtraHop(remoteNodeId, remoteUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
+      // for incoming payments we preferably use the *remote alias*, otherwise the real scid if we have it
+      val scid_opt = shortIds.remoteAlias_opt.orElse(shortIds.real.toOption)
+      // we override the remote update's scid, because it contains either the real scid or our local alias
+      scid_opt.flatMap { scid =>
+        remoteUpdate_opt.map { remoteUpdate =>
+          ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
         }
+      }
     }
   }
   // @formatter:on
@@ -626,7 +633,7 @@ object Router {
   case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[GossipOrigin]], updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
   // @formatter:on
 
-  case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
+  case class ShortChannelIdAndFlag(shortChannelId: RealShortChannelId, flag: Long)
 
   /**
    * @param remainingQueries remaining queries to send, the next one will be popped after we receive a [[ReplyShortChannelIdsEnd]]
@@ -637,27 +644,31 @@ object Router {
   }
 
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[ShortChannelId, PublicChannel],
+                  channels: SortedMap[RealShortChannelId, PublicChannel],
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[GossipOrigin]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
                   privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
-                  scid2PrivateChannels: Map[ShortChannelId, ByteVector32], // scid to channel_id, only to be used for private channels
+                  scid2PrivateChannels: Map[Long, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  ) {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
-      channels.get(scid) match {
+      channels.get(RealShortChannelId(scid.toLong)) match {
         case Some(publicChannel) => Some(publicChannel)
         case None =>
           // maybe it's an alias or a real scid
-          scid2PrivateChannels.get(scid).flatMap(privateChannels.get) match {
+          scid2PrivateChannels.get(scid.toLong).flatMap(privateChannels.get) match {
             case Some(privateChannel) => Some(privateChannel)
             case None => None
           }
       }
+    }
+
+    def resolve(channelId: ByteVector32, realScid_opt: Option[RealShortChannelId]): Option[KnownChannel] = {
+      privateChannels.get(channelId).orElse(realScid_opt.flatMap(channels.get))
     }
   }
 

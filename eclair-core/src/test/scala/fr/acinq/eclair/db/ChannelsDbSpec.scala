@@ -19,6 +19,7 @@ package fr.acinq.eclair.db
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
+import fr.acinq.eclair.channel.RealScidStatus
 import fr.acinq.eclair.db.ChannelsDbSpec.{getPgTimestamp, getTimestamp, testCases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
@@ -28,7 +29,7 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, ShortChannelId, TestDatabases, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -60,7 +61,7 @@ class ChannelsDbSpec extends AnyFunSuite {
 
       val channel1 = ChannelCodecsSpec.normal
       val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(randomBytes32())
-      val channel2b = channel2a.modify(_.shortChannelId).setTo(ShortChannelId(189371))
+      val channel2b = channel2a.modify(_.shortIds.real).setTo(RealScidStatus.Final(RealShortChannelId(189371)))
 
       val commitNumber = 42
       val paymentHash1 = ByteVector32.Zeroes

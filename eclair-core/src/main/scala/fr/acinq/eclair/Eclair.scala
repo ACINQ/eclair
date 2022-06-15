@@ -182,14 +182,18 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeeratePerByte_opt: Option[FeeratePerByte], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
-    (appKit.switchboard ? Peer.OpenChannel(
-      remoteNodeId = nodeId,
-      fundingSatoshis = fundingAmount,
-      pushMsat = pushAmount_opt.getOrElse(0 msat),
-      channelType_opt = channelType_opt,
-      fundingTxFeeratePerKw_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
-      channelFlags = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
-      timeout_opt = Some(openTimeout))).mapTo[ChannelOpenResponse]
+    for {
+      _ <- Future.successful(0)
+      open = Peer.OpenChannel(
+        remoteNodeId = nodeId,
+        fundingSatoshis = fundingAmount,
+        pushMsat = pushAmount_opt.getOrElse(0 msat),
+        channelType_opt = channelType_opt,
+        fundingTxFeeratePerKw_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
+        channelFlags = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
+        timeout_opt = Some(openTimeout))
+      res <- (appKit.switchboard ? open).mapTo[ChannelOpenResponse]
+    } yield res
   }
 
   override def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]] = {

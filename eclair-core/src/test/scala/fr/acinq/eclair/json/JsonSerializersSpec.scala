@@ -202,7 +202,7 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
           toLocal = Map(ByteVector32(hex"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247") -> Btc(0.1)))
       ))
     )
-    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":1.0,"onChain":{"confirmed":0.4,"unconfirmed":0.05},"offChain":{"waitForFundingConfirmed":0.0,"waitForFundingLocked":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
+    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":1.0,"onChain":{"confirmed":0.4,"unconfirmed":0.05},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
   }
 
   test("type hints") {
@@ -304,6 +304,20 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
       Left(id3) -> Left(res3)
     )
     JsonSerializers.serialization.write(map)(JsonSerializers.formats) shouldBe s"""{"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff":"ok","8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3":"cannot execute command=CMD_UPDATE_RELAY_FEE in state=CLOSING","74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8":"channel 74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8 not found"}"""
+  }
+
+  test("serialize short ids") {
+    val testCases = Map(
+      ShortIds(real = RealScidStatus.Unknown, localAlias = Alias(0x4455), remoteAlias_opt = Some(Alias(0x88888888L))) ->
+        """{"real":{"status":"unknown"},"localAlias":"0x4455","remoteAlias":"0x88888888"}""",
+      ShortIds(real = RealScidStatus.Temporary(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
+        """{"real":{"status":"temporary","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
+      ShortIds(real = RealScidStatus.Final(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
+        """{"real":{"status":"final","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
+    )
+    for ((obj, json) <- testCases) {
+      JsonSerializers.serialization.write(obj)(JsonSerializers.formats) shouldBe json
+    }
   }
 
   /** utility method that strips line breaks in the expected json */

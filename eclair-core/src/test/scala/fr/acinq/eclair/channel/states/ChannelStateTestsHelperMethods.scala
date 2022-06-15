@@ -72,6 +72,10 @@ object ChannelStateTestsTags {
   val HighDustLimitDifferenceBobAlice = "high_dust_limit_difference_bob_alice"
   /** If set, channels will use option_channel_type. */
   val ChannelType = "option_channel_type"
+  /** If set, channels will use option_zeroconf. */
+  val ZeroConf = "zeroconf"
+  /** If set, channels will use option_scid_alias. */
+  val ScidAlias = "scid_alias"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -146,7 +150,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
-  def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, LocalParams, SupportedChannelType) = {
+  def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalParams, LocalParams, SupportedChannelType) = {
     import setup._
 
     val aliceInitFeatures = Alice.nodeParams.features
@@ -157,6 +161,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(_.updated(Features.UpfrontShutdownScript, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .initFeatures()
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
@@ -166,9 +172,15 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(_.updated(Features.UpfrontShutdownScript, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .initFeatures()
 
-    val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures)
+    val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, channelFlags.announceChannel)
+
+    // those features can only be enabled with AnchorOutputsZeroFeeHtlcTxs, this is to prevent incompatible test configurations
+    if (tags.contains(ChannelStateTestsTags.ZeroConf)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), "invalid test configuration")
+    if (tags.contains(ChannelStateTestsTags.ScidAlias)) assert(channelType.features.contains(Features.ScidAlias), "invalid test configuration")
 
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceParams = Alice.channelParams
@@ -188,19 +200,22 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     (aliceParams, bobParams, channelType)
   }
 
-  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Transaction = {
+  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty, interceptChannelUpdates: Boolean = true): Transaction = {
 
     import setup._
 
     val channelConfig = ChannelConfig.standard
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags)
     val channelFlags = ChannelFlags(announceChannel = tags.contains(ChannelStateTestsTags.ChannelsPublic))
+    val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags, channelFlags)
     val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(ChannelStateTestsTags.NoPushMsat)) {
       (TestConstants.fundingSatoshis, 0.msat)
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
+
+    val eventListener = TestProbe()
+    systemA.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
 
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
@@ -218,21 +233,29 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     bob2alice.forward(alice)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     alice2blockchain.expectMsgType[WatchFundingSpent]
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     bob2blockchain.expectMsgType[WatchFundingSpent]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
-
-    eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
+    if (!channelType.features.contains(Features.ZeroConf)) {
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
+      eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
+      alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    }
+    eventually(assert(alice.stateName == WAIT_FOR_CHANNEL_READY))
+    eventually(assert(bob.stateName == WAIT_FOR_CHANNEL_READY))
     alice2blockchain.expectMsgType[WatchFundingLost]
     bob2blockchain.expectMsgType[WatchFundingLost]
-    alice2bob.expectMsgType[FundingLocked]
+    alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[FundingLocked]
+    bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
+    if (interceptChannelUpdates) {
+      // we don't forward the channel updates, in reality they would be processed by the router
+      alice2bob.expectMsgType[ChannelUpdate]
+      bob2alice.expectMsgType[ChannelUpdate]
+    }
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     eventually(assert(alice.stateName == NORMAL))

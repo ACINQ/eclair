@@ -340,12 +340,12 @@ object FrontRouterSpec {
   val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, Features.empty)
   val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, Features.empty)
 
-  val channelId_ab = ShortChannelId(BlockHeight(420000), 1, 0)
-  val channelId_bc = ShortChannelId(BlockHeight(420000), 2, 0)
-  val channelId_cd = ShortChannelId(BlockHeight(420000), 3, 0)
-  val channelId_ef = ShortChannelId(BlockHeight(420000), 4, 0)
+  val channelId_ab = RealShortChannelId(BlockHeight(420000), 1, 0)
+  val channelId_bc = RealShortChannelId(BlockHeight(420000), 2, 0)
+  val channelId_cd = RealShortChannelId(BlockHeight(420000), 3, 0)
+  val channelId_ef = RealShortChannelId(BlockHeight(420000), 4, 0)
 
-  def channelAnnouncement(shortChannelId: ShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
+  def channelAnnouncement(shortChannelId: RealShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
     val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, Features.empty)
     val node1_sig = Announcements.signChannelAnnouncement(witness, node1_priv)
     val funding1_sig = Announcements.signChannelAnnouncement(witness, funding1_priv)

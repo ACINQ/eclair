@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
@@ -333,7 +334,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(42000))),
       TlvStream.empty)
 
     // make sure that routing messages go through
@@ -423,7 +424,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     probe.send(peerConnection, message)
     assert(peerConnection.stateName == PeerConnection.CONNECTED)
-    probe.send(peerConnection, FundingLocked(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
+    probe.send(peerConnection, ChannelReady(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
     peerConnection.stateData match {
       case d: PeerConnection.ConnectedData => assert(d.isPersistent)
       case _ => fail()

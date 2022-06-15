@@ -374,7 +374,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx), None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)), None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -994,7 +994,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockChannelUpdate1 = ChannelUpdate(
       signature = ByteVector64.fromValidHex("92cf3f12e161391986eb2cd7106ddab41a23c734f8f1ed120fb64f4b91f98f690ecf930388e62965f8aefbf1adafcd25a572669a125396dcfb83615208754679"),
       chainHash = ByteVector32.fromValidHex("024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2"),
-      shortChannelId = ShortChannelId(BlockHeight(1), 2, 3),
+      shortChannelId = RealShortChannelId(BlockHeight(1), 2, 3),
       timestamp = 0 unixsec,
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(0),
@@ -1003,8 +1003,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       feeProportionalMillionths = 1,
       htlcMaximumMsat = None
     )
-    val mockChannelUpdate2 = mockChannelUpdate1.copy(shortChannelId = ShortChannelId(BlockHeight(1), 2, 4))
-    val mockChannelUpdate3 = mockChannelUpdate1.copy(shortChannelId = ShortChannelId(BlockHeight(1), 2, 5))
+    val mockChannelUpdate2 = mockChannelUpdate1.copy(shortChannelId = RealShortChannelId(BlockHeight(1), 2, 4))
+    val mockChannelUpdate3 = mockChannelUpdate1.copy(shortChannelId = RealShortChannelId (BlockHeight(1), 2, 5))
 
     val mockHop1 = Router.ChannelHop(mockChannelUpdate1.shortChannelId, PublicKey.fromBin(ByteVector.fromValidHex("03007e67dc5a8fd2b2ef21cb310ab6359ddb51f3f86a8b79b8b1e23bc3a6ea150a")), PublicKey.fromBin(ByteVector.fromValidHex("026105f6cb4862810be989385d16f04b0f748f6f2a14040338b1a534d45b4be1c1")), ChannelRelayParams.FromAnnouncement(mockChannelUpdate1))
     val mockHop2 = Router.ChannelHop(mockChannelUpdate2.shortChannelId, mockHop1.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("038cfa2b5857843ee90cff91b06f692c0d8fe201921ee6387aee901d64f43699f0")), ChannelRelayParams.FromAnnouncement(mockChannelUpdate2))

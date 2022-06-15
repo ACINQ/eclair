@@ -44,7 +44,7 @@ object Monitoring {
 
     object OffchainStates {
       val waitForFundingConfirmed = "waitForFundingConfirmed"
-      val waitForFundingLocked = "waitForFundingLocked"
+      val waitForChannelReady = "waitForChannelReady"
       val normal = "normal"
       val shutdown = "shutdown"
       val negotiating = "negotiating"

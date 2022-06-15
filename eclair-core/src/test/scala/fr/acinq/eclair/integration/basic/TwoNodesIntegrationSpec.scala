@@ -1,7 +1,7 @@
 package fr.acinq.eclair.integration.basic
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
-import fr.acinq.eclair.channel.{DATA_NORMAL, NORMAL}
+import fr.acinq.eclair.channel.{DATA_NORMAL, NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong}
@@ -45,8 +45,8 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
   test("open a channel alice-bob (autoconfirm)") { f =>
     import f._
-    alice.watcher.setAutoPilot(autoConfirmLocalChannels(alice.wallet.funded))
-    bob.watcher.setAutoPilot(autoConfirmLocalChannels(alice.wallet.funded))
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice)))
+    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice)))
     connect(alice, bob)
     val channelId = openChannel(alice, bob, 100_000 sat).channelId
     eventually {
@@ -61,19 +61,19 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val channelId = openChannel(alice, bob, 100_000 sat).channelId
     confirmChannel(alice, bob, channelId, BlockHeight(420_000), 21)
     confirmChannelDeep(alice, bob, channelId, BlockHeight(420_000), 21)
-    assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].buried)
-    assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].buried)
+    assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+    assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
   }
 
   test("open a channel alice-bob and confirm deeply (autoconfirm)") { f =>
     import f._
-    alice.watcher.setAutoPilot(autoConfirmLocalChannels(alice.wallet.funded))
-    bob.watcher.setAutoPilot(autoConfirmLocalChannels(alice.wallet.funded))
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice)))
+    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice)))
     connect(alice, bob)
     val channelId = openChannel(alice, bob, 100_000 sat).channelId
     eventually {
-      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].buried)
-      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].buried)
+      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
     }
   }
 

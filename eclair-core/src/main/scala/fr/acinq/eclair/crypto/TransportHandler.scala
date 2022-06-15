@@ -410,6 +410,7 @@ object TransportHandler {
   case class Encryptor(state: CipherState) {
     /**
      * see BOLT #8
+     * {{{
      * +-------------------------------
      * |2-byte encrypted message length|
      * +-------------------------------
@@ -425,6 +426,7 @@ object TransportHandler {
      * |     16-byte MAC of the        |
      * |      lightning message        |
      * +-------------------------------
+     * }}}
      *
      * @param plaintext plaintext
      * @return a (cipherstate, ciphertext) tuple where ciphertext is encrypted according to BOLT #8

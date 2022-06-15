@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
-import fr.acinq.eclair.{BlockHeight, KamonExt, NodeParams, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.{BlockHeight, KamonExt, NodeParams, RealShortChannelId, TimestampSecond}
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
@@ -136,8 +136,8 @@ object ZmqWatcher {
   /** This event is sent when a [[WatchSpentBasic]] condition is met. */
   sealed trait WatchSpentBasicTriggered extends WatchTriggered
 
-  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: ByteVector32, outputIndex: Int, shortChannelId: ShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
-  case class WatchExternalChannelSpentTriggered(shortChannelId: ShortChannelId) extends WatchSpentBasicTriggered
+  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: ByteVector32, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
+  case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId) extends WatchSpentBasicTriggered
 
   case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: ByteVector32, outputIndex: Int, hints: Set[ByteVector32]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
