@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.router.Router.ChannelRelayParams.{FromAnnouncement, FromHint}
+import fr.acinq.eclair.router.Router.ChannelRelayParams.FromAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Announcements, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -320,7 +320,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val extraEdge = GraphEdge(AssistedChannel(e, FromHint(ExtraHop(b, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta))))
+    val extraEdge = GraphEdge(Invoice.BasicEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta))
     val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(extraEdge))
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].extraEdges.head == extraEdge)
@@ -341,7 +341,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val extraEdge = GraphEdge(AssistedChannel(e, FromHint(ExtraHop(b, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta))))
+    val extraEdge = GraphEdge(Invoice.BasicEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta))
     val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(extraEdge))
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].extraEdges.head == extraEdge)
@@ -366,7 +366,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val extraEdges = Seq(
       Seq(ExtraHop(a, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ExtraHop(b, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24))),
       Seq(ExtraHop(a, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144)))
-    ).flatMap(Bolt11Invoice.toExtraEdges(_, c))
+    ).flatMap(Bolt11Invoice.toExtraEdges(_, c)).map(GraphEdge(_))
 
     def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelUpdate = {
       defaultChannelUpdate.copy(shortChannelId = shortChannelId, feeBaseMsat = feeBase, feeProportionalMillionths = feeProportional, cltvExpiryDelta = cltvExpiryDelta)
@@ -381,7 +381,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
       val extraEdges1 = Seq(
         Seq(ExtraHop(a, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ExtraHop(b, ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48))),
         Seq(ExtraHop(a, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144)))
-      ).flatMap(Bolt11Invoice.toExtraEdges(_, c))
+      ).flatMap(Bolt11Invoice.toExtraEdges(_, c)).map(GraphEdge(_))
       assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, extraEdges)).forall{case (e1, e2) => ChannelRelayParams.areSame(e1.params, e2.params, ignoreHtlcSize = true)})
     }
     {
@@ -394,7 +394,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
       val extraEdges1 = Seq(
         Seq(ExtraHop(a, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23)), ExtraHop(b, ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21))),
         Seq(ExtraHop(a, ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22)))
-      ).flatMap(Bolt11Invoice.toExtraEdges(_, c))
+      ).flatMap(Bolt11Invoice.toExtraEdges(_, c)).map(GraphEdge(_))
       assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, extraEdges)).forall{case (e1, e2) => ChannelRelayParams.areSame(e1.params, e2.params, ignoreHtlcSize = true)})
     }
   }

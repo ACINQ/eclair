@@ -19,10 +19,6 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
-import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
-import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.router.Router.AssistedChannel
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
@@ -89,7 +85,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
 
   lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfo => t.path }
 
-  lazy val extraEdges: Seq[GraphEdge] = routingInfo.flatMap(path => toExtraEdges(path, nodeId))
+  lazy val extraEdges: Seq[Invoice.ExtraEdge] = routingInfo.flatMap(path => toExtraEdges(path, nodeId))
 
   lazy val relativeExpiry: FiniteDuration = FiniteDuration(tags.collectFirst { case expiry: Bolt11Invoice.Expiry => expiry.toLong }.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
 
@@ -338,9 +334,7 @@ object Bolt11Invoice {
    * @param feeProportionalMillionths node proportional fee
    * @param cltvExpiryDelta           node cltv expiry delta
    */
-  case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta) {
-    def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
-  }
+  case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta)
 
   /**
    * Routing Info
@@ -593,12 +587,12 @@ object Bolt11Invoice {
     }
   }
 
-  def toExtraEdges(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Seq[GraphEdge] = {
+  def toExtraEdges(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Seq[Invoice.ExtraEdge] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
     extraRoute.zip(nextNodeIds).map {
       case (extraHop, nextNodeId) =>
-        GraphEdge(AssistedChannel(nextNodeId, Router.ChannelRelayParams.FromHint(extraHop)))
+        Invoice.BasicEdge(extraHop.nodeId, nextNodeId, extraHop.shortChannelId, extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta)
     }
   }
 }

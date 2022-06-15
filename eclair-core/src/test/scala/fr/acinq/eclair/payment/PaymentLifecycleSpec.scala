@@ -39,6 +39,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.BaseRouterSpec.{channelAnnouncement, channelHopFromUpdate}
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.ChannelRelayParams.FromAnnouncement
 import fr.acinq.eclair.router.Router._
@@ -196,7 +197,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val recipient = randomKey().publicKey
     val route = PredefinedNodeRoute(Seq(a, b, c, recipient))
-    val extraEdges = Bolt11Invoice.toExtraEdges(Seq(ExtraHop(c, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144))), recipient)
+    val extraEdges = Bolt11Invoice.toExtraEdges(Seq(ExtraHop(c, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144))), recipient).map(GraphEdge(_))
     val request = SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), extraEdges)
 
     sender.send(paymentFSM, request)
@@ -569,7 +570,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val extraEdges = Bolt11Invoice.toExtraEdges(Seq(
       ExtraHop(b, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, update_bc.cltvExpiryDelta),
       ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
-    ), d)
+    ), d).map(GraphEdge(_))
 
     val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), 5, extraEdges = extraEdges, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
@@ -611,7 +612,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // we build an assisted route for channel cd
-    val extraEdges = Bolt11Invoice.toExtraEdges(Seq(ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)), d)
+    val extraEdges = Bolt11Invoice.toExtraEdges(Seq(ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)), d).map(GraphEdge(_))
     val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), 1, extraEdges = extraEdges, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))

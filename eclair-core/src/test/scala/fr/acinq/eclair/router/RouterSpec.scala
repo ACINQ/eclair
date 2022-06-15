@@ -27,10 +27,11 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate, RealScidStatus, ShortIds}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Graph.RoutingHeuristics
 import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, DEFAULT_ROUTE_PARAMS}
 import fr.acinq.eclair.router.Router._
@@ -360,7 +361,7 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
-    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, extraEdges = Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z), routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, extraEdges = Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z).map(GraphEdge(_)), routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: x :: y :: Nil)
     assert(res.routes.head.hops.last.nextNodeId == z)
@@ -525,12 +526,12 @@ class RouterSpec extends BaseRouterSpec {
     val targetNodeId = randomKey().publicKey
 
     {
-      val invoiceRoutingHint = ExtraHop(b, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
+      val invoiceRoutingHint = Invoice.BasicEdge(b, targetNodeId, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
       val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(scid_ab, invoiceRoutingHint.shortChannelId))
       val amount = 10_000.msat
       // the amount affects the way we estimate the channel capacity of the hinted channel
       assert(amount < RoutingHeuristics.CAPACITY_CHANNEL_LOW)
-      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Bolt11Invoice.toExtraEdges(Seq(invoiceRoutingHint), targetNodeId)))
+      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Seq(GraphEdge(invoiceRoutingHint))))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
@@ -540,12 +541,12 @@ class RouterSpec extends BaseRouterSpec {
       assert(route.hops.last.params == ChannelRelayParams.FromHint(invoiceRoutingHint))
     }
     {
-      val invoiceRoutingHint = ExtraHop(h, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
+      val invoiceRoutingHint = Invoice.BasicEdge(h, targetNodeId, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
       val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(scid_ag_private, scid_gh, invoiceRoutingHint.shortChannelId))
       val amount = RoutingHeuristics.CAPACITY_CHANNEL_LOW * 2
       // the amount affects the way we estimate the channel capacity of the hinted channel
       assert(amount > RoutingHeuristics.CAPACITY_CHANNEL_LOW)
-      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Bolt11Invoice.toExtraEdges(Seq(invoiceRoutingHint), targetNodeId)))
+      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Seq(GraphEdge(invoiceRoutingHint))))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head

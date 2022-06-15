@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -405,11 +405,6 @@ object Router {
   }
   // @formatter:on
 
-  case class AssistedChannel(nextNodeId: PublicKey, params: ChannelRelayParams.FromHint) {
-    val nodeId: PublicKey = params.extraHop.nodeId
-    val shortChannelId: ShortChannelId = params.extraHop.shortChannelId
-  }
-
   trait Hop {
     /** @return the id of the start node. */
     def nodeId: PublicKey
@@ -446,7 +441,7 @@ object Router {
       override def htlcMaximum_opt: Option[MilliSatoshi] = channelUpdate.htlcMaximumMsat
     }
     /** We learnt about this channel from hints in an invoice */
-    case class FromHint(extraHop: Bolt11Invoice.ExtraHop) extends ChannelRelayParams {
+    case class FromHint(extraHop: Invoice.BasicEdge) extends ChannelRelayParams {
       override def cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
       override def relayFees: Relayer.RelayFees = extraHop.relayFees
       override def htlcMinimum: MilliSatoshi = 0 msat

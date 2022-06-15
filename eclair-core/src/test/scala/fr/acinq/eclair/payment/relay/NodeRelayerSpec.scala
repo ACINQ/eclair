@@ -35,6 +35,7 @@ import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -584,7 +585,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
     assert(outgoingPayment.additionalTlvs == Nil)
-    assert(outgoingPayment.extraEdges == Bolt11Invoice.toExtraEdges(hints, outgoingNodeId))
+    assert(outgoingPayment.extraEdges == Bolt11Invoice.toExtraEdges(hints, outgoingNodeId).map(GraphEdge(_)))
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
@@ -624,7 +625,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.finalPayload.expiry == outgoingExpiry)
     assert(outgoingPayment.finalPayload.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.extraEdges == Bolt11Invoice.toExtraEdges(hints, outgoingNodeId))
+    assert(outgoingPayment.extraEdges == Bolt11Invoice.toExtraEdges(hints, outgoingNodeId).map(GraphEdge(_)))
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 

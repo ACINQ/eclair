@@ -278,7 +278,7 @@ object MinimalNodeFixture extends Assertions {
     val invoice = sender.expectMsgType[Bolt11Invoice]
 
     val routeParams = node1.nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
-    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, extraEdges = hints.flatMap(Bolt11Invoice.toExtraEdges(_, node2.nodeParams.nodeId)), blockUntilComplete = true))
+    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, extraEdges = hints.flatMap(Bolt11Invoice.toExtraEdges(_, node2.nodeParams.nodeId)).map(GraphEdge(_)), blockUntilComplete = true))
     sender.expectMsgType[PaymentSent]
   }
 
