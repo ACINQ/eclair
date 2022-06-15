@@ -284,6 +284,7 @@ object PaymentOnion {
     NodeRelayPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(nextNodeId)))
 
   /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
+  // TODO: Allow sending blinded routes to trampoline nodes instead of routing hints to support BOLT12Invoice
   def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): NodeRelayPayload = {
     val tlvs = Seq(
       Some(AmountToForward(amount)),

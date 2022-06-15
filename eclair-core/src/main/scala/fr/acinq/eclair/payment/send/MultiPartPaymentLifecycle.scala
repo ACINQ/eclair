@@ -117,8 +117,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
-        val assistedRoutes1 = PaymentFailure.updateExtraEdges(pf.failures, d.request.extraEdges)
-        stay() using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(extraEdges = assistedRoutes1))
+        val extraEdges1 = PaymentFailure.updateExtraEdges(pf.failures, d.request.extraEdges)
+        stay() using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(extraEdges = extraEdges1))
       }
 
     // The recipient released the preimage without receiving the full payment amount.
