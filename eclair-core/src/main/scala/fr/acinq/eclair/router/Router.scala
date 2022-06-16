@@ -359,7 +359,6 @@ object Router {
     val nodeId1: PublicKey = ann.nodeId1
     val nodeId2: PublicKey = ann.nodeId2
     def shortChannelId: RealShortChannelId = ann.shortChannelId
-    def channelId: ByteVector32 = toLongId(fundingTxid.reverse, ann.shortChannelId.outputIndex)
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (u.channelFlags.isNode1) update_1_opt else update_2_opt
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (u.channelFlags.isNode1) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
