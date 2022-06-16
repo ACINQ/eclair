@@ -33,7 +33,7 @@ import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TxCoordinates, toLongId}
+import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TxCoordinates}
 
 object Validation {
 
@@ -113,7 +113,7 @@ object Validation {
             log.debug("validation successful for shortChannelId={}", c.shortChannelId)
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
-            Some(addPublicChannel(d0, nodeParams, watcher, c, fundingTxid = tx.txid, capacity = capacity))
+            Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
           if (fundingTxStatus.spendingTxConfirmed) {
@@ -156,15 +156,12 @@ object Validation {
     }
   }
 
-  private def addPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  private def addPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, privChan_opt: Option[PrivateChannel])(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val fundingOutputIndex = outputIndex(ann.shortChannelId)
-    val channelId = toLongId(fundingTxid.reverse, fundingOutputIndex)
     watcher ! WatchExternalChannelSpent(ctx.self, fundingTxid, fundingOutputIndex, ann.shortChannelId)
     ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(ann, capacity, None, None) :: Nil))
     nodeParams.db.network.addChannel(ann, fundingTxid, capacity)
-    // if this is a local channel graduating from private to public, we already have data
-    val privChan_opt = d.privateChannels.get(channelId)
     val pubChan = PublicChannel(
       ann = ann,
       fundingTxid = fundingTxid,
@@ -173,7 +170,7 @@ object Validation {
       update_2_opt = privChan_opt.flatMap(_.update_2_opt),
       meta_opt = privChan_opt.map(_.meta)
     )
-    log.debug("adding public channel channelId={} realScid={} localChannel={} publicChannel={}", channelId, ann.shortChannelId, privChan_opt.isDefined, pubChan)
+    log.debug("adding public channel realScid={} localChannel={} publicChannel={}", ann.shortChannelId, privChan_opt.isDefined, pubChan)
     // if this is a local channel graduating from private to public, we need to update the graph because the edge
     // identifiers change from alias to real scid, and we can also populate the metadata
     val graph1 = privChan_opt match {
@@ -198,7 +195,7 @@ object Validation {
     val d1 = d.copy(
       channels = d.channels + (pubChan.shortChannelId -> pubChan),
       // we remove the corresponding unannounced channel that we may have until now
-      privateChannels = d.privateChannels - pubChan.channelId,
+      privateChannels = d.privateChannels -- privChan_opt.map(_.channelId).toSeq,
       // we also remove the scid -> channelId mappings
       scid2PrivateChannels = d.scid2PrivateChannels - pubChan.shortChannelId.toLong -- privChan_opt.map(_.shortIds.localAlias.toLong),
       // we also add the newly validated channels to the rebroadcast queue
@@ -504,7 +501,7 @@ object Validation {
               case commitments: Commitments => commitments.commitInput.outPoint.txid
               case _ => ByteVector32.Zeroes
             }
-            val d1 = addPublicChannel(d, nodeParams, watcher, ann, fundingTxId, lcu.commitments.capacity)
+            val d1 = addPublicChannel(d, nodeParams, watcher, ann, fundingTxId, lcu.commitments.capacity, Some(privateChannel))
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(ann.shortChannelId)
             log.debug("processing channel_update")
