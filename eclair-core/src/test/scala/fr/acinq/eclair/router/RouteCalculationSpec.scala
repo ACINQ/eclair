@@ -30,6 +30,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, ShortChannelIdSpec, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, randomKey}
+import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.{ParallelTestExecution, Tag}
 import scodec.bits._
@@ -848,12 +849,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val currentBlockHeight = BlockHeight(554000)
 
     val g = DirectedGraph(List(
-      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong}x0x1").get.toLong, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong}x0x4").get.toLong, a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong - 3000}x0x2").get.toLong, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)), // younger channel
-      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong - 3000}x0x3").get.toLong, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong}x0x5").get.toLong, e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong}x0x6").get.toLong, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
+      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong}x0x1").success.value.toLong, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong}x0x4").success.value.toLong, a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong - 3000}x0x2").success.value.toLong, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)), // younger channel
+      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong - 3000}x0x3").success.value.toLong, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong}x0x5").success.value.toLong, e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(ShortChannelId.fromCoordinates(s"${currentBlockHeight.toLong}x0x6").success.value.toLong, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
     ))
 
     val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = Left(WeightRatios(
@@ -916,27 +917,27 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     // then if the cost function is not monotonic the path-finding breaks because the result path contains a loop.
     val updates = SortedMap(
       RealShortChannelId(BlockHeight(565643), 1216, 0) -> PublicChannel(
-        ann = makeChannel(ShortChannelId.fromCoordinates("565643x1216x0").get.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")),
+        ann = makeChannel(ShortChannelId.fromCoordinates("565643x1216x0").success.value.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").get, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, Some(4294967295L msat))),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").get, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, Some(15000000000L msat))),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, Some(4294967295L msat))),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, Some(15000000000L msat))),
         meta_opt = None
       ),
       RealShortChannelId(BlockHeight(542280), 2156, 0) -> PublicChannel(
-        ann = makeChannel(ShortChannelId.fromCoordinates("542280x2156x0").get.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")),
+        ann = makeChannel(ShortChannelId.fromCoordinates("542280x2156x0").success.value.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").get, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, Some(16777000000L msat))),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").get, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, Some(16777000000L msat))),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, Some(16777000000L msat))),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, Some(16777000000L msat))),
         meta_opt = None
       ),
       RealShortChannelId(BlockHeight(565779), 2711, 0) -> PublicChannel(
-        ann = makeChannel(ShortChannelId.fromCoordinates("565779x2711x0").get.toLong, PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
+        ann = makeChannel(ShortChannelId.fromCoordinates("565779x2711x0").success.value.toLong, PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").get, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, Some(230000000L msat))),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").get, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, Some(230000000L msat))),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, Some(230000000L msat))),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, Some(230000000L msat))),
         meta_opt = None
       )
     )
@@ -1870,7 +1871,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   test("use direct channel when available") {
     // A ===> B ===> C
     //  \___________/
-    val recentChannelId = ShortChannelId.fromCoordinates("399990x1x2").get.toLong
+    val recentChannelId = ShortChannelId.fromCoordinates("399990x1x2").success.value.toLong
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 1 msat, 1, capacity = 100_000_000 sat),
       makeEdge(2L, b, c, 1 msat, 1, capacity = 100_000_000 sat),

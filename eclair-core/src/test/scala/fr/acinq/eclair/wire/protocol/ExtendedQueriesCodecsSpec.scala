@@ -21,6 +21,7 @@ import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, UInt64}
+import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -150,7 +151,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
     val update = ChannelUpdate(
       chainHash = ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       signature = ByteVector64.fromValidHex("76df7e70c63cc2b63ef1c062b99c6d934a80ef2fd4dae9e1d86d277f47674af3255a97fa52ade7f129263f591ed784996eba6383135896cc117a438c80293282"),
-      shortChannelId = ShortChannelId.fromCoordinates("103x1x0").get,
+      shortChannelId = ShortChannelId.fromCoordinates("103x1x0").success.value,
       timestamp = TimestampSecond(1565587763L),
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(144),
@@ -170,7 +171,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
     val update = ChannelUpdate(
       chainHash = ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       signature = ByteVector64.fromValidHex("06737e9e18d3e4d0ab4066ccaecdcc10e648c5f1c5413f1610747e0d463fa7fa39c1b02ea2fd694275ecfefe4fe9631f24afd182ab75b805e16cd550941f858c"),
-      shortChannelId = ShortChannelId.fromCoordinates("109x1x0").get,
+      shortChannelId = ShortChannelId.fromCoordinates("109x1x0").success.value,
       timestamp = TimestampSecond(1565587765L),
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(48),

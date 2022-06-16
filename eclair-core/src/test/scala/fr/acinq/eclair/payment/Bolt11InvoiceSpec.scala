@@ -22,6 +22,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
 import fr.acinq.eclair.payment.Bolt11Invoice._
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature, randomBytes32}
+import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -218,8 +219,8 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(invoice.fallbackAddress().contains("1RustyRX2oai4EYYDpQGWvEL62BBGqN9T"))
     assert(invoice.routingInfo == List(List(
-      ExtraHop(PublicKey(hex"029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId.fromCoordinates("66051x263430x1800").get, 1 msat, 20, CltvExpiryDelta(3)),
-      ExtraHop(PublicKey(hex"039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId.fromCoordinates("197637x395016x2314").get, 2 msat, 30, CltvExpiryDelta(4))
+      ExtraHop(PublicKey(hex"029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId.fromCoordinates("66051x263430x1800").success.value, 1 msat, 20, CltvExpiryDelta(3)),
+      ExtraHop(PublicKey(hex"039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255"), ShortChannelId.fromCoordinates("197637x395016x2314").success.value, 2 msat, 30, CltvExpiryDelta(4))
     )))
     assert(invoice.tags.size == 6)
     assert(invoice.sign(priv).toString == ref)
@@ -348,7 +349,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.fallbackAddress().isEmpty)
     assert(invoice.relativeExpiry == 604800.seconds)
     assert(invoice.minFinalCltvExpiryDelta == CltvExpiryDelta(10))
-    assert(invoice.routingInfo == Seq(Seq(ExtraHop(PublicKey(hex"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"), ShortChannelId.fromCoordinates("589390x3312x1").get, 1000 msat, 2500, CltvExpiryDelta(40)))))
+    assert(invoice.routingInfo == Seq(Seq(ExtraHop(PublicKey(hex"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"), ShortChannelId.fromCoordinates("589390x3312x1").success.value, 1000 msat, 2500, CltvExpiryDelta(40)))))
     assert(invoice.sign(priv).toString == ref)
   }
 

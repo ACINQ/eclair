@@ -43,6 +43,7 @@ import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAnnouncement}
 import org.mockito.scalatest.IdiomaticMockito
+import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits._
@@ -124,7 +125,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // with assisted routes
     val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
-    val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId.fromCoordinates("569178x2331x1").get, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
+    val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId.fromCoordinates("569178x2331x1").success.value, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val invoice1 = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, Left("description"), CltvExpiryDelta(18), None, None, hints)
     eclair.send(Some(externalId1), 123 msat, invoice1)
     val send1 = paymentInitiator.expectMsgType[SendPaymentToNode]
@@ -261,13 +262,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil)
     register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)))
 
-    eclair.forceClose(Right(ShortChannelId.fromCoordinates("568749x2597x0").get) :: Nil)
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").get, CMD_FORCECLOSE(ActorRef.noSender)))
+    eclair.forceClose(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender)))
 
-    eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId.fromCoordinates("568749x2597x0").get) :: Nil)
+    eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
     register.expectMsgAllOf(
       Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)),
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").get, CMD_FORCECLOSE(ActorRef.noSender))
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender))
     )
 
     eclair.close(Left(ByteVector32.Zeroes) :: Nil, None, None)
@@ -277,17 +278,17 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.close(Left(ByteVector32.Zeroes) :: Nil, None, Some(customClosingFees))
     register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None, Some(customClosingFees))))
 
-    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").get) :: Nil, None, None)
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").get, CMD_CLOSE(ActorRef.noSender, None, None)))
+    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, None, None)
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, None, None)))
 
-    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").get) :: Nil, Some(ByteVector.empty), Some(customClosingFees))
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").get, CMD_CLOSE(ActorRef.noSender, Some(ByteVector.empty), Some(customClosingFees))))
+    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, Some(ByteVector.empty), Some(customClosingFees))
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, Some(ByteVector.empty), Some(customClosingFees))))
 
-    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").get) :: Left(ByteVector32.One) :: Right(ShortChannelId.fromCoordinates("568749x2597x1").get) :: Nil, None, None)
+    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Left(ByteVector32.One) :: Right(ShortChannelId.fromCoordinates("568749x2597x1").success.value) :: Nil, None, None)
     register.expectMsgAllOf(
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").get, CMD_CLOSE(ActorRef.noSender, None, None)),
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, None, None)),
       Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_CLOSE(ActorRef.noSender, None, None)),
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x1").get, CMD_CLOSE(ActorRef.noSender, None, None))
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x1").success.value, CMD_CLOSE(ActorRef.noSender, None, None))
     )
   }
 
