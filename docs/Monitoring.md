@@ -33,6 +33,7 @@ kamon {
 }
 ```
 
+
 When starting eclair, you should enable the Kanela agent:
 
 ```sh
