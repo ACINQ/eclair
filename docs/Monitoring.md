@@ -52,6 +52,14 @@ To enable monitoring with Prometheus, add the following to your `eclair.conf`:
 
 ```config
 eclair.enable-kamon=true
+
+// The Kamon APM reporter is enabled by default, but it won't work with Prometheus, so we disable it.
+kamon.modules {
+  apm-reporter {
+    enabled = false
+  }
+}
+
 kamon {
   prometheus {
     start-embedded-http-server = yes
@@ -61,16 +69,6 @@ kamon {
     }
   }
 }
-```
-Note: By default kamon apm reporter will initialize when you enable kamon in eclair.conf. To disable kamon apm-reporter, add following to your `eclair.conf`
-```disable
-eclair.enable-kamon=true
-kamon.modules {
-  apm-reporter {
-    enabled = false
-  }
-} 
-```
 
 You should then configure your Prometheus process to scrape metrics from the exposed http server. 
 * Download the Prometheus from [here](https://prometheus.io/download/).
