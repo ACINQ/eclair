@@ -71,8 +71,9 @@ kamon {
 }
 
 You should then configure your Prometheus process to scrape metrics from the exposed http server. 
-* Download the Prometheus from [here](https://prometheus.io/download/).
-* Configure the `prometheus.yml` file present in prometheus repository and add following in it
+* Download Prometheus [here](https://prometheus.io/download/).
+* Add the following configuration to the `prometheus.yml` file (see the [Prometheus documentation](https://prometheus.io/docs/prometheus/latest/configuration/configuration/) for more details)
+
 ```prometheus.yml
 global:
   scrape_interval:     15s # By default, scrape targets every 15 seconds.
