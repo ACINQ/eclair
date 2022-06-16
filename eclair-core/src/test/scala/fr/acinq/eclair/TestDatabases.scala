@@ -130,7 +130,7 @@ object TestDatabases {
     /** single instance */
     private val pg = EmbeddedPostgres.start()
 
-    def getNewDatabase: DataSource = {
+    def getNewDatabase(): DataSource = {
       implicit val datasource: DataSource = pg.getPostgresDatabase
       val dbName = s"db_${randomBytes(8).toHex}"
       JdbcUtils.withConnection { connection =>
