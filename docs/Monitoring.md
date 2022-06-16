@@ -69,7 +69,8 @@ kamon {
       port = <port to expose to prometheus>
     }
   }
-}```
+}
+```
 
 You should then configure your Prometheus process to scrape metrics from the exposed http server. 
 * Download Prometheus [here](https://prometheus.io/download/).
@@ -94,3 +95,4 @@ metrics are just a small sample of all the metrics we provide:
 * Number of connected peers
 * Bitcoin wallet balance
 * Various metrics about the public graph (nodes, channels, updates, etc)
+```
