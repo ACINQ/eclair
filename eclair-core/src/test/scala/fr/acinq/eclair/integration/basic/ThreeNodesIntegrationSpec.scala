@@ -46,7 +46,7 @@ class ThreeNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     // alice now knows about bob-carol
     eventually {
       val routerData = getRouterData(alice)
-      prettyPrint(routerData, alice, bob, carol)
+      //prettyPrint(routerData, alice, bob, carol)
       assert(routerData.channels.size == 2) // 2 channels
       assert(routerData.channels.values.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 4) // 2 channel_updates per channel
     }
