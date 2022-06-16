@@ -80,8 +80,8 @@ global:
 scrape_configs:
   - job_name: 'eclair'
     static_configs:
-      - targets: ['<url of the eclair http embedded server>']
-After making changes in the prometheus.yml file, start Prometheus and check the status of Prometheus by `sudo systemctl status prometheus`. If it is actively running, you can visit the Prometheus web interface at a specified target in `prometheus.yml`.
+      - targets: ['<url of the eclair http embedded server>']```
+
 ## Example metrics
 
 Apart from akka and system metrics, eclair generates a lot of lightning metrics. The following
