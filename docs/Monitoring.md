@@ -83,7 +83,8 @@ global:
 scrape_configs:
   - job_name: 'eclair'
     static_configs:
-      - targets: ['<url of the eclair http embedded server>']```
+      - targets: ['<url of the eclair http embedded server>']
+ ```
 
 ## Example metrics
 
@@ -95,4 +96,4 @@ metrics are just a small sample of all the metrics we provide:
 * Number of connected peers
 * Bitcoin wallet balance
 * Various metrics about the public graph (nodes, channels, updates, etc)
-```
+
