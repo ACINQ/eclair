@@ -68,7 +68,7 @@ kamon {
       port = <port to expose to prometheus>
     }
   }
-}
+}```
 
 You should then configure your Prometheus process to scrape metrics from the exposed http server. 
 * Download Prometheus [here](https://prometheus.io/download/).
