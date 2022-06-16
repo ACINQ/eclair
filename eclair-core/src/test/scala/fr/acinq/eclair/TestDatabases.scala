@@ -104,7 +104,7 @@ object TestDatabases {
 
   case class TestPgDatabases() extends TestDatabases {
 
-    val datasource: DataSource = getNewDatabase
+    val datasource: DataSource = getNewDatabase()
     val hikariConfig = new HikariConfig
     hikariConfig.setDataSource(datasource)
     val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, LockFailureHandler.logAndThrow, autoReleaseAtShutdown = false)
