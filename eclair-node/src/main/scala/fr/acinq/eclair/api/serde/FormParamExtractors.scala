@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
-import fr.acinq.eclair.{UnspecifiedShortChannelId, MilliSatoshi, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -46,9 +46,9 @@ object FormParamExtractors {
 
   implicit val bolt11Unmarshaller: Unmarshaller[String, Bolt11Invoice] = Unmarshaller.strict { rawRequest => Bolt11Invoice.fromString(rawRequest).get }
 
-  implicit val shortChannelIdUnmarshaller: Unmarshaller[String, ShortChannelId] = Unmarshaller.strict { str => ShortChannelId(str) }
+  implicit val shortChannelIdUnmarshaller: Unmarshaller[String, ShortChannelId] = Unmarshaller.strict { str => ShortChannelId.fromCoordinates(str).get }
 
-  implicit val shortChannelIdsUnmarshaller: Unmarshaller[String, List[ShortChannelId]] = listUnmarshaller(str => ShortChannelId(str))
+  implicit val shortChannelIdsUnmarshaller: Unmarshaller[String, List[ShortChannelId]] = listUnmarshaller(str => ShortChannelId.fromCoordinates(str).get)
 
   implicit val javaUUIDUnmarshaller: Unmarshaller[String, UUID] = Unmarshaller.strict { str => UUID.fromString(str) }
 

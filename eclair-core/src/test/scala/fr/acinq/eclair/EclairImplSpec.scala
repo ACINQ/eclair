@@ -43,6 +43,7 @@ import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAnnouncement}
 import org.mockito.scalatest.IdiomaticMockito
+import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits._
@@ -98,13 +99,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     // standard conversion
     eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), announceChannel_opt = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
-    assert(open.fundingTxFeeratePerKw_opt == Some(FeeratePerKw(1250 sat)))
+    assert(open.fundingTxFeeratePerKw_opt.contains(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
     eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey), fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), announceChannel_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
-    assert(open1.fundingTxFeeratePerKw_opt == Some(FeeratePerKw.MinimumFeeratePerKw))
-    assert(open1.channelType_opt == Some(ChannelTypes.StaticRemoteKey))
+    assert(open1.fundingTxFeeratePerKw_opt.contains(FeeratePerKw.MinimumFeeratePerKw))
+    assert(open1.channelType_opt.contains(ChannelTypes.StaticRemoteKey))
   }
 
   test("call send with passing correct arguments") { f =>
@@ -115,7 +116,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val invoice0 = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, Left("description"), CltvExpiryDelta(18))
     eclair.send(None, 123 msat, invoice0)
     val send = paymentInitiator.expectMsgType[SendPaymentToNode]
-    assert(send.externalId == None)
+    assert(send.externalId.isEmpty)
     assert(send.recipientNodeId == nodePrivKey.publicKey)
     assert(send.recipientAmount == 123.msat)
     assert(send.paymentHash == ByteVector32.Zeroes)
@@ -124,11 +125,11 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // with assisted routes
     val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
-    val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId("569178x2331x1"), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
+    val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId.fromCoordinates("569178x2331x1").success.value, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val invoice1 = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, Left("description"), CltvExpiryDelta(18), None, None, hints)
     eclair.send(Some(externalId1), 123 msat, invoice1)
     val send1 = paymentInitiator.expectMsgType[SendPaymentToNode]
-    assert(send1.externalId == Some(externalId1))
+    assert(send1.externalId.contains(externalId1))
     assert(send1.recipientNodeId == nodePrivKey.publicKey)
     assert(send1.recipientAmount == 123.msat)
     assert(send1.paymentHash == ByteVector32.Zeroes)
@@ -140,7 +141,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val invoice2 = Bolt11Invoice("lntb", Some(123 msat), TimestampSecond.now(), nodePrivKey.publicKey, List(Bolt11Invoice.MinFinalCltvExpiry(96), Bolt11Invoice.PaymentHash(ByteVector32.Zeroes), Bolt11Invoice.Description("description")), ByteVector.empty)
     eclair.send(Some(externalId2), 123 msat, invoice2)
     val send2 = paymentInitiator.expectMsgType[SendPaymentToNode]
-    assert(send2.externalId == Some(externalId2))
+    assert(send2.externalId.contains(externalId2))
     assert(send2.recipientNodeId == nodePrivKey.publicKey)
     assert(send2.recipientAmount == 123.msat)
     assert(send2.paymentHash == ByteVector32.Zeroes)
@@ -149,7 +150,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     // with custom route fees parameters
     eclair.send(None, 123 msat, invoice0, maxFeeFlat_opt = Some(123 sat), maxFeePct_opt = Some(4.20))
     val send3 = paymentInitiator.expectMsgType[SendPaymentToNode]
-    assert(send3.externalId == None)
+    assert(send3.externalId.isEmpty)
     assert(send3.recipientNodeId == nodePrivKey.publicKey)
     assert(send3.recipientAmount == 123.msat)
     assert(send3.paymentHash == ByteVector32.Zeroes)
@@ -261,13 +262,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil)
     register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)))
 
-    eclair.forceClose(Right(ShortChannelId("568749x2597x0")) :: Nil)
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE(ActorRef.noSender)))
+    eclair.forceClose(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender)))
 
-    eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId("568749x2597x0")) :: Nil)
+    eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
     register.expectMsgAllOf(
       Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)),
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE(ActorRef.noSender))
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender))
     )
 
     eclair.close(Left(ByteVector32.Zeroes) :: Nil, None, None)
@@ -277,17 +278,17 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.close(Left(ByteVector32.Zeroes) :: Nil, None, Some(customClosingFees))
     register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None, Some(customClosingFees))))
 
-    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, None, None)
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, None, None)))
+    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, None, None)
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, None, None)))
 
-    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, Some(ByteVector.empty), Some(customClosingFees))
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, Some(ByteVector.empty), Some(customClosingFees))))
+    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, Some(ByteVector.empty), Some(customClosingFees))
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, Some(ByteVector.empty), Some(customClosingFees))))
 
-    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Left(ByteVector32.One) :: Right(ShortChannelId("568749x2597x1")) :: Nil, None, None)
+    eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Left(ByteVector32.One) :: Right(ShortChannelId.fromCoordinates("568749x2597x1").success.value) :: Nil, None, None)
     register.expectMsgAllOf(
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, None, None)),
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, None, None)),
       Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_CLOSE(ActorRef.noSender, None, None)),
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x1"), CMD_CLOSE(ActorRef.noSender, None, None))
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x1").success.value, CMD_CLOSE(ActorRef.noSender, None, None))
     )
   }
 
@@ -299,9 +300,9 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
-    assert(receive.amount_opt == Some(123 msat))
-    assert(receive.expirySeconds_opt == Some(456))
-    assert(receive.fallbackAddress_opt == Some(fallBackAddressRaw))
+    assert(receive.amount_opt.contains(123 msat))
+    assert(receive.expirySeconds_opt.contains(456))
+    assert(receive.fallbackAddress_opt.contains(fallBackAddressRaw))
 
     // try with wrong address format
     assertThrows[IllegalArgumentException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None))
@@ -339,7 +340,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.sendWithPreimage(None, nodeId, 12345 msat)
     val send = paymentInitiator.expectMsgType[SendSpontaneousPayment]
-    assert(send.externalId == None)
+    assert(send.externalId.isEmpty)
     assert(send.recipientNodeId == nodeId)
     assert(send.recipientAmount == 12345.msat)
     assert(send.paymentHash == Crypto.sha256(send.paymentPreimage))
@@ -356,7 +357,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.sendWithPreimage(None, nodeId, 12345 msat, paymentPreimage = expectedPaymentPreimage)
     val send = paymentInitiator.expectMsgType[SendSpontaneousPayment]
-    assert(send.externalId == None)
+    assert(send.externalId.isEmpty)
     assert(send.recipientNodeId == nodeId)
     assert(send.recipientAmount == 12345.msat)
     assert(send.paymentPreimage == expectedPaymentPreimage)

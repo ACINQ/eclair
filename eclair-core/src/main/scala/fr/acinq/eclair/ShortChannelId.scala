@@ -18,6 +18,8 @@ package fr.acinq.eclair
 
 import fr.acinq.eclair.ShortChannelId.toShortId
 
+import scala.util.{Failure, Try}
+
 // @formatter:off
 sealed trait ShortChannelId extends Ordered[ShortChannelId] {
   def toLong: Long
@@ -52,11 +54,6 @@ case class Alias(private val id: Long) extends ShortChannelId {
 // @formatter:on
 
 object ShortChannelId {
-  def apply(s: String): ShortChannelId = s.split("x").toList match {
-    case blockHeight :: txIndex :: outputIndex :: Nil => UnspecifiedShortChannelId(toShortId(blockHeight.toInt, txIndex.toInt, outputIndex.toInt))
-    case _ => throw new IllegalArgumentException(s"Invalid short channel id: $s")
-  }
-
   def apply(l: Long): ShortChannelId = UnspecifiedShortChannelId(l)
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
@@ -73,6 +70,13 @@ object ShortChannelId {
   def outputIndex(shortChannelId: ShortChannelId): Int = (shortChannelId.toLong & 0xFFFF).toInt
 
   def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(blockHeight(shortChannelId), txIndex(shortChannelId), outputIndex(shortChannelId))
+
+  def fromCoordinates(s: String): Try[ShortChannelId] = s.split("x").toList match {
+    case blockHeight :: txIndex :: outputIndex :: Nil => Try {
+      UnspecifiedShortChannelId(toShortId(blockHeight.toInt, txIndex.toInt, outputIndex.toInt))
+    }
+    case _ => Failure(new IllegalArgumentException(s"Invalid short channel id: $s"))
+  }
 }
 
 /**

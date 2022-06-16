@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.util.Try
+import scala.util.Success
 
 class ShortChannelIdSpec extends AnyFunSuite {
 
@@ -43,17 +43,17 @@ class ShortChannelIdSpec extends AnyFunSuite {
   }
 
   test("parse a short channel id") {
-    assert(ShortChannelId("42000x27x3").toLong == 0x0000a41000001b0003L)
+    assert(ShortChannelId.fromCoordinates("42000x27x3").map(_.toLong) == Success(0x0000a41000001b0003L))
   }
 
   test("fail parsing a short channel id if not in the required form") {
-    assert(Try(ShortChannelId("42000x27x3.1")).isFailure)
-    assert(Try(ShortChannelId("4200aa0x27x3")).isFailure)
-    assert(Try(ShortChannelId("4200027x3")).isFailure)
-    assert(Try(ShortChannelId("42000x27ax3")).isFailure)
-    assert(Try(ShortChannelId("42000x27x")).isFailure)
-    assert(Try(ShortChannelId("42000x27")).isFailure)
-    assert(Try(ShortChannelId("42000x")).isFailure)
+    assert(ShortChannelId.fromCoordinates("42000x27x3.1").isFailure)
+    assert(ShortChannelId.fromCoordinates("4200aa0x27x3").isFailure)
+    assert(ShortChannelId.fromCoordinates("4200027x3").isFailure)
+    assert(ShortChannelId.fromCoordinates("42000x27ax3").isFailure)
+    assert(ShortChannelId.fromCoordinates("42000x27x").isFailure)
+    assert(ShortChannelId.fromCoordinates("42000x27").isFailure)
+    assert(ShortChannelId.fromCoordinates("42000x").isFailure)
   }
 
   test("compare different types of short channel ids") {
