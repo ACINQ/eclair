@@ -30,8 +30,7 @@ kamon {
     sampler = "random"
   }
 
-}
-```
+}```
 
 When starting eclair, you should enable the Kanela agent:
 
