@@ -26,7 +26,7 @@ import shapeless.{::, HNil}
 object Mutators {
 
   object AddLocalAlias {
-    def genDeterministicAlias(channelId: ByteVector32): Alias = Alias(channelId.take(7).toLong(signed = false))
+    def genDeterministicAlias(channelId: ByteVector32): Alias = Alias(channelId.takeRight(7).toLong(signed = false))
 
     def mutateDataWaitForFundingConfirmed: Commitments :: Option[Transaction] :: BlockHeight :: Option[ChannelReady] :: Either[FundingCreated, FundingSigned] :: HNil =>
       Commitments :: Option[Transaction] :: BlockHeight :: Alias :: Option[ChannelReady] :: Either[FundingCreated, FundingSigned] :: HNil = {
