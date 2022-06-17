@@ -22,7 +22,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, REFRESH_CHANNEL_UPDATE_INTERVAL}
@@ -39,7 +38,6 @@ import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -186,27 +184,45 @@ object Helpers {
   }
 
   /**
-   * The general rule is that we use remote_alias for our channel_update until the channel is publicly announced, and
+   * The general rule is that we use our local alias for our channel_update until the channel is publicly announced, and
    * then we use the real scid.
    *
-   * Private channels are handled like public channels that have not yet been announced, there is no special case.
+   * Private channels are handled like public channels that have not yet been announced, unless our peer peer does not
+   * support scid_alias.
    *
    * Decision tree:
-   *  - received remote_alias from peer
-   *    - before channel announcement: use remote_alias
+   *  - received remote_alias from peer (which indicates that they support scid_alias)
+   *    - before channel announcement: use local alias
    *    - after channel announcement: use real scid
    *  - no remote_alias from peer
    *    - min_depth > 0: use real scid (may change if reorg between min_depth and 6 conf)
    *    - min_depth = 0 (zero-conf): spec violation, our peer MUST send an alias when using zero-conf
    */
   def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], shortIds: ShortIds): ShortChannelId = {
-    channelAnnouncement_opt.map(_.shortChannelId) // we use the real "final" scid when it is publicly announced
-      .orElse(shortIds.remoteAlias_opt) // otherwise the remote alias
-      .orElse(shortIds.real.toOption) // if we don't have a remote alias, we use the real scid (which could change because the funding tx possibly has less than 6 confs here)
-      .getOrElse(throw new RuntimeException("this is a zero-conf channel and no alias was provided in channel_ready")) // if we don't have a real scid, it means this is a zero-conf channel and our peer must have sent an alias
+    channelAnnouncement_opt match {
+      case Some(ann) => ann.shortChannelId // we use the real "final" scid when it is publicly announced
+      case None => shortIds.remoteAlias_opt match {
+        case Some(_) => shortIds.localAlias // we use our local alias if the channel isn't announced and our peer supports it
+        case None => shortIds.real.toOption match {
+          case Some(real) => real // we use the real scid if our peer doesn't support scid_alias and the channel is confirmed
+          case None => shortIds.localAlias // spec violation: this is a 0-conf channel, our peer MUST send their alias, we just use ours
+        }
+      }
+    }
   }
 
   def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds)
+
+  /**
+   * If our peer sent us an alias, that's what we must use in the channel_update we send them to ensure they're able to
+   * match this update with the corresponding local channel.
+   */
+  def channelUpdateForDirectPeer(nodeParams: NodeParams, channelUpdate: ChannelUpdate, remoteAlias_opt: Option[Alias]): ChannelUpdate = {
+    remoteAlias_opt match {
+      case Some(remoteAlias) => Announcements.signChannelUpdate(nodeParams.privateKey, channelUpdate.copy(shortChannelId = remoteAlias))
+      case None => channelUpdate
+    }
+  }
 
   /**
    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by

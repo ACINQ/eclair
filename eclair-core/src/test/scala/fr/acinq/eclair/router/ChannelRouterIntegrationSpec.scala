@@ -10,6 +10,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, Shutdown}
 import fr.acinq.eclair.{BlockHeight, TestKitBaseClass}
+import org.scalatest.OptionValues.convertOptionToValuable
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -57,9 +58,9 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     // alice will only have a real scid if this is not a zeroconf channel
     assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.toOption.isEmpty == f.testTags.contains(ChannelStateTestsTags.ZeroConf))
     assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.remoteAlias_opt.isDefined)
-    // alice uses bob's alias for her channel update
-    assert(privateChannel.update_1_opt.get.shortChannelId != privateChannel.shortIds.localAlias)
-    assert(privateChannel.update_1_opt.get.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.remoteAlias_opt.get)
+    // alice uses her alias for her internal channel update
+    val aliceInitialChannelUpdate = privateChannel.update_1_opt.value
+    assert(aliceInitialChannelUpdate.shortChannelId == privateChannel.shortIds.localAlias)
 
     // alice and bob send their channel_updates using remote alias when they go to NORMAL state
     val aliceChannelUpdate1 = channels.alice2bob.expectMsgType[ChannelUpdate]
@@ -73,7 +74,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     // router processes bob's channel_update and now knows both channel updates
     awaitCond {
-      privateChannel.update_1_opt.contains(aliceChannelUpdate1) && privateChannel.update_2_opt.contains(bobChannelUpdate1)
+      privateChannel.update_1_opt.contains(aliceInitialChannelUpdate) && privateChannel.update_2_opt.contains(bobChannelUpdate1)
     }
 
     // there is nothing for the router to rebroadcast, channel is not announced
@@ -81,7 +82,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     // router graph contains a single channel
     assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
-    assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate1, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
+    assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
 
     if (testTags.contains(ChannelStateTestsTags.ChannelsPublic)) {
       // this is a public channel
@@ -161,7 +162,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
       // router graph contains a single channel
       assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
-      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate1, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
+      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
     }
     // channel closes
     channels.alice ! CMD_CLOSE(TestProbe().ref, scriptPubKey = None, feerates = None)

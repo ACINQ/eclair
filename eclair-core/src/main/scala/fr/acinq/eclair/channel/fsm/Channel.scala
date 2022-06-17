@@ -1640,7 +1640,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           val lcu = LocalChannelUpdate(self, d.channelId, d.shortIds, d.commitments.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.commitments)
           context.system.eventStream.publish(lcu)
           if (sendToPeer) {
-            send(d.channelUpdate)
+            send(Helpers.channelUpdateForDirectPeer(nodeParams, d.channelUpdate, d.shortIds.remoteAlias_opt))
           }
         case EmitLocalChannelDown(d) =>
           log.debug(s"emitting channel down event")
