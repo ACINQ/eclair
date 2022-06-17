@@ -530,8 +530,6 @@ object Peer {
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
 
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
-
-  case class ChannelCreationData(localParams: LocalParams)
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, fundingAmount: Satoshi): LocalParams = {
