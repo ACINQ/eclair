@@ -19,16 +19,18 @@ package fr.acinq.eclair.io
 import akka.actor.Status.Failure
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{ActorContext, ActorRef, FSM, PoisonPill, Status}
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair.TestUtils.waitEventStreamSynced
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
+import fr.acinq.eclair.channel.Register.GenerateLocalAlias
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
@@ -57,6 +59,18 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
       assert(remoteNodeId == Bob.nodeParams.nodeId)
       channel.ref
+    }
+  }
+
+  {
+    val generateLocalAliasListener = TestProbe()
+    system.eventStream.subscribe(generateLocalAliasListener.ref, classOf[GenerateLocalAlias])
+    waitEventStreamSynced(system.eventStream)
+    generateLocalAliasListener.setAutoPilot {
+      case (_, gen:GenerateLocalAlias)  =>
+        gen.promise.success(ShortChannelId.generateLocalAlias())
+        TestActor.KeepRunning
+      case _ => TestActor.KeepRunning
     }
   }
 

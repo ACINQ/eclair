@@ -18,6 +18,8 @@ package fr.acinq.eclair
 
 import fr.acinq.eclair.ShortChannelId.toShortId
 
+import scala.util.Random
+
 // @formatter:off
 sealed trait ShortChannelId extends Ordered[ShortChannelId] {
   def toLong: Long
@@ -61,7 +63,11 @@ object ShortChannelId {
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
 
-  def generateLocalAlias(): Alias = Alias(System.nanoTime()) // TODO: fixme (duplicate, etc.)
+  def generateLocalAlias(): Alias = {
+    // at block height 1000 LN didn't exist, so all real scids less than that will never be used
+    val upperBound = RealShortChannelId.apply(BlockHeight(1000),1,0).toLong
+    Alias(Random.nextLong(upperBound))
+  }
 
   @inline
   def blockHeight(shortChannelId: ShortChannelId): BlockHeight = BlockHeight((shortChannelId.toLong >> 40) & 0xFFFFFF)

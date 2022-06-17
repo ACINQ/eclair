@@ -19,8 +19,10 @@ package fr.acinq.eclair.channel
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{Alias, ShortChannelId}
 import fr.acinq.eclair.channel.Register._
+
+import scala.concurrent.Promise
 
 /**
  * Created by PM on 26/01/2016.
@@ -32,6 +34,7 @@ class Register extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[AbstractChannelRestored])
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
+  context.system.eventStream.subscribe(self, classOf[GenerateLocalAlias])
 
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
@@ -79,6 +82,13 @@ class Register extends Actor with ActorLogging {
         case Some(channel) => channel.tell(msg, compatReplyTo)
         case None => compatReplyTo ! ForwardShortIdFailure(fwd)
       }
+
+    case GenerateLocalAlias(promise) =>
+      var alias: Alias = null
+      do {
+        alias = ShortChannelId.generateLocalAlias()
+      } while (shortIds.contains(alias)) // we make sure that there is no collision with an existing scid
+      promise.trySuccess(alias)
   }
 }
 
@@ -90,5 +100,7 @@ object Register {
 
   case class ForwardFailure[T](fwd: Forward[T])
   case class ForwardShortIdFailure[T](fwd: ForwardShortId[T])
+
+  case class GenerateLocalAlias(promise: Promise[Alias])
   // @formatter:on
 }

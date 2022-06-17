@@ -63,7 +63,7 @@ class UInt64Spec extends AnyFunSuite {
     assert(z.toString == "0")
     assert(z.toBigInt == BigInt("0"))
 
-    assert(UInt64(hex"ff").toByteVector ==  hex"0000000000000ff")
+    assert(UInt64(hex"ff").toByteVector == hex"0000000000000ff")
     assert(UInt64(hex"800").toByteVector == hex"000000000000800")
   }
 
@@ -73,12 +73,11 @@ class UInt64Spec extends AnyFunSuite {
     assert(UInt64(1234) > MilliSatoshi(123))
     assert(UInt64(hex"ffffffffffffffff") > MilliSatoshi(123))
     assert(UInt64(hex"ffffffffffffffff") > MilliSatoshi(-123))
-    assert(UInt64(hex"7ffffffffffffffe") < MilliSatoshi(Long.MaxValue))  // 7ffffffffffffffe == Long.MaxValue - 1
+    assert(UInt64(hex"7ffffffffffffffe") < MilliSatoshi(Long.MaxValue)) // 7ffffffffffffffe == Long.MaxValue - 1
     assert(UInt64(hex"7fffffffffffffff") <= MilliSatoshi(Long.MaxValue) && UInt64(hex"7fffffffffffffff") >= MilliSatoshi(Long.MaxValue)) // 7fffffffffffffff == Long.MaxValue
-    assert(UInt64(hex"8000000000000000") > MilliSatoshi(Long.MaxValue))  // 8000000000000000 == Long.MaxValue + 1
+    assert(UInt64(hex"8000000000000000") > MilliSatoshi(Long.MaxValue)) // 8000000000000000 == Long.MaxValue + 1
     assert(UInt64(1) > MilliSatoshi(-1))
     assert(UInt64(0) > MilliSatoshi(Long.MinValue))
   }
-
 
 }

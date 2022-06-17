@@ -42,7 +42,7 @@ import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.{Failure, Success}
 
 /**
@@ -389,10 +389,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
     } else {
       wallet.getReceiveAddress().map(address => makeChannelParams(nodeParams, initFeatures, Script.write(addressToPublicKeyScript(address, nodeParams.chainHash)), None, isInitiator, fundingAmount))
     }
-    val localAlias_f = Future(ShortChannelId.generateLocalAlias())
+    val localAlias_p = Promise[Alias]()
+    context.system.eventStream.publish(Register.GenerateLocalAlias(localAlias_p))
     for {
       localParams <- localParams_f
-      localAlias <- localAlias_f
+      localAlias <- localAlias_p.future
     } yield (localParams, localAlias)
   }
 
