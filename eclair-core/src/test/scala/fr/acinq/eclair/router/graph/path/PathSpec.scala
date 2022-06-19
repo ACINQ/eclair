@@ -28,29 +28,71 @@ import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
+import scala.collection.Seq
+
 class PathSpec extends AnyFunSuite {
 
   private val WEIGHT_RATIOS: WeightRatios = path.WeightRatios(1, 0, 0, 0, RelayFees(10 msat, 1))
 
-  test("addEdgeWeight with and without channelCost") {
-    val key1 = randomKey()
-    val senderKey = generatePubkeyHigherThan(key1)
-    val edge = createGraphEdge(senderKey)
-    val prevWeight = new RichWeight(5 msat, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees = 10 msat, virtualFees = 0 msat, weight = 10)
-    val currentBlockHeight = new BlockHeight(7)
+  test("addEdgeWeight with  channelCost") {
 
-    val edgeWeightWithChannelCost = Path.addEdgeWeight(senderKey.publicKey, edge, prevWeight, currentBlockHeight, Left(WEIGHT_RATIOS), includeLocalChannelCost = true)
-    val edgeWeightWithoutChannelCost = Path.addEdgeWeight(senderKey.publicKey, edge, prevWeight, currentBlockHeight, Left(WEIGHT_RATIOS), includeLocalChannelCost = false)
-
-    assert(edgeWeightWithChannelCost.toString ==    "RichWeight(50005 msat,3,CltvExpiryDelta(10),1.0,50010 msat,0 msat,50020.0)")
-    assert(edgeWeightWithoutChannelCost.toString == "RichWeight(50005 msat,3,CltvExpiryDelta(10),1.0,50010 msat,0 msat,50020.0)")
+    assertResult("RichWeight(5 msat,3,CltvExpiryDelta(5),1.0,10 msat,0 msat,10.0)") {
+      createEdgeWeight(5 msat, 10 msat, 0 msat, 50000 msat, 10, includeLocalChannelCost = false).toString
+    }
+    assertResult("RichWeight(50 msat,3,CltvExpiryDelta(5),1.0,10 msat,0 msat,10.0)") {
+      createEdgeWeight(50 msat, 10 msat, 0 msat, 50000 msat, 10, includeLocalChannelCost = false).toString
+    }
+    assertResult("RichWeight(50 msat,3,CltvExpiryDelta(5),1.0,20 msat,0 msat,10.0)") {
+      createEdgeWeight(50 msat, 20 msat, 0 msat, 50000 msat, 10, includeLocalChannelCost = false).toString
+    }
+    assertResult("RichWeight(50 msat,3,CltvExpiryDelta(5),1.0,20 msat,0 msat,10.0)") {
+      createEdgeWeight(50 msat, 20 msat, 10 msat, 50000 msat, 10, includeLocalChannelCost = false).toString
+    }
+    assertResult("RichWeight(50 msat,3,CltvExpiryDelta(5),1.0,20 msat,0 msat,10.0)"){
+      createEdgeWeight(50 msat, 20 msat, 10 msat, 10000 msat, 10, includeLocalChannelCost = false).toString
+    }
+    assertResult("RichWeight(50 msat,3,CltvExpiryDelta(5),1.0,20 msat,0 msat,100.0)") {
+      createEdgeWeight(50 msat, 20 msat, 10 msat, 10000 msat, 100, includeLocalChannelCost = false).toString
+    }
   }
 
-  private def createGraphEdge(key2: PrivateKey): GraphEdge = {
-    val feeBaseMsat = 50000 msat
+  test("addEdgeWeight without channelCost") {
+
+    assertResult("RichWeight(40005 msat,3,CltvExpiryDelta(10),1.0,40010 msat,0 msat,40010.0)") {
+      createEdgeWeight(5 msat, 10 msat, 0 msat, 40000 msat, 10, includeLocalChannelCost = true).toString
+    }
+    assertResult("RichWeight(10000 msat,3,CltvExpiryDelta(10),1.0,5010 msat,0 msat,5010.0)"){
+      createEdgeWeight(5000 msat, 10 msat, 0 msat, 5000 msat, 10, includeLocalChannelCost = true).toString
+    }
+    assertResult("RichWeight(50050 msat,3,CltvExpiryDelta(10),1.0,50100 msat,0 msat,50010.0)"){
+      createEdgeWeight(50 msat, 100 msat, 0 msat, 50000 msat, 10, includeLocalChannelCost = true).toString
+    }
+    assertResult("RichWeight(50050 msat,3,CltvExpiryDelta(10),1.0,50100 msat,0 msat,50010.0)"){
+      createEdgeWeight(50 msat, 100 msat, 10 msat, 50000 msat, 10, includeLocalChannelCost = true).toString
+    }
+    assertResult("RichWeight(10050 msat,3,CltvExpiryDelta(10),1.0,10100 msat,0 msat,10010.0)"){
+      createEdgeWeight(50 msat, 100 msat, 10 msat, 10000 msat, 10, includeLocalChannelCost = true).toString
+    }
+    assertResult("RichWeight(10050 msat,3,CltvExpiryDelta(10),1.0,10100 msat,0 msat,10020.0)"){
+      createEdgeWeight(50 msat, 100 msat, 10 msat, 10000 msat, 20, includeLocalChannelCost = true).toString
+    }
+  }
+
+  private def createEdgeWeight(prevAmount: MilliSatoshi, fees: MilliSatoshi, virtualFees: MilliSatoshi, feeBase: MilliSatoshi, weight: Double, includeLocalChannelCost: Boolean): RichWeight = {
+    val key1 = randomKey()
+    val senderKey = generatePubkeyHigherThan(key1)
+    val edge = createGraphEdge(senderKey, feeBase)
+    val prevWeight = new RichWeight(prevAmount, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees, virtualFees, weight)
+    val currentBlockHeight = new BlockHeight(7)
+
+    Path.addEdgeWeight(senderKey.publicKey, edge, prevWeight, currentBlockHeight, Left(WEIGHT_RATIOS), includeLocalChannelCost)
+  }
+
+
+  private def createGraphEdge(key2: PrivateKey, feeBase: MilliSatoshi): GraphEdge = {
     val key1 = randomKey()
 
-    val channelUpdate: ChannelUpdate = createChannelUpdate(feeBaseMsat, key1, key2)
+    val channelUpdate: ChannelUpdate = createChannelUpdate(feeBase, key2, key1)
 
     val transactionId = randomBytes32()
     val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1),
