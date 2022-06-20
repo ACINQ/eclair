@@ -25,9 +25,10 @@ import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.router.graph.path
 import fr.acinq.eclair.router.graph.structure.GraphEdge
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
-import fr.acinq.eclair.router.graph.path.PathSpec.{WEIGHT_RATIOS, RANDOM}
+import fr.acinq.eclair.router.graph.path.PathSpec.{RANDOM, WEIGHT_RATIOS}
+
 import scala.util.Random
 
 class PathSpec extends AnyFunSuite {
@@ -96,7 +97,7 @@ class PathSpec extends AnyFunSuite {
     val channelUpdate: ChannelUpdate = createChannelUpdate(feeBase, key2, key1)
 
     val transactionId = randomBytes32()
-    val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1),
+    val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(1),
       key1.publicKey, key2.publicKey, key1.publicKey, key2.publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val publicChannel = PublicChannel(channelAnnouncement, transactionId, 100000 sat, None, None, None)
 

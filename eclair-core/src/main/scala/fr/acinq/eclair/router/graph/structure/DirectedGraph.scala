@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router.graph.structure
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, PublicChannel}
 
 import scala.collection.immutable.SortedMap
@@ -176,7 +176,7 @@ object DirectedGraph {
    *
    * @param channels map of all known public channels in the network.
    */
-  def makeGraph(channels: SortedMap[ShortChannelId, PublicChannel]): DirectedGraph = {
+  def makeGraph(channels: SortedMap[RealShortChannelId, PublicChannel]): DirectedGraph = {
     // initialize the map with the appropriate size to avoid resizing during the graph initialization
     val mutableMap = new mutable.HashMap[PublicKey, List[GraphEdge]](initialCapacity = channels.size + 1, mutable.HashMap.defaultLoadFactor)
 

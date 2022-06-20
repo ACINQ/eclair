@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.router.graph
 
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ToMilliSatoshiConversion, ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, ToMilliSatoshiConversion, randomBytes32, randomKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, Crypto, SatoshiLong}
+import fr.acinq.eclair.channel.{RealScidStatus, ShortIds}
 import fr.acinq.eclair.db.NetworkDbSpec.generatePubkeyHigherThan
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.router.Announcements
@@ -37,7 +38,7 @@ class GraphEdgeSpec extends AnyFunSuite{
     val channelUpdate: ChannelUpdate = createChannelUpdate(feeBaseMsat, key1, key2, feeProportionalMillionths)
 
     val transactionId = randomBytes32()
-    val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1),
+    val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(1),
       key1.publicKey, key2.publicKey, key1.publicKey, key2.publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val publicChannel = PublicChannel(channelAnnouncement, transactionId, 100000 sat, None, None, None)
 
@@ -57,11 +58,15 @@ class GraphEdgeSpec extends AnyFunSuite{
     val key2 = generatePubkeyHigherThan(key1)
     val channelUpdate: ChannelUpdate = createChannelUpdate(feeBaseMsat, key1, key2, feeProportionalMillionths)
 
-    val channelId_ag_private = randomBytes32()
-    val scid_ag_private = ShortChannelId(BlockHeight(420000), 5, 0)
-    val publicChannel = PrivateChannel(scid_ag_private, channelId_ag_private, key1.publicKey, key2.publicKey, None, None, ChannelMeta(1000 msat, 2000 msat))
+    val scid_ag_private = randomBytes32() //ShortChannelId(BlockHeight(420000), 5, 0)
+    val channelId_ag_private = RealShortChannelId(BlockHeight(420000), 5, 0)
 
-    val graphEdge = GraphEdge(channelUpdate, publicChannel)
+    val alias_ag_private = ShortChannelId.generateLocalAlias()
+    val scids_ag_private = ShortIds(RealScidStatus.Final(channelId_ag_private),  alias_ag_private, None)
+
+    val privateChannel = PrivateChannel(scid_ag_private, scids_ag_private, key1.publicKey, key2.publicKey, None, None, ChannelMeta(1000 msat, 2000 msat))
+
+    val graphEdge = GraphEdge(channelUpdate, privateChannel)
 
     assert(graphEdge.capacity == (3 sat))
     assert(graphEdge.maxHtlcAmount(1000 msat) == (0 msat))

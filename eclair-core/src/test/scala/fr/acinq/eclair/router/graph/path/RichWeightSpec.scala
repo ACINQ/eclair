@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, Crypto, Satoshi, Satos
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.eclair.db.NetworkDbSpec.generatePubkeyHigherThan
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.{BitcoinDefaultWalletException, BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{BitcoinDefaultWalletException, BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, randomBytes32, randomKey}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.router.graph.path
@@ -224,7 +224,7 @@ class RichWeightSpec extends AnyFunSuite {
       createChannelUpdate(feeBaseMsat, localKey, senderKey, cltvExpiryDelta, feeProportionalMillionths, htlcMin, htlcMax)
 
     val transactionId = randomBytes32()
-    val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1),
+    val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(1),
       localKey.publicKey, senderKey.publicKey, localKey.publicKey, senderKey.publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val publicChannel = PublicChannel(channelAnnouncement, transactionId, capacity, update_1, update_2, meta)
 

@@ -56,7 +56,8 @@ class ShortestPathFinderSpec extends AnyFunSuite {
 
   test("fees less along C->D->E than C->E") {
     /*
-    The channel C -> D is large enough for the payment and associated fees to go through, but C -> E is not.
+    The channel going through C -> D -> E  (fee = 1001 + 1 = 1002) is considered shorter than going
+    through C -> E (fee = 1003) because the fees are less.
     A --> B --> C <-> D
                  \   /
                   \ /
@@ -76,7 +77,7 @@ class ShortestPathFinderSpec extends AnyFunSuite {
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
 
     assert(paths.length == 2)
-    assert(paths.head.path == Seq(edgeAB, edgeBC, edgeCD, edgeDE))
+    assert(paths(0).path == Seq(edgeAB, edgeBC, edgeCD, edgeDE))
     assert(paths(1).path == Seq(edgeAB, edgeBC, edgeCE))
   }
 
@@ -98,7 +99,7 @@ class ShortestPathFinderSpec extends AnyFunSuite {
 
     val paths = shortestPathFinder.yenKshortestPaths(graph, a, e, 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
-      Left(path.WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
 
     // Even though paths to find is 2, we only find 1 because that is all the valid paths that there are.
@@ -108,35 +109,34 @@ class ShortestPathFinderSpec extends AnyFunSuite {
 
   /**
    * Find all the shortest paths using the example described in
-   * https://en.wikipedia.org/wiki/Yen%27s_algorithm#:~:text=Yen's%20algorithm
+   * https://en.wikipedia.org/wiki/Yen's_algorithm#Example
    */
   test("all shortest paths are found") {
     // There will be 3 shortest paths.
     // Edge capacities are set to be the same so that only feeBase will affect the RichWeight.
-    //  C --> D --> F
-    //   \    ^    /|\
-    //    \   |  /  | \
-    //     \ | /    |  \
-    //       E----->G-->H
-    val edgeCD = makeEdge(1L, c, d, 301 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeDF = makeEdge(2L, d, f, 401 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeCE = makeEdge(3L, c, e, 201 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeED = makeEdge(4L, e, d, 101 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeEF = makeEdge(5L, e, f, 201 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeFG = makeEdge(6L, f, g, 201 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeFH = makeEdge(7L, f, h, 101 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeEG = makeEdge(8L, e, g, 301 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeGH = makeEdge(9L, g, h, 201 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    // C --> D --> F
+    //   \   ^   / | \
+    //    \  |  /  |  \
+    //     \ | /   |   \
+    //       E --> G --> H
+    val edgeCD = makeEdge(1L, c, d, 3 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeDF = makeEdge(2L, d, f, 4 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeCE = makeEdge(3L, c, e, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeED = makeEdge(4L, e, d, 1 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeEF = makeEdge(5L, e, f, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeFG = makeEdge(6L, f, g, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeFH = makeEdge(7L, f, h, 1 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeEG = makeEdge(8L, e, g, 3 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeGH = makeEdge(9L, g, h, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
     val graph = DirectedGraph(Seq(edgeCD, edgeDF, edgeCE, edgeED, edgeEF, edgeFG, edgeFH, edgeEG, edgeGH))
 
     val paths = shortestPathFinder.yenKshortestPaths(graph, c, h, 10000000 msat,
       Set.empty, Set.empty, Set.empty, 3,
-      Left(path.WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.length == 3)
-    assert(paths.head.path == Seq(edgeCE, edgeEF, edgeFH))
+    assert(paths(0).path == Seq(edgeCE, edgeEF, edgeFH))
     assert(paths(1).path == Seq(edgeCE, edgeEG, edgeGH))
     assert(paths(2).path == Seq(edgeCD, edgeDF, edgeFH))
   }
-
 }
