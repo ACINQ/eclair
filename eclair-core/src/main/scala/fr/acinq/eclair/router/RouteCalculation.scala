@@ -224,6 +224,8 @@ object RouteCalculation {
     }
   }
 
+  val shortestPathFinder = new ShortestPathFinder()
+
   @tailrec
   private def findRouteInternal(g: DirectedGraph,
                                 localNodeId: PublicKey,
@@ -249,7 +251,7 @@ object RouteCalculation {
     val boundaries: RichWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
     val foundRoutes: Seq[Path.WeightedPath] =
-      new ShortestPathFinder().yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges,
+      shortestPathFinder.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges,
                                                  numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
