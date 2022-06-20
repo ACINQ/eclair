@@ -27,14 +27,12 @@ import fr.acinq.eclair.router.graph.structure.GraphEdge
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
-
-import scala.collection.Seq
+import fr.acinq.eclair.router.graph.path.PathSpec.{WEIGHT_RATIOS, RANDOM}
+import scala.util.Random
 
 class PathSpec extends AnyFunSuite {
 
-  private val WEIGHT_RATIOS: WeightRatios = path.WeightRatios(1, 0, 0, 0, RelayFees(10 msat, 1))
-
-  test("addEdgeWeight with  channelCost") {
+  test("addEdgeWeight with channelCost") {
 
     assertResult("RichWeight(5 msat,3,CltvExpiryDelta(5),1.0,10 msat,0 msat,10.0)") {
       createEdgeWeight(5 msat, 10 msat, 0 msat, 50000 msat, 10, includeLocalChannelCost = false).toString
@@ -82,12 +80,15 @@ class PathSpec extends AnyFunSuite {
     val key1 = randomKey()
     val senderKey = generatePubkeyHigherThan(key1)
     val edge = createGraphEdge(senderKey, feeBase)
-    val prevWeight = new RichWeight(prevAmount, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees, virtualFees, weight)
+
+    // This value doe not affect the results, so make it random
+    val successProbability = RANDOM.nextDouble()
+
+    val prevWeight = new RichWeight(prevAmount, length = 2, CltvExpiryDelta(5), successProbability, fees, virtualFees, weight)
     val currentBlockHeight = new BlockHeight(7)
 
     Path.addEdgeWeight(senderKey.publicKey, edge, prevWeight, currentBlockHeight, Left(WEIGHT_RATIOS), includeLocalChannelCost)
   }
-
 
   private def createGraphEdge(key2: PrivateKey, feeBase: MilliSatoshi): GraphEdge = {
     val key1 = randomKey()
@@ -106,4 +107,9 @@ class PathSpec extends AnyFunSuite {
     Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, key1, key2.publicKey,
       ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, feeBaseMsat, 100, 500000000L msat)
   }
+}
+
+object PathSpec {
+  private val WEIGHT_RATIOS: WeightRatios = path.WeightRatios(1, 0, 0, 0, RelayFees(10 msat, 1))
+  private val RANDOM = new Random(0)
 }

@@ -28,33 +28,11 @@ import fr.acinq.eclair.router.graph.path.Path.NegativeProbability
 import fr.acinq.eclair.router.graph.structure.GraphEdge
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import org.scalatest.funsuite.AnyFunSuite
+import fr.acinq.eclair.router.graph.path.RichWeightSpec._
 
 import scala.collection.Seq
 
 class RichWeightSpec extends AnyFunSuite {
-
-  private val NO_WEIGHT_RATIOS: WeightRatios = path.WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))
-
-  private val HEURISTICS_CONSTANTS_TYPICAL = HeuristicsConstants(
-    lockedFundsRisk = 0.0,
-    failureCost = RelayFees(1000 msat, 500),
-    hopCost = RelayFees(0 msat, 0),
-    useLogProbability = false,
-  )
-
-  private val HEURISTICS_CONSTANTS_HIGH_FAILURE_COST = HeuristicsConstants(
-    lockedFundsRisk = 0.1,
-    failureCost = RelayFees(10000 msat, 1000),
-    hopCost = RelayFees(0 msat, 0),
-    useLogProbability = true,
-  )
-
-  private val HEURISTICS_CONSTANTS_HIGH_RISK = HeuristicsConstants(
-    lockedFundsRisk = 1e-7,
-    failureCost = RelayFees(0 msat, 0),
-    hopCost = RelayFees(0 msat, 0),
-    useLogProbability = true,
-  )
 
   test("construct RichWeight from edge and WeightRatios") {
     val key1 = randomKey()
@@ -108,21 +86,38 @@ class RichWeightSpec extends AnyFunSuite {
     assert(RichWeight.calculateAgeFactor(edge, new BlockHeight(1000000000)) == 1.0E-5)
   }
 
-  test("calculateCapacityFactor") {
-    val edge1 = createGraphEdge(randomKey(), 10 sat)
-    assert(RichWeight.calculateCapacityFactor(edge1) == 0.99999)
+  test("calculateCapacityFactor when edge does not have balance") {
 
-    val edge2 = createGraphEdge(randomKey(), 100000 sat)
-    assert(RichWeight.calculateCapacityFactor(edge2) == 0.99999)
+    val result = Seq(
+      1 sat,
+      100000 sat,
+      1000000 sat,
+      10000000 sat,
+      50000000 sat,
+      99000000 sat,
+      100000000 sat,
+      1000000000 sat,
+    ).map(sats => RichWeight.calculateCapacityFactor(createGraphEdge(randomKey(), sats)) )
 
-    val edge3 = createGraphEdge(randomKey(), 10000000 sat)
-    assert(RichWeight.calculateCapacityFactor(edge3) == 0.9009009009009009)
+    assertResult("0.99999, 0.99999, 0.990990990990991, 0.9009009009009009, 0.5005005005005005, 0.010010010010010006, 9.99999999995449E-6, 9.99999999995449E-6") {
+      result.mkString(", ")
+    }
+  }
 
-    val edge4 = createGraphEdge(randomKey(), 100000000 sat)
-    assert(RichWeight.calculateCapacityFactor(edge4) == 9.99999999995449E-6)
+  test("calculateCapacityFactor when edge has a balance") {
 
-    val edge5 = createGraphEdge(randomKey(), 1000000000 sat)
-    assert(RichWeight.calculateCapacityFactor(edge5) == 9.99999999995449E-6)
+    val prev = new RichWeight(1000 msat, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees = 10 msat, virtualFees = 0 msat, weight = 10)
+    val htlcMin = 7_000_000 msat
+    val htlcMax = 500_000_000 msat
+    val feePropertionalMillionsth = 100
+    val meta = ChannelMeta(1 msat, 0 msat)
+
+    val edge = createGraphEdge(randomKey(), 10000 sat, CltvExpiryDelta(10), feePropertionalMillionsth, htlcMin, htlcMax,
+      None, None, Some(meta))
+
+    assertResult(0.0) {
+      RichWeight.calculateCapacityFactor(edge)
+    }
   }
 
   test("calculateCltvFactor") {
@@ -137,8 +132,8 @@ class RichWeightSpec extends AnyFunSuite {
       (1000000 sat, CltvExpiryDelta(1000)),
 
       (1000000 sat, CltvExpiryDelta(5)),
-      (1000000 sat, CltvExpiryDelta(50000)),
-      ).map(v => checkCltvFactor(v._1, v._2))
+      (1000000 sat, CltvExpiryDelta(50000))
+      ).map(v => getCltvFactor(v._1, v._2))
 
     assertResult(
       "4.982561036372695E-4, 0.04534130543099153, 0.49377179870453414, " +
@@ -148,7 +143,7 @@ class RichWeightSpec extends AnyFunSuite {
     }
   }
 
-  private def checkCltvFactor(capacity: Satoshi, cltvExpiryDelta: CltvExpiryDelta): Double = {
+  private def getCltvFactor(capacity: Satoshi, cltvExpiryDelta: CltvExpiryDelta): Double = {
     val edge = createGraphEdge(randomKey(), capacity, cltvExpiryDelta)
     RichWeight.calculateCltvFactor(edge)
   }
@@ -157,7 +152,7 @@ class RichWeightSpec extends AnyFunSuite {
     val result = Seq(
       (100 sat, CltvExpiryDelta(10), 50 msat, Some(ChannelMeta(34000 msat, 42000 msat)), HEURISTICS_CONSTANTS_TYPICAL),
       (10 sat, CltvExpiryDelta(10), 500 msat, Some(ChannelMeta(1 msat, 0 msat)), HEURISTICS_CONSTANTS_TYPICAL)
-    ).map(v => checkSuccessProbability(v._1, v._2, v._3, v._4, v._5))
+    ).map(v => getSuccessProbability(v._1, v._2, v._3, v._4, v._5))
 
     assertResult(
       "1.0, 1.0") {
@@ -167,7 +162,7 @@ class RichWeightSpec extends AnyFunSuite {
 
   test("calculateSuccessProbability when success probability negative ") {
 
-    // negatvie probability when ratio of prevAmount / capacity > 1
+    // negatvie probability results when ratio of prevAmount / capacity > 1
     val prevAmount = 10001000 msat
     val capacity = 10000 sat
 
@@ -195,14 +190,14 @@ class RichWeightSpec extends AnyFunSuite {
       (10000 sat, CltvExpiryDelta(100), 5000 msat, None,  HEURISTICS_CONSTANTS_TYPICAL),
       (10000 sat, CltvExpiryDelta(10000), 9800000 msat, None,  HEURISTICS_CONSTANTS_TYPICAL),
       (10000 sat, CltvExpiryDelta(10000), 10000000 msat, None,  HEURISTICS_CONSTANTS_TYPICAL),
-    ).map(v => checkSuccessProbability(v._1, v._2, v._3, v._4, v._5))
+    ).map(v => getSuccessProbability(v._1, v._2, v._3, v._4, v._5))
 
     assertResult("0.9995, 0.5, 0.0, 0.99995, 0.9995, 0.020000000000000018, 0.0") {
       result.mkString(", ")
     }
   }
 
-  private def checkSuccessProbability(capacity: Satoshi, cltvExpiryDelta: CltvExpiryDelta, prevAmount: MilliSatoshi,
+  private def getSuccessProbability(capacity: Satoshi, cltvExpiryDelta: CltvExpiryDelta, prevAmount: MilliSatoshi,
                                       meta: Option[ChannelMeta], heuristicsConstants: HeuristicsConstants): Double = {
     val prev = new RichWeight(prevAmount, length = 2, CltvExpiryDelta(5), successProbability = 0.99, fees = 10 msat, virtualFees = 0 msat, weight = 10)
     val htlcMin = 7_000_000 msat
@@ -242,4 +237,31 @@ class RichWeightSpec extends AnyFunSuite {
     Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, key1, key2.publicKey,
       ShortChannelId(42), cltvExpiryDelta, htlcMin, feeBaseMsat, feeProportionalMillionths, htlcMax)
   }
+}
+
+object RichWeightSpec {
+
+  private val NO_WEIGHT_RATIOS: WeightRatios = path.WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))
+
+  private val HEURISTICS_CONSTANTS_TYPICAL = HeuristicsConstants(
+    lockedFundsRisk = 0.0,
+    failureCost = RelayFees(1000 msat, 500),
+    hopCost = RelayFees(0 msat, 0),
+    useLogProbability = false,
+  )
+
+  private val HEURISTICS_CONSTANTS_HIGH_FAILURE_COST = HeuristicsConstants(
+    lockedFundsRisk = 0.1,
+    failureCost = RelayFees(10000 msat, 1000),
+    hopCost = RelayFees(0 msat, 0),
+    useLogProbability = true,
+  )
+
+  private val HEURISTICS_CONSTANTS_HIGH_RISK = HeuristicsConstants(
+    lockedFundsRisk = 1e-7,
+    failureCost = RelayFees(0 msat, 0),
+    hopCost = RelayFees(0 msat, 0),
+    useLogProbability = true,
+  )
+
 }
