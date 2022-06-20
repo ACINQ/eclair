@@ -135,13 +135,18 @@ object Relayer extends Logging {
   case class RelayForward(add: UpdateAddHtlc)
   case class ChannelBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
 
+  sealed trait OutgoingChannelParams {
+    def channelUpdate: ChannelUpdate
+    def prevChannelUpdate: Option[ChannelUpdate]
+  }
+
   /**
    * Get the list of local outgoing channels.
    *
    * @param enabledOnly if true, filter out disabled channels.
    */
   case class GetOutgoingChannels(enabledOnly: Boolean = true)
-  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: AbstractCommitments) {
+  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: AbstractCommitments) extends OutgoingChannelParams {
     val channelId: ByteVector32 = commitments.channelId
     def toChannelBalance: ChannelBalance = ChannelBalance(
       remoteNodeId = nextNodeId,
