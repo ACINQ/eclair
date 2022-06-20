@@ -82,7 +82,7 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
     )
 
     for (testCase <- testCases) {
-      assert(ChannelTypes.defaultFromFeatures(testCase.localFeatures, testCase.remoteFeatures, testCase.announceChannel) == testCase.expectedChannelType, s"localFeatures=${testCase.localFeatures} remoteFeatures=${testCase.remoteFeatures}")
+      assert(ChannelTypes.defaultFromFeatures(testCase.localFeatures, testCase.remoteFeatures, announceChannel = testCase.announceChannel) == testCase.expectedChannelType, s"localFeatures=${testCase.localFeatures} remoteFeatures=${testCase.remoteFeatures}")
     }
   }
 

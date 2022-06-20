@@ -153,7 +153,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         } else {
           // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
           val channelFlags = c.channelFlags.getOrElse(nodeParams.channelConf.channelFlags)
-          val channelType = c.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, channelFlags.announceChannel))
+          val channelType = c.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, announceChannel = channelFlags.announceChannel))
           // NB: we need to capture parameters in a val to use them in andThen
           val selfRef = self
           val origin = sender()
@@ -182,12 +182,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
               // remote explicitly specifies a channel type: we check whether we want to allow it
               case Some(remoteChannelType) => ChannelTypes.areCompatible(d.localFeatures, remoteChannelType) match {
                 case Some(acceptedChannelType) => Right(acceptedChannelType)
-                case None => Left(InvalidChannelType(msg.temporaryChannelId, ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, msg.channelFlags.announceChannel), remoteChannelType))
+                case None => Left(InvalidChannelType(msg.temporaryChannelId, ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, announceChannel = msg.channelFlags.announceChannel), remoteChannelType))
               }
               // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
               case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.ChannelType) => Left(MissingChannelType(msg.temporaryChannelId))
               // remote doesn't specify a channel type: we use spec-defined defaults
-              case None => Right(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, msg.channelFlags.announceChannel))
+              case None => Right(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, announceChannel = msg.channelFlags.announceChannel))
             }
             chosenChannelType match {
               case Right(channelType) =>

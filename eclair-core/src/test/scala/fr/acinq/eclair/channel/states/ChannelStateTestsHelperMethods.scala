@@ -177,7 +177,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .initFeatures()
 
-    val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, channelFlags.announceChannel)
+    val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
 
     // those features can only be enabled with AnchorOutputsZeroFeeHtlcTxs, this is to prevent incompatible test configurations
     if (tags.contains(ChannelStateTestsTags.ZeroConf)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), "invalid test configuration")
