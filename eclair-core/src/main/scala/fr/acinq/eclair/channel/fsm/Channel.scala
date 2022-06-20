@@ -1319,15 +1319,21 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
   when(SYNCING)(handleExceptions {
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      val minDepth = if (d.commitments.localParams.isInitiator) {
+      val minDepth_opt = if (d.commitments.localParams.isInitiator) {
         Helpers.Funding.minDepthFunder(d.commitments.channelFeatures)
       } else {
         // when we're not the channel initiator we scale the min_depth confirmations depending on the funding amount
         Helpers.Funding.minDepthFundee(nodeParams.channelConf, d.commitments.channelFeatures, d.commitments.commitInput.txOut.amount)
       }
+      val minDepth = minDepth_opt.getOrElse {
+        val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
+        // If we are in state WAIT_FOR_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
+        // have skipped this state. Maybe the computation method was changed and eclair was restarted?
+        log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
+        defaultMinDepth.toLong
+      }
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-      require(minDepth.nonEmpty, "min_depth must be set since we're waiting for the funding tx to confirm")
-      blockchain ! WatchFundingConfirmed(self, d.commitments.commitInput.outPoint.txid, minDepth.get)
+      blockchain ! WatchFundingConfirmed(self, d.commitments.commitInput.outPoint.txid, minDepth)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
