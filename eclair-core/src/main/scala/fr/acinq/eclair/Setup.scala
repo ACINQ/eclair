@@ -307,7 +307,7 @@ class Setup(val datadir: File,
       channelFactory = Peer.SimpleChannelFactory(nodeParams, watcher, relayer, bitcoinClient, txPublisherFactory)
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)), "payment-initiator", SupervisorStrategy.Restart))
       swapRegister = system.spawn(Behaviors.supervise(SwapRegister(nodeParams, paymentInitiator, watcher, register, bitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "swap-register")
-      peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory)
+      peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory, swapRegister)
 
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, peerFactory), "switchboard", SupervisorStrategy.Resume))
       clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router), "client-spawner", SupervisorStrategy.Restart))

@@ -38,8 +38,10 @@ import fr.acinq.eclair.io.PeerConnection.KillReason
 import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
+import fr.acinq.eclair.swap.SwapRegister
+import fr.acinq.eclair.swap.SwapRegister.MessageReceived
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
+import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasSwapId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -55,7 +57,7 @@ import scala.util.{Failure, Success}
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory, switchboard: ActorRef) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory, switchboard: ActorRef, swapRegister: typed.ActorRef[SwapRegister.Command]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -298,6 +300,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         replyTo_opt.foreach(_ ! MessageRelay.Sent(messageId))
         stay()
 
+      case Event(message: HasSwapId, d: ConnectedData) =>
+        swapRegister ! MessageReceived(message)
+        stay()
+
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
         stay()
@@ -403,6 +409,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
     self ! Peer.OutgoingMessage(msg, peerConnection)
   }
 
+  def replyUnknownSwap(peerConnection: ActorRef, unknownSwapId: String): Unit = {
+    val msg = Warning(s"unknown swap id $unknownSwapId")
+    self ! Peer.OutgoingMessage(msg, peerConnection)
+  }
+
   def handleOpenChannel(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], temporaryChannelId: ByteVector32, fundingAmount: Satoshi, channelFlags: ChannelFlags, channelType_opt: Option[ChannelType], d: ConnectedData): Unit = {
     validateRemoteChannelType(temporaryChannelId, channelFlags, channelType_opt, d.localFeatures, d.remoteFeatures) match {
       case Right(channelType) =>
@@ -483,7 +494,7 @@ object Peer {
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory, origin_opt))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory, switchboard: ActorRef): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory, switchboard: ActorRef, swapRegister: typed.ActorRef[SwapRegister.Command]): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard, swapRegister))
 
   // @formatter:off
 

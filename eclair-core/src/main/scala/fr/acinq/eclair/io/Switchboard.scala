@@ -28,6 +28,7 @@ import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.io.Peer.PeerInfoResponse
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
+import fr.acinq.eclair.swap.SwapRegister
 import fr.acinq.eclair.wire.protocol.OnionMessage
 import fr.acinq.eclair.{SubscriptionsComplete, NodeParams}
 
@@ -152,9 +153,9 @@ object Switchboard {
     def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
   }
 
-  case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory) extends PeerFactory {
+  case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory, swapRegister: typed.ActorRef[SwapRegister.Command]) extends PeerFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
-      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self), name = peerActorName(remoteNodeId))
+      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self, swapRegister), name = peerActorName(remoteNodeId))
   }
 
   def props(nodeParams: NodeParams, peerFactory: PeerFactory) = Props(new Switchboard(nodeParams, peerFactory))
