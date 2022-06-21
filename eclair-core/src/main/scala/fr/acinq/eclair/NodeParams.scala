@@ -35,6 +35,7 @@ import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
+import fr.acinq.eclair.swap.SwapKeyManager
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -54,6 +55,7 @@ import scala.jdk.CollectionConverters._
  */
 case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
+                      swapKeyManager: SwapKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
                       alias: String,
@@ -140,6 +142,7 @@ object NodeParams extends Logging {
     val oldSeedPath = new File(datadir, "seed.dat")
     val nodeSeedFilename: String = "node_seed.dat"
     val channelSeedFilename: String = "channel_seed.dat"
+    val swapSeedFilename: String = "swap_seed.dat"
 
     def getSeed(filename: String): ByteVector = {
       val seedPath = new File(datadir, filename)
@@ -157,7 +160,8 @@ object NodeParams extends Logging {
 
     val nodeSeed = getSeed(nodeSeedFilename)
     val channelSeed = getSeed(channelSeedFilename)
-    Seeds(nodeSeed, channelSeed)
+    val swapSeed = getSeed(swapSeedFilename)
+    Seeds(nodeSeed, channelSeed, swapSeed)
   }
 
   private val chain2Hash: Map[String, ByteVector32] = Map(
@@ -188,7 +192,7 @@ object NodeParams extends Logging {
     }
   }
 
-  def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
+  def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager, swapKeyManager: SwapKeyManager,
                      torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator,
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
@@ -422,6 +426,7 @@ object NodeParams extends Logging {
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
+      swapKeyManager = swapKeyManager,
       instanceId = instanceId,
       blockHeight = blockHeight,
       alias = nodeAlias,

@@ -24,6 +24,7 @@ import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.swap.LocalSwapKeyManager
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.concurrent.PatienceConfiguration
@@ -61,6 +62,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       instanceId = UUID.randomUUID(),
       nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
       channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
+      swapKeyManager = new LocalSwapKeyManager(seed, Block.RegtestGenesisBlock.hash),
       torAddress_opt = None,
       database = TestDatabases.inMemoryDb(),
       blockHeight = new AtomicLong(400_000),

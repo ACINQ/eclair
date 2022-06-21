@@ -43,6 +43,7 @@ import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.swap.LocalSwapKeyManager
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.protocol.NodeAddress
 import grizzled.slf4j.Logging
@@ -93,12 +94,13 @@ class Setup(val datadir: File,
 
   datadir.mkdirs()
   val config = system.settings.config.getConfig("eclair")
-  val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
+  val Seeds(nodeSeed, channelSeed, swapSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
   chaindir.mkdirs()
   val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
   val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
+  val swapKeyManager = new LocalSwapKeyManager(swapSeed, NodeParams.hashFromChain(chain))
   val instanceId = UUID.randomUUID()
 
   logger.info(s"instanceid=$instanceId")
@@ -132,7 +134,7 @@ class Setup(val datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, swapKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
@@ -380,7 +382,7 @@ class Setup(val datadir: File,
 
 object Setup {
 
-  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector)
+  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector, swapSeed: ByteVector)
 
 }
 
