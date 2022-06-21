@@ -163,6 +163,10 @@ object Transactions {
   sealed trait TxGenerationSkipped
   case object OutputNotFound extends TxGenerationSkipped { override def toString = "output not found (probably trimmed)" }
   case object AmountBelowDustLimit extends TxGenerationSkipped { override def toString = "amount is below dust limit" }
+
+  case class SwapClaimByInvoiceTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "swap-claimbyinvoice-tx" }
+  case class SwapClaimByCoopTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "swap-claimbycoop-tx" }
+  case class SwapClaimByCsvTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "swap-claimbycsv-tx" }
   // @formatter:on
 
   /**
