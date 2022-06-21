@@ -54,7 +54,7 @@ object PendingCommandsDb {
    */
   def safeSend(register: ActorRef, db: PendingCommandsDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
     // htlc settlement commands don't have replyTo
-    register ! Register.Forward(ActorRef.noSender, channelId, cmd)
+    register ! Register.Forward(null, channelId, cmd)
     // we store the command in a db (note that this happens *after* forwarding the command to the channel, so we don't add latency)
     db.addSettlementCommand(channelId, cmd)
   }

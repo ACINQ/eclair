@@ -118,7 +118,7 @@ class ChannelRelay private(nodeParams: NodeParams,
             safeSendAndStop(r.add.channelId, cmdFail)
           case RelaySuccess(selectedChannelId, cmdAdd) =>
             context.log.info(s"forwarding htlc to channelId=$selectedChannelId")
-            register ! Register.Forward(forwardFailureAdapter.toClassic, selectedChannelId, cmdAdd)
+            register ! Register.Forward(forwardFailureAdapter, selectedChannelId, cmdAdd)
             waitForAddResponse(selectedChannelId, previousFailures)
         }
     }

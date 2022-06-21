@@ -15,7 +15,7 @@ class RegisterSpec extends TestKitBaseClass with AnyFunSuiteLike with ParallelTe
 
   test("register processes custom restored events") {
     val sender = TestProbe()
-    val registerRef = system.actorOf(Props(new Register))
+    val registerRef = system.actorOf(Register.props())
     val customRestoredEvent = CustomChannelRestored(TestProbe().ref, randomBytes32(), TestProbe().ref, randomKey().publicKey)
     registerRef ! customRestoredEvent
     sender.send(registerRef, Symbol("channels"))
