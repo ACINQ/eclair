@@ -7,7 +7,6 @@ import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.ShortChannelId.txIndex
-import fr.acinq.eclair.TestUtils.waitEventStreamSynced
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingDeeplyBuriedTriggered}
@@ -25,7 +24,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, IAmReady, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.Assertions
 import org.scalatest.concurrent.Eventually.eventually
 
@@ -73,8 +72,7 @@ object MinimalNodeFixture extends Assertions {
   def apply(nodeParams: NodeParams): MinimalNodeFixture = {
     implicit val system: ActorSystem = ActorSystem(s"system-${nodeParams.alias}")
     val readyListener = TestProbe("ready-listener")
-    system.eventStream.subscribe(readyListener.ref, classOf[IAmReady])
-    waitEventStreamSynced(system.eventStream)
+    system.eventStream.subscribe(readyListener.ref, classOf[SubscriptionsComplete])
     val bitcoinClient = new TestBitcoinCoreClient()
     val wallet = new DummyOnChainWallet()
     val watcher = TestProbe("watcher")
@@ -90,10 +88,10 @@ object MinimalNodeFixture extends Assertions {
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
     readyListener.expectMsgAllOf(
-      IAmReady(classOf[Router]),
-      IAmReady(classOf[Register]),
-      IAmReady(classOf[Switchboard]),
-      IAmReady(ChannelRelayer.getClass))
+      SubscriptionsComplete(classOf[Router]),
+      SubscriptionsComplete(classOf[Register]),
+      SubscriptionsComplete(classOf[Switchboard]),
+      SubscriptionsComplete(ChannelRelayer.getClass))
     MinimalNodeFixture(
       nodeParams,
       system,

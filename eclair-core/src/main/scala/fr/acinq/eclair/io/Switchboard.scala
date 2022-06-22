@@ -29,7 +29,7 @@ import fr.acinq.eclair.io.Peer.PeerInfoResponse
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.protocol.OnionMessage
-import fr.acinq.eclair.{IAmReady, NodeParams}
+import fr.acinq.eclair.{SubscriptionsComplete, NodeParams}
 
 /**
  * Ties network connections to peers.
@@ -41,7 +41,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[LastChannelClosed])
-  context.system.eventStream.publish(IAmReady(this.getClass))
+  context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
   // we load channels from database
   private def initialPeersWithChannels(): Set[PublicKey] = {

@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPaymentPacket
-import fr.acinq.eclair.{IAmReady, Logs, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{SubscriptionsComplete, Logs, NodeParams, ShortChannelId}
 
 import java.util.UUID
 import scala.collection.mutable
@@ -65,7 +65,7 @@ object ChannelRelayer {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelUpdate](WrappedLocalChannelUpdate))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelDown](WrappedLocalChannelDown))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[AvailableBalanceChanged](WrappedAvailableBalanceChanged))
-      context.system.eventStream ! EventStream.Publish(IAmReady(this.getClass))
+      context.system.eventStream ! EventStream.Publish(SubscriptionsComplete(this.getClass))
       context.messageAdapter[IncomingPaymentPacket.ChannelRelayPacket](Relay)
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), nodeAlias_opt = Some(nodeParams.alias)), mdc) {
         Behaviors.receiveMessage {

@@ -20,7 +20,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.Register._
-import fr.acinq.eclair.{IAmReady, ShortChannelId}
+import fr.acinq.eclair.{SubscriptionsComplete, ShortChannelId}
 
 /**
  * Created by PM on 26/01/2016.
@@ -32,7 +32,7 @@ class Register extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[AbstractChannelRestored])
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
-  context.system.eventStream.publish(IAmReady(this.getClass))
+  context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
