@@ -82,6 +82,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.bitcoind.wallet" -> defaultWallet,
     "eclair.channel.mindepth-blocks" -> 2,
     "eclair.channel.max-htlc-value-in-flight-msat" -> 100000000000L,
+    "eclair.channel.max-htlc-value-in-flight-percent" -> 100,
     "eclair.channel.max-block-processing-delay" -> "2 seconds",
     "eclair.channel.to-remote-delay-blocks" -> 24,
     "eclair.channel.max-funding-satoshis" -> 500000000,
