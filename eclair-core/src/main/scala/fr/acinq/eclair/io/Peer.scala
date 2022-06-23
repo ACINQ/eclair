@@ -581,7 +581,7 @@ object Peer {
       // NB: when we're the initiator, we don't know yet if the remote peer will contribute to the funding amount, so
       // our choice of maxHtlcValueInFlightMsat may not be optimal and the specification doesn't provide a mechanism yet
       // to update this value after the channel has been opened.
-      maxHtlcValueInFlightMsat = nodeParams.channelConf.maxHtlcValueInFlightMsat.min(fundingAmount),
+      maxHtlcValueInFlightMsat = nodeParams.channelConf.maxHtlcValueInFlightMsat.min(fundingAmount * nodeParams.channelConf.maxHtlcValueInFlightPercent / 100),
       requestedChannelReserve_opt = if (dualFunded) None else Some((fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit)), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.channelConf.htlcMinimum,
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay

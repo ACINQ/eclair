@@ -64,6 +64,7 @@ object Channel {
                          maxRemoteDustLimit: Satoshi,
                          htlcMinimum: MilliSatoshi,
                          maxHtlcValueInFlightMsat: MilliSatoshi,
+                         maxHtlcValueInFlightPercent: Int,
                          maxAcceptedHtlcs: Int,
                          reserveToFundingRatio: Double,
                          maxReserveToFundingRatio: Double,
@@ -81,6 +82,8 @@ object Channel {
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
                          revocationTimeout: FiniteDuration,
                          requireConfirmedInputsForDualFunding: Boolean) {
+    require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
+
     def minFundingSatoshis(announceChannel: Boolean): Satoshi = if (announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
   }
 

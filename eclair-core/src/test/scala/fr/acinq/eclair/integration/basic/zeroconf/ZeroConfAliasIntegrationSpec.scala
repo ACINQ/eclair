@@ -275,10 +275,11 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     assert(carolHint.shortChannelId == bobAlias)
 
     // We make sure Bob won't have enough liquidity to relay another payment.
-    sendSuccessfulPayment(bob, carol, 60_000_000 msat)
+    sendSuccessfulPayment(bob, carol, 35_000_000 msat)
+    sendSuccessfulPayment(bob, carol, 25_000_000 msat)
 
     // The channel update returned in failures doesn't leak the real scid.
-    val failure = sendFailingPayment(alice, carol, 50_000_000 msat, hints = List(List(carolHint)))
+    val failure = sendFailingPayment(alice, carol, 40_000_000 msat, hints = List(List(carolHint)))
     val failureWithChannelUpdate = failure.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f }
     assert(failureWithChannelUpdate.length == 1)
     assert(failureWithChannelUpdate.head.update.shortChannelId == bobAlias)
