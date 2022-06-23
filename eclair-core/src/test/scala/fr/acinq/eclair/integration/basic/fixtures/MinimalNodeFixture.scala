@@ -19,12 +19,12 @@ import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
-import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.relay.{ChannelRelayer, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.Assertions
 import org.scalatest.concurrent.Eventually.eventually
 
@@ -71,6 +71,8 @@ object MinimalNodeFixture extends Assertions {
 
   def apply(nodeParams: NodeParams): MinimalNodeFixture = {
     implicit val system: ActorSystem = ActorSystem(s"system-${nodeParams.alias}")
+    val readyListener = TestProbe("ready-listener")
+    system.eventStream.subscribe(readyListener.ref, classOf[SubscriptionsComplete])
     val bitcoinClient = new TestBitcoinCoreClient()
     val wallet = new DummyOnChainWallet()
     val watcher = TestProbe("watcher")
@@ -85,6 +87,11 @@ object MinimalNodeFixture extends Assertions {
     val switchboard = system.actorOf(Switchboard.props(nodeParams, peerFactory), "switchboard")
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
+    readyListener.expectMsgAllOf(
+      SubscriptionsComplete(classOf[Router]),
+      SubscriptionsComplete(classOf[Register]),
+      SubscriptionsComplete(classOf[Switchboard]),
+      SubscriptionsComplete(ChannelRelayer.getClass))
     MinimalNodeFixture(
       nodeParams,
       system,
