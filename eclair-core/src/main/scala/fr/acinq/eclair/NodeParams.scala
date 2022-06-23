@@ -313,7 +313,7 @@ object NodeParams extends Logging {
 
     val overrideInitFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-init-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f })
+      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f }, features.initFeatures())
       validateFeatures(f.unscoped())
       p -> (f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
     }.toMap
