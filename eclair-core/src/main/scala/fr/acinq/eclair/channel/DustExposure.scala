@@ -19,9 +19,9 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.channel.HtlcFiltering.FilteredHtlcs
 import fr.acinq.eclair.transactions.Transactions.CommitmentFormat
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.protocol._
 
 /**
  * Created by t-bast on 07/10/2021.
@@ -74,82 +74,23 @@ object DustExposure {
                           remoteSpec: CommitmentSpec,
                           remoteDustLimit: Satoshi,
                           remoteCommitDustExposure: MilliSatoshi,
-                          receivedHtlcs: Seq[UpdateAddHtlc],
-                          commitmentFormat: CommitmentFormat): (Seq[UpdateAddHtlc], Seq[UpdateAddHtlc]) = {
-    val (_, _, acceptedHtlcs, rejectedHtlcs) = receivedHtlcs.foldLeft((localCommitDustExposure, remoteCommitDustExposure, Seq.empty[UpdateAddHtlc], Seq.empty[UpdateAddHtlc])) {
-      case ((currentLocalCommitDustExposure, currentRemoteCommitDustExposure, acceptedHtlcs, rejectedHtlcs), add) =>
+                          receivedHtlcs: FilteredHtlcs,
+                          commitmentFormat: CommitmentFormat): FilteredHtlcs = {
+    val (_, _, result) = receivedHtlcs.accepted.foldLeft((localCommitDustExposure, remoteCommitDustExposure, receivedHtlcs.copy(accepted = Seq.empty))) {
+      case ((currentLocalCommitDustExposure, currentRemoteCommitDustExposure, currentHtlcs), add) =>
         val contributesToLocalCommitDustExposure = contributesToDustExposure(IncomingHtlc(add), localSpec, localDustLimit, commitmentFormat)
         val overflowsLocalCommitDustExposure = contributesToLocalCommitDustExposure && currentLocalCommitDustExposure + add.amountMsat > maxDustExposure
         val contributesToRemoteCommitDustExposure = contributesToDustExposure(OutgoingHtlc(add), remoteSpec, remoteDustLimit, commitmentFormat)
         val overflowsRemoteCommitDustExposure = contributesToRemoteCommitDustExposure && currentRemoteCommitDustExposure + add.amountMsat > maxDustExposure
         if (overflowsLocalCommitDustExposure || overflowsRemoteCommitDustExposure) {
-          (currentLocalCommitDustExposure, currentRemoteCommitDustExposure, acceptedHtlcs, rejectedHtlcs :+ add)
+          (currentLocalCommitDustExposure, currentRemoteCommitDustExposure, currentHtlcs.reject(add))
         } else {
           val nextLocalCommitDustExposure = if (contributesToLocalCommitDustExposure) currentLocalCommitDustExposure + add.amountMsat else currentLocalCommitDustExposure
           val nextRemoteCommitDustExposure = if (contributesToRemoteCommitDustExposure) currentRemoteCommitDustExposure + add.amountMsat else currentRemoteCommitDustExposure
-          (nextLocalCommitDustExposure, nextRemoteCommitDustExposure, acceptedHtlcs :+ add, rejectedHtlcs)
+          (nextLocalCommitDustExposure, nextRemoteCommitDustExposure, currentHtlcs.accept(add))
         }
     }
-    (acceptedHtlcs, rejectedHtlcs)
-  }
-
-  def reduceForDustExposure(localCommitSpec: CommitmentSpec, localChanges: List[UpdateMessage], remoteChanges: List[UpdateMessage]): CommitmentSpec = {
-    // NB: when computing dust exposure, we usually apply all pending updates (proposed, signed and acked), which means
-    // that we will sometimes apply fulfill/fail on htlcs that have already been removed: that's why we don't use the
-    // normal functions from CommitmentSpec that would throw when that happens.
-    def fulfillIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
-      spec.findIncomingHtlcById(htlcId) match {
-        case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-        case None => spec
-      }
-    }
-
-    def fulfillOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
-      spec.findOutgoingHtlcById(htlcId) match {
-        case Some(htlc) => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-        case None => spec
-      }
-    }
-
-    def failIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
-      spec.findIncomingHtlcById(htlcId) match {
-        case Some(htlc) => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-        case None => spec
-      }
-    }
-
-    def failOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
-      spec.findOutgoingHtlcById(htlcId) match {
-        case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-        case None => spec
-      }
-    }
-
-    val spec1 = localChanges.foldLeft(localCommitSpec) {
-      case (spec, u: UpdateAddHtlc) => CommitmentSpec.addHtlc(spec, OutgoingHtlc(u))
-      case (spec, _) => spec
-    }
-    val spec2 = remoteChanges.foldLeft(spec1) {
-      case (spec, u: UpdateAddHtlc) => CommitmentSpec.addHtlc(spec, IncomingHtlc(u))
-      case (spec, _) => spec
-    }
-    val spec3 = localChanges.foldLeft(spec2) {
-      case (spec, u: UpdateFulfillHtlc) => fulfillIncomingHtlc(spec, u.id)
-      case (spec, u: UpdateFailHtlc) => failIncomingHtlc(spec, u.id)
-      case (spec, u: UpdateFailMalformedHtlc) => failIncomingHtlc(spec, u.id)
-      case (spec, _) => spec
-    }
-    val spec4 = remoteChanges.foldLeft(spec3) {
-      case (spec, u: UpdateFulfillHtlc) => fulfillOutgoingHtlc(spec, u.id)
-      case (spec, u: UpdateFailHtlc) => failOutgoingHtlc(spec, u.id)
-      case (spec, u: UpdateFailMalformedHtlc) => failOutgoingHtlc(spec, u.id)
-      case (spec, _) => spec
-    }
-    val spec5 = (localChanges ++ remoteChanges).foldLeft(spec4) {
-      case (spec, u: UpdateFee) => spec.copy(commitTxFeerate = u.feeratePerKw)
-      case (spec, _) => spec
-    }
-    spec5
+    result
   }
 
 }

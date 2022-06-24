@@ -72,6 +72,7 @@ object ChannelRelay {
       case (_: HtlcValueTooHighInFlight, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: LocalDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: RemoteDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+      case (_: HtlcRejectedByCongestionControl, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: FeerateTooDifferent, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: ChannelUnavailable, Some(channelUpdate)) if !channelUpdate.channelFlags.isEnabled => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
       case (_: ChannelUnavailable, None) => PermanentChannelFailure

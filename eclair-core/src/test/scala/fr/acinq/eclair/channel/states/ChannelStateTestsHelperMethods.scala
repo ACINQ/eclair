@@ -63,8 +63,16 @@ object ChannelStateTestsTags {
   val NoPushMsat = "no_push_msat"
   /** If set, max-htlc-value-in-flight will be set to the highest possible value for Alice and Bob. */
   val NoMaxHtlcValueInFlight = "no_max_htlc_value_in_flight"
+  /** If set, max-accepted-htlcs will be set to the highest possible value for Alice and Bob. */
+  val HighMaxAcceptedHtlcs = "high_max_accepted_htlcs"
+  /** If set, max-accepted-htlcs will be set to 5 for Alice. */
+  val AliceLowMaxAcceptedHtlcs = "alice_low_max_accepted_htlcs"
+  /** If set, max-accepted-htlcs will be set to 5 for Bob. */
+  val BobLowMaxAcceptedHtlcs = "bob_low_max_accepted_htlcs"
   /** If set, max-htlc-value-in-flight will be set to a low value for Alice. */
   val AliceLowMaxHtlcValueInFlight = "alice_low_max_htlc_value_in_flight"
+  /** If set, max-htlc-value-in-flight will be set to a low value for Bob. */
+  val BobLowMaxHtlcValueInFlight = "bob_low_max_htlc_value_in_flight"
   /** If set, channels will use option_upfront_shutdown_script. */
   val UpfrontShutdownScript = "option_upfront_shutdown_script"
   /** If set, Alice will have a much higher dust limit than Bob. */
@@ -135,11 +143,15 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+      .modify(_.channelConf.maxAcceptedHtlcs).setToIf(tags.contains(ChannelStateTestsTags.HighMaxAcceptedHtlcs))(483)
+      .modify(_.channelConf.maxAcceptedHtlcs).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxAcceptedHtlcs))(5)
     val finalNodeParamsB = nodeParamsB
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+      .modify(_.channelConf.maxAcceptedHtlcs).setToIf(tags.contains(ChannelStateTestsTags.HighMaxAcceptedHtlcs))(483)
+      .modify(_.channelConf.maxAcceptedHtlcs).setToIf(tags.contains(ChannelStateTestsTags.BobLowMaxAcceptedHtlcs))(5)
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemA
       TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
@@ -191,12 +203,17 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(150_000_000 msat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
+      .modify(_.maxAcceptedHtlcs).setToIf(tags.contains(ChannelStateTestsTags.HighMaxAcceptedHtlcs))(483)
+      .modify(_.maxAcceptedHtlcs).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxAcceptedHtlcs))(5)
     val bobParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(wallet.getReceivePubkey(), 10 seconds)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(Long.MaxValue.msat)
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.BobLowMaxHtlcValueInFlight))(150_000_000 msat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
+      .modify(_.maxAcceptedHtlcs).setToIf(tags.contains(ChannelStateTestsTags.HighMaxAcceptedHtlcs))(483)
+      .modify(_.maxAcceptedHtlcs).setToIf(tags.contains(ChannelStateTestsTags.BobLowMaxAcceptedHtlcs))(5)
 
     (aliceParams, bobParams, channelType)
   }

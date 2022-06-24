@@ -341,20 +341,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectNoMessage(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (over remote max accepted htlcs)") { f =>
+  test("recv CMD_ADD_HTLC (over remote max accepted htlcs)", Tag(ChannelStateTestsTags.BobLowMaxAcceptedHtlcs)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(initialState.commitments.localParams.maxAcceptedHtlcs == 100)
-    assert(initialState.commitments.remoteParams.maxAcceptedHtlcs == 30) // Bob accepts a maximum of 30 htlcs
-    for (_ <- 0 until 30) {
-      alice ! CMD_ADD_HTLC(sender.ref, 10000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    assert(initialState.commitments.remoteParams.maxAcceptedHtlcs == 5) // Bob accepts a maximum of 5 htlcs
+    for (_ <- 0 until 5) {
+      alice ! CMD_ADD_HTLC(sender.ref, 60000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       alice2bob.expectMsgType[UpdateAddHtlc]
     }
-    val add = CMD_ADD_HTLC(sender.ref, 10000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 60000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add
-    val error = TooManyAcceptedHtlcs(channelId(alice), maximum = 30)
+    val error = TooManyAcceptedHtlcs(channelId(alice), maximum = 5)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     alice2bob.expectNoMessage(200 millis)
   }
@@ -373,6 +373,25 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     bob ! add
     val error = TooManyAcceptedHtlcs(channelId(bob), maximum = 30)
+    sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
+    bob2alice.expectNoMessage(200 millis)
+  }
+
+  test("recv CMD_ADD_HTLC (channel congestion protection)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    // We can send at most 30 HTLCs, but we will be more restrictive for small HTLCs.
+    assert(initialState.commitments.localParams.maxAcceptedHtlcs == 30)
+    assert(initialState.commitments.remoteParams.maxAcceptedHtlcs == 100)
+    for (_ <- 0 until 15) {
+      bob ! CMD_ADD_HTLC(sender.ref, 10_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+      sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+      bob2alice.expectMsgType[UpdateAddHtlc]
+    }
+    val add = CMD_ADD_HTLC(sender.ref, 10_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    bob ! add
+    val error = HtlcRejectedByCongestionControl(channelId(bob), add.amount)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     bob2alice.expectNoMessage(200 millis)
   }
@@ -445,7 +464,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.expectMsg(RES_ADD_FAILED(add, LocalDustHtlcExposureTooHigh(channelId(alice), 25000.sat, 25001.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
   }
 
-  test("recv CMD_ADD_HTLC (over max dust htlc exposure in local commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_ADD_HTLC (over max dust htlc exposure in local commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighMaxAcceptedHtlcs)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -469,7 +488,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.expectMsg(RES_ADD_FAILED(add, LocalDustHtlcExposureTooHigh(channelId(alice), 25000.sat, 25200.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
   }
 
-  test("recv CMD_ADD_HTLC (over max dust htlc exposure in remote commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_ADD_HTLC (over max dust htlc exposure in remote commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighMaxAcceptedHtlcs)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -1250,6 +1269,34 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectMsgType[WatchTxConfirmed]
   }
 
+  test("recv RevokeAndAck (channel congestion protection)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.AliceLowMaxAcceptedHtlcs), Tag(ChannelStateTestsTags.BobLowMaxHtlcValueInFlight)) { f =>
+    import f._
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.localParams.maxAcceptedHtlcs == 30)
+    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat == 150_000_000.msat)
+    // Alice's congestion control parameters are more restrictive than Bob's.
+    assert(initialState.commitments.remoteParams.maxAcceptedHtlcs == 5)
+    assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat == UInt64(500_000_000))
+
+    // Bob sends many HTLCs to Alice, while staying below max-accepted-htlcs.
+    for (_ <- 0 until 5) {
+      addHtlc(20_000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
+    }
+    crossSign(bob, alice, bob2alice, alice2bob)
+
+    // Alice doesn't relay all the HTLCs.
+    alice2relayer.expectMsgType[RelayForward]
+    alice2relayer.expectMsgType[RelayForward]
+    alice2relayer.expectMsgType[RelayForward]
+    alice2relayer.expectMsgType[RelayForward]
+    alice2relayer.expectNoMessage(100 millis)
+    // And instantly fail one of them.
+    alice2bob.expectMsgType[UpdateFailHtlc]
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.expectNoMessage(100 millis)
+  }
+
   test("recv RevokeAndAck (over max dust htlc exposure)") { f =>
     import f._
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -1362,17 +1409,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectNoMessage(100 millis)
   }
 
-  test("recv RevokeAndAck (over max dust htlc exposure in local commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob)) { f =>
+  test("recv RevokeAndAck (over max dust htlc exposure in local commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob), Tag(ChannelStateTestsTags.HighMaxAcceptedHtlcs)) { f =>
     import f._
-    val sender = TestProbe()
     assert(alice.underlyingActor.nodeParams.channelConf.dustLimit == 5000.sat)
     assert(bob.underlyingActor.nodeParams.channelConf.dustLimit == 1000.sat)
     testRevokeAndAckDustOverflowSingleCommit(f)
   }
 
-  test("recv RevokeAndAck (over max dust htlc exposure in remote commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice)) { f =>
+  test("recv RevokeAndAck (over max dust htlc exposure in remote commit only with pending local changes)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice), Tag(ChannelStateTestsTags.HighMaxAcceptedHtlcs)) { f =>
     import f._
-    val sender = TestProbe()
     assert(alice.underlyingActor.nodeParams.channelConf.dustLimit == 1000.sat)
     assert(bob.underlyingActor.nodeParams.channelConf.dustLimit == 5000.sat)
     testRevokeAndAckDustOverflowSingleCommit(f)

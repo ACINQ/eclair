@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.channel.HtlcFiltering.FilteredHtlcs
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, TestConstants, ToMilliSatoshiConversion, randomBytes32}
@@ -130,17 +131,17 @@ class DustExposureSpec extends AnyFunSuiteLike {
     ))
     assert(DustExposure.computeExposure(updatedSpec, dustLimit, Transactions.DefaultCommitmentFormat) == 18500.sat.toMilliSatoshi)
 
-    val receivedHtlcs = Seq(
+    val receivedHtlcs = FilteredHtlcs(Seq(
       createHtlc(5, 9500.sat.toMilliSatoshi),
       createHtlc(6, 5000.sat.toMilliSatoshi),
       createHtlc(7, 1000.sat.toMilliSatoshi),
       createHtlc(8, 400.sat.toMilliSatoshi),
       createHtlc(9, 400.sat.toMilliSatoshi),
       createHtlc(10, 50000.sat.toMilliSatoshi),
-    )
-    val (accepted, rejected) = DustExposure.filterBeforeForward(25000 sat, updatedSpec, dustLimit, 10000.sat.toMilliSatoshi, initialSpec, dustLimit, 15000.sat.toMilliSatoshi, receivedHtlcs, Transactions.DefaultCommitmentFormat)
-    assert(accepted.map(_.id).toSet == Set(5, 6, 8, 10))
-    assert(rejected.map(_.id).toSet == Set(7, 9))
+    ), Seq.empty)
+    val filtered = DustExposure.filterBeforeForward(25000 sat, updatedSpec, dustLimit, 10000.sat.toMilliSatoshi, initialSpec, dustLimit, 15000.sat.toMilliSatoshi, receivedHtlcs, Transactions.DefaultCommitmentFormat)
+    assert(filtered.accepted.map(_.id).toSet == Set(5, 6, 8, 10))
+    assert(filtered.rejected.map(_.id).toSet == Set(7, 9))
   }
 
 }
