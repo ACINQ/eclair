@@ -415,9 +415,10 @@ object Graph {
      * extremes but always bigger than zero so it's guaranteed to never return zero
      */
     def normalize(value: Double, min: Double, max: Double): Double = {
-      if (value <= min) 0.00001D
-      else if (value > max) 0.99999D
-      else (value - min) / (max - min)
+      assert(max > min)
+      val clampedValue = Math.min(Math.max(min, value), max)
+      val extent = max - min
+      0.00001D + 0.99998D * (clampedValue - min) / extent
     }
 
   }
