@@ -178,13 +178,20 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   when(Normal) {
     handleExceptions {
       case Event(Tcp.Received(data), d: NormalData[T @unchecked]) =>
+        log.debug("received chunk of size={}", data.size)
         val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
         if (plaintextMessages.isEmpty) {
           connection ! Tcp.ResumeReading
           stay() using d.copy(decryptor = dec1)
         } else {
-          log.debug("read {} messages, waiting for readacks", plaintextMessages.size)
+          log.debug("decoding {} raw messages", plaintextMessages.size)
           val unackedReceived = sendToListener(d.listener, plaintextMessages)
+          if (unackedReceived.isEmpty) {
+            log.debug("no decoded messages in this chunk, resuming reading")
+            connection ! Tcp.ResumeReading
+          } else {
+            log.debug("decoded {} messages, waiting for readacks", unackedReceived.size)
+          }
           stay() using NormalData(d.encryptor, dec1, d.listener, d.sendBuffer, unackedReceived, d.unackedSent)
         }
 
