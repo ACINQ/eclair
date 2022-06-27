@@ -51,8 +51,8 @@
         <!--<appender-ref ref="CONSOLE_NOTIFICATIONS"/>-->
     </logger>
 
-    <logger name="fr.acinq.eclair.router" level="WARN"/>
-    <logger name="fr.acinq.eclair.channel" level="WARN"/>
+    <logger name="fr.acinq.eclair.router" level="DEBUG"/>
+    <logger name="fr.acinq.eclair.channel" level="DEBUG"/>
     <logger name="fr.acinq.eclair.channel.publish" level="DEBUG"/>
     <logger name="fr.acinq.eclair.Diagnostics" level="OFF"/>
     <logger name="fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher" level="OFF"/>
@@ -62,7 +62,7 @@
 
     <root level="INFO">
         <appender-ref ref="CapturingAppender"/>
-        <!--<appender-ref ref="CONSOLE"/>-->
+        <appender-ref ref="CONSOLE"/>
     </root>
 
 </configuration>
