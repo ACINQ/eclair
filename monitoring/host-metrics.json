@@ -487,8 +487,8 @@
                   "options": {
                     "mode": "exclude",
                     "names": [
-                      "{__name__=\"host_storage_mount_space_total_bytes\", component=\"host\", instance=\"localhost:9095\", job=\"eclair\", mount=\"/\"}",
-                      "{__name__=\"host_storage_mount_space_free_bytes\", component=\"host\", instance=\"localhost:9095\", job=\"eclair\", mount=\"/\"}"
+                      "{__name__=\"host_storage_mount_space_total_bytes\", component=\"host\", job=\"eclair\", mount=\"/\"}",
+                      "{__name__=\"host_storage_mount_space_free_bytes\", component=\"host\", job=\"eclair\", mount=\"/\"}"
                     ],
                     "prefix": "All except:",
                     "readOnly": true
@@ -942,13 +942,9 @@
   "templating": {
     "list": []
   },
-  "time": {
-    "from": "2022-06-24T04:54:44.507Z",
-    "to": "2022-06-24T04:58:02.485Z"
-  },
   "timepicker": {},
   "timezone": "",
-  "title": "Ecalir Node Monitor",
+  "title": "eclair Host Metrics",
   "uid": "FDdGZp37k",
   "version": 3,
   "weekStart": ""
