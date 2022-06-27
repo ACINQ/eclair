@@ -86,6 +86,8 @@ scrape_configs:
       - targets: ['<url of the eclair http embedded server>']
  ```
 
+After setting up with the prometheus, download [grafana](https://grafana.com/grafana/download) and visit grafana-web via `http://localhost:3000`. Finally, you can import monitoring dashboards available at monitoring directory(see the [grafana documentation](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard) for more details).  
+
 ## Example metrics
 
 Apart from akka and system metrics, eclair generates a lot of lightning metrics. The following
