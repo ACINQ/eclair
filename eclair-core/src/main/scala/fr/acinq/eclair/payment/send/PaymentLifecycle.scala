@@ -24,14 +24,13 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
+import fr.acinq.eclair.payment.Invoice.{BasicEdge, ExtraEdge}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
-import fr.acinq.eclair.router.Router.ChannelRelayParams.FromAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion._
@@ -261,7 +260,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
    *
    * @return updated routing hints if applicable.
    */
-  private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[GraphEdge] = {
+  private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[ExtraEdge] = {
     // TODO: properly handle updates to channels provided as routing hints in the invoice
     data.route.getChannelUpdateForNode(nodeId) match {
       case Some(u) if u.shortChannelId != failure.update.shortChannelId =>
@@ -288,15 +287,15 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     // we return updated assisted routes: they take precedence over the router's routing table
     if (failure.update.channelFlags.isEnabled) {
       data.c.extraEdges.map {
-        case edge if edge.desc.shortChannelId == failure.update.shortChannelId => edge.copy(params = FromAnnouncement(failure.update))
+        case edge: BasicEdge if edge.shortChannelId == failure.update.shortChannelId => edge.update(failure.update)
         case edge => edge
       }
     } else {
       // if the channel is disabled, we temporarily exclude it: this is necessary because the routing hint doesn't contain
       // channel flags to indicate that it's disabled
-      data.c.extraEdges.map(_.desc)
-        .find(_.shortChannelId == failure.update.shortChannelId)
-        .foreach(desc => router ! ExcludeChannel(desc)) // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
+      data.c.extraEdges
+        .find { case edge: BasicEdge => edge.shortChannelId == failure.update.shortChannelId }
+        .foreach { case edge: BasicEdge => router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId)) } // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
       data.c.extraEdges
     }
   }
@@ -380,7 +379,7 @@ object PaymentLifecycle {
     // @formatter:off
     def replyTo: ActorRef
     def finalPayload: FinalPayload
-    def extraEdges: Seq[GraphEdge]
+    def extraEdges: Seq[ExtraEdge]
     def targetNodeId: PublicKey
     def maxAttempts: Int
     // @formatter:on
@@ -395,7 +394,7 @@ object PaymentLifecycle {
   case class SendPaymentToRoute(replyTo: ActorRef,
                                 route: Either[PredefinedRoute, Route],
                                 finalPayload: FinalPayload,
-                                extraEdges: Seq[GraphEdge] = Nil) extends SendPayment {
+                                extraEdges: Seq[ExtraEdge] = Nil) extends SendPayment {
     require(route.fold(!_.isEmpty, _.hops.nonEmpty), "payment route must not be empty")
 
     val targetNodeId: PublicKey = route.fold(_.targetNodeId, _.hops.last.nextNodeId)
@@ -423,7 +422,7 @@ object PaymentLifecycle {
                                targetNodeId: PublicKey,
                                finalPayload: FinalPayload,
                                maxAttempts: Int,
-                               extraEdges: Seq[GraphEdge] = Nil,
+                               extraEdges: Seq[ExtraEdge] = Nil,
                                routeParams: RouteParams) extends SendPayment {
     require(finalPayload.amount > 0.msat, s"amount must be > 0")
 

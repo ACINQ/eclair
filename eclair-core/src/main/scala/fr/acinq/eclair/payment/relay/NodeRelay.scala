@@ -35,7 +35,6 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived,
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -268,7 +267,7 @@ class NodeRelay private(nodeParams: NodeParams,
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     val payFSM = payloadOut.invoiceFeatures match {
       case Some(features) =>
-        val extraEdges = payloadOut.invoiceRoutingInfo.getOrElse(Nil).flatMap(Bolt11Invoice.toExtraEdges(_, payloadOut.outgoingNodeId)).map(GraphEdge(_))
+        val extraEdges = payloadOut.invoiceRoutingInfo.getOrElse(Nil).flatMap(Bolt11Invoice.toExtraEdges(_, payloadOut.outgoingNodeId))
         val paymentSecret = payloadOut.paymentSecret.get // NB: we've verified that there was a payment secret in validateRelay
         if (Features(features).hasFeature(Features.BasicMultiPartPayment)) {
           context.log.debug("sending the payment to non-trampoline recipient using MPP")

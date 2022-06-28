@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.BasicEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
@@ -39,9 +39,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.BaseRouterSpec.{channelAnnouncement, channelHopFromUpdate}
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.router.Router.ChannelRelayParams.FromAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
@@ -197,7 +195,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val recipient = randomKey().publicKey
     val route = PredefinedNodeRoute(Seq(a, b, c, recipient))
-    val extraEdges = Bolt11Invoice.toExtraEdges(Seq(ExtraHop(c, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144))), recipient).map(GraphEdge(_))
+    val extraEdges = Seq(BasicEdge(c, recipient, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144)))
     val request = SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), extraEdges)
 
     sender.send(paymentFSM, request)
@@ -567,10 +565,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // we build an assisted route for channel bc and cd
-    val extraEdges = Bolt11Invoice.toExtraEdges(Seq(
-      ExtraHop(b, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, update_bc.cltvExpiryDelta),
-      ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
-    ), d).map(GraphEdge(_))
+    val extraEdges = Seq(
+      BasicEdge(b, c, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, update_bc.cltvExpiryDelta),
+      BasicEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
+    )
 
     val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), 5, extraEdges = extraEdges, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
@@ -593,7 +591,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsg(channelUpdate_bc_modified)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending)) // 1 failure but not final, the payment is still PENDING
     val extraEdges1 = Seq(
-      extraEdges(0).copy(params = FromAnnouncement(channelUpdate_bc_modified)),
+      extraEdges(0).asInstanceOf[BasicEdge].update(channelUpdate_bc_modified),
       extraEdges(1)
     )
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(extraEdges = extraEdges1))
@@ -612,7 +610,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // we build an assisted route for channel cd
-    val extraEdges = Bolt11Invoice.toExtraEdges(Seq(ExtraHop(c, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)), d).map(GraphEdge(_))
+    val extraEdges = Seq(BasicEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta))
     val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata), 1, extraEdges = extraEdges, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))

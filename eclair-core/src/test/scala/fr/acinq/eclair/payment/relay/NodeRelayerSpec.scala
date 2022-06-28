@@ -29,13 +29,13 @@ import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret, VariableL
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.BasicEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -585,7 +585,12 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
     assert(outgoingPayment.additionalTlvs == Nil)
-    assert(outgoingPayment.extraEdges == Bolt11Invoice.toExtraEdges(hints, outgoingNodeId).map(GraphEdge(_)))
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
@@ -625,7 +630,13 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.finalPayload.expiry == outgoingExpiry)
     assert(outgoingPayment.finalPayload.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.extraEdges == Bolt11Invoice.toExtraEdges(hints, outgoingNodeId).map(GraphEdge(_)))
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
+
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 

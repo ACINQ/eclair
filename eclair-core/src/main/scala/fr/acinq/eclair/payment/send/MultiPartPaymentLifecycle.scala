@@ -22,13 +22,13 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
+import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
@@ -325,7 +325,7 @@ object MultiPartPaymentLifecycle {
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
                                   paymentMetadata: Option[ByteVector],
-                                  extraEdges: Seq[GraphEdge] = Nil,
+                                  extraEdges: Seq[ExtraEdge] = Nil,
                                   routeParams: RouteParams,
                                   additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
                                   userCustomTlvs: Seq[GenericTlv] = Nil) {

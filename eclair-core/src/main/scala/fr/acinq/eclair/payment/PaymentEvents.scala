@@ -19,10 +19,9 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Invoice.{BasicEdge, ExtraEdge}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
-import fr.acinq.eclair.router.Router.ChannelRelayParams.FromAnnouncement
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
 import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
@@ -232,7 +231,7 @@ object PaymentFailure {
   }
 
   /** Update the invoice routing hints based on more recent channel updates received. */
-  def updateExtraEdges(failures: Seq[PaymentFailure], extraEdges: Seq[GraphEdge]): Seq[GraphEdge] = {
+  def updateExtraEdges(failures: Seq[PaymentFailure], extraEdges: Seq[ExtraEdge]): Seq[ExtraEdge] = {
     // We're only interested in the last channel update received per channel.
     val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
       case (current, failure) => failure match {
@@ -240,10 +239,13 @@ object PaymentFailure {
         case _ => current
       }
     }
-    extraEdges.map(edge => updates.get(edge.desc.shortChannelId) match {
-      case Some(u) => edge.copy(params = FromAnnouncement(u))
-      case None => edge
-    })
+    extraEdges.map {
+      case edge: BasicEdge => updates.get(edge.shortChannelId) match {
+        case Some(u) => edge.update(u)
+        case None => edge
+      }
+      case edge => edge
+    }
   }
 
 }

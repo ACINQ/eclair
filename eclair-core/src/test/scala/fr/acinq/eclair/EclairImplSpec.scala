@@ -32,12 +32,12 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.BasicEdge
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed}
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, Router}
@@ -135,7 +135,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send1.recipientAmount == 123.msat)
     assert(send1.paymentHash == ByteVector32.Zeroes)
     assert(send1.invoice == invoice1)
-    assert(send1.extraEdges == Bolt11Invoice.toExtraEdges(hints, nodePrivKey.publicKey).map(GraphEdge(_)))
+    assert(send1.extraEdges.length == 1)
+    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId.fromCoordinates("569178x2331x1").success.value)
+    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == Bob.nodeParams.nodeId)
+    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == nodePrivKey.publicKey)
+    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
+    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
+    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
 
     // with finalCltvExpiry
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"

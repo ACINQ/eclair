@@ -361,7 +361,7 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
-    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, extraEdges = Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z).map(GraphEdge(_)), routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, extraEdges = Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z), routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: x :: y :: Nil)
     assert(res.routes.head.hops.last.nextNodeId == z)
@@ -531,7 +531,7 @@ class RouterSpec extends BaseRouterSpec {
       val amount = 10_000.msat
       // the amount affects the way we estimate the channel capacity of the hinted channel
       assert(amount < RoutingHeuristics.CAPACITY_CHANNEL_LOW)
-      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Seq(GraphEdge(invoiceRoutingHint))))
+      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Seq(invoiceRoutingHint)))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
@@ -546,7 +546,7 @@ class RouterSpec extends BaseRouterSpec {
       val amount = RoutingHeuristics.CAPACITY_CHANNEL_LOW * 2
       // the amount affects the way we estimate the channel capacity of the hinted channel
       assert(amount > RoutingHeuristics.CAPACITY_CHANNEL_LOW)
-      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Seq(GraphEdge(invoiceRoutingHint))))
+      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Seq(invoiceRoutingHint)))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head

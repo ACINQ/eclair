@@ -19,7 +19,8 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -59,6 +60,8 @@ object Invoice {
     val feeBase: MilliSatoshi
     val feeProportionalMillionths: Long
     val cltvExpiryDelta: CltvExpiryDelta
+    val htlcMinimum: MilliSatoshi
+    val htlcMaximum_opt: Option[MilliSatoshi]
 
     def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
   }
@@ -68,7 +71,12 @@ object Invoice {
                        shortChannelId: ShortChannelId,
                        feeBase: MilliSatoshi,
                        feeProportionalMillionths: Long,
-                       cltvExpiryDelta: CltvExpiryDelta) extends ExtraEdge
+                       cltvExpiryDelta: CltvExpiryDelta) extends ExtraEdge {
+    override val htlcMinimum: MilliSatoshi = 0 msat
+    override val htlcMaximum_opt: Option[MilliSatoshi] = None
+
+    def update(u: ChannelUpdate): BasicEdge = copy(feeBase = u.feeBaseMsat, feeProportionalMillionths = u.feeProportionalMillionths, cltvExpiryDelta = u.cltvExpiryDelta)
+  }
 
   def fromString(input: String): Try[Invoice] = {
     if (input.toLowerCase.startsWith("lni")) {

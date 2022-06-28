@@ -31,10 +31,11 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
@@ -441,11 +442,11 @@ object Router {
       override def htlcMaximum_opt: Option[MilliSatoshi] = channelUpdate.htlcMaximumMsat
     }
     /** We learnt about this channel from hints in an invoice */
-    case class FromHint(extraHop: Invoice.BasicEdge) extends ChannelRelayParams {
+    case class FromHint(extraHop: Invoice.ExtraEdge) extends ChannelRelayParams {
       override def cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
       override def relayFees: Relayer.RelayFees = extraHop.relayFees
-      override def htlcMinimum: MilliSatoshi = 0 msat
-      override def htlcMaximum_opt: Option[MilliSatoshi] = None
+      override def htlcMinimum: MilliSatoshi = extraHop.htlcMinimum
+      override def htlcMaximum_opt: Option[MilliSatoshi] = extraHop.htlcMaximum_opt
     }
 
     def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
@@ -516,7 +517,7 @@ object Router {
                           target: PublicKey,
                           amount: MilliSatoshi,
                           maxFee: MilliSatoshi,
-                          extraEdges: Seq[GraphEdge] = Nil,
+                          extraEdges: Seq[ExtraEdge] = Nil,
                           ignore: Ignore = Ignore.empty,
                           routeParams: RouteParams,
                           allowMultiPart: Boolean = false,
@@ -525,7 +526,7 @@ object Router {
 
   case class FinalizeRoute(amount: MilliSatoshi,
                            route: PredefinedRoute,
-                           extraEdges: Seq[GraphEdge] = Nil,
+                           extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
   /**

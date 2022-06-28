@@ -43,7 +43,7 @@ object RouteCalculation {
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val g = fr.extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
+      val g = fr.extraEdges.map(GraphEdge(_)).foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       fr.route match {
         case PredefinedNodeRoute(hops) =>
@@ -72,7 +72,7 @@ object RouteCalculation {
                   case c.nodeId2 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId2, c.nodeId1))
                   case _ => None
                 }
-                case None => fr.extraEdges.find(_.desc.shortChannelId == shortChannelId).map(_.desc)
+                case None => fr.extraEdges.map(GraphEdge(_)).find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)
               }
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
                 case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.params))
@@ -98,7 +98,7 @@ object RouteCalculation {
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val extraEdges = r.extraEdges.filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
+      val extraEdges = r.extraEdges.map(GraphEdge(_)).filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
