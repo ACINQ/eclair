@@ -70,10 +70,13 @@ object ShortChannelId {
    *
    * (*) https://en.wikipedia.org/wiki/Birthday_attack
    */
-  private val aliasUpperBound = RealShortChannelId.apply(BlockHeight(350_000),1,0).toLong
+  private val aliasUpperBound = RealShortChannelId.apply(BlockHeight(350_000), 1, 0).toLong
 
   def generateLocalAlias(): Alias = {
-    val l = randomLong() % aliasUpperBound
+    var l = -1L
+    do {
+      l = randomLong()
+    } while (l < 0 || l > aliasUpperBound)
     Alias(l)
   }
 
