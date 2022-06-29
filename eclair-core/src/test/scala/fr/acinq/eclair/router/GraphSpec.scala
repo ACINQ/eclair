@@ -24,6 +24,7 @@ import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios, yenKshor
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId}
+import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -349,51 +350,26 @@ class GraphSpec extends AnyFunSuite {
     assert(paths(2).path == Seq(edgeCD, edgeDF, edgeFH))
   }
 
-  test("RoutingHeuristics.normalize when value in range") {
-    assert(Graph.RoutingHeuristics.normalize(value = 10, min = 0, max = 100) == 0.100008)
-    assert(Graph.RoutingHeuristics.normalize(value = 20, min = 10, max = 200) == 0.05264052631578948)
-    assert(Graph.RoutingHeuristics.normalize(value = -11, min = -100, max = -10) == 0.9888791111111112)
-  }
+  test("RoutingHeuristics.normalize") {
+      // value inside the range
+      assert(Graph.RoutingHeuristics.normalize(value = 10, min = 0, max = 100) === (10.0 / 100.0) +- 0.001)
+      assert(Graph.RoutingHeuristics.normalize(value = 20, min = 10, max = 200) === (10.0 / 190.0) +- 0.001)
+      assert(Graph.RoutingHeuristics.normalize(value = -11, min = -100, max = -10) === (89.0 / 90.0) +- 0.001)
 
-  test("Graph.RoutingHeuristics.normalize when value is == min") {
-    assert(Graph.RoutingHeuristics.normalize(value = 0, min = 0, max = 100) == 1.0E-5)
-    assert(Graph.RoutingHeuristics.normalize(value = 10, min = 10, max = 200) == 1.0E-5)
-    assert(Graph.RoutingHeuristics.normalize(value = -100, min = -100, max = -10) == 1.0E-5)
-  }
+      // value on the bounds
+      assert(Graph.RoutingHeuristics.normalize(value = 0, min = 0, max = 100) > 0)
+      assert(Graph.RoutingHeuristics.normalize(value = 10, min = 10, max = 200) > 0)
+      assert(Graph.RoutingHeuristics.normalize(value = -100, min = -100, max = -10) > 0)
+      assert(Graph.RoutingHeuristics.normalize(value = 9.1, min = 10, max = 200) > 0)
+      assert(Graph.RoutingHeuristics.normalize(value = 100, min = 0, max = 100) < 1)
+      assert(Graph.RoutingHeuristics.normalize(value = 200, min = 10, max = 200) < 1)
 
-  test("Graph.RoutingHeuristics.normalize when value is < min") {
-    assert(Graph.RoutingHeuristics.normalize(value = -1, min = 0, max = 100) == 1.0E-5)
-    assert(Graph.RoutingHeuristics.normalize(value = 9.1, min = 10, max = 200) == 1.0E-5)
-    assert(Graph.RoutingHeuristics.normalize(value = -101.1, min = -100, max = -10) == 1.0E-5)
-  }
+      // value outside the range
+      assert(Graph.RoutingHeuristics.normalize(value = 105.2, min = 0, max = 100) < 1)
 
-  test("Graph.RoutingHeuristics.normalize when value is == max") {
-    assert(Graph.RoutingHeuristics.normalize(value = 100, min = 0, max = 100) == 0.99999)
-    assert(Graph.RoutingHeuristics.normalize(value = 200, min = 10, max = 200) == 0.9999899999999999)
-    assert(Graph.RoutingHeuristics.normalize(value = -10, min = -100, max = -10) == 0.9999899999999999)
-  }
-
-  test("Graph.RoutingHeuristics.normalize when value is > max") {
-    assert(Graph.RoutingHeuristics.normalize(value = 105.2, min = 0, max = 100) == 0.99999)
-    assert(Graph.RoutingHeuristics.normalize(value = 300, min = 10, max = 200) == 0.9999899999999999)
-    assert(Graph.RoutingHeuristics.normalize(value = -9, min = -100, max = -10) == 0.9999899999999999)
-  }
-
-  test("Graph.RoutingHeuristics.normalize when value is very close to min") {
-    assert(Graph.RoutingHeuristics.normalize(value = 0.001, min = 0, max = 100) == 1.9999799999999998E-5)
-    assert(Graph.RoutingHeuristics.normalize(value = 10.00001, min = 10, max = 200) == 1.0052630526313798E-5)
-    assert(Graph.RoutingHeuristics.normalize(value = -99.9999934, min = -100, max = -10) == 1.0073331866734155E-5)
-  }
-
-  test("Graph.RoutingHeuristics.normalize when value is very close to max") {
-    assert(Graph.RoutingHeuristics.normalize(value = 99.999999, min = 0, max = 100) == 0.9999899900002)
-    assert(Graph.RoutingHeuristics.normalize(value = 199.999999934, min = 10, max = 200) == 0.9999899996526385)
-    assert(Graph.RoutingHeuristics.normalize(value = -10.000000034, min = -100, max = -10) == 0.9999899996222298)
-  }
-
-  test("Graph.RoutingHeuristics.normalize should throw exception if min > max") {
-    assertThrows[AssertionError](
-      Graph.RoutingHeuristics.normalize(value = 9, min = 10, max = 1)
-    )
+      // Should throw exception if min > max
+      assertThrows[IllegalArgumentException](
+        Graph.RoutingHeuristics.normalize(value = 9, min = 10, max = 1)
+      )
   }
 }
