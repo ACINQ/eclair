@@ -52,6 +52,12 @@ class Register extends Actor with ActorLogging {
       // We map all known scids (real or alias) to the channel_id. The relayer is in charge of deciding whether a real
       // scid can be used or not for routing (see option_scid_alias), but the register is neutral.
       val m = (scidAssigned.shortIds.real.toOption.toSeq :+ scidAssigned.shortIds.localAlias).map(_ -> scidAssigned.channelId).toMap
+      // duplicate check for aliases (we use a random value in a large enough space that there should never be collisions)
+      shortIds.get(scidAssigned.shortIds.localAlias) match {
+        case Some(channelId) if channelId != scidAssigned.channelId =>
+          log.error("duplicate alias={} for channelIds={},{} this should never happen!", scidAssigned.shortIds.localAlias, channelId, scidAssigned.channelId)
+        case _ => ()
+      }
       context become main(channels, shortIds ++ m, channelsTo)
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
