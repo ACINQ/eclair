@@ -70,4 +70,11 @@ class ShortChannelIdSpec extends AnyFunSuite {
     Seq(-561L, 0xffffffffffffffffL, 0x2affffffffffffffL).foreach(id => assert(Alias(id) == UnspecifiedShortChannelId(id)))
   }
 
+  test("basic check on random alias generation") {
+    for(_ <- 0 until 100) {
+      val alias = ShortChannelId.generateLocalAlias()
+      assert(alias.toLong >= 0 && alias.toLong <= 384_829_069_721_665_536L)
+    }
+  }
+
 }

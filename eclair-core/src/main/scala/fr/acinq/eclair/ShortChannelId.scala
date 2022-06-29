@@ -58,7 +58,25 @@ object ShortChannelId {
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
 
-  def generateLocalAlias(): Alias = Alias(System.nanoTime()) // TODO: fixme (duplicate, etc.)
+  /**
+   * At block height 350 000 LN didn't exist, so all real scids less than that will never be used. This results in
+   * more than `2^58` values.
+   *
+   * The expected number of values before we have a collision can be approximated by (*):
+   * `Q(H) ~= sqrt( Pi * H / 2) = sqrt(Pi * 2^57) = 673 000 000`
+   *
+   * We don't expect to have anywhere close to that many channels at any given time on our node, so we don't need to
+   * check for duplicate values.
+   *
+   * (*) https://en.wikipedia.org/wiki/Birthday_attack
+   */
+  private val aliasUpperBound = 2^58
+
+  def generateLocalAlias(): Alias = {
+    // modulo won't skew the distribution because 2^64 is a multiple of 2^58
+    val l = Math.abs(randomLong() % aliasUpperBound)
+    Alias(l)
+  }
 
   @inline
   def blockHeight(shortChannelId: ShortChannelId): BlockHeight = BlockHeight((shortChannelId.toLong >> 40) & 0xFFFFFF)
