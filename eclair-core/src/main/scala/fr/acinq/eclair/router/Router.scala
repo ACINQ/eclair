@@ -31,8 +31,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.Bolt11Invoice
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.ExtraEdge
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
@@ -392,7 +392,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
     /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
-    def toIncomingExtraHop: Option[ExtraHop] = {
+    def toIncomingExtraHop: Option[Bolt11Invoice.ExtraHop] = {
       // we want the incoming channel_update
       val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
       // for incoming payments we preferably use the *remote alias*, otherwise the real scid if we have it
@@ -400,17 +400,12 @@ object Router {
       // we override the remote update's scid, because it contains either the real scid or our local alias
       scid_opt.flatMap { scid =>
         remoteUpdate_opt.map { remoteUpdate =>
-          ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
+          Bolt11Invoice.ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
         }
       }
     }
   }
   // @formatter:on
-
-  case class AssistedChannel(nextNodeId: PublicKey, params: ChannelRelayParams.FromHint) {
-    val nodeId: PublicKey = params.extraHop.nodeId
-    val shortChannelId: ShortChannelId = params.extraHop.shortChannelId
-  }
 
   trait Hop {
     /** @return the id of the start node. */
@@ -448,11 +443,11 @@ object Router {
       override def htlcMaximum_opt: Option[MilliSatoshi] = channelUpdate.htlcMaximumMsat
     }
     /** We learnt about this channel from hints in an invoice */
-    case class FromHint(extraHop: Bolt11Invoice.ExtraHop, htlcMaximum: MilliSatoshi) extends ChannelRelayParams {
+    case class FromHint(extraHop: Invoice.ExtraEdge) extends ChannelRelayParams {
       override def cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
       override def relayFees: Relayer.RelayFees = extraHop.relayFees
-      override def htlcMinimum: MilliSatoshi = 0 msat
-      override def htlcMaximum_opt: Option[MilliSatoshi] = Some(htlcMaximum)
+      override def htlcMinimum: MilliSatoshi = extraHop.htlcMinimum
+      override def htlcMaximum_opt: Option[MilliSatoshi] = extraHop.htlcMaximum_opt
     }
 
     def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
@@ -523,7 +518,7 @@ object Router {
                           target: PublicKey,
                           amount: MilliSatoshi,
                           maxFee: MilliSatoshi,
-                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                          extraEdges: Seq[ExtraEdge] = Nil,
                           ignore: Ignore = Ignore.empty,
                           routeParams: RouteParams,
                           allowMultiPart: Boolean = false,
@@ -532,7 +527,7 @@ object Router {
 
   case class FinalizeRoute(amount: MilliSatoshi,
                            route: PredefinedRoute,
-                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                           extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
   /**

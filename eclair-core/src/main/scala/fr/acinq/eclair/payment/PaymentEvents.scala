@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.{BasicEdge, ExtraEdge}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
@@ -231,7 +231,7 @@ object PaymentFailure {
   }
 
   /** Update the invoice routing hints based on more recent channel updates received. */
-  def updateRoutingHints(failures: Seq[PaymentFailure], routingHints: Seq[Seq[ExtraHop]]): Seq[Seq[ExtraHop]] = {
+  def updateExtraEdges(failures: Seq[PaymentFailure], extraEdges: Seq[ExtraEdge]): Seq[ExtraEdge] = {
     // We're only interested in the last channel update received per channel.
     val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
       case (current, failure) => failure match {
@@ -239,14 +239,13 @@ object PaymentFailure {
         case _ => current
       }
     }
-    routingHints.map(_.map(extraHop => updates.get(extraHop.shortChannelId) match {
-      case Some(u) => extraHop.copy(
-        cltvExpiryDelta = u.cltvExpiryDelta,
-        feeBase = u.feeBaseMsat,
-        feeProportionalMillionths = u.feeProportionalMillionths
-      )
-      case None => extraHop
-    }))
+    extraEdges.map {
+      case edge: BasicEdge => updates.get(edge.shortChannelId) match {
+        case Some(u) => edge.update(u)
+        case None => edge
+      }
+      case edge => edge
+    }
   }
 
 }
@@ -260,4 +259,4 @@ case class PathFindingExperimentMetrics(paymentHash: ByteVector32,
                                         isMultiPart: Boolean,
                                         experimentName: String,
                                         recipientNodeId: PublicKey,
-                                        routingHints_opt: Option[Seq[Seq[ExtraHop]]])
+                                        routingHints_opt: Option[Seq[Seq[Bolt11Invoice.ExtraHop]]])

@@ -29,6 +29,7 @@ import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret, VariableL
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.BasicEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
@@ -566,9 +567,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
-    val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
+    val hints = List(ExtraHop(randomKey().publicKey, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12)))
     val features = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional)
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18), extraHops = hints, paymentMetadata = Some(hex"123456"), features = features)
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, outgoingNodeKey, Left("Some invoice"), CltvExpiryDelta(18), extraHops = List(hints), paymentMetadata = Some(hex"123456"), features = features)
     val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, outgoingAmount * 3, outgoingExpiry, outgoingNodeId, invoice
     )))
@@ -584,7 +585,12 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
     assert(outgoingPayment.additionalTlvs == Nil)
-    assert(outgoingPayment.assistedRoutes == hints)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
@@ -608,8 +614,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
-    val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18), extraHops = hints, paymentMetadata = Some(hex"123456"))
+    val hints = List(ExtraHop(randomKey().publicKey, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12)))
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, outgoingNodeKey, Left("Some invoice"), CltvExpiryDelta(18), extraHops = List(hints), paymentMetadata = Some(hex"123456"))
     assert(!invoice.features.hasFeature(BasicMultiPartPayment))
     val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, invoice
@@ -624,7 +630,13 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.finalPayload.expiry == outgoingExpiry)
     assert(outgoingPayment.finalPayload.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.assistedRoutes == hints)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
+    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
+
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
@@ -680,7 +692,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
     assert(outgoingPayment.additionalTlvs == Seq(OnionPaymentPayloadTlv.TrampolineOnion(nextTrampolinePacket)))
-    assert(outgoingPayment.assistedRoutes == Nil)
+    assert(outgoingPayment.extraEdges == Nil)
   }
 
   def validateRelayEvent(e: TrampolinePaymentRelayed): Unit = {
@@ -704,7 +716,8 @@ object NodeRelayerSpec {
 
   val outgoingAmount = 4000000 msat
   val outgoingExpiry = CltvExpiry(490000)
-  val outgoingNodeId = randomKey().publicKey
+  val outgoingNodeKey = randomKey()
+  val outgoingNodeId = outgoingNodeKey.publicKey
 
   val incomingAmount = 5000000 msat
   val incomingSecret = randomBytes32()

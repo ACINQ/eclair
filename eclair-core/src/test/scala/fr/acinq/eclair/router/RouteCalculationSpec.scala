@@ -444,28 +444,6 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(route.hops == channelHopFromUpdate(a, b, uab) :: channelHopFromUpdate(b, c, ubc) :: channelHopFromUpdate(c, d, ucd) :: channelHopFromUpdate(d, e, ude) :: Nil)
   }
 
-  test("convert extra hops to assisted channels") {
-    val a = randomKey().publicKey
-    val b = randomKey().publicKey
-    val c = randomKey().publicKey
-    val d = randomKey().publicKey
-    val e = randomKey().publicKey
-
-    val extraHop1 = ExtraHop(a, ShortChannelId(1), 12.sat.toMilliSatoshi, 10000, CltvExpiryDelta(12))
-    val extraHop2 = ExtraHop(b, ShortChannelId(2), 200.sat.toMilliSatoshi, 0, CltvExpiryDelta(22))
-    val extraHop3 = ExtraHop(c, ShortChannelId(3), 150.sat.toMilliSatoshi, 0, CltvExpiryDelta(32))
-    val extraHop4 = ExtraHop(d, ShortChannelId(4), 50.sat.toMilliSatoshi, 0, CltvExpiryDelta(42))
-    val extraHops = extraHop1 :: extraHop2 :: extraHop3 :: extraHop4 :: Nil
-
-    val amount = 90000 sat // below RoutingHeuristics.CAPACITY_CHANNEL_LOW
-    val assistedChannels = toAssistedChannels(extraHops, e, amount.toMilliSatoshi)
-
-    assert(assistedChannels(extraHop4.shortChannelId) == AssistedChannel(e, ChannelRelayParams.FromHint(extraHop4, 100050.sat.toMilliSatoshi)))
-    assert(assistedChannels(extraHop3.shortChannelId) == AssistedChannel(d, ChannelRelayParams.FromHint(extraHop3, 100200.sat.toMilliSatoshi)))
-    assert(assistedChannels(extraHop2.shortChannelId) == AssistedChannel(c, ChannelRelayParams.FromHint(extraHop2, 100400.sat.toMilliSatoshi)))
-    assert(assistedChannels(extraHop1.shortChannelId) == AssistedChannel(b, ChannelRelayParams.FromHint(extraHop1, 101416.sat.toMilliSatoshi)))
-  }
-
   test("blacklist routes") {
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 0 msat, 0),

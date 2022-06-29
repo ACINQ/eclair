@@ -227,10 +227,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val route_x_t = extraHop_x_t :: Nil
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee with additional routing info"), extraHops = List(route_x_z, route_x_t)))
-    assert(sender.expectMsgType[Invoice].routingInfo == Seq(route_x_z, route_x_t))
+    assert(sender.expectMsgType[Bolt11Invoice].routingInfo == Seq(route_x_z, route_x_t))
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee without routing info")))
-    assert(sender.expectMsgType[Invoice].routingInfo == Nil)
+    assert(sender.expectMsgType[Bolt11Invoice].routingInfo == Nil)
   }
 
   test("PaymentHandler should reject incoming payments if the invoice is expired") { f =>
