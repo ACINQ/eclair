@@ -60,7 +60,7 @@ object ShortChannelId {
 
   /**
    * At block height 350 000 LN didn't exist, so all real scids less than that will never be used. This results in
-   * `384_829_069_721_665_536` possible values, greater than `2^58`.
+   * more than `2^58` values.
    *
    * The expected number of values before we have a collision can be approximated by (*):
    * `Q(H) ~= sqrt( Pi * H / 2) = sqrt(Pi * 2^57) = 673 000 000`
@@ -70,13 +70,11 @@ object ShortChannelId {
    *
    * (*) https://en.wikipedia.org/wiki/Birthday_attack
    */
-  private val aliasUpperBound = RealShortChannelId.apply(BlockHeight(350_000), 1, 0).toLong
+  private val aliasUpperBound = 2^58
 
   def generateLocalAlias(): Alias = {
-    var l = -1L
-    do {
-      l = randomLong()
-    } while (l < 0 || l > aliasUpperBound)
+    // modulo won't skew the distribution because 2^64 is a multiple of 2^58
+    val l = Math.abs(randomLong() % aliasUpperBound)
     Alias(l)
   }
 
