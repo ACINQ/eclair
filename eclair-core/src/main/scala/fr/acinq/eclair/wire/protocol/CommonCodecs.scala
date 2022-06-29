@@ -110,6 +110,8 @@ object CommonCodecs {
 
   val listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
 
+  def seqOfN[A](countCodec: Codec[Int], valueCodec: Codec[A]): Codec[Seq[A]] = listOfN(countCodec, valueCodec).xmap(_.toSeq, _.toList)
+
   val channelflags: Codec[ChannelFlags] = (ignore(7) dropLeft bool).as[ChannelFlags]
 
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))

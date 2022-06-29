@@ -237,34 +237,86 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
     bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFundingAmount, dualFunded, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
-    alice2bob.expectMsgType[OpenChannel]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[AcceptChannel]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[FundingCreated]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[FundingSigned]
-    bob2alice.forward(alice)
-    assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
-    alice2blockchain.expectMsgType[WatchFundingSpent]
-    assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
-    bob2blockchain.expectMsgType[WatchFundingSpent]
-    val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
-    if (!channelType.features.contains(Features.ZeroConf)) {
-      alice2blockchain.expectMsgType[WatchFundingConfirmed]
-      bob2blockchain.expectMsgType[WatchFundingConfirmed]
-      eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
-      alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-      bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+
+    val fundingTx = if (!dualFunded) {
+      alice2bob.expectMsgType[OpenChannel]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[AcceptChannel]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[FundingCreated]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingSigned]
+      bob2alice.forward(alice)
+      assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
+      if (!channelType.features.contains(Features.ZeroConf)) {
+        alice2blockchain.expectMsgType[WatchFundingConfirmed]
+        bob2blockchain.expectMsgType[WatchFundingConfirmed]
+        eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
+        alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+        bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      }
+      eventually(assert(alice.stateName == WAIT_FOR_CHANNEL_READY))
+      eventually(assert(bob.stateName == WAIT_FOR_CHANNEL_READY))
+      alice2blockchain.expectMsgType[WatchFundingLost]
+      bob2blockchain.expectMsgType[WatchFundingLost]
+      alice2bob.expectMsgType[ChannelReady]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[ChannelReady]
+      bob2alice.forward(alice)
+      fundingTx
+    } else {
+      alice2bob.expectMsgType[OpenDualFundedChannel]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[AcceptDualFundedChannel]
+      bob2alice.forward(alice)
+      assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      alice2bob.expectMsgType[TxAddInput]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddInput]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxAddOutput]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddOutput]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxAddOutput]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxComplete]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxComplete]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxSignatures]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxSignatures]
+      alice2bob.forward(bob)
+      val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
+      if (!channelType.features.contains(Features.ZeroConf)) {
+        eventually(assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
+        eventually(assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
+        alice2blockchain.expectMsgType[WatchFundingConfirmed]
+        bob2blockchain.expectMsgType[WatchFundingConfirmed]
+        alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+        bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      }
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      alice2blockchain.expectMsgType[WatchFundingLost]
+      bob2blockchain.expectMsgType[WatchFundingLost]
+      alice2bob.expectMsgType[ChannelReady]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[ChannelReady]
+      bob2alice.forward(alice)
+      fundingTx
     }
-    eventually(assert(alice.stateName == WAIT_FOR_CHANNEL_READY))
-    eventually(assert(bob.stateName == WAIT_FOR_CHANNEL_READY))
-    alice2blockchain.expectMsgType[WatchFundingLost]
-    bob2blockchain.expectMsgType[WatchFundingLost]
-    alice2bob.expectMsgType[ChannelReady]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[ChannelReady]
-    bob2alice.forward(alice)
+
     if (interceptChannelUpdates) {
       // we don't forward the channel updates, in reality they would be processed by the router
       alice2bob.expectMsgType[ChannelUpdate]
@@ -274,7 +326,10 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     eventually(assert(alice.stateName == NORMAL))
     eventually(assert(bob.stateName == NORMAL))
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.requestedChannelReserve_opt.getOrElse(0 sat)).max(0 msat))
+
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(bobCommitments.availableBalanceForSend == (nonInitiatorFundingAmount.getOrElse(0 sat) + pushMsat - aliceCommitments.remoteChannelReserve).max(0 msat))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]

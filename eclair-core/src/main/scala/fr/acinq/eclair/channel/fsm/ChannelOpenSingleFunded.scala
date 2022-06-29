@@ -379,7 +379,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       if (remoteChannelReady.alias_opt.isDefined && d.commitments.localParams.isInitiator) {
         log.info("this channel isn't zero-conf, but we are funder and they sent an early channel_ready with an alias: no need to wait for confirmations")
-        // No need to emit ShortChannelIdAssigned: we will emit it when handling their channel_ready in WAIT_FOR_CHANNEL_READY
         val (shortIds, localChannelReady) = acceptFundingTx(d.commitments, RealScidStatus.Unknown)
         self ! remoteChannelReady
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored

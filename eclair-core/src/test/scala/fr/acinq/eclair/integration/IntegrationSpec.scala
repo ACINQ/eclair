@@ -119,6 +119,10 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "optional"
   ).asJava).withFallback(withStaticRemoteKey)
 
+  val withDualFunding = ConfigFactory.parseMap(Map(
+    s"eclair.features.${DualFunding.rfcName}" -> "optional"
+  ).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs)
+
   implicit val formats: Formats = DefaultFormats
 
   override def beforeAll(): Unit = {

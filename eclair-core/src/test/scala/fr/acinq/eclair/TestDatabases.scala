@@ -48,7 +48,6 @@ object TestDatabases {
     dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
   }
 
-
   /**
    * ChannelsDb instance that wraps around an actual db instance and does additional checks
    * This can be thought of as fuzzing and fills a gap between codec unit tests and database tests, by checking that channel state can be written and read consistently
@@ -75,6 +74,8 @@ object TestDatabases {
       def freeze3(input: PersistentChannelData): PersistentChannelData = input match {
         case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))
