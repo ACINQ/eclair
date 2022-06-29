@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
@@ -35,23 +35,23 @@ class Register() extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
 
   // @formatter:off
-  private case class ChannelTerminated(channel: ActorRef, channelId_opt: Option[ByteVector32], shortChannelId_opt: Option[ShortChannelId])
+  private case class ChannelTerminated(channel: ActorRef, channelId: ByteVector32)
   // @formatter:on
 
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
   def main(channels: Map[ByteVector32, ActorRef], shortIds: Map[ShortChannelId, ByteVector32], channelsTo: Map[ByteVector32, PublicKey]): Receive = {
     case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId, _, _) =>
-      context.watchWith(channel, ChannelTerminated(channel, Some(temporaryChannelId), None))
+      context.watchWith(channel, ChannelTerminated(channel, temporaryChannelId))
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
 
     case event: AbstractChannelRestored =>
-      context.watchWith(event.channel, ChannelTerminated(event.channel, Some(event.channelId), None))
+      context.watchWith(event.channel, ChannelTerminated(event.channel, event.channelId))
       context become main(channels + (event.channelId -> event.channel), shortIds, channelsTo + (event.channelId -> event.remoteNodeId))
 
     case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
       context.unwatch(channel)
-      context.watchWith(channel, ChannelTerminated(channel, Some(channelId), None))
+      context.watchWith(channel, ChannelTerminated(channel, channelId))
       context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId)
 
     case scidAssigned: ShortChannelIdAssigned =>
@@ -60,11 +60,7 @@ class Register() extends Actor with ActorLogging {
       val m = (scidAssigned.shortIds.real.toOption.toSeq :+ scidAssigned.shortIds.localAlias).map(_ -> scidAssigned.channelId).toMap
       context become main(channels, shortIds ++ m, channelsTo)
 
-    case ChannelTerminated(_, channelId_opt, shortChannelId_opt) =>
-      context become main(channels -- channelId_opt, shortIds -- shortChannelId_opt, channelsTo -- channelId_opt)
-
-    case Terminated(actor) if channels.values.toSet.contains(actor) =>
-      val channelId = channels.find(_._2 == actor).get._1
+    case ChannelTerminated(_, channelId) =>
       val shortChannelIds = shortIds.collect { case (key, value) if value == channelId => key }
       context become main(channels - channelId, shortIds -- shortChannelIds, channelsTo - channelId)
 

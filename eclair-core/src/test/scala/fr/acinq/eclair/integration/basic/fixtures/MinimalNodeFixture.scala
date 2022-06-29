@@ -1,7 +1,7 @@
 package fr.acinq.eclair.integration.basic.fixtures
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, _}
-import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
+import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
