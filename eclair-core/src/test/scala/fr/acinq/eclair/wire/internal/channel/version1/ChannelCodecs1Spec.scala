@@ -62,7 +62,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       nodeId = randomKey().publicKey,
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+      maxHtlcValueInFlightMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       requestedChannelReserve_opt = Some(Satoshi(Random.nextInt(Int.MaxValue))),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
