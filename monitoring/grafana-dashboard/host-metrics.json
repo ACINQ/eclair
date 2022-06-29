@@ -176,7 +176,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "max(host_load_average)",
+              "expr": "max(rate(host_load_average[1m]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -288,7 +288,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "host_swap_usage",
+              "expr": "rate(host_swap_usage[1m])",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -386,7 +386,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "host_memory_usage",
+              "expr": "rate(host_memory_usage[1m])",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -669,7 +669,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "rate(host_network_data_read_bytes_total[1h])",
+              "expr": "rate(host_network_data_read_bytes_total[1m])",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -680,7 +680,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "rate(host_network_data_write_bytes_total[1h])",
+              "expr": "rate(host_network_data_write_bytes_total[1m])",
               "hide": false,
               "legendFormat": "__auto",
               "range": true,
@@ -779,7 +779,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "rate(host_network_packets_read_total[1h])",
+              "expr": "rate(host_network_packets_read_total[1m])",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -790,7 +790,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "rate(host_network_packets_write_total[1h])",
+              "expr": "rate(host_network_packets_write_total[1m])",
               "hide": false,
               "legendFormat": "__auto",
               "range": true,
@@ -850,7 +850,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "rate(host_cpu_usage_sum[10m])",
+              "expr": "rate(host_cpu_usage_sum[1m])",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -908,7 +908,7 @@
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "builder",
-              "expr": "rate(host_cpu_usage_bucket[10m])",
+              "expr": "rate(host_cpu_usage_bucket[1m])",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -941,6 +941,10 @@
   "tags": [],
   "templating": {
     "list": []
+  },
+  "time": {
+    "from": "now-5m",
+    "to": "now"
   },
   "timepicker": {},
   "timezone": "",
