@@ -267,35 +267,35 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
 
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil)
-    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)))
+    register.expectMsg(Register.Forward(null, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)))
 
     eclair.forceClose(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender)))
+    register.expectMsg(Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender)))
 
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
     register.expectMsgAllOf(
-      Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)),
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender))
+      Register.Forward(null, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)),
+      Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender))
     )
 
     eclair.close(Left(ByteVector32.Zeroes) :: Nil, None, None)
-    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None, None)))
+    register.expectMsg(Register.Forward(null, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None, None)))
 
     val customClosingFees = ClosingFeerates(FeeratePerKw(500 sat), FeeratePerKw(200 sat), FeeratePerKw(1000 sat))
     eclair.close(Left(ByteVector32.Zeroes) :: Nil, None, Some(customClosingFees))
-    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None, Some(customClosingFees))))
+    register.expectMsg(Register.Forward(null, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None, Some(customClosingFees))))
 
     eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, None, None)
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, None, None)))
+    register.expectMsg(Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, None, None)))
 
     eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, Some(ByteVector.empty), Some(customClosingFees))
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, Some(ByteVector.empty), Some(customClosingFees))))
+    register.expectMsg(Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, Some(ByteVector.empty), Some(customClosingFees))))
 
     eclair.close(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Left(ByteVector32.One) :: Right(ShortChannelId.fromCoordinates("568749x2597x1").success.value) :: Nil, None, None)
     register.expectMsgAllOf(
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, None, None)),
-      Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_CLOSE(ActorRef.noSender, None, None)),
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId.fromCoordinates("568749x2597x1").success.value, CMD_CLOSE(ActorRef.noSender, None, None))
+      Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_CLOSE(ActorRef.noSender, None, None)),
+      Register.Forward(null, ByteVector32.One, CMD_CLOSE(ActorRef.noSender, None, None)),
+      Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x1").success.value, CMD_CLOSE(ActorRef.noSender, None, None))
     )
   }
 

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.integration.basic.fixtures
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
-import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
@@ -77,7 +77,7 @@ object MinimalNodeFixture extends Assertions {
     val wallet = new DummyOnChainWallet()
     val watcher = TestProbe("watcher")
     val watcherTyped = watcher.ref.toTyped[ZmqWatcher.Command]
-    val register = system.actorOf(Props(new Register), "register")
+    val register = system.actorOf(Register.props(), "register")
     val router = system.actorOf(Router.props(nodeParams, watcherTyped), "router")
     val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register), "payment-handler")
     val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler), "relayer")
@@ -221,13 +221,13 @@ object MinimalNodeFixture extends Assertions {
 
   def getChannelState(node: MinimalNodeFixture, channelId: ByteVector32)(implicit system: ActorSystem): ChannelState = {
     val sender = TestProbe("sender")
-    node.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(sender.ref))
+    node.register ! Register.Forward(sender.ref.toTyped, channelId, CMD_GET_CHANNEL_STATE(sender.ref))
     sender.expectMsgType[RES_GET_CHANNEL_STATE].state
   }
 
   def getChannelData(node: MinimalNodeFixture, channelId: ByteVector32)(implicit system: ActorSystem): ChannelData = {
     val sender = TestProbe("sender")
-    node.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(sender.ref))
+    node.register ! Register.Forward(sender.ref.toTyped, channelId, CMD_GET_CHANNEL_DATA(sender.ref))
     sender.expectMsgType[RES_GET_CHANNEL_DATA[ChannelData]].data
   }
 

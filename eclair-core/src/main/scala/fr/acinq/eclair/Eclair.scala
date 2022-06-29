@@ -449,8 +449,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
    * @param channel either a shortChannelId (BOLT encoded) or a channelId (32-byte hex encoded).
    */
   private def sendToChannel[C <: Command, R <: CommandResponse[C]](channel: ApiTypes.ChannelIdentifier, request: C)(implicit timeout: Timeout): Future[R] = (channel match {
-    case Left(channelId) => appKit.register ? Register.Forward(ActorRef.noSender, channelId, request)
-    case Right(shortChannelId) => appKit.register ? Register.ForwardShortId(ActorRef.noSender, shortChannelId, request)
+    case Left(channelId) => appKit.register ? Register.Forward(null, channelId, request)
+    case Right(shortChannelId) => appKit.register ? Register.ForwardShortId(null, shortChannelId, request)
   }).map {
     case t: R@unchecked => t
     case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))

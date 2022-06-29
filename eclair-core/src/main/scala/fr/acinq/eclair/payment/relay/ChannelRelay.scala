@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
+import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, TimestampSecond, channel, nodeFee}
@@ -118,7 +118,7 @@ class ChannelRelay private(nodeParams: NodeParams,
             safeSendAndStop(r.add.channelId, cmdFail)
           case RelaySuccess(selectedChannelId, cmdAdd) =>
             context.log.info(s"forwarding htlc to channelId=$selectedChannelId")
-            register ! Register.Forward(forwardFailureAdapter.toClassic, selectedChannelId, cmdAdd)
+            register ! Register.Forward(forwardFailureAdapter, selectedChannelId, cmdAdd)
             waitForAddResponse(selectedChannelId, previousFailures)
         }
     }
@@ -256,7 +256,7 @@ class ChannelRelay private(nodeParams: NodeParams,
    * channel, because some parameters don't match with our settings for that channel. In that case we directly fail the
    * htlc.
    */
-  def relayOrFail(outgoingChannel_opt: Option[OutgoingChannel]): RelayResult = {
+  def relayOrFail(outgoingChannel_opt: Option[OutgoingChannelParams]): RelayResult = {
     import r._
     outgoingChannel_opt match {
       case None =>
@@ -272,7 +272,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         (TimestampSecond.now() - c.channelUpdate.timestamp > nodeParams.relayParams.enforcementDelay ||
           outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c.relayFees, payload.amountToForward))) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, c.channelUpdate)), commit = true))
-      case Some(c) =>
+      case Some(c: OutgoingChannel) =>
         val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, add, payload.amountToForward)
         RelaySuccess(c.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, origin, commit = true))
     }

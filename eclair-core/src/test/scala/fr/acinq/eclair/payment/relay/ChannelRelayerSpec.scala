@@ -26,7 +26,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Features.ScidAlias
 import fr.acinq.eclair.TestConstants.emptyOnionPacket
-import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
@@ -36,6 +35,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, NodeParams, RealShortChannelId, TestConstants, randomBytes32, _}
+import org.scalatest.Inside.inside
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -67,13 +67,14 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   def expectFwdAdd(register: TestProbe[Any], channelId: ByteVector32, outAmount: MilliSatoshi, outExpiry: CltvExpiry): Register.Forward[CMD_ADD_HTLC] = {
     val fwd = register.expectMessageType[Register.Forward[CMD_ADD_HTLC]]
-    assert(fwd.message.isInstanceOf[CMD_ADD_HTLC]) // the line above doesn't check the type due to type erasure
+    inside(fwd.message) { case add: CMD_ADD_HTLC =>
+      assert(add.amount == outAmount)
+      assert(add.cltvExpiry == outExpiry)
+      inside(add.origin) { case o: Origin.ChannelRelayedHot =>
+        assert(o.amountOut == outAmount)
+      }
+    }
     assert(fwd.channelId == channelId)
-    assert(fwd.message.amount == outAmount)
-    assert(fwd.message.cltvExpiry == outExpiry)
-    assert(fwd.message.origin.isInstanceOf[Origin.ChannelRelayedHot])
-    val o = fwd.message.origin.asInstanceOf[Origin.ChannelRelayedHot]
-    assert(o.amountOut == outAmount)
     fwd
   }
 
@@ -179,7 +180,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u1)
 
     // this is another channel, with less balance (it will be preferred)
-    val u2 = createLocalUpdate(channelId2, balance = 8000000 msat)
+    val u2 = createLocalUpdate(channelId2, balance = 80_000_000 msat)
     channelRelayer ! WrappedLocalChannelUpdate(u2)
 
     channelRelayer ! Relay(r)
@@ -450,7 +451,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val channelId1 = channelIds(realScid1)
     val payload = RelayLegacyPayload(realScid1, outgoingAmount, outgoingExpiry)
-    val r = createValidIncomingPacket(payload, 1100000 msat, CltvExpiry(400100))
+    val r = createValidIncomingPacket(payload)
     val u = createLocalUpdate(channelId1)
     val u_disabled = createLocalUpdate(channelId1, enabled = false)
     val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket)
@@ -564,7 +565,7 @@ object ChannelRelayerSpec {
   val paymentPreimage: ByteVector32 = randomBytes32()
   val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
 
-  val outgoingAmount: MilliSatoshi = 1000000 msat
+  val outgoingAmount: MilliSatoshi = 10_000_000 msat
   val outgoingExpiry: CltvExpiry = CltvExpiry(400000)
   val outgoingNodeId: PublicKey = randomKey().publicKey
 
@@ -586,7 +587,7 @@ object ChannelRelayerSpec {
     localAlias2 -> channelId2,
   )
 
-  def createValidIncomingPacket(payload: ChannelRelayPayload, amountIn: MilliSatoshi = 1_100_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100)): IncomingPaymentPacket.ChannelRelayPacket = {
+  def createValidIncomingPacket(payload: ChannelRelayPayload, amountIn: MilliSatoshi = 11_000_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100)): IncomingPaymentPacket.ChannelRelayPacket = {
     val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket)
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
   }
@@ -597,11 +598,14 @@ object ChannelRelayerSpec {
     ShortIds(real = RealScidStatus.Final(realScid), localAlias, remoteAlias_opt = None)
   }
 
-  def createLocalUpdate(channelId: ByteVector32, channelUpdateScid_opt: Option[ShortChannelId] = None, balance: MilliSatoshi = 10000000 msat, capacity: Satoshi = 500000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat, timestamp: TimestampSecond = 0 unixsec, feeBaseMsat: MilliSatoshi = 1000 msat, feeProportionalMillionths: Long = 100, optionScidAlias: Boolean = false): LocalChannelUpdate = {
+  def createLocalUpdate(channelId: ByteVector32, channelUpdateScid_opt: Option[ShortChannelId] = None, balance: MilliSatoshi = 100_000_000 msat, capacity: Satoshi = 5_000_000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat, timestamp: TimestampSecond = 0 unixsec, feeBaseMsat: MilliSatoshi = 1000 msat, feeProportionalMillionths: Long = 100, optionScidAlias: Boolean = false): LocalChannelUpdate = {
     val shortIds = createShortIds(channelId)
     val channelUpdateScid = channelUpdateScid_opt.getOrElse(shortIds.real.toOption.get)
     val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, channelUpdateScid, timestamp, ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, feeBaseMsat, feeProportionalMillionths, Some(capacity.toMilliSatoshi))
-    val channelFeatures = if (optionScidAlias) ChannelFeatures(ScidAlias) else ChannelFeatures()
+    val features: Set[PermanentChannelFeature] = Set(
+      if (optionScidAlias) Some(ScidAlias) else None,
+    ).flatten
+    val channelFeatures = ChannelFeatures(features)
     val commitments = PaymentPacketSpec.makeCommitments(channelId, testAvailableBalanceForSend = balance, testCapacity = capacity, channelFeatures = channelFeatures)
     LocalChannelUpdate(null, channelId, shortIds, outgoingNodeId, None, update, commitments)
   }
