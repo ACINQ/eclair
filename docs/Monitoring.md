@@ -86,7 +86,7 @@ scrape_configs:
       - targets: ['<url of the eclair http embedded server>']
  ```
 
-After setting up with the prometheus, download [grafana](https://grafana.com/grafana/download) and visit grafana-web via `http://localhost:3000`. Finally, you can import monitoring dashboards available at monitoring directory(see the [grafana documentation](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard) for more details).  
+Eclair provides many [Grafana](https://grafana.com/) dashboards to help you monitor your lightning node, which you can find in the `monitoring` folder of this repository. Follow the [Grafana documentation](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard) to import these dashboards and create new ones if necessary.
 
 ## Example metrics
 
