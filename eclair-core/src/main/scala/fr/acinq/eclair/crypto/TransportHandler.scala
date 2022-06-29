@@ -168,6 +168,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         val (dec1, plaintextMessages) = dec.decrypt()
         val unackedReceived1 = decodeAndSendToListener(listener, plaintextMessages)
         if (unackedReceived1.isEmpty) {
+          log.debug("no decoded messages, resuming reading")
           connection ! Tcp.ResumeReading
         }
         goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived = unackedReceived1, unackedSent = None)
@@ -181,6 +182,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
         val unackedReceived1 = decodeAndSendToListener(d.listener, plaintextMessages)
         if (unackedReceived1.isEmpty) {
+          log.debug("no decoded messages, resuming reading")
           connection ! Tcp.ResumeReading
         }
         stay() using d.copy(decryptor = dec1, unackedReceived = unackedReceived1)
