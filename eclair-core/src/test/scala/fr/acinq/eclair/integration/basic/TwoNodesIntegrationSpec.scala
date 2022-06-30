@@ -87,7 +87,7 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
       getRouterData(alice).privateChannels.size == 1
     }
 
-    sendPayment(alice, bob, 10_000 msat)
+    sendSuccessfulPayment(alice, bob, 10_000 msat)
   }
 
 }

@@ -51,7 +51,7 @@ class ThreeNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
       assert(routerData.channels.values.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 4) // 2 channel_updates per channel
     }
 
-    sendPayment(alice, carol, 100_000 msat)
+    sendSuccessfulPayment(alice, carol, 100_000 msat)
   }
 
 }

@@ -21,7 +21,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
+import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
@@ -278,14 +278,24 @@ object MinimalNodeFixture extends Assertions {
     case _ => TestActor.KeepRunning
   }
 
-  def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): PaymentSent = {
-    val sender = TestProbe("sender")
+  private def sendPayment(sender: TestProbe, node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): Unit = {
     sender.send(node2.paymentHandler, MultiPartHandler.ReceivePayment(Some(amount), Left("test payment")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
 
     val routeParams = node1.nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
     sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, extraEdges = hints.flatMap(Bolt11Invoice.toExtraEdges(_, node2.nodeParams.nodeId)), blockUntilComplete = true))
+  }
+
+  def sendSuccessfulPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): PaymentSent = {
+    val sender = TestProbe("sender")
+    sendPayment(sender, node1, node2, amount, hints)
     sender.expectMsgType[PaymentSent]
+  }
+
+  def sendFailingPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): PaymentFailed = {
+    val sender = TestProbe("sender")
+    sendPayment(sender, node1, node2, amount, hints)
+    sender.expectMsgType[PaymentFailed]
   }
 
   def prettyPrint(routerData: Router.Data, nodes: MinimalNodeFixture*): Unit = {

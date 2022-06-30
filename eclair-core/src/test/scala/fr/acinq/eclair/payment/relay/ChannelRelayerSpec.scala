@@ -362,30 +362,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     }
   }
 
-  test("use incoming scid when returning a channel update") { f =>
-    import f._
-
-    // Our channel updates use an alias before the channel confirms.
-    val u1 = createLocalUpdate(channelId1, channelUpdateScid_opt = Some(localAlias1))
-    channelRelayer ! WrappedLocalChannelUpdate(u1)
-    // We switch to using the real scid once the channel confirms.
-    val u2 = createLocalUpdate(channelId1, channelUpdateScid_opt = Some(realScid1), feeBaseMsat = 10 msat, feeProportionalMillionths = 250)
-    channelRelayer ! WrappedLocalChannelUpdate(u2)
-    // But payers may still use the alias.
-    val payload = RelayLegacyPayload(localAlias1, outgoingAmount, outgoingExpiry)
-    val r = createValidIncomingPacket(payload)
-    channelRelayer ! Relay(r)
-    val fwd = expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry)
-    fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, InsufficientFunds(channelId1, payload.amountToForward, 100 sat, 0 sat, 0 sat), Some(u2.channelUpdate))
-    // The relayer ensures that the channel update uses the sender's scid.
-    val failure = register.expectMessageType[Register.Forward[channel.Command]]
-    assert(failure.channelId == r.add.channelId)
-    val Right(TemporaryChannelFailure(u3)) = failure.message.asInstanceOf[CMD_FAIL_HTLC].reason
-    assert(u3.shortChannelId == localAlias1)
-    assert(Announcements.areSameIgnoreFlags(u2.channelUpdate, u3))
-    assert(Announcements.checkSig(u3, nodeParams.nodeId))
-  }
-
   test("select preferred channels") { f =>
     import f._
 

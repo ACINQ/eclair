@@ -27,7 +27,6 @@ import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, TimestampSecond, channel, nodeFee}
 
@@ -176,13 +175,13 @@ class ChannelRelay private(nodeParams: NodeParams,
     selectPreferredChannel(alreadyTried) match {
       case None if previousFailures.nonEmpty =>
         // no more channels to try
-        val selected = previousFailures
+        val error = previousFailures
           // we return the error for the initially requested channel if it exists
           .find(failure => requestedChannelId_opt.contains(failure.channelId))
           // otherwise we return the error for the first channel tried
           .getOrElse(previousFailures.head)
-        val channelUpdate = selected.failure.channelUpdate.map(u => channelUpdateForFailure(selected.channelId, u))
-        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(translateLocalError(selected.failure.t, channelUpdate)), commit = true))
+          .failure
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(translateLocalError(error.t, error.channelUpdate)), commit = true))
       case outgoingChannel_opt =>
         relayOrFail(outgoingChannel_opt)
     }
@@ -266,38 +265,20 @@ class ChannelRelay private(nodeParams: NodeParams,
       case None =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
       case Some(c) if !c.channelUpdate.channelFlags.isEnabled =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(c.channelUpdate.messageFlags, c.channelUpdate.channelFlags, channelUpdateForFailure(c))), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(c.channelUpdate.messageFlags, c.channelUpdate.channelFlags, c.channelUpdate)), commit = true))
       case Some(c) if payload.amountToForward < c.channelUpdate.htlcMinimumMsat =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, channelUpdateForFailure(c))), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, c.channelUpdate)), commit = true))
       case Some(c) if r.expiryDelta < c.channelUpdate.cltvExpiryDelta =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, channelUpdateForFailure(c))), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, c.channelUpdate)), commit = true))
       case Some(c) if r.relayFeeMsat < nodeFee(c.channelUpdate.relayFees, payload.amountToForward) &&
         // fees also do not satisfy the previous channel update for `enforcementDelay` seconds after current update
         (TimestampSecond.now() - c.channelUpdate.timestamp > nodeParams.relayParams.enforcementDelay ||
           outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c.relayFees, payload.amountToForward))) =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdateForFailure(c))), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, c.channelUpdate)), commit = true))
       case Some(c: OutgoingChannel) =>
         val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, add, payload.amountToForward)
         RelaySuccess(c.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, origin, commit = true))
     }
   }
-
-  /**
-   * Our channel updates may contain either the real scid or our local alias. The incoming payment may use either for
-   * public channels (note that the [[ChannelRelayer]] already rejected requests using the real scid when scid_alias is
-   * active), so we must ensure that the channel update we return matches what they sent us.
-   */
-  def channelUpdateForFailure(channelId: ByteVector32, channelUpdate: ChannelUpdate): ChannelUpdate = {
-    // NB: we must ensure that the channel update is for the channel they requested before updating it, otherwise we
-    // would replace the scid of another channel which would be incorrect. When we return an error for a different
-    // channel, we should use the scid of that other channel.
-    if (requestedChannelId_opt.contains(channelId) && channelUpdate.shortChannelId != r.payload.outgoingChannelId) {
-      Announcements.signChannelUpdate(nodeParams.privateKey, channelUpdate.copy(shortChannelId = r.payload.outgoingChannelId))
-    } else {
-      channelUpdate
-    }
-  }
-
-  def channelUpdateForFailure(c: OutgoingChannelParams): ChannelUpdate = channelUpdateForFailure(c.channelId, c.channelUpdate)
 
 }
