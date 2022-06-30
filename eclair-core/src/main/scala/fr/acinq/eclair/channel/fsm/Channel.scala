@@ -284,12 +284,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               }
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
-          if (closing.waitingSince.toLong > 1_500_000_000) {
-            // we were using timestamps instead of block heights when the channel was created: we reset it *and* we use block heights
-            goto(CLOSING) using closing.copy(waitingSince = nodeParams.currentBlockHeight) storing()
-          } else {
-            goto(CLOSING) using closing
-          }
+          goto(CLOSING) using closing
 
         case normal: DATA_NORMAL =>
           watchFundingTx(data.commitments)
@@ -314,12 +309,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           watchFundingTx(funding.commitments)
           // we make sure that the funding tx has been published
           blockchain ! GetTxWithMeta(self, funding.commitments.fundingTxId)
-          if (funding.waitingSince.toLong > 1_500_000_000) {
-            // we were using timestamps instead of block heights when the channel was created: we reset it *and* we use block heights
-            goto(OFFLINE) using funding.copy(waitingSince = nodeParams.currentBlockHeight) storing()
-          } else {
-            goto(OFFLINE) using funding
-          }
+          goto(OFFLINE) using funding
 
         case funding: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
           // we make sure that the funding tx with the highest feerate has been published
