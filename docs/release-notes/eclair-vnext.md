@@ -34,10 +34,6 @@ override-init-features = [
   {
     nodeid = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
     features = {
-      // these features need to be enabled
-      var_onion_optin = mandatory
-      payment_secret = mandatory
-      option_channel_type = optional
       // dependencies of zeroconf
       option_static_remotekey = optional
       option_anchors_zero_fee_htlc_tx = optional
@@ -76,6 +72,12 @@ $ ./eclair-cli open --nodeId=03864e... --fundingSatoshis=100000 --channelType=an
 ```shell
 $ ./eclair-cli open --nodeId=03864e... --fundingSatoshis=100000 --channelType=anchor_outputs_zero_fee_htlc_tx+scid_alias+zeroconf --announceChannel=false
 ```
+
+### Changes to features override
+
+Eclair supports overriding features on a per-peer basis, using the `eclair.override-init-features` field in `eclair.conf`.
+These overrides will now be applied on top of the default features, whereas the previous behavior was to completely ignore default features.
+We provide detailed examples in the [documentation](../Configure.md#customize-features).
 
 ### Remove support for Tor v2
 
