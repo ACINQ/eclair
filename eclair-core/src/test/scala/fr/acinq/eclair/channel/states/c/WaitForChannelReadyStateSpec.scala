@@ -121,13 +121,15 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)
-    // the channel is not announced but bob didn't send an alias so we use the real scid
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
-    assert(initialChannelUpdate.shortChannelId == realScid)
+    assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
+    // the channel is not announced but bob didn't send an alias so we use the real scid
     val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
-    assert(channelUpdateSentToPeer == initialChannelUpdate)
+    assert(channelUpdateSentToPeer.shortChannelId == realScid)
+    assert(Announcements.areSameIgnoreFlags(initialChannelUpdate, channelUpdateSentToPeer))
+    assert(Announcements.checkSig(channelUpdateSentToPeer, alice.underlyingActor.nodeParams.nodeId))
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2alice.expectNoMessage(100 millis)
     awaitCond(alice.stateName == NORMAL)

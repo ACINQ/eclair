@@ -3409,7 +3409,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(annSigs.shortChannelId == realShortChannelId)
     // alice updates her internal state
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
-    // public channel: alice will update the channel update to use the real scid when she receives her peer's announcement_signatures
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)
@@ -3428,7 +3427,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(annSigs.shortChannelId == realShortChannelId)
     // alice updates her internal state
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
-    // public channel: alice will update the channel update to use the real scid when she receives her peer's announcement_signatures
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)
@@ -3448,7 +3446,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(annSigs.shortChannelId == newRealShortChannelId)
     // update data with real short channel id
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(newRealShortChannelId))
-    // public channel: alice will update the channel update to use the real scid when she receives her peer's announcement_signatures
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)
@@ -3463,7 +3460,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
     // update data with real short channel id
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
-    // private channel: we prefer the remote alias, so there is no change in the channel_update, and we don't send a new one
+    // private channel: we'll use the remote alias in the channel_update we sent to our peer, so there is no change and we don't send a new one
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)
@@ -3481,7 +3478,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val realShortChannelId = RealShortChannelId(BlockHeight(42000), 42, 0)
     // update data with real short channel id
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
-    // private channel: we prefer the remote alias, so there is no change in the channel_update, and we don't send a new one
+    // private channel: we'll use the remote alias in the channel_update we sent to our peer, so there is no change and we don't send a new one
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)
@@ -3501,7 +3498,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val newRealShortChannelId = RealShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitInput.outPoint.index.toInt)
     // update data with real short channel id
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(newRealShortChannelId))
-    // private channel: we prefer the remote alias, so there is no change in the channel_update, and we don't send a new one
+    // private channel: we'll use the remote alias in the channel_update we sent to our peer, so there is no change and we don't send a new one
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)

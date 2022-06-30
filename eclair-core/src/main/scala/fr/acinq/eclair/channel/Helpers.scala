@@ -184,43 +184,28 @@ object Helpers {
   }
 
   /**
-   * The general rule is that we use our local alias for our channel_update until the channel is publicly announced, and
-   * then we use the real scid.
-   *
-   * Private channels are handled like public channels that have not yet been announced, unless our peer peer does not
-   * support scid_alias.
-   *
-   * Decision tree:
-   *  - received remote_alias from peer (which indicates that they support scid_alias)
-   *    - before channel announcement: use local alias
-   *    - after channel announcement: use real scid
-   *  - no remote_alias from peer
-   *    - min_depth > 0: use real scid (may change if reorg between min_depth and 6 conf)
-   *    - min_depth = 0 (zero-conf): spec violation, our peer MUST send an alias when using zero-conf
+   * We use the real scid if the channel has been announced, otherwise we use our local alias.
    */
-  def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], shortIds: ShortIds): ShortChannelId = {
-    channelAnnouncement_opt match {
-      case Some(ann) => ann.shortChannelId // we use the real "final" scid when it is publicly announced
-      case None => shortIds.remoteAlias_opt match {
-        case Some(_) => shortIds.localAlias // we use our local alias if the channel isn't announced and our peer supports it
-        case None => shortIds.real.toOption match {
-          case Some(real) => real // we use the real scid if our peer doesn't support scid_alias and the channel is confirmed
-          case None => shortIds.localAlias // spec violation: this is a 0-conf channel, our peer MUST send their alias, we just use ours
-        }
-      }
-    }
+  def scidForChannelUpdate(channelAnnouncement_opt: Option[ChannelAnnouncement], localAlias: Alias): ShortChannelId = {
+    channelAnnouncement_opt.map(_.shortChannelId).getOrElse(localAlias)
   }
 
-  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds)
+  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds.localAlias)
 
   /**
    * If our peer sent us an alias, that's what we must use in the channel_update we send them to ensure they're able to
-   * match this update with the corresponding local channel.
+   * match this update with the corresponding local channel. If they didn't send us an alias, it means we're not using
+   * 0-conf and we'll use the real scid.
    */
-  def channelUpdateForDirectPeer(nodeParams: NodeParams, channelUpdate: ChannelUpdate, remoteAlias_opt: Option[Alias]): ChannelUpdate = {
-    remoteAlias_opt match {
+  def channelUpdateForDirectPeer(nodeParams: NodeParams, channelUpdate: ChannelUpdate, shortIds: ShortIds): ChannelUpdate = {
+    shortIds.remoteAlias_opt match {
       case Some(remoteAlias) => Announcements.signChannelUpdate(nodeParams.privateKey, channelUpdate.copy(shortChannelId = remoteAlias))
-      case None => channelUpdate
+      case None => shortIds.real.toOption match {
+        case Some(realScid) => Announcements.signChannelUpdate(nodeParams.privateKey, channelUpdate.copy(shortChannelId = realScid))
+        // This case is a spec violation: this is a 0-conf channel, so our peer MUST send their alias.
+        // They won't be able to match our channel_update with their local channel, too bad for them.
+        case None => channelUpdate
+      }
     }
   }
 
