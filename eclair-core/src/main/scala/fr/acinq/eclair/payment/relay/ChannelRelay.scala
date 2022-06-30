@@ -288,6 +288,9 @@ class ChannelRelay private(nodeParams: NodeParams,
    * active), so we must ensure that the channel update we return matches what they sent us.
    */
   def channelUpdateForFailure(channelId: ByteVector32, channelUpdate: ChannelUpdate): ChannelUpdate = {
+    // NB: we must ensure that the channel update is for the channel they requested before updating it, otherwise we
+    // would replace the scid of another channel which would be incorrect. When we return an error for a different
+    // channel, we should use the scid of that other channel.
     if (requestedChannelId_opt.contains(channelId) && channelUpdate.shortChannelId != r.payload.outgoingChannelId) {
       Announcements.signChannelUpdate(nodeParams.privateKey, channelUpdate.copy(shortChannelId = r.payload.outgoingChannelId))
     } else {
