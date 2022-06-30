@@ -114,6 +114,7 @@ object NodeParams extends Logging {
     ConfigFactory.systemProperties()
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load())
+      .resolve()
 
   private def readSeedFromFile(seedPath: File): ByteVector = {
     logger.info(s"use seed file: ${seedPath.getCanonicalPath}")
