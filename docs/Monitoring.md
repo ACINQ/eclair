@@ -88,7 +88,7 @@ scrape_configs:
 
 Eclair provides many [Grafana](https://grafana.com/) dashboards to help you monitor your lightning node, which you can find in the `monitoring` folder of this repository. Follow the [Grafana documentation](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard) to import these dashboards and create new ones if necessary.
 
-Note: Do not forget to add `Prometheus` as data source in grafana(see [grafana documentation](https://prometheus.io/docs/visualization/grafana/#creating-a-prometheus-data-source) for more details)
+Note: do not forget to add `Prometheus` as a data source in grafana (see [grafana documentation](https://prometheus.io/docs/visualization/grafana/#creating-a-prometheus-data-source) for more details)
 
 
 ## Example metrics
