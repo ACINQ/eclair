@@ -78,7 +78,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     fwd
   }
 
-  def basicRelaytest(f: FixtureParam)(relayPayloadScid: ShortChannelId, lcu: LocalChannelUpdate, success: Boolean): Unit = {
+  def basicRelayTest(f: FixtureParam)(relayPayloadScid: ShortChannelId, lcu: LocalChannelUpdate, success: Boolean): Unit = {
     import f._
 
     val payload = RelayLegacyPayload(relayPayloadScid, outgoingAmount, outgoingExpiry)
@@ -95,37 +95,35 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   }
 
   test("relay with real scid (channel update uses real scid)") { f =>
-    basicRelaytest(f)(relayPayloadScid = realScid1, lcu = createLocalUpdate(channelId1), success = true)
+    basicRelayTest(f)(relayPayloadScid = realScid1, lcu = createLocalUpdate(channelId1), success = true)
   }
 
-  test("relay with real scid (channel update uses remote alias)") { f =>
-    basicRelaytest(f)(relayPayloadScid = realScid1, lcu = createLocalUpdate(channelId1, channelUpdateScid_opt = Some(remoteAlias1)), success = true)
+  test("relay with real scid (channel update uses local alias)") { f =>
+    basicRelayTest(f)(relayPayloadScid = realScid1, lcu = createLocalUpdate(channelId1, channelUpdateScid_opt = Some(localAlias1)), success = true)
   }
 
   test("relay with local alias (channel update uses real scid)") { f =>
-    basicRelaytest(f)(relayPayloadScid = localAlias1, lcu = createLocalUpdate(channelId1), success = true)
+    basicRelayTest(f)(relayPayloadScid = localAlias1, lcu = createLocalUpdate(channelId1), success = true)
   }
 
-  test("relay with local alias (channel update uses remote alias)") { f =>
-    // we use a random value to simulate a remote alias
-    basicRelaytest(f)(relayPayloadScid = localAlias1, lcu = createLocalUpdate(channelId1, channelUpdateScid_opt = Some(remoteAlias1)), success = true)
+  test("relay with local alias (channel update uses local alias)") { f =>
+    basicRelayTest(f)(relayPayloadScid = localAlias1, lcu = createLocalUpdate(channelId1, channelUpdateScid_opt = Some(localAlias1)), success = true)
   }
 
   test("fail to relay with real scid when option_scid_alias is enabled (channel update uses real scid)") { f =>
-    basicRelaytest(f)(relayPayloadScid = realScid1, lcu = createLocalUpdate(channelId1, optionScidAlias = true), success = false)
+    basicRelayTest(f)(relayPayloadScid = realScid1, lcu = createLocalUpdate(channelId1, optionScidAlias = true), success = false)
   }
 
-  test("fail to relay with real scid when option_scid_alias is enabled (channel update uses remote alias)") { f =>
-    basicRelaytest(f)(relayPayloadScid = realScid1, lcu = createLocalUpdate(channelId1, optionScidAlias = true, channelUpdateScid_opt = Some(remoteAlias1)), success = false)
+  test("fail to relay with real scid when option_scid_alias is enabled (channel update uses local alias)") { f =>
+    basicRelayTest(f)(relayPayloadScid = realScid1, lcu = createLocalUpdate(channelId1, optionScidAlias = true, channelUpdateScid_opt = Some(localAlias1)), success = false)
   }
 
   test("relay with local alias when option_scid_alias is enabled (channel update uses real scid)") { f =>
-    basicRelaytest(f)(relayPayloadScid = localAlias1, lcu = createLocalUpdate(channelId1, optionScidAlias = true), success = true)
+    basicRelayTest(f)(relayPayloadScid = localAlias1, lcu = createLocalUpdate(channelId1, optionScidAlias = true), success = true)
   }
 
-  test("relay with local alias when option_scid_alias is enabled (channel update uses remote alias)") { f =>
-    // we use a random value to simulate a remote alias
-    basicRelaytest(f)(relayPayloadScid = localAlias1, lcu = createLocalUpdate(channelId1, optionScidAlias = true, channelUpdateScid_opt = Some(remoteAlias1)), success = true)
+  test("relay with local alias when option_scid_alias is enabled (channel update uses local alias)") { f =>
+    basicRelayTest(f)(relayPayloadScid = localAlias1, lcu = createLocalUpdate(channelId1, optionScidAlias = true, channelUpdateScid_opt = Some(localAlias1)), success = true)
   }
 
   test("relay with new real scid after reorg") { f =>
@@ -153,7 +151,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! Relay(r2)
     expectFwdAdd(register, lcu2.channelId, outgoingAmount, outgoingExpiry)
   }
-
 
   test("relay with onion tlv payload") { f =>
     import f._
@@ -535,9 +532,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val channels1 = getOutgoingChannels(true)
     assert(channels1.size == 2)
     assert(channels1.head.channelUpdate == channelUpdate_ab)
-    assert(channels1.head.toChannelBalance == Relayer.ChannelBalance(a, channelUpdate_ab.shortChannelId, 0 msat, 300000 msat, isPublic = false, isEnabled = true))
+    assert(channels1.head.toChannelBalance == Relayer.ChannelBalance(a, shortIds_ab, 0 msat, 300000 msat, isPublic = false, isEnabled = true))
     assert(channels1.last.channelUpdate == channelUpdate_bc)
-    assert(channels1.last.toChannelBalance == Relayer.ChannelBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false, isEnabled = true))
+    assert(channels1.last.toChannelBalance == Relayer.ChannelBalance(c, shortIds_bc, 400000 msat, 0 msat, isPublic = false, isEnabled = true))
 
     channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_bc, shortIds_ab, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
     val channels2 = getOutgoingChannels(true)
@@ -574,8 +571,6 @@ object ChannelRelayerSpec {
 
   val localAlias1: Alias = Alias(111000)
   val localAlias2: Alias = Alias(222000)
-
-  val remoteAlias1: ShortChannelId = ShortChannelId(111999)
 
   val channelId1: ByteVector32 = randomBytes32()
   val channelId2: ByteVector32 = randomBytes32()

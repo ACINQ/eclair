@@ -18,9 +18,8 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
-import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, NodeFeature, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, NodeFeature, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
 import scodec.bits.ByteVector
 import shapeless.HNil
 
@@ -118,7 +117,6 @@ object Announcements {
   def makeChannelUpdate(chainHash: ByteVector32, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now()): ChannelUpdate = {
     val channelFlags = ChannelUpdate.ChannelFlags(isNode1 = isNode1(nodeSecret.publicKey, remoteNodeId), isEnabled = enable)
     val htlcMaximumMsatOpt = Some(htlcMaximumMsat)
-
     val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestamp, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsatOpt, TlvStream.empty)
     val sig = Crypto.sign(witness, nodeSecret)
     ChannelUpdate(
@@ -133,6 +131,14 @@ object Announcements {
       feeProportionalMillionths = feeProportionalMillionths,
       htlcMaximumMsat = htlcMaximumMsatOpt
     )
+  }
+
+  def updateScid(nodeSecret: PrivateKey, u: ChannelUpdate, scid: ShortChannelId): ChannelUpdate = {
+    // NB: we don't update the timestamp as we're not changing any parameter.
+    val u1 = u.copy(shortChannelId = scid)
+    val witness = channelUpdateWitnessEncode(u.chainHash, scid, u.timestamp, u.channelFlags, u.cltvExpiryDelta, u.htlcMinimumMsat, u.feeBaseMsat, u.feeProportionalMillionths, u.htlcMaximumMsat, u.tlvStream)
+    val sig = Crypto.sign(witness, nodeSecret)
+    u1.copy(signature = sig)
   }
 
   def checkSigs(ann: ChannelAnnouncement): Boolean = {

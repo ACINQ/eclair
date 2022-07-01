@@ -622,7 +622,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         // this is a zero-conf channel and it is the first time we know for sure that the funding tx has been confirmed
         context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
       }
-      val scidForChannelUpdate = Helpers.scidForChannelUpdate(d.channelAnnouncement, shortIds1)
+      val scidForChannelUpdate = Helpers.scidForChannelUpdate(d.channelAnnouncement, shortIds1.localAlias)
       // if the shortChannelId is different from the one we had before, we need to re-announce it
       val channelUpdate1 = if (d.channelUpdate.shortChannelId != scidForChannelUpdate) {
         log.info(s"using new scid in channel_update: old=${d.channelUpdate.shortChannelId} new=$scidForChannelUpdate")
@@ -659,7 +659,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
                 handleLocalError(InvalidAnnouncementSignatures(d.channelId, remoteAnnSigs), d, Some(remoteAnnSigs))
               } else {
                 // we generate a new channel_update because the scid used may change if we were previously using an alias
-                val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.shortIds)
+                val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.shortIds.localAlias)
                 val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
                 // we use goto() instead of stay() because we want to fire transitions
                 goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate) storing()
@@ -1640,7 +1640,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           val lcu = LocalChannelUpdate(self, d.channelId, d.shortIds, d.commitments.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.commitments)
           context.system.eventStream.publish(lcu)
           if (sendToPeer) {
-            send(d.channelUpdate)
+            send(Helpers.channelUpdateForDirectPeer(nodeParams, d.channelUpdate, d.shortIds))
           }
         case EmitLocalChannelDown(d) =>
           log.debug(s"emitting channel down event")

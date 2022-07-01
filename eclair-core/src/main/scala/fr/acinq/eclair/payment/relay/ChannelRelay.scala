@@ -191,7 +191,10 @@ class ChannelRelay private(nodeParams: NodeParams,
   private val nextNodeId_opt = channels.headOption.map(_._2.nextNodeId)
 
   /** channel id explicitly requested in the onion payload */
-  private val requestedChannelId_opt = channels.find(_._2.channelUpdate.shortChannelId == r.payload.outgoingChannelId).map(_._1)
+  private val requestedChannelId_opt = channels.collectFirst {
+    case (channelId, channel) if channel.shortIds.localAlias == r.payload.outgoingChannelId => channelId
+    case (channelId, channel) if channel.shortIds.real.toOption.contains(r.payload.outgoingChannelId) => channelId
+  }
 
   /**
    * Select a channel to the same node to relay the payment to, that has the lowest capacity and balance and is

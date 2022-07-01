@@ -91,8 +91,9 @@ upgrading to this release.
 
 ### API changes
 
-- `channelbalances` Retrieves information about the balances of all local channels. (#2196)
-- `stop` Stops eclair. Please note that the recommended way of stopping eclair is simply to kill its process (#2233)
+- `channelbalances`: retrieves information about the balances of all local channels (#2196)
+- `stop`: stops eclair. Please note that the recommended way of stopping eclair is simply to kill its process (#2233)
+- `channelbalances` and `usablebalances` return a `shortIds` object instead of a single `shortChannelId` (#2323)
 
 ### Miscellaneous improvements and bug fixes
 
@@ -114,8 +115,8 @@ to your node.
 The `eclair.channel.min-funding-satoshis` setting has been deprecated and replaced with the following two new settings
 and defaults:
 
-* `eclair.channel.min-public-funding-satoshis = 100000`
-* `eclair.channel.min-private-funding-satoshis = 100000`
+- `eclair.channel.min-public-funding-satoshis = 100000`
+- `eclair.channel.min-private-funding-satoshis = 100000`
 
 If your configuration file changes `eclair.channel.min-funding-satoshis` then you should replace it with both of these
 new settings.
@@ -126,8 +127,8 @@ Expired incoming invoices that are unpaid will be searched for and purged from t
 Thereafter searches for expired unpaid invoices to purge will run once every 24 hours. You can disable this feature, or
 change the search interval with two new settings:
 
-* `eclair.purge-expired-invoices.enabled = true
-* `eclair.purge-expired-invoices.interval = 24 hours`
+- `eclair.purge-expired-invoices.enabled = true
+- `eclair.purge-expired-invoices.interval = 24 hours`
 
 ## Verifying signatures
 

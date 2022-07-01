@@ -95,7 +95,7 @@ object ChannelRelayer {
           case WrappedLocalChannelUpdate(lcu@LocalChannelUpdate(_, channelId, shortIds, remoteNodeId, _, channelUpdate, commitments)) =>
             context.log.debug(s"updating local channel info for channelId=$channelId realScid=${shortIds.real} localAlias=${shortIds.localAlias} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
             val prevChannelUpdate = channels.get(channelId).map(_.channelUpdate)
-            val channel = Relayer.OutgoingChannel(remoteNodeId, channelUpdate, prevChannelUpdate, commitments)
+            val channel = Relayer.OutgoingChannel(shortIds, remoteNodeId, channelUpdate, prevChannelUpdate, commitments)
             val channels1 = channels + (channelId -> channel)
             val mappings = lcu.scidsForRouting.map(_ -> channelId).toMap
             context.log.debug("adding mappings={} to channelId={}", mappings.keys.mkString(","), channelId)
