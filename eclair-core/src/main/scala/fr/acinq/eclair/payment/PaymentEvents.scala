@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.{BasicEdge, ExtraEdge}
+import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
@@ -154,6 +155,7 @@ object PaymentFailure {
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
     failures match {
       case previousFailures :+ LocalFailure(_, _, RouteNotFound) if previousFailures.nonEmpty => previousFailures
+      case previousFailures :+ LocalFailure(_, _, RetryExhausted) if previousFailures.nonEmpty => previousFailures
       case other => other
     }
   }
