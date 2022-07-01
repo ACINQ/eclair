@@ -36,7 +36,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Alias, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature, channel}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature, channel}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -149,6 +149,10 @@ object CltvExpirySerializer extends MinimalSerializer({
 
 object CltvExpiryDeltaSerializer extends MinimalSerializer({
   case x: CltvExpiryDelta => JInt(x.toInt)
+})
+
+object BlockHeightSerializer extends MinimalSerializer({
+  case x: BlockHeight => JInt(x.toInt)
 })
 
 object FeeratePerKwSerializer extends MinimalSerializer({
@@ -539,6 +543,7 @@ object JsonSerializers {
     MilliSatoshiSerializer +
     CltvExpirySerializer +
     CltvExpiryDeltaSerializer +
+    BlockHeightSerializer +
     FeeratePerKwSerializer +
     ShortChannelIdSerializer +
     ChannelIdentifierSerializer +

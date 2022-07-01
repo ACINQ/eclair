@@ -320,6 +320,10 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     }
   }
 
+  test("serialize block height") {
+    JsonSerializers.serialization.write(BlockHeight(123456))(JsonSerializers.formats) shouldBe "123456"
+  }
+
   /** utility method that strips line breaks in the expected json */
   def assertJsonEquals(actual: String, expected: String) = {
     val cleanedExpected = expected
