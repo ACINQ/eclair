@@ -144,7 +144,19 @@
               },
               "unit": "none"
             },
-            "overrides": []
+            "overrides": [ {
+              "matcher": {
+                "id": "byFrameRefID",
+                "options": "A"
+              },
+              "properties": [
+                {
+                  "id": "displayName",
+                  "value": "host_load_average"
+                }
+              ]
+            }
+            ]
           },
           "gridPos": {
             "h": 9,
@@ -256,7 +268,19 @@
               },
               "unit": "percent"
             },
-            "overrides": []
+            "overrides": [ {
+              "matcher": {
+                "id": "byName",
+                "options": "Value"
+              },
+              "properties": [
+                {
+                  "id": "displayName",
+                  "value": "host_swap_usage"
+                }
+              ]
+            }
+            ]
           },
           "gridPos": {
             "h": 9,
@@ -354,7 +378,19 @@
               },
               "unit": "percent"
             },
-            "overrides": []
+            "overrides": [ {
+              "matcher": {
+                "id": "byName",
+                "options": "Value"
+              },
+              "properties": [
+                {
+                  "id": "displayName",
+                  "value": "host_memory_usage"
+                }
+              ]
+            }
+            ]
           },
           "gridPos": {
             "h": 9,
@@ -573,7 +609,31 @@
               },
               "unit": "none"
             },
-            "overrides": []
+            "overrides": [
+              {
+              "matcher": {
+                "id": "byFrameRefID",
+                "options": "A"
+              },
+              "properties": [
+                {
+                  "id": "displayName",
+                  "value": "host_network_data_read_bytes"
+                }
+              ]
+            },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "host_network_data_write_bytes"
+                  }
+                ]
+              }]
           },
           "gridPos": {
             "h": 9,
@@ -683,7 +743,31 @@
               },
               "unit": "none"
             },
-            "overrides": []
+            "overrides": [
+              {
+              "matcher": {
+                "id": "byFrameRefID",
+                "options": "A"
+              },
+              "properties": [
+                {
+                  "id": "displayName",
+                  "value": "host_network_packets_read"
+                }
+              ]
+            },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "host_network_packets_write"
+                  }
+                ]
+              }]
           },
           "gridPos": {
             "h": 9,
@@ -811,7 +895,31 @@
           },
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+          "matcher": {
+            "id": "byFrameRefID",
+            "options": "A"
+          },
+          "properties": [
+            {
+              "id": "displayName",
+              "value": "host_cpu_system_usage"
+            }
+          ]
+        },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "host_cpu_user_usage"
+              }
+            ]
+          }]
       },
       "gridPos": {
         "h": 9,
