@@ -145,19 +145,20 @@ object Features {
     )
   }
 
-  def fromConfiguration[T <: Feature](config: Config, validFeatures: Set[T]): Features[T] = Features[T](
-    config.root().entrySet().asScala.flatMap { entry =>
-      val featureName = entry.getKey
-      val feature: T = validFeatures.find(_.rfcName == featureName).getOrElse(throw new IllegalArgumentException(s"Invalid feature name ($featureName)"))
-      config.getString(featureName) match {
-        case support if support == Mandatory.toString => Some(feature -> Mandatory)
-        case support if support == Optional.toString => Some(feature -> Optional)
-        case support if support == "disabled" => None
-        case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
-      }
-    }.toMap)
+  def fromConfiguration[T <: Feature](config: Config, validFeatures: Set[T], baseFeatures: Features[T]): Features[T] = Features[T](
+    config.root().entrySet().asScala.foldLeft(baseFeatures.activated) {
+      case (current, entry) =>
+        val featureName = entry.getKey
+        val feature: T = validFeatures.find(_.rfcName == featureName).getOrElse(throw new IllegalArgumentException(s"Invalid feature name ($featureName)"))
+        config.getString(featureName) match {
+          case support if support == Mandatory.toString => current + (feature -> Mandatory)
+          case support if support == Optional.toString => current + (feature -> Optional)
+          case support if support == "disabled" => current - feature
+          case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
+        }
+    })
 
-  def fromConfiguration(config: Config): Features[Feature] = fromConfiguration[Feature](config, knownFeatures)
+  def fromConfiguration(config: Config): Features[Feature] = fromConfiguration[Feature](config, knownFeatures, Features.empty)
 
   case object DataLossProtect extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_data_loss_protect"

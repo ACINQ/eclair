@@ -166,23 +166,64 @@ class StartupSpec extends AnyFunSuite {
   test("parse human readable override features") {
     val perNodeConf = ConfigFactory.parseString(
       """
+        |  features {
+        |    var_onion_optin = mandatory
+        |    payment_secret = mandatory
+        |    option_channel_type = optional
+        |  }
         |  override-init-features = [ // optional per-node features
         |      {
-        |        nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
-        |          features {
-        |            var_onion_optin = mandatory
-        |            payment_secret = mandatory
-        |            basic_mpp = mandatory
-        |            option_channel_type = optional
-        |          }
+        |        nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+        |        features {
+        |          basic_mpp = mandatory
+        |          gossip_queries = optional
+        |        }
         |      }
         |  ]
       """.stripMargin
     )
 
-    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
+    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf.withoutPath("features")))
     val perNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
-    assert(perNodeFeatures == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelType -> Optional))
+    assert(perNodeFeatures == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelRangeQueries -> Optional, ChannelType -> Optional))
+  }
+
+  test("combine node override features with default features") {
+    val perNodeConf = ConfigFactory.parseString(
+      """
+        |  features {
+        |    var_onion_optin = mandatory
+        |    payment_secret = mandatory
+        |    basic_mpp = mandatory
+        |    option_static_remotekey = optional
+        |    option_channel_type = optional
+        |  }
+        |  override-init-features = [ // optional per-node features
+        |      {
+        |        nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+        |        features {
+        |          option_static_remotekey = mandatory
+        |          option_anchors_zero_fee_htlc_tx = optional
+        |        }
+        |      },
+        |      {
+        |        nodeid = "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
+        |        features {
+        |          basic_mpp = optional
+        |          option_static_remotekey = disabled
+        |        }
+        |      }
+        |  ]
+      """.stripMargin
+    )
+
+    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf.withoutPath("features")))
+    val defaultFeatures = nodeParams.features
+    assert(defaultFeatures == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, StaticRemoteKey -> Optional, ChannelType -> Optional))
+    val perNodeFeatures1 = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
+    assert(perNodeFeatures1 == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional))
+    val perNodeFeatures2 = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766")))
+    assert(perNodeFeatures2 == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, ChannelType -> Optional))
   }
 
   test("reject non-init features in node override") {
@@ -190,22 +231,22 @@ class StartupSpec extends AnyFunSuite {
       """
         |  override-init-features = [ // optional per-node features
         |      {
-        |        nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
-        |          features {
-        |            var_onion_optin = mandatory
-        |            payment_secret = mandatory
-        |            option_channel_type = optional
-        |            option_payment_metadata = disabled
-        |          }
+        |        nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+        |        features {
+        |          var_onion_optin = mandatory
+        |          payment_secret = mandatory
+        |          option_channel_type = optional
+        |          option_payment_metadata = disabled
+        |        }
         |      },
         |      {
-        |        nodeid = "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
-        |          features {
-        |            var_onion_optin = mandatory
-        |            payment_secret = mandatory
-        |            option_channel_type = optional
-        |            option_payment_metadata = mandatory
-        |          }
+        |        nodeid = "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
+        |        features {
+        |          var_onion_optin = mandatory
+        |          payment_secret = mandatory
+        |          option_channel_type = optional
+        |          option_payment_metadata = mandatory
+        |        }
         |      }
         |  ]
       """.stripMargin
@@ -219,7 +260,7 @@ class StartupSpec extends AnyFunSuite {
       """
         |  on-chain-fees.override-feerate-tolerance = [
         |    {
-        |      nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        |      nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
         |      feerate-tolerance {
         |        ratio-low = 0.1
         |        ratio-high = 15.0
@@ -231,7 +272,7 @@ class StartupSpec extends AnyFunSuite {
         |      }
         |    },
         |    {
-        |      nodeid = "03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b",
+        |      nodeid = "03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b"
         |      feerate-tolerance {
         |        ratio-low = 0.75
         |        ratio-high = 5.0
