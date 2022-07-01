@@ -21,7 +21,7 @@ This feature is enabled by default, but your peer has to support it too, and it 
 
 Zeroconf channels make it possible to use a newly created channel before the funding tx is confirmed on the blockchain.
 
-:warning: Zeroconf requires the fundee to trust the funder. For this reason it is disabled by default, and you should
+:warning: Zeroconf requires the fundee to trust the funder. For this reason it is disabled by default, and you can
 only enable it on a peer-by-peer basis.
 
 ##### Enabling through features

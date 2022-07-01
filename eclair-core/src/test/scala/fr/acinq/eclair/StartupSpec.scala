@@ -255,6 +255,35 @@ class StartupSpec extends AnyFunSuite {
     assertThrows[IllegalArgumentException](makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf)))
   }
 
+  test("disallow enabling zero-conf for every peer") {
+    val invalidConf = ConfigFactory.parseString(
+      """
+        |  features {
+        |    option_zeroconf = optional
+        |  }
+      """.stripMargin
+    )
+    assertThrows[IllegalArgumentException](makeNodeParamsWithDefaults(invalidConf.withFallback(defaultConf)))
+
+    val perNodeConf = ConfigFactory.parseString(
+      """
+        |  override-init-features = [
+        |      {
+        |        nodeid = "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+        |        features {
+        |          option_zeroconf = optional
+        |        }
+        |      }
+        |  ]
+      """.stripMargin
+    )
+
+    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
+    assert(!nodeParams.features.hasFeature(Features.ZeroConf))
+    val perNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
+    assert(perNodeFeatures.hasFeature(Features.ZeroConf))
+  }
+
   test("override feerate mismatch tolerance") {
     val perNodeConf = ConfigFactory.parseString(
       """

@@ -128,15 +128,25 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(minerAddress) = sender.expectMsgType[JValue]
-    // we create and announce a channel between C and F; we use push_msat to ensure both nodes have an output in the commit tx
-    connect(nodes("C"), nodes("F"), 5000000 sat, 500000000 msat)
-    generateBlocks(6, Some(minerAddress))
-    awaitAnnouncements(2)
     // we subscribe to channel state transitions
     val stateListenerC = TestProbe()
     val stateListenerF = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListenerC.ref, classOf[ChannelStateChanged])
     nodes("F").system.eventStream.subscribe(stateListenerF.ref, classOf[ChannelStateChanged])
+    // we create and announce a channel between C and F; we use push_msat to ensure both nodes have an output in the commit tx
+    connect(nodes("C"), nodes("F"), 5000000 sat, 500000000 msat)
+    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED, max = 30 seconds)
+    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED, max = 30 seconds)
+    generateBlocks(1, Some(minerAddress))
+    // the funder sends its channel_ready after only one block
+    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_CHANNEL_READY, max = 30 seconds)
+    generateBlocks(2, Some(minerAddress))
+    // the fundee sends its channel_ready after 3 blocks
+    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
+    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
+    // we generate more blocks for the funding tx to be deeply buried and the channel to be announced
+    generateBlocks(3, Some(minerAddress))
+    awaitAnnouncements(2)
     // first we make sure we are in sync with current blockchain height
     val currentBlockHeight = getBlockHeight()
     awaitCond(getBlockHeight() == currentBlockHeight, max = 20 seconds, interval = 1 second)
