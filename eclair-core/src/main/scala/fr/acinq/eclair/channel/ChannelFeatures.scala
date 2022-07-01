@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
-import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature}
 import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeature, PermanentChannelFeature}
 
 /**
@@ -57,10 +56,15 @@ object ChannelFeatures {
   def apply(features: PermanentChannelFeature*): ChannelFeatures = ChannelFeatures(Set.from(features))
 
   /** Enrich the channel type with other permanent features that will be applied to the channel. */
-  def apply(channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): ChannelFeatures = {
+  def apply(channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): ChannelFeatures = {
     val additionalPermanentFeatures = Features.knownFeatures.collect {
-      case _: ChannelTypeFeature => None // channel-type features are negotiated in the channel-type, we ignore them in the init
-      case f: PermanentChannelFeature if Features.canUseFeature(localFeatures, remoteFeatures, f) => Some(f) // we only consider permanent channel features
+      // If we both support 0-conf or scid_alias, we use it even if it wasn't in the channel-type.
+      case Features.ScidAlias if Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias) && !announceChannel => Some(Features.ScidAlias)
+      case Features.ZeroConf if Features.canUseFeature(localFeatures, remoteFeatures, Features.ZeroConf) => Some(Features.ZeroConf)
+      // Other channel-type features are negotiated in the channel-type, we ignore their value from the init message.
+      case _: ChannelTypeFeature => None
+      // We add all other permanent channel features that aren't negotiated as part of the channel-type.
+      case f: PermanentChannelFeature if Features.canUseFeature(localFeatures, remoteFeatures, f) => Some(f)
     }.flatten
     val allPermanentFeatures = channelType.features.toSeq ++ additionalPermanentFeatures
     ChannelFeatures(allPermanentFeatures: _*)
@@ -139,7 +143,7 @@ object ChannelTypes {
 
   /** Pick the channel type based on local and remote feature bits, as defined by the spec. */
   def defaultFromFeatures(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): SupportedChannelType = {
-    def canUse(feature: InitFeature) = Features.canUseFeature(localFeatures, remoteFeatures, feature)
+    def canUse(feature: InitFeature): Boolean = Features.canUseFeature(localFeatures, remoteFeatures, feature)
 
     if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias = canUse(Features.ScidAlias) && !announceChannel, zeroConf = canUse(Features.ZeroConf)) // alias feature is incompatible with public channel

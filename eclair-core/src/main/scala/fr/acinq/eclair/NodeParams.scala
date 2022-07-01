@@ -302,6 +302,7 @@ object NodeParams extends Logging {
     val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
     val features = Features.fromConfiguration(config.getConfig("features"))
     validateFeatures(features)
+    require(!features.hasFeature(Features.ZeroConf), s"${Features.ZeroConf.rfcName} cannot be enabled for all peers: you have to use override-init-features to enable it on a per-peer basis")
 
     require(pluginMessageParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
     require(pluginMessageParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
