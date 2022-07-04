@@ -343,7 +343,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   def listAllIncomingPayments(): Seq[IncomingPayment] = withMetrics("payments/list-incoming") {
-    using(sqlite.prepareStatement("SELECT * FROM received_payments")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM received_payments where received_msat > 0")) { statement =>
       val rs = statement.executeQuery()
       var q: Queue[IncomingPayment] = Queue()
       while (rs.next()) {
