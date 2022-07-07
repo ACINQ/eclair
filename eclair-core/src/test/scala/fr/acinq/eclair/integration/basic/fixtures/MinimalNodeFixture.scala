@@ -26,6 +26,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
+import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
@@ -180,7 +181,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     watch1.replyTo ! WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx)
     watch2.replyTo ! WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx)
 
-    eventually {
+    eventually(PatienceConfiguration.Timeout(2 seconds), PatienceConfiguration.Interval(1 second)) {
       assert(getChannelState(node1, channelId) == NORMAL)
       assert(getChannelState(node2, channelId) == NORMAL)
     }
