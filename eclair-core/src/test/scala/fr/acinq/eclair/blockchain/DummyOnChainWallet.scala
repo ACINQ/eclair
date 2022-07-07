@@ -26,6 +26,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{randomBytes32, randomKey}
 import scodec.bits._
 
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.{ExecutionContext, Future, Promise}
 
 /**
@@ -35,10 +36,12 @@ class DummyOnChainWallet extends OnChainWallet {
 
   import DummyOnChainWallet._
 
-  val funded = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
+  var confirmedBalance: Satoshi = 1105 sat
+  var unconfirmedBalance: Satoshi = 561 sat
+  val funded: TrieMap[ByteVector32, Transaction] = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
   var rolledback = Set.empty[Transaction]
 
-  override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
+  override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(confirmedBalance, unconfirmedBalance))
 
   override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
