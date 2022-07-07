@@ -1641,6 +1641,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid =>
       log.warning(s"processing local commit spent in catch-all handler")
       spendLocalCurrent(d)
+
+    case Event(msg: HasSwapId, _) => send(msg)
+      stay()
   }
 
   onTransition {
