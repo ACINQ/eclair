@@ -453,11 +453,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       val JBool(safe) = utxo \ "safe"
       val JDecimal(amount) = utxo \ "amount"
       val JString(txid) = utxo \ "txid"
+      val JInt(vout) = utxo \ "vout"
+      val JString(address) = utxo \ "address"
       val label = utxo \ "label" match {
         case JString(label) => Some(label)
         case _ => None
       }
-      Utxo(ByteVector32.fromValidHex(txid), (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
+      Utxo(ByteVector32.fromValidHex(txid), vout.toInt, address, toSatoshi(amount), confirmations.toLong, safe, label)
     })
   }
 
@@ -511,7 +513,7 @@ object BitcoinCoreClient {
 
   case class UnlockOutpoint(txid: ByteVector32, vout: Long)
 
-  case class Utxo(txid: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
+  case class Utxo(txid: ByteVector32, vout: Int, address: String, amount: Satoshi, confirmations: Long, safe: Boolean, label_opt: Option[String])
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 

@@ -81,6 +81,7 @@ and COMMAND is one of the available commands:
     - sendonchain
     - onchainbalance
     - onchaintransactions
+    - onchainunspent
 
 Examples
 --------

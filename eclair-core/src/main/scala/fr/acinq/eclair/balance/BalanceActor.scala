@@ -144,10 +144,10 @@ private class BalanceActor(context: ActorContext[Command],
           )
           filteredByStatus.foreach {
             case (status, filteredUtxos) =>
-              val amount = filteredUtxos.map(_.amount.toDouble).sum
-              log.info(s"we have ${filteredUtxos.length} $status utxos ($amount mBTC)")
+              val amount = filteredUtxos.map(_.amount).sum.toMilliBtc
+              log.info(s"we have ${filteredUtxos.length} $status utxos ($amount)")
               Monitoring.Metrics.UtxoCount.withTag(Monitoring.Tags.UtxoStatus, status).update(filteredUtxos.length)
-              Monitoring.Metrics.BitcoinBalance.withTag(Monitoring.Tags.UtxoStatus, status).update(amount)
+              Monitoring.Metrics.BitcoinBalance.withTag(Monitoring.Tags.UtxoStatus, status).update(amount.toDouble)
           }
         case Failure(t) =>
           log.warn("could not check utxos: ", t)

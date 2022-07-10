@@ -21,7 +21,7 @@ _eclair-cli()
         *)
             # works fine, but is too slow at the moment.
             # allopts=$($eclaircli help 2>&1 | awk '$1 ~ /^"/ { sub(/,/, ""); print $1}' | sed 's/[":]//g')
-            allopts="getinfo connect open close forceclose updaterelayfee peers channels channel allnodes allchannels allupdates findroute findroutetonode findroutebetweennodes parseinvoice payinvoice sendtonode getsentinfo createinvoice getinvoice listinvoices listpendinginvoices getreceivedinfo audit networkfees channelstats"
+            allopts="allchannels allupdates audit channel channelbalances channels channelstats close connect createinvoice deleteinvoice disconnect findroute findroutebetweennodes findroutetonode forceclose getinfo getinvoice getnewaddress getreceivedinfo getsentinfo globalbalance listinvoices listpendinginvoices networkfees nodes onchainbalance onchaintransactions onchainunspent open parseinvoice payinvoice peers sendonchain sendonionmessage sendtonode sendtoroute signmessage stop updaterelayfee usablebalances verifymessage"
 
             if ! [[ " $allopts " =~ " $prev " ]]; then          # prevent double arguments
                 if [[ -z "$cur" || "$cur" =~ ^[a-z] ]]; then

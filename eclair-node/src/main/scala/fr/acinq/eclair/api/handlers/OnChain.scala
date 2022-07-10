@@ -48,10 +48,14 @@ trait OnChain {
     }
   }
 
+  val onChainUnspent: Route = postRequest("onchainunspent") { implicit t =>
+      complete(eclairApi.onChainUnspent())
+  }
+
   val globalBalance: Route = postRequest("globalbalance") { implicit t =>
     complete(eclairApi.globalBalance())
   }
 
-  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ onChainBalance ~ onChainTransactions ~ globalBalance
+  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ onChainBalance ~ onChainTransactions ~ onChainUnspent ~ globalBalance
 
 }

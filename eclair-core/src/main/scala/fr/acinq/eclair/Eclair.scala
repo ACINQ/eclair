@@ -29,7 +29,7 @@ import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Utxo, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -151,6 +151,8 @@ trait Eclair {
   def onChainBalance(): Future[OnChainBalance]
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTx]]
+
+  def onChainUnspent(): Future[Iterable[Utxo]]
 
   def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance]
 
@@ -277,6 +279,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTx]] = {
     appKit.wallet match {
       case w: BitcoinCoreClient => w.listTransactions(count, skip)
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
+  }
+
+  override def onChainUnspent(): Future[Iterable[Utxo]] = {
+    appKit.wallet match {
+      case w: BitcoinCoreClient => w.listUnspent()
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }

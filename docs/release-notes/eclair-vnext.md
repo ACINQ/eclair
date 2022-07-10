@@ -94,6 +94,7 @@ upgrading to this release.
 - `channelbalances`: retrieves information about the balances of all local channels (#2196)
 - `stop`: stops eclair. Please note that the recommended way of stopping eclair is simply to kill its process (#2233)
 - `channelbalances` and `usablebalances` return a `shortIds` object instead of a single `shortChannelId` (#2323)
+- `onchainunspent`: retrieves the list of UTXOs
 
 ### Miscellaneous improvements and bug fixes
 

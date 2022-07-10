@@ -132,7 +132,7 @@ object TimestampMilliSerializer extends ConvertClassSerializer[TimestampMilli](t
 // @formatter:on
 
 object BtcSerializer extends MinimalSerializer({
-  case x: Btc => JDecimal(x.toDouble)
+  case x: Btc => JDecimal(x.toBigDecimal)
 })
 
 object SatoshiSerializer extends MinimalSerializer({
