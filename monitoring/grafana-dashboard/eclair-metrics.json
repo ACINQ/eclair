@@ -1528,7 +1528,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "channels_errors_total",
+          "expr": "channels_errors_total{fatal=\"false\"}",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
