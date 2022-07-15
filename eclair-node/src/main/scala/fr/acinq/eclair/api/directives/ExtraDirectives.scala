@@ -21,8 +21,8 @@ import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.StatusCodes.NotFound
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
@@ -47,11 +47,13 @@ trait ExtraDirectives extends Directives {
   val fromFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "from".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.now() - 1.day)
   val toFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "to".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.now())
   val amountMsatFormParam: NameReceptacle[MilliSatoshi] = "amountMsat".as[MilliSatoshi]
+  val amountSatFormParam: NameReceptacle[Satoshi] = "amountSat".as[Satoshi]
   val invoiceFormParam: NameReceptacle[Bolt11Invoice] = "invoice".as[Bolt11Invoice]
   val routeFormatFormParam: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
+  val swapIdFormParam: NameUnmarshallerReceptacle[ByteVector32] = "swapId".as[ByteVector32](sha256HashUnmarshaller)
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {

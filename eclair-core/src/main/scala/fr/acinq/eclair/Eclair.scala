@@ -45,6 +45,8 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.swap.SwapRegister
+import fr.acinq.eclair.swap.SwapResponses.{Response, Status}
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -163,6 +165,12 @@ trait Eclair {
   def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 
   def stop(): Future[Unit]
+
+  def swapIn(channelId: ByteVector32, amount: Satoshi)(implicit timeout: Timeout): Future[Response]
+
+  def listSwaps()(implicit timeout: Timeout): Future[Iterable[Status]]
+
+  def cancelSwap(swapId: String)(implicit timeout: Timeout): Future[Response]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -580,4 +588,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     sys.exit(0)
     Future.successful(())
   }
+
+  override def swapIn(channelId: ByteVector32, amount: Satoshi)(implicit timeout: Timeout): Future[Response] =
+    appKit.swapRegister.ask(ref => SwapRegister.SwapInRequested(ref, amount, channelId))(timeout, appKit.system.scheduler.toTyped)
+
+  override def listSwaps()(implicit timeout: Timeout): Future[Iterable[Status]] =
+    appKit.swapRegister.ask(ref => SwapRegister.ListPendingSwaps(ref))(timeout, appKit.system.scheduler.toTyped)
+
+  override def cancelSwap(swapId: String)(implicit timeout: Timeout): Future[Response] =
+    appKit.swapRegister.ask(ref => SwapRegister.CancelSwapRequested(ref, swapId))(timeout, appKit.system.scheduler.toTyped)
 }

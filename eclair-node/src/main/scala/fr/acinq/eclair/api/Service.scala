@@ -23,7 +23,7 @@ import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.handlers._
 import grizzled.slf4j.Logging
 
-trait Service extends EclairDirectives with WebSocket with Node with Channel with Fees with PathFinding with Invoice with Payment with Message with OnChain with Logging {
+trait Service extends EclairDirectives with WebSocket with Node with Channel with Fees with PathFinding with Invoice with Payment with Message with OnChain with PeerSwap with Logging {
 
   /**
    * Allows router access to the API password as configured in eclair.conf
@@ -46,7 +46,7 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
    * This is where we handle errors to ensure all routes are correctly tried before rejecting.
    */
   def finalRoutes(extraRouteProviders: Seq[RouteProvider] = Nil): Route = securedHandler {
-    val baseRoutes = nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
+    val baseRoutes = nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ peerSwapRoutes ~ webSocket
     extraRouteProviders.map(_.route(this)).foldLeft(baseRoutes)(_ ~ _)
   }
 }
