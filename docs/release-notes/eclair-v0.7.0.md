@@ -1,4 +1,4 @@
-# Eclair v0.7.0
+# Eclair v0.7.0-patch-disconnect
 
 This release adds official support for two long-awaited lightning features: anchor outputs and onion messages.
 Support for the PostreSQL database backend is also now production ready!
@@ -245,7 +245,7 @@ Use the following command to generate the eclair-node package:
 mvn clean install -DskipTests
 ```
 
-That should generate `eclair-node/target/eclair-node-0.7.0-XXXXXXX-bin.zip` with sha256 checksums that match the one we provide and sign in `SHA256SUMS.asc`
+That should generate `eclair-node/target/eclair-node-0.7.0-patch-disconnect-XXXXXXX-bin.zip` with sha256 checksums that match the one we provide and sign in `SHA256SUMS.asc`
 
 (*) You may be able to build the exact same artefacts with other operating systems or versions of JDK 11, we have not tried everything.
 
