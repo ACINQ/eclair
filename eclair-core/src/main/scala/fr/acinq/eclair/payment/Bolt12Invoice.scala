@@ -19,11 +19,12 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{OfferTypes, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, randomKey}
 import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
@@ -40,6 +41,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   require(records.get[Amount].nonEmpty, "bolt 12 invoices must provide an amount")
   require(records.get[NodeIdXOnly].nonEmpty, "bolt 12 invoices must provide a node id")
+  require(records.get[Paths].exists(_.paths.nonEmpty), "bolt 12 invoices must provide a blinded path")
   require(records.get[PaymentHash].nonEmpty, "bolt 12 invoices must provide a payment hash")
   require(records.get[Description].nonEmpty, "bolt 12 invoices must provide a description")
   require(records.get[CreatedAt].nonEmpty, "bolt 12 invoices must provide a creation timestamp")
@@ -78,7 +80,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
 
-  val blindedPaths: Option[Seq[RouteBlinding.BlindedRoute]] = records.get[Paths].map(_.paths)
+  val blindedPaths: Seq[RouteBlinding.BlindedRoute] = records.get[Paths].get.paths
 
   val issuer: Option[String] = records.get[Issuer].map(_.issuer)
 
@@ -145,8 +147,15 @@ object Bolt12Invoice {
    * @param preimage the preimage to use for the payment
    * @param nodeKey  the key that was used to generate the offer, may be different from our public nodeId if we're hiding behind a blinded route
    * @param features invoice features
+   * @param selfId   data to identify the payment when receiving it, can contain anything and is not readable by the payer
    */
-  def apply(offer: Offer, request: InvoiceRequest, preimage: ByteVector32, nodeKey: PrivateKey, minFinalCltvExpiryDelta: CltvExpiryDelta, features: Features[InvoiceFeature]): Bolt12Invoice = {
+  def apply(offer: Offer,
+            request: InvoiceRequest,
+            preimage: ByteVector32,
+            nodeKey: PrivateKey,
+            minFinalCltvExpiryDelta: CltvExpiryDelta,
+            features: Features[InvoiceFeature],
+            selfId: ByteVector): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
     val tlvs: Seq[InvoiceTlv] = Seq(
       Some(Chain(request.chain)),
@@ -154,6 +163,7 @@ object Bolt12Invoice {
       Some(PaymentHash(Crypto.sha256(preimage))),
       Some(OfferId(offer.offerId)),
       Some(NodeIdXOnly(xOnlyPublicKey(nodeKey.publicKey))),
+      Some(Paths(Seq(Sphinx.RouteBlinding.createDirect(randomKey(), nodeKey.publicKey, selfId)))),
       Some(Amount(request.amount.orElse(offer.amount.map(_ * request.quantity)).get)),
       Some(Description(offer.description)),
       request.quantity_opt.map(Quantity),

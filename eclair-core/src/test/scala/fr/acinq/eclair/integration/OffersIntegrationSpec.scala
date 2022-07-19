@@ -35,6 +35,7 @@ import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.Invoice
 import fr.acinq.eclair.wire.protocol.TlvStream
 import fr.acinq.eclair.{EclairImpl, Features, MilliSatoshiLong, PayOfferResponse, randomBytes32}
+import scodec.bits.ByteVector
 
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -115,7 +116,7 @@ class OffersIntegrationSpec extends IntegrationSpec {
     val invoiceRequestPayload = eventListener.expectMsgType[OnionMessages.ReceiveMessage].finalPayload
     val invoiceRequest = invoiceRequestPayload.invoiceRequest.get.request
     val invoiceRequestReplyPath = invoiceRequestPayload.replyPath.get.blindedRoute
-    val invoice = Bolt12Invoice(offer, invoiceRequest, preimage, nodes("A").nodeParams.privateKey, dummyInvoice.minFinalCltvExpiryDelta, Features.empty)
+    val invoice = Bolt12Invoice(offer, invoiceRequest, preimage, nodes("A").nodeParams.privateKey, dummyInvoice.minFinalCltvExpiryDelta, Features.empty, randomBytes32())
     val encodedInvoice = perHopPayloadCodec.encode(TlvStream(Invoice(invoice))).require.bytes
     alice.sendOnionMessage(Nil, Right(invoiceRequestReplyPath), None, encodedInvoice)
 
