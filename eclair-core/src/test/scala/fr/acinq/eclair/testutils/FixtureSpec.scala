@@ -16,9 +16,14 @@
 
 package fr.acinq.eclair.testutils
 
+import akka.actor.{ActorSystem, Props}
+import akka.event.Logging.{LogEvent, StdOutLogger}
+import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
 import org.scalatest.concurrent.Eventually
 import org.scalatest.funsuite.FixtureAnyFunSuite
 import org.scalatest.{Assertions, Outcome, TestData}
+
+import scala.collection.mutable.ListBuffer
 
 /**
  * This is an opinionated base class for tests that need a fixture. It is a very thin layer on top of Scalatest, which
@@ -66,16 +71,51 @@ abstract class FixtureSpec extends FixtureAnyFunSuite
   with Assertions
   with Eventually {
 
+  val logCapture = new MyLogCapture()
+
   def createFixture(testData: TestData): FixtureParam
 
   def cleanupFixture(fixture: FixtureParam): Unit
 
-  override final def withFixture(test: OneArgTest): Outcome = {
+  override def withFixture(test: OneArgTest): Outcome = {
     val fixture = createFixture(test)
-    try {
+    logCapture.setup(fixture)
+    val outcome = try {
       withFixture(test.toNoArgTest(fixture))
     } finally {
       cleanupFixture(fixture)
+    }
+    logCapture.maybePrintLogs(test.name, outcome)
+    outcome
+  }
+
+}
+
+class MyLogCapture extends StdOutLogger {
+
+  // constant-time append
+  private val logEvents: ListBuffer[LogEvent] = ListBuffer[LogEvent]()
+
+  def setup(f: Any): Unit = {
+    // we use reflection to find actorsystems to listen to
+    val testSystem = f.getClass.getDeclaredMethods
+      .collect {
+        case m if m.getReturnType == classOf[ActorSystem] => m.invoke(f).asInstanceOf[ActorSystem]
+      }.head
+    val systems = f.getClass.getDeclaredMethods
+      .collect {
+        case m if m.getReturnType == classOf[MinimalNodeFixture] => m.invoke(f).asInstanceOf[MinimalNodeFixture].system
+      }
+      .toSet
+    val l = testSystem.actorOf(Props(new LogListener(logEvents)))
+    systems.foreach(l ! LogListener.ListenTo(_))
+  }
+
+  def maybePrintLogs(testName: String, outcome: Outcome): Unit = {
+    if (!outcome.isSucceeded) {
+      println(s"START OF LOGS FOR TEST $testName")
+      logEvents.foreach(print)
+      println(s"END OF LOGS FOR TEST $testName")
     }
   }
 
