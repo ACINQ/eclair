@@ -22,17 +22,16 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
-import fr.acinq.eclair.message.OnionMessages.Recipient
-import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage, SendMessageToBoth}
+import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol.{OnionMessage, OnionMessagePayloadTlv}
 import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, TimestampSecond, randomBytes32, randomKey}
-import fr.acinq.eclair.router.Router.RouteParams
 
 import java.util.UUID
 import scala.util.Random
@@ -78,7 +77,7 @@ object OfferPayment {
     val pathId = randomBytes32()
     // TODO: randomize intermediate nodes
     val intermediateNodes = Seq.empty
-    val replyPath = ReplyPath(OnionMessages.buildRoute(randomKey(), intermediateNodes.reverse, Recipient(nodeParams.nodeId, Some(pathId.bytes))))
+    val replyPath = ReplyPath(OnionMessages.buildRoute(randomKey(), intermediateNodes.reverse, OnionMessages.Recipient(nodeParams.nodeId, Some(pathId.bytes))))
     val (nextNodeId, message) = OnionMessages.buildMessage(randomKey(), randomKey(), intermediateNodes, destination, Seq(replyPath, OnionMessagePayloadTlv.InvoiceRequest(request)))
     (pathId, nextNodeId, message)
   }
@@ -139,29 +138,22 @@ object OfferPayment {
                          replyTo: typed.ActorRef[Result],
                          remainingAttempts: Int,
                          sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
-    offer.contact match {
-            case Left(blindedRoutes) =>
-              val blindedRoute = blindedRoutes(rand.nextInt(blindedRoutes.length))
-              val (pathId, nextNodeId, message) = buildRequest(nodeParams, request, OnionMessages.BlindedPath(blindedRoute))
-              postman ! SendMessage(nextNodeId, message, Some(pathId), context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
-              waitForInvoice(nodeParams, postman, paymentInitiator, offer, Map(pathId -> offer.nodeIdXOnly.nodeId1), request, payerKey, replyTo, remainingAttempts - 1, sendPaymentConfig)
-            case Right(nodeIdXOnly) =>
-              // The node id from the offer is missing the first byte so we try both the odd and even versions, we'll
-              // pay the first one that answers (the other one should not exist but if it does, it is controlled by the
-              // same person).
-              val (pathId1, nextNodeId1, message1) = buildRequest(nodeParams, request, Recipient(nodeIdXOnly.nodeId1, None, None))
-              val (pathId2, nextNodeId2, message2) = buildRequest(nodeParams, request, Recipient(nodeIdXOnly.nodeId2, None, None))
-              postman ! SendMessageToBoth(nextNodeId1, message1, pathId1, nextNodeId2, message2, pathId2, context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
-              waitForInvoice(nodeParams, postman, paymentInitiator, offer, Map(pathId1 -> nodeIdXOnly.nodeId1, pathId2 -> nodeIdXOnly.nodeId2),request, payerKey, replyTo, remainingAttempts - 1, sendPaymentConfig)
-
+    val destination = offer.contact match {
+      case Left(blindedRoutes) =>
+        val blindedRoute = blindedRoutes(rand.nextInt(blindedRoutes.length))
+        OnionMessages.BlindedPath(blindedRoute)
+      case Right(nodeId) =>
+        OnionMessages.Recipient(nodeId, None, None)
     }
+    val (pathId, nextNodeId, message) = buildRequest(nodeParams, request, destination)
+    postman ! SendMessage(nextNodeId, message, Some(pathId), context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
+    waitForInvoice(nodeParams, postman, paymentInitiator, offer, request, payerKey, replyTo, remainingAttempts - 1, sendPaymentConfig)
   }
 
   def waitForInvoice(nodeParams: NodeParams,
                      postman: typed.ActorRef[Postman.Command],
                      paymentInitiator: ActorRef,
                      offer: Offer,
-                     nodeId: Map[ByteVector32, PublicKey],
                      request: InvoiceRequest,
                      payerKey: PrivateKey,
                      replyTo: typed.ActorRef[Result],
@@ -169,7 +161,7 @@ object OfferPayment {
                      sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
     Behaviors.receivePartial {
       case (context, WrappedMessageResponse(Postman.Response(payload, pathId))) if payload.invoice.nonEmpty =>
-        val invoice = payload.invoice.get.invoice.withNodeId(nodeId(pathId))
+        val invoice = payload.invoice.get.invoice
         if (invoice.isValidFor(offer, request)) {
           val recipientAmount = invoice.amount
           paymentInitiator ! SendPaymentToNode(context.messageAdapter(paymentResultWrapper).toClassic, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams)

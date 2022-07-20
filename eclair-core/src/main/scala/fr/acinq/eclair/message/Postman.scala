@@ -39,14 +39,6 @@ object Postman {
                          replyPathId: Option[ByteVector32],
                          replyTo: ActorRef[OnionMessageResponse],
                          timeout: FiniteDuration) extends Command
-  case class SendMessageToBoth(nextNodeId1: PublicKey,
-                               message1: OnionMessage,
-                               replyPathId1: ByteVector32,
-                               nextNodeId2: PublicKey,
-                               message2: OnionMessage,
-                               replyPathId2: ByteVector32,
-                               replyTo: ActorRef[OnionMessageResponse],
-                               timeout: FiniteDuration) extends Command
   private case class Unsubscribe(pathId: ByteVector32) extends Command
   private case class WrappedMessage(finalPayload: FinalPayload, pathId: Option[ByteVector]) extends Command
   sealed trait OnionMessageResponse
@@ -95,14 +87,6 @@ object Postman {
           subscribed += (pathId -> ref)
           context.scheduleOnce(timeout, context.self, Unsubscribe(pathId))
           switchboard ! Switchboard.RelayMessage(pathId, None, nextNodeId, message, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
-          Behaviors.same
-        case SendMessageToBoth(nextNodeId1, message1, pathId1, nextNodeId2, message2, pathId2, ref, timeout) => // two messages expecting one reply
-          messagePair += (pathId1 -> (pathId2, ref))
-          messagePair += (pathId2 -> (pathId1, ref))
-          context.scheduleOnce(timeout, context.self, Unsubscribe(pathId1))
-          context.scheduleOnce(timeout, context.self, Unsubscribe(pathId2))
-          switchboard ! Switchboard.RelayMessage(pathId1, None, nextNodeId1, message1, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
-          switchboard ! Switchboard.RelayMessage(pathId2, None, nextNodeId2, message2, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
           Behaviors.same
         case Unsubscribe(pathId) =>
           subscribed.get(pathId).foreach(ref => {

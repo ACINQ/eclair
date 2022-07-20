@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, VariableLengthOnion}
@@ -29,7 +29,7 @@ import scodec.bits.{ByteVector, HexStringSyntax}
 import scala.util.Success
 
 class OfferTypesSpec extends AnyFunSuite {
-  val nodeId = ByteVector32(hex"4b9a1fa8e006f1e3937f65f66c408e6da8e1ca728ea43222a7381df1cc449605")
+  val nodeId = PublicKey(hex"024b9a1fa8e006f1e3937f65f66c408e6da8e1ca728ea43222a7381df1cc449605")
 
   test("sign and check offer") {
     val key = randomKey()
@@ -53,7 +53,7 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(offer.amount.isEmpty)
     assert(offer.signature.isEmpty)
     assert(offer.description == "Offer by rusty's node")
-    assert(offer.nodeIdXOnly.xOnly == nodeId)
+    assert(offer.nodeId == nodeId)
   }
 
   test("basic signed offer") {
@@ -62,7 +62,7 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(signedOffer.checkSignature())
     assert(signedOffer.amount.isEmpty)
     assert(signedOffer.description == "Offer by rusty's node")
-    assert(signedOffer.nodeIdXOnly.xOnly == nodeId)
+    assert(signedOffer.nodeId == nodeId)
   }
 
   test("offer with amount and quantity") {
@@ -71,7 +71,7 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(offer.amount.contains(50 msat))
     assert(offer.signature.isEmpty)
     assert(offer.description == "50msat multi-quantity offer")
-    assert(offer.nodeIdXOnly.xOnly == nodeId)
+    assert(offer.nodeId == nodeId)
     assert(offer.issuer.contains("rustcorp.com.au"))
     assert(offer.quantityMin.contains(1))
   }
@@ -82,7 +82,7 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(signedOffer.checkSignature())
     assert(signedOffer.amount.contains(50 msat))
     assert(signedOffer.description == "50msat multi-quantity offer")
-    assert(signedOffer.nodeIdXOnly.xOnly == nodeId)
+    assert(signedOffer.nodeId == nodeId)
     assert(signedOffer.issuer.contains("rustcorp.com.au"))
     assert(signedOffer.quantityMin.contains(1))
   }
@@ -142,7 +142,7 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("check that invoice request matches offer (chain compatibility)") {
     {
-      val offer = Offer(TlvStream(Seq(Amount(100 msat), Description("offer without chains"), NodeIdXOnly(randomKey().publicKey))))
+      val offer = Offer(TlvStream(Seq(Amount(100 msat), Description("offer without chains"), NodeId(randomKey().publicKey))))
       val payerKey = randomKey()
       val request = {
         val tlvs: Seq[InvoiceRequestTlv] = Seq(
@@ -162,7 +162,7 @@ class OfferTypesSpec extends AnyFunSuite {
     }
     {
       val (chain1, chain2) = (randomBytes32(), randomBytes32())
-      val offer = Offer(TlvStream(Seq(Chains(Seq(chain1, chain2)), Amount(100 msat), Description("offer with chains"), NodeIdXOnly(randomKey().publicKey))))
+      val offer = Offer(TlvStream(Seq(Chains(Seq(chain1, chain2)), Amount(100 msat), Description("offer with chains"), NodeId(randomKey().publicKey))))
       val payerKey = randomKey()
       val request1 = InvoiceRequest(offer, 100 msat, 1, Features.empty, payerKey, chain1)
       assert(request1.isValidFor(offer))
@@ -179,7 +179,7 @@ class OfferTypesSpec extends AnyFunSuite {
     val offer = Offer(TlvStream(
       Amount(500 msat),
       Description("offer for multiple items"),
-      NodeIdXOnly(randomKey().publicKey),
+      NodeId(randomKey().publicKey),
       QuantityMin(3),
       QuantityMax(10),
     ))

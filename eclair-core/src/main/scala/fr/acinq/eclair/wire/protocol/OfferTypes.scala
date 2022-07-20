@@ -60,12 +60,15 @@ object OfferTypes {
 
   case class Paths(paths: Seq[BlindedRoute]) extends OfferTlv with InvoiceTlv
 
-  case class PaymentInfo(feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta)
+  case class PaymentInfo(feeBase: MilliSatoshi,
+                         feeProportionalMillionths: Long,
+                         cltvExpiryDelta: CltvExpiryDelta,
+                         minHtlc: MilliSatoshi,
+                         maxHtlc: MilliSatoshi,
+                         allowedFeatures: Features[Feature])
   case class PaymentPathsInfo(paymentInfo: Seq[PaymentInfo]) extends InvoiceTlv
 
-  case class PaymentConstraints(maxCltvExpiry: CltvExpiry, minHtlc: MilliSatoshi, allowedFeatures: Features[Feature])
-
-  case class PaymentPathsConstraints(paymentConstraints: Seq[PaymentConstraints]) extends InvoiceTlv
+  case class PaymentPathsCapacities(capacities: Seq[MilliSatoshi]) extends InvoiceTlv
 
   case class Issuer(issuer: String) extends OfferTlv with InvoiceTlv
 
@@ -73,14 +76,7 @@ object OfferTypes {
 
   case class QuantityMax(max: Long) extends OfferTlv
 
-  case class NodeIdXOnly(xOnly: ByteVector32) extends OfferTlv with InvoiceTlv {
-    val nodeId1: PublicKey = PublicKey(2 +: xOnly)
-    val nodeId2: PublicKey = PublicKey(3 +: xOnly)
-  }
-
-  object NodeIdXOnly {
-    def apply(publicKey: PublicKey): NodeIdXOnly = NodeIdXOnly(xOnlyPublicKey(publicKey))
-  }
+  case class NodeId(publicKey: PublicKey) extends OfferTlv with InvoiceTlv
 
   case class SendInvoice() extends OfferTlv with InvoiceTlv
 
@@ -128,7 +124,7 @@ object OfferTypes {
 
   case class Offer(records: TlvStream[OfferTlv]) {
 
-    require(records.get[NodeIdXOnly].nonEmpty || records.get[Paths].exists(_.paths.nonEmpty), "bolt 12 offers must provide a node id or a blinded path")
+    require(records.get[NodeId].nonEmpty || records.get[Paths].exists(_.paths.nonEmpty), "bolt 12 offers must provide a node id or a blinded path")
     require(records.get[Description].nonEmpty, "bolt 12 offers must provide a description")
 
     val offerId: ByteVector32 = rootHash(removeSignature(records), offerTlvCodec)
@@ -153,8 +149,8 @@ object OfferTypes {
     val quantityMin: Option[Long] = records.get[QuantityMin].map(_.min)
     val quantityMax: Option[Long] = records.get[QuantityMax].map(_.max)
 
-    val nodeIdXOnly: NodeIdXOnly =
-      records.get[NodeIdXOnly].getOrElse(NodeIdXOnly(records.get[Paths].get.paths.head.blindedNodes.last.blindedPublicKey))
+    val nodeId: PublicKey =
+      records.get[NodeId].map(_.publicKey).getOrElse(records.get[Paths].get.paths.head.blindedNodes.last.blindedPublicKey)
 
     val sendInvoice: Boolean = records.get[SendInvoice].nonEmpty
 
@@ -162,8 +158,8 @@ object OfferTypes {
 
     val signature: Option[ByteVector64] = records.get[Signature].map(_.signature)
 
-    val contact: Either[Seq[BlindedRoute], NodeIdXOnly] =
-      records.get[Paths].map(_.paths).map(Left(_)).getOrElse(Right(records.get[NodeIdXOnly].get))
+    val contact: Either[Seq[BlindedRoute], PublicKey] =
+      records.get[Paths].map(_.paths).map(Left(_)).getOrElse(Right(records.get[NodeId].get.publicKey))
 
     def sign(key: PrivateKey): Offer = {
       val sig = signSchnorr(Offer.signatureTag, rootHash(records, offerTlvCodec), key)
@@ -172,7 +168,7 @@ object OfferTypes {
 
     def checkSignature(): Boolean = {
       signature match {
-        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), offerTlvCodec), sig, nodeIdXOnly.xOnly)
+        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), offerTlvCodec), sig, xOnlyPublicKey(nodeId))
         case None => false
       }
     }
@@ -201,7 +197,7 @@ object OfferTypes {
         if (chain != Block.LivenetGenesisBlock.hash) Some(Chains(Seq(chain))) else None,
         amount_opt.map(Amount),
         Some(Description(description)),
-        Some(NodeIdXOnly(xOnlyPublicKey(nodeId))),
+        Some(NodeId(nodeId)),
         if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
       ).flatten
       Offer(TlvStream(tlvs))
@@ -298,7 +294,7 @@ object OfferTypes {
         Some(Amount(amount)),
         if (offer.quantityMin.nonEmpty || offer.quantityMax.nonEmpty) Some(Quantity(quantity)) else None,
         Some(PayerKey(payerKey.publicKey)),
-        Some(FeaturesTlv(features.unscoped()))
+        if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
       ).flatten
       val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
       InvoiceRequest(TlvStream(tlvs :+ Signature(signature)))
