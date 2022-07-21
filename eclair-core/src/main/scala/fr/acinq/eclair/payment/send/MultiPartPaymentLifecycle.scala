@@ -287,7 +287,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       parentPaymentId_opt = Some(cfg.parentId),
       paymentId_opt = Some(id),
       paymentHash_opt = Some(paymentHash),
-      remoteNodeId_opt = Some(cfg.recipientNodeId))
+      remoteNodeId_opt = Some(cfg.recipientNodeId),
+      nodeAlias_opt = Some(nodeParams.alias))
   }
 
   initialize()

@@ -17,7 +17,8 @@
 package fr.acinq.eclair.payment.relay
 
 import akka.Done
-import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
+import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
@@ -28,7 +29,7 @@ import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.wire.protocol.{FailureMessage, TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{CustomCommitmentsPlugin, MilliSatoshiLong, NodeParams, TimestampMilli}
+import fr.acinq.eclair.{CustomCommitmentsPlugin, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
 
 import scala.concurrent.Promise
 import scala.util.Try
@@ -48,7 +49,7 @@ import scala.util.Try
  * payment (because of multi-part): we have lost the intermediate state necessary to retry that payment, so we need to
  * wait for the partial HTLC set sent downstream to either fail or fulfill the payment in our DB.
  */
-class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with ActorLogging {
+class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
 
   import PostRestartHtlcCleaner._
 
@@ -256,6 +257,15 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
         Metrics.Unhandled.withTag(Metrics.Hint, "MissingOrigin").increment()
         log.error(s"received failure with unknown origin $origin for htlcId=${failedHtlc.id}, channelId=${failedHtlc.channelId}")
     }
+
+  override def mdc(currentMessage: Any): MDC = {
+    val (remoteNodeId_opt, channelId_opt) = currentMessage match {
+      case e: ChannelStateChanged => (Some(e.remoteNodeId), Some(e.channelId))
+      case e: RES_ADD_SETTLED[_, _] => (None, Some(e.htlc.channelId))
+      case _ => (None, None)
+    }
+    Logs.mdc(remoteNodeId_opt = remoteNodeId_opt, channelId_opt = channelId_opt, nodeAlias_opt = Some(nodeParams.alias))
+  }
 
 }
 
