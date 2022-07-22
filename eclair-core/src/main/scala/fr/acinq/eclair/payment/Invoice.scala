@@ -56,12 +56,12 @@ trait Invoice {
 
 object Invoice {
   sealed trait ExtraEdge {
-    val sourceNodeId: PublicKey
-    val feeBase: MilliSatoshi
-    val feeProportionalMillionths: Long
-    val cltvExpiryDelta: CltvExpiryDelta
-    val htlcMinimum: MilliSatoshi
-    val htlcMaximum_opt: Option[MilliSatoshi]
+    def sourceNodeId: PublicKey
+    def feeBase: MilliSatoshi
+    def feeProportionalMillionths: Long
+    def cltvExpiryDelta: CltvExpiryDelta
+    def htlcMinimum: MilliSatoshi
+    def htlcMaximum_opt: Option[MilliSatoshi]
 
     def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
   }

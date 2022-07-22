@@ -122,7 +122,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send.recipientAmount == 123.msat)
     assert(send.paymentHash == ByteVector32.Zeroes)
     assert(send.invoice == invoice0)
-    assert(send.extraEdges == Seq.empty)
+    assert(send.invoice.extraEdges == Seq.empty)
 
     // with assisted routes
     val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
@@ -135,13 +135,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send1.recipientAmount == 123.msat)
     assert(send1.paymentHash == ByteVector32.Zeroes)
     assert(send1.invoice == invoice1)
-    assert(send1.extraEdges.length == 1)
-    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId.fromCoordinates("569178x2331x1").success.value)
-    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == Bob.nodeParams.nodeId)
-    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == nodePrivKey.publicKey)
-    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
-    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
-    assert(send1.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
+    assert(send1.invoice.extraEdges.length == 1)
+    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId.fromCoordinates("569178x2331x1").success.value)
+    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == Bob.nodeParams.nodeId)
+    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == nodePrivKey.publicKey)
+    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
+    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
+    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
 
     // with finalCltvExpiry
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
