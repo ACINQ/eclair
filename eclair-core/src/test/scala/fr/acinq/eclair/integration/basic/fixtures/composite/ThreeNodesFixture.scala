@@ -6,10 +6,10 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
 
 
-case class ThreeNodesFixture(system: ActorSystem,
-                             alice: MinimalNodeFixture,
-                             bob: MinimalNodeFixture,
-                             carol: MinimalNodeFixture) {
+case class ThreeNodesFixture private(system: ActorSystem,
+                                     alice: MinimalNodeFixture,
+                                     bob: MinimalNodeFixture,
+                                     carol: MinimalNodeFixture) {
   implicit val implicitSystem: ActorSystem = system
 
   def cleanup(): Unit = {
