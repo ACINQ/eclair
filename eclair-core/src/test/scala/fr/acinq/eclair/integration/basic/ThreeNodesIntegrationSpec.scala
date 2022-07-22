@@ -2,7 +2,7 @@ package fr.acinq.eclair.integration.basic
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.MilliSatoshiLong
-import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
+import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import org.scalatest.TestData
 import org.scalatest.concurrent.IntegrationPatience

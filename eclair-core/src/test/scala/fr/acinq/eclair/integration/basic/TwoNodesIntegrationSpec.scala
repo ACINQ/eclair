@@ -2,7 +2,7 @@ package fr.acinq.eclair.integration.basic
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.channel.{DATA_NORMAL, NORMAL, RealScidStatus}
-import fr.acinq.eclair.integration.basic.fixtures.TwoNodesFixture
+import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong}
 import org.scalatest.TestData

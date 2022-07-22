@@ -1,4 +1,4 @@
-package fr.acinq.eclair.integration.basic
+package fr.acinq.eclair.integration.basic.zeroconf
 
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
@@ -6,7 +6,7 @@ import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.ZeroConf
 import fr.acinq.eclair.channel.ChannelTypes.AnchorOutputsZeroFeeHtlcTx
 import fr.acinq.eclair.channel.PersistentChannelData
-import fr.acinq.eclair.integration.basic.fixtures.TwoNodesFixture
+import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatest.{Tag, TestData}

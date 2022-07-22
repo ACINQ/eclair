@@ -1,4 +1,4 @@
-package fr.acinq.eclair.integration.basic
+package fr.acinq.eclair.integration.basic.zeroconf
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
@@ -6,7 +6,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ScidAlias, ZeroConf}
 import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
+import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.RouteNotFound

@@ -1,8 +1,9 @@
-package fr.acinq.eclair.integration.basic.fixtures
+package fr.acinq.eclair.integration.basic.fixtures.composite
 
 import akka.actor.ActorSystem
 import akka.testkit.TestKit
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
 
 case class TwoNodesFixture(system: ActorSystem,
                            alice: MinimalNodeFixture,
