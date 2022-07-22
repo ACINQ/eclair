@@ -342,7 +342,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         externalId_opt match {
           case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
           case _ if invoice.isExpired() => Left(new IllegalArgumentException("invoice has expired"))
-          case _ => Right(SendPaymentToNode(amount, invoice, maxAttempts, externalId_opt, extraEdges = invoice.extraEdges, routeParams = routeParams))
+          case _ => Right(SendPaymentToNode(amount, invoice, maxAttempts, externalId_opt, routeParams = routeParams))
         }
       case Left(t) => Left(t)
     }

@@ -60,12 +60,12 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, PaymentSecretMissing) :: Nil)
         case Some(paymentSecret) if r.invoice.features.hasFeature(Features.BasicMultiPartPayment) && nodeParams.features.hasFeature(BasicMultiPartPayment) =>
           val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
-          fsm ! SendMultiPartPayment(self, paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.invoice.paymentMetadata, r.extraEdges, r.routeParams, userCustomTlvs = r.userCustomTlvs)
+          fsm ! SendMultiPartPayment(self, paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.invoice.paymentMetadata, r.invoice.extraEdges, r.routeParams, userCustomTlvs = r.userCustomTlvs)
           context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
         case Some(paymentSecret) =>
           val finalPayload = PaymentOnion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.invoice.paymentMetadata, r.userCustomTlvs)
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, finalPayload, r.maxAttempts, r.extraEdges, r.routeParams)
+          fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, finalPayload, r.maxAttempts, r.invoice.extraEdges, r.routeParams)
           context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
       }
 
@@ -305,7 +305,6 @@ object PaymentInitiator {
    * @param invoice                  Bolt 11 invoice.
    * @param maxAttempts              maximum number of retries.
    * @param externalId               (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
-   * @param extraEdges               (optional) routing hints (usually from a Bolt 11 invoice).
    * @param routeParams              (optional) parameters to fine-tune the routing algorithm.
    * @param userCustomTlvs           (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
    * @param blockUntilComplete       (optional) if true, wait until the payment completes before returning a result.
@@ -314,7 +313,6 @@ object PaymentInitiator {
                                invoice: Invoice,
                                maxAttempts: Int,
                                externalId: Option[String] = None,
-                               extraEdges: Seq[ExtraEdge] = Nil,
                                routeParams: RouteParams,
                                userCustomTlvs: Seq[GenericTlv] = Nil,
                                blockUntilComplete: Boolean = false) extends SendRequestedPayment
