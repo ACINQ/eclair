@@ -43,6 +43,7 @@ trait Databases {
   def channels: ChannelsDb
   def peers: PeersDb
   def payments: PaymentsDb
+  def offers: OffersDb
   def pendingCommands: PendingCommandsDb
   //@formatter:on
 }
