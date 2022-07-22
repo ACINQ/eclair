@@ -349,13 +349,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           fees
       }
       request match {
-        case SendPaymentToNode(_, _, _, _, _, routeParams) =>
-          val hints_opt = cfg.invoice.flatMap {
-            case invoice: Bolt11Invoice if invoice.routingInfo.nonEmpty => Some(invoice.routingInfo)
-            case _ => None
-          }
-          context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, routeParams.experimentName, cfg.recipientNodeId, hints_opt))
-        case SendPaymentToRoute(_, _, _, _) => ()
+        case request: SendPaymentToNode =>
+          context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, request.routeParams.experimentName, cfg.recipientNodeId, request.extraEdges))
+        case _: SendPaymentToRoute => ()
       }
     }
     Metrics.SentPaymentDuration

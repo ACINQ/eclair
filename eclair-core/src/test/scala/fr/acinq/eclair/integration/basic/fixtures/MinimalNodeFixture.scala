@@ -280,25 +280,11 @@ object MinimalNodeFixture extends Assertions with EitherValues {
 
   def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
     val sender = TestProbe("sender")
-    sender.send(node2.paymentHandler, MultiPartHandler.ReceivePayment(Some(amount), Left("test payment")))
+    sender.send(node2.paymentHandler, MultiPartHandler.ReceivePayment(Some(amount), Left("test payment"), extraHops = hints.map(_.toList).toList))
     val invoice = sender.expectMsgType[Bolt11Invoice]
-    val invoiceWithHints = Bolt11Invoice(
-      chainHash = node2.nodeParams.chainHash,
-      amount = invoice.amount_opt,
-      paymentHash = invoice.paymentHash,
-      privateKey = node2.nodeParams.privateKey,
-      description = invoice.description,
-      minFinalCltvExpiryDelta = invoice.minFinalCltvExpiryDelta,
-      fallbackAddress = invoice.fallbackAddress(),
-      expirySeconds = invoice.tags.collectFirst { case expiry: Bolt11Invoice.Expiry => expiry.toLong },
-      extraHops = hints.map(_.toList).toList,
-      timestamp = invoice.createdAt,
-      paymentSecret = invoice.paymentSecret.get,
-      paymentMetadata = invoice.paymentMetadata,
-      features = invoice.features)
 
     val routeParams = node1.nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
-    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoiceWithHints, maxAttempts = 1, routeParams = routeParams, blockUntilComplete = true))
+    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, blockUntilComplete = true))
     sender.expectMsgType[PaymentEvent] match {
       case e: PaymentSent => Right(e)
       case e: PaymentFailed => Left(e)

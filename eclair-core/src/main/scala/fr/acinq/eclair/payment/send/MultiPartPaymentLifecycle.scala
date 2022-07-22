@@ -264,11 +264,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
           }
           paymentSent.feesPaid + localFees
       }
-      val hints_opt = cfg.invoice.flatMap {
-        case invoice: Bolt11Invoice if invoice.routingInfo.nonEmpty => Some(invoice.routingInfo)
-        case _ => None
-      }
-      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId, hints_opt))
+      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId, request.extraEdges))
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)

@@ -852,7 +852,8 @@ class AuditDbSpec extends AnyFunSuite {
   test("add experiment metrics") {
     forAllDbs { dbs =>
       val isPg = dbs.isInstanceOf[TestPgDatabases]
-      val hints = Some(Seq(Seq(ExtraHop(
+      val recipientNodeId = PublicKey(hex"03f5b1f2768140178e1daac0fec11fce2eec6beec3ed64862bfb1114f7bc535b48")
+      val hints = Seq(Seq(ExtraHop(
         PublicKey(hex"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e"),
         ShortChannelId(1),
         1000 msat,
@@ -870,12 +871,13 @@ class AuditDbSpec extends AnyFunSuite {
         800 msat,
         300,
         CltvExpiryDelta(78)
-      ))))
-      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(randomBytes32(), 100000000 msat, 3000 msat, status = "SUCCESS", 37 millis, TimestampMilli.now(), isMultiPart = false, "my-test-experiment", randomKey().publicKey, hints))
+      )))
+      val extraEdges = hints.flatMap(Bolt11Invoice.toExtraEdges(_, recipientNodeId))
+      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(randomBytes32(), 100000000 msat, 3000 msat, status = "SUCCESS", 37 millis, TimestampMilli.now(), isMultiPart = false, "my-test-experiment", recipientNodeId, extraEdges))
 
       val table = if (isPg) "audit.path_finding_metrics" else "path_finding_metrics"
       val hint_column = if (isPg) ", routing_hints" else ""
-      using(dbs.connection.prepareStatement(s"SELECT amount_msat, status, fees_msat, duration_ms, experiment_name $hint_column FROM $table")) { statement =>
+      using(dbs.connection.prepareStatement(s"SELECT amount_msat, status, fees_msat, duration_ms, experiment_name, recipient_node_id $hint_column FROM $table")) { statement =>
         val result = statement.executeQuery()
         assert(result.next())
         assert(result.getLong(1) == 100000000)
@@ -884,7 +886,8 @@ class AuditDbSpec extends AnyFunSuite {
         assert(result.getLong(4) == 37)
         assert(result.getString(5) == "my-test-experiment")
         if (isPg) {
-          assert(result.getString(6) == "[[{\"nodeId\": \"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e\", \"feeBase\": 1000, \"shortChannelId\": \"0x0x1\", \"cltvExpiryDelta\": 144, \"feeProportionalMillionths\": 100}, {\"nodeId\": \"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7\", \"feeBase\": 900, \"shortChannelId\": \"0x0x2\", \"cltvExpiryDelta\": 12, \"feeProportionalMillionths\": 200}], [{\"nodeId\": \"026ec3e3438308519a75ca4496822a6c1e229174fbcaadeeb174704c377112c331\", \"feeBase\": 800, \"shortChannelId\": \"0x0x3\", \"cltvExpiryDelta\": 78, \"feeProportionalMillionths\": 300}]]")
+          assert(result.getString(6) == recipientNodeId.toHex)
+          assert(result.getString(7) == "[{\"feeBase\": 1000, \"sourceNodeId\": \"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e\", \"targetNodeId\": \"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7\", \"shortChannelId\": \"0x0x1\", \"cltvExpiryDelta\": 144, \"feeProportionalMillionths\": 100}, {\"feeBase\": 900, \"sourceNodeId\": \"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7\", \"targetNodeId\": \"03f5b1f2768140178e1daac0fec11fce2eec6beec3ed64862bfb1114f7bc535b48\", \"shortChannelId\": \"0x0x2\", \"cltvExpiryDelta\": 12, \"feeProportionalMillionths\": 200}, {\"feeBase\": 800, \"sourceNodeId\": \"026ec3e3438308519a75ca4496822a6c1e229174fbcaadeeb174704c377112c331\", \"targetNodeId\": \"03f5b1f2768140178e1daac0fec11fce2eec6beec3ed64862bfb1114f7bc535b48\", \"shortChannelId\": \"0x0x3\", \"cltvExpiryDelta\": 78, \"feeProportionalMillionths\": 300}]")
         }
         assert(!result.next())
       }

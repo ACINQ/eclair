@@ -261,4 +261,4 @@ case class PathFindingExperimentMetrics(paymentHash: ByteVector32,
                                         isMultiPart: Boolean,
                                         experimentName: String,
                                         recipientNodeId: PublicKey,
-                                        routingHints_opt: Option[Seq[Seq[Bolt11Invoice.ExtraHop]]])
+                                        extraEdges: Seq[ExtraEdge])

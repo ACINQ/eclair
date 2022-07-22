@@ -31,8 +31,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannel
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
-import fr.acinq.eclair.payment.Invoice.BasicEdge
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
@@ -122,26 +120,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send.recipientAmount == 123.msat)
     assert(send.paymentHash == ByteVector32.Zeroes)
     assert(send.invoice == invoice0)
-    assert(send.invoice.extraEdges == Seq.empty)
-
-    // with assisted routes
-    val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
-    val hints = List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId.fromCoordinates("569178x2331x1").success.value, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12)))
-    val invoice1 = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, Left("description"), CltvExpiryDelta(18), None, None, List(hints))
-    eclair.send(Some(externalId1), 123 msat, invoice1)
-    val send1 = paymentInitiator.expectMsgType[SendPaymentToNode]
-    assert(send1.externalId.contains(externalId1))
-    assert(send1.recipientNodeId == nodePrivKey.publicKey)
-    assert(send1.recipientAmount == 123.msat)
-    assert(send1.paymentHash == ByteVector32.Zeroes)
-    assert(send1.invoice == invoice1)
-    assert(send1.invoice.extraEdges.length == 1)
-    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId.fromCoordinates("569178x2331x1").success.value)
-    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == Bob.nodeParams.nodeId)
-    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == nodePrivKey.publicKey)
-    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
-    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
-    assert(send1.invoice.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
 
     // with finalCltvExpiry
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
