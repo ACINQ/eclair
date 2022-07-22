@@ -5,11 +5,12 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingDeeplyBuriedTriggered}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelOpenResponse.ChannelOpened
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -18,14 +19,14 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
-import org.scalatest.concurrent.Eventually.eventually
+import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
 import java.net.InetAddress
@@ -49,9 +50,10 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       paymentInitiator: ActorRef,
                                       paymentHandler: ActorRef,
                                       watcher: TestProbe,
-                                      wallet: DummyOnChainWallet)
+                                      wallet: DummyOnChainWallet,
+                                      bitcoinClient: TestBitcoinCoreClient)
 
-object MinimalNodeFixture extends Assertions with EitherValues {
+object MinimalNodeFixture extends Assertions with Eventually with IntegrationPatience with EitherValues {
 
   def nodeParamsFor(alias: String, seed: ByteVector32): NodeParams = {
     NodeParams.makeNodeParams(
@@ -62,7 +64,7 @@ object MinimalNodeFixture extends Assertions with EitherValues {
       torAddress_opt = None,
       database = TestDatabases.inMemoryDb(),
       blockHeight = new AtomicLong(400_000),
-      feeEstimator = new TestFeeEstimator
+      feeEstimator = new TestFeeEstimator(FeeratePerKw(253 sat))
     ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
@@ -102,7 +104,8 @@ object MinimalNodeFixture extends Assertions with EitherValues {
       paymentInitiator = paymentInitiator,
       paymentHandler = paymentHandler,
       watcher = watcher,
-      wallet = wallet
+      wallet = wallet,
+      bitcoinClient = bitcoinClient
     )
   }
 
@@ -158,7 +161,7 @@ object MinimalNodeFixture extends Assertions with EitherValues {
 
   def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = None)(implicit system: ActorSystem): ChannelOpened = {
     val sender = TestProbe("sender")
-    sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, 0L msat, channelType_opt, None, None, None))
+    sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, 0 msat, channelType_opt, None, None, None))
     sender.expectMsgType[ChannelOpened]
   }
 
@@ -278,10 +281,8 @@ object MinimalNodeFixture extends Assertions with EitherValues {
     case _ => TestActor.KeepRunning
   }
 
-  def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
+  def sendPayment(node1: MinimalNodeFixture, amount: MilliSatoshi, invoice: Invoice)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
     val sender = TestProbe("sender")
-    sender.send(node2.paymentHandler, MultiPartHandler.ReceivePayment(Some(amount), Left("test payment"), extraHops = hints.map(_.toList).toList))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
 
     val routeParams = node1.nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
     sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, blockUntilComplete = true))
@@ -292,11 +293,19 @@ object MinimalNodeFixture extends Assertions with EitherValues {
     }
   }
 
-  def sendSuccessfulPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): PaymentSent = {
+  def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: List[List[ExtraHop]] = List.empty)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
+    val sender = TestProbe("sender")
+    sender.send(node2.paymentHandler, MultiPartHandler.ReceivePayment(Some(amount), Left("test payment"), extraHops = hints))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+
+    sendPayment(node1, amount, invoice)
+  }
+
+  def sendSuccessfulPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: List[List[ExtraHop]] = List.empty)(implicit system: ActorSystem): PaymentSent = {
     sendPayment(node1, node2, amount, hints).value
   }
 
-  def sendFailingPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: Seq[Seq[ExtraHop]] = Seq.empty)(implicit system: ActorSystem): PaymentFailed = {
+  def sendFailingPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: List[List[ExtraHop]] = List.empty)(implicit system: ActorSystem): PaymentFailed = {
     sendPayment(node1, node2, amount, hints).left.value
   }
 

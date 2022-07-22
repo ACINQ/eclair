@@ -16,7 +16,7 @@ class ThreeNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
   type FixtureParam = ThreeNodesFixture
 
-  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture._
+  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendSuccessfulPayment, watcherAutopilot}
 
   override def createFixture(testData: TestData): FixtureParam = {
     // seeds have been chosen so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.

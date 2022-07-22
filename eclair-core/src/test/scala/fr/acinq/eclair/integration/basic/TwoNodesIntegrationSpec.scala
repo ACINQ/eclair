@@ -16,7 +16,7 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
   type FixtureParam = TwoNodesFixture
 
-  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture._
+  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{confirmChannel, confirmChannelDeep, connect, getChannelData, getChannelState, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendSuccessfulPayment, watcherAutopilot}
 
   override def createFixture(testData: TestData): FixtureParam = {
     // seeds have been chosen so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
