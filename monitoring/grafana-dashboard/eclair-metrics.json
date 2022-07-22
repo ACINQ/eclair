@@ -283,7 +283,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "rate(peers_connected[1m])",
+          "expr": "peers_connected",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -402,7 +402,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "rate(peerconnections_connecting_total{state=\"authenticating\"}[5m])",
+          "expr": "peerconnections_connecting_total{state=\"authenticating\"}",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -413,7 +413,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "rate(peerconnections_connecting_total{state=\"authenticated\"}[5m])",
+          "expr": "peerconnections_connecting_total{state=\"authenticated\"}",
           "hide": false,
           "legendFormat": "__auto",
           "range": true,
