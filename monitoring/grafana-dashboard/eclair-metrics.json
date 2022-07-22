@@ -541,7 +541,7 @@
           "refId": "A"
         }
       ],
-      "title": "Global Bitcoin Balance (mBTC)",
+      "title": "Global Bitcoin Balance (BTC)",
       "type": "timeseries"
     },
     {
@@ -672,7 +672,7 @@
           "refId": "B"
         }
       ],
-      "title": "Confirmed/Unconfirmend Bitcoin (mBTC)",
+      "title": "Confirmed/Unconfirmend Bitcoin (BTC)",
       "type": "timeseries"
     },
     {
