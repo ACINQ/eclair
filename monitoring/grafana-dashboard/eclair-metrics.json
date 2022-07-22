@@ -1774,8 +1774,13 @@
       "id": 30,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "lastNotNull",
+            "firstNotNull",
+            "min",
+            "max"
+          ],
+          "displayMode": "table",
           "placement": "bottom"
         },
         "tooltip": {
