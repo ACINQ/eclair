@@ -349,9 +349,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           fees
       }
       request match {
-        case SendPaymentToNode(_, _, _, _, extraEdges, routeParams) =>
-          context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, routeParams.experimentName, cfg.recipientNodeId, extraEdges))
-        case SendPaymentToRoute(_, _, _, _) => ()
+        case request: SendPaymentToNode =>
+          context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, request.routeParams.experimentName, cfg.recipientNodeId, request.extraEdges))
+        case _: SendPaymentToRoute => ()
       }
     }
     Metrics.SentPaymentDuration
