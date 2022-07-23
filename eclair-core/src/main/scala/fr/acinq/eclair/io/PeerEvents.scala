@@ -31,4 +31,6 @@ case class PeerDisconnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
 
 case class LastChannelClosed(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
 
+case class receivedPong(latency: FiniteDuration, nodeId: PublicKey) extends PeerEvent
+
 case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage, connectionInfo: ConnectionInfo) extends PeerEvent
