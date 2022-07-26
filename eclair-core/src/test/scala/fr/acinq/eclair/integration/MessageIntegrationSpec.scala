@@ -309,7 +309,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(r.pathId.isEmpty)
+    assert(r.pathId_opt.isEmpty)
     assert(r.finalPayload.records.unknown.toSet == Set(GenericTlv(UInt64(115), hex"")))
   }
 

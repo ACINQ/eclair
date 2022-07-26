@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.send.{PaymentError, PaymentInitiator, PaymentLife
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, KeySend, OutgoingCltv}
-import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalTlvPayload
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{BlindedFinalPayload, FinalTlvPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -282,11 +282,14 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // Verify that the recipient can correctly peel the trampoline onion.
     val Right(decrypted1) = Sphinx.peel(priv_c.privateKey, Some(invoice.paymentHash), decrypted.nextPacket)
     assert(decrypted1.isLastPacket)
-    val finalPayload = PaymentOnionCodecs.finalPerHopPayloadCodec.decode(decrypted1.payload.bits).require.value
-    assert(finalPayload.amount == finalAmount)
-    assert(finalPayload.totalAmount == finalAmount)
-    assert(finalPayload.expiry.toLong == currentBlockCount + 9 + 1)
-    assert(finalPayload.paymentSecret == invoice.paymentSecret.get)
+    PaymentOnionCodecs.finalPerHopPayloadCodec.decode(decrypted1.payload.bits).require.value match {
+      case finalPayload: FinalTlvPayload =>
+        assert(finalPayload.amount == finalAmount)
+        assert(finalPayload.totalAmount == finalAmount)
+        assert(finalPayload.expiry.toLong == currentBlockCount + 9 + 1)
+        assert(finalPayload.paymentSecret == invoice.paymentSecret.get)
+      case _: BlindedFinalPayload => fail()
+    }
   }
 
   test("forward trampoline to legacy payment") { f =>
@@ -456,7 +459,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.finalPayload.paymentSecret == payment.trampolineSecret.get)
     assert(msg.finalPayload.totalAmount == finalAmount + trampolineFees)
     assert(msg.finalPayload.isInstanceOf[PaymentOnion.FinalTlvPayload])
-    val trampolineOnion = msg.finalPayload.asInstanceOf[PaymentOnion.FinalTlvPayload].records.get[OnionPaymentPayloadTlv.TrampolineOnion]
+    val trampolineOnion = msg.finalPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion]
     assert(trampolineOnion.nonEmpty)
 
     // Verify that the trampoline node can correctly peel the trampoline onion.

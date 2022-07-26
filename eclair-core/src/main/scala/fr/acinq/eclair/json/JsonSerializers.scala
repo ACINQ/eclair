@@ -444,7 +444,7 @@ private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Optio
 object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address.map(_.toString), peerInfo.channels))
 
 private[json] case class MessageReceivedJson(pathId: Option[ByteVector], encodedReplyPath: Option[String], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
-object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex), m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
+object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId_opt, m.finalPayload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex), m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
 // @formatter:on
 
 // @formatter:off
