@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.lengthPrefixedFeaturesCodec
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tu32, tu64overflow}
@@ -133,7 +134,7 @@ object OfferCodecs {
     ("cltv_expiry_delta" | cltvExpiryDelta) ::
     ("htlc_minimum_msat" | millisatoshi) ::
     ("htlc_maximum_msat" | millisatoshi) ::
-    ("features" | variableSizeBytes(uint16, bytes).xmap[Features[Feature]](Features(_), _.toByteVector))).as[PaymentInfo]
+    ("features" | lengthPrefixedFeaturesCodec)).as[PaymentInfo]
 
   private val paymentPathsInfo: Codec[PaymentPathsInfo] = variableSizeBytesLong(varintoverflow, list(paymentInfo)).xmap[Seq[PaymentInfo]](_.toSeq, _.toList).as[PaymentPathsInfo]
 

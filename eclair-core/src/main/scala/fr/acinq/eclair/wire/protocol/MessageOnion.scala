@@ -106,9 +106,9 @@ object MessageOnionCodecs {
     .typecase(UInt64(68), variableSizeBytesLong(varintoverflow, invoiceErrorCodec.as[InvoiceError]))
 
 
-  val prefixedPerHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
+  val lengthPrefixedPerHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 
-  val relayPerHopPayloadCodec: Codec[RelayPayload] = prefixedPerHopPayloadCodec.narrow({
+  val relayPerHopPayloadCodec: Codec[RelayPayload] = lengthPrefixedPerHopPayloadCodec.narrow({
     case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
     case tlvs if tlvs.get[ReplyPath].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(2)))
     case tlvs => Attempt.successful(RelayPayload(tlvs))
@@ -116,7 +116,7 @@ object MessageOnionCodecs {
     case RelayPayload(tlvs) => tlvs
   })
 
-  val finalPerHopPayloadCodec: Codec[FinalPayload] = prefixedPerHopPayloadCodec.narrow({
+  val finalPerHopPayloadCodec: Codec[FinalPayload] = lengthPrefixedPerHopPayloadCodec.narrow({
     case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
     case tlvs => Attempt.successful(FinalPayload(tlvs))
   }, {
