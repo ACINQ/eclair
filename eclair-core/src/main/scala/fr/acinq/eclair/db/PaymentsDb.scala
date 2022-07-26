@@ -25,7 +25,7 @@ import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
 import java.util.UUID
 import scala.util.Try
 
-trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb
+trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb
 
 trait IncomingPaymentsDb {
 
@@ -224,46 +224,6 @@ object FailureSummary {
     case UnreadableRemoteFailure(_, route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList, None)
   }
 }
-
-trait PaymentsOverviewDb {
-  def listPaymentsOverview(limit: Int): Seq[PlainPayment]
-}
-
-/**
- * Generic payment trait holding only the minimum information in the most plain type possible. Notably, the invoice
- * is kept as a String, because deserialization is costly.
- * <p>
- * This object should only be used for a high level snapshot of the payments stored in the payment database.
- * <p>
- * Payment status should be of the correct type, but may not contain all the required data (routes, failures...).
- */
-sealed trait PlainPayment {
-  val paymentHash: ByteVector32
-  val paymentType: String
-  val invoice: Option[String]
-  val finalAmount: Option[MilliSatoshi]
-  val createdAt: TimestampMilli
-  val completedAt: Option[TimestampMilli]
-}
-
-case class PlainIncomingPayment(paymentHash: ByteVector32,
-                                paymentType: String,
-                                finalAmount: Option[MilliSatoshi],
-                                invoice: Option[String],
-                                status: IncomingPaymentStatus,
-                                createdAt: TimestampMilli,
-                                completedAt: Option[TimestampMilli],
-                                expireAt: Option[TimestampMilli]) extends PlainPayment
-
-case class PlainOutgoingPayment(parentId: Option[UUID],
-                                externalId: Option[String],
-                                paymentHash: ByteVector32,
-                                paymentType: String,
-                                finalAmount: Option[MilliSatoshi],
-                                invoice: Option[String],
-                                status: OutgoingPaymentStatus,
-                                createdAt: TimestampMilli,
-                                completedAt: Option[TimestampMilli]) extends PlainPayment
 
 object PaymentsDb {
 

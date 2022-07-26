@@ -2,7 +2,6 @@ package fr.acinq.eclair.db
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
-import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -11,7 +10,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.io.File
@@ -288,11 +287,6 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
 case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends PaymentsDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-payments").build()))
-
-  override def listPaymentsOverview(limit: Int): Seq[PlainPayment] = {
-    runAsync(secondary.listPaymentsOverview(limit))
-    primary.listPaymentsOverview(limit)
-  }
 
   override def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String): Unit = {
     runAsync(secondary.addIncomingPayment(pr, preimage, paymentType))
