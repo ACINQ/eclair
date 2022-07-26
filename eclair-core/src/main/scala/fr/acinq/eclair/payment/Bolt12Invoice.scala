@@ -17,14 +17,14 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Bech32
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{OfferTypes, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, randomKey, MilliSatoshiLong}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond}
 import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
@@ -146,7 +146,7 @@ object Bolt12Invoice {
    * @param preimage the preimage to use for the payment
    * @param nodeKey  the key that was used to generate the offer, may be different from our public nodeId if we're hiding behind a blinded route
    * @param features invoice features
-   * @param selfId   data to identify the payment when receiving it, can contain anything and is not readable by the payer
+   * @param path     the blinded path to use to request an invoice
    */
   def apply(offer: Offer,
             request: InvoiceRequest,
@@ -154,7 +154,7 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             features: Features[InvoiceFeature],
-            selfId: ByteVector): Bolt12Invoice = {
+            path: Sphinx.RouteBlinding.BlindedRoute): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
     val amount = request.amount.orElse(offer.amount.map(_ * request.quantity)).get
     val tlvs: Seq[InvoiceTlv] = Seq(
@@ -163,7 +163,7 @@ object Bolt12Invoice {
       Some(Amount(amount)),
       Some(Description(offer.description)),
       if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
-      Some(Paths(Seq(Sphinx.RouteBlinding.createDirect(randomKey(), nodeKey.publicKey, selfId)))),
+      Some(Paths(Seq(path))),
       Some(PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty)))),
       offer.issuer.map(Issuer),
       Some(NodeId(nodeKey.publicKey)),

@@ -19,7 +19,6 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.encryptedDataCodec
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
@@ -409,19 +408,6 @@ object Sphinx extends Logging {
         (BlindedNode(blindedPublicKey, encryptedPayload ++ mac), blindingKey)
       }.unzip
       BlindedRoute(publicKeys.head, blindingKeys.head, blindedHops)
-    }
-
-    /**
-     * Creates a direct blinded route with a single node
-     *
-     * @param sessionKey this node's session key.
-     * @param nodeId     public key of the target node, which is also the introduction point.
-     * @param selfId     payloads that should be encrypted for each node on the route.
-     * @return a blinded route.
-     */
-    def createDirect(sessionKey: PrivateKey, nodeId: PublicKey, selfId: ByteVector): BlindedRoute = {
-      val selfPayload = encryptedDataCodec.encode(TlvStream(Seq(RouteBlindingEncryptedDataTlv.PathId(selfId)))).require.bytes
-      Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload))
     }
 
     /**

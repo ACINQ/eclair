@@ -133,7 +133,7 @@ object OfferCodecs {
     ("cltv_expiry_delta" | cltvExpiryDelta) ::
     ("htlc_minimum_msat" | millisatoshi) ::
     ("htlc_maximum_msat" | millisatoshi) ::
-    ("features" | variableSizeBytesLong(uint32, bytes).xmap[Features[Feature]](Features(_), _.toByteVector))).as[PaymentInfo]
+    ("features" | variableSizeBytes(uint16, bytes).xmap[Features[Feature]](Features(_), _.toByteVector))).as[PaymentInfo]
 
   private val paymentPathsInfo: Codec[PaymentPathsInfo] = variableSizeBytesLong(varintoverflow, list(paymentInfo)).xmap[Seq[PaymentInfo]](_.toSeq, _.toList).as[PaymentPathsInfo]
 
