@@ -18,10 +18,10 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta, millisatoshi, millisatoshi32}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta, millisatoshi}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.featuresCodec
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
-import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tu32}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.tmillisatoshi32
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.Attempt
 import scodec.bits.ByteVector
@@ -122,7 +122,7 @@ object RouteBlindingEncryptedDataCodecs {
   private val paymentRelay: Codec[PaymentRelay] = variableSizeBytesLong(varintoverflow,
     ("cltv_expiry_delta" | cltvExpiryDelta) ::
       ("fee_proportional_millionths" | uint32) ::
-      ("fee_base_msat" | tu32.xmap[MilliSatoshi](l => MilliSatoshi(l), m => m.toLong))).as[PaymentRelay]
+      ("fee_base_msat" | tmillisatoshi32)).as[PaymentRelay]
   private val paymentConstraints: Codec[PaymentConstraints] = variableSizeBytesLong(varintoverflow,
     ("max_cltv_expiry" | cltvExpiry) ::
       ("htlc_minimum_msat" | millisatoshi) ::

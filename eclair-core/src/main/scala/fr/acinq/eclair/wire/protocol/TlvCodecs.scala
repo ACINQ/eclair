@@ -72,15 +72,6 @@ object TlvCodecs {
     u => if (u <= Long.MaxValue) Attempt.Successful(u.toBigInt.toLong) else Attempt.Failure(Err(s"overflow for value $u")),
     l => if (l >= 0) Attempt.Successful(UInt64(l)) else Attempt.Failure(Err(s"uint64 must be positive (actual=$l)")))
 
-  /**
-   * Truncated millisatoshi (0 to 8 bytes unsigned).
-   * This codec can be safely used for values < `2^63` and will fail otherwise.
-   */
-  val tmillisatoshi: Codec[MilliSatoshi] = tu64overflow.xmap(l => MilliSatoshi(l), m => m.toLong)
-
-  /** Truncated satoshi (0 to 8 bytes unsigned). */
-  val tsatoshi: Codec[Satoshi] = tu64overflow.xmap(l => Satoshi(l), s => s.toLong)
-
   /** Truncated uint32 (0 to 4 bytes unsigned integer). */
   val tu32: Codec[Long] = tu64.exmap({
     case i if i > 0xffffffffL => Attempt.Failure(Err("tu32 overflow"))
@@ -92,6 +83,20 @@ object TlvCodecs {
     case i if i > 0xffff => Attempt.Failure(Err("tu16 overflow"))
     case i => Attempt.Successful(i.toInt)
   }, l => Attempt.Successful(l))
+
+  /**
+   * Truncated millisatoshi (0 to 8 bytes unsigned).
+   * This codec can be safely used for values < `2^63` and will fail otherwise.
+   */
+  val tmillisatoshi: Codec[MilliSatoshi] = tu64overflow.xmap(l => MilliSatoshi(l), m => m.toLong)
+
+  /**
+   * Truncated millisatoshi (0 to 4 bytes unsigned).
+   */
+  val tmillisatoshi32: Codec[MilliSatoshi] = tu32.xmap(l => MilliSatoshi(l), m => m.toLong)
+
+  /** Truncated satoshi (0 to 8 bytes unsigned). */
+  val tsatoshi: Codec[Satoshi] = tu64overflow.xmap(l => Satoshi(l), s => s.toLong)
 
   /** Length-prefixed truncated uint64 (1 to 9 bytes unsigned integer). */
   val ltu64: Codec[UInt64] = variableSizeBytes(uint8, tu64)
