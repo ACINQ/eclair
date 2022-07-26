@@ -24,11 +24,13 @@ import fr.acinq.eclair.Features.{BasicMultiPartPayment, VariableLengthOnion}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.payment.Bolt12Invoice.{hrp, signatureTag}
+import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRecipientData
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, invoiceTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.encryptedDataCodec
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.paymentRecipientDataCodec
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.PaymentConstraints
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferTypes, RouteBlindingEncryptedDataTlv, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, TimestampSecond, TimestampSecondLong, UInt64, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, TimestampSecond, TimestampSecondLong, UInt64, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -50,7 +52,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   }
 
   def createDirectPath(sessionKey: PrivateKey, nodeId: PublicKey, pathId: ByteVector): BlindedRoute = {
-    val selfPayload = encryptedDataCodec.encode(TlvStream(Seq(RouteBlindingEncryptedDataTlv.PathId(pathId)))).require.bytes
+    val selfPayload = paymentRecipientDataCodec.encode(PaymentRecipientData(TlvStream(Seq(RouteBlindingEncryptedDataTlv.PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat, Features.empty))))).require.bytes
     Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload))
   }
 
@@ -330,7 +332,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     ), Seq(GenericTlv(UInt64(311), hex"010203"), GenericTlv(UInt64(313), hex"")))
     val signature = signSchnorr(Bolt12Invoice.signatureTag("signature"), rootHash(tlvs, invoiceTlvCodec), nodeKey)
     val invoice = Bolt12Invoice(tlvs.copy(records = tlvs.records ++ Seq(Signature(signature))))
-    assert(invoice.toString == "lni1qvsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqyyz9ut9uduhtztjgpxm06394g5qkw7v79g4czw6zxsl3lnrsvljj0qzqrq83yqzscd9h8vmmfvdjjqamfw35zqmtpdeujqenfv4kxgucvqgqsqyycq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmcq5ecw92k3597h7kdndc64mg2xt709acf2gmxnnag5kq9a6wslznscqsyu5p4eckl7m69k0qpcppkpz3lq4chus9szjkgw9w7mgeknz7m7fpqqe02qmqdj08z62mz0jws0gxt45fyq8udel9jg5gd6xlgdrkdt5qywp0jsc93kcksk4x4yvk7s3dej984yh3y8qqqqyjjqqqqt7sz3qqqqqqqqqqq05qqqqqqqqqrcjqqqqpgptpd35kxeg7yypugee7xc8qa0pf3jxe9k0976dvzuqu8eaedk0pcpg2dr5qx3gh00pqqyujvgy04twhrv0h3vtzvhjmqcde62ug3ygp9hr66wrzdm425238zc26v5nswjf8d5syymmz9qzx9gqxhc4zq5v4r4x98jgyqd0sk2fae803crnevusngv9wq7jl8cf5e5eny56p9spquypwqgq8kvq5quzqqpqj84t0szcxqqywkwkudz29aaspxgx2n6mw2fh2ckwdnwylkgpcypc66qe7tapqdq39vzrhp7nkwfg9gj2ztk658g0ecgalqdjh4gmuruzq5t7s5glh3s6f5tzdp5pn0wnuml4q28qclukj9lf66krwa8r09y3v2j8qnjpxjuzvmh32jkwx63wjdre8m9yh6dnkqh0ruygwhxwegh8aqymsxqgzq07szwgq")
+    assert(invoice.toString == "lni1qvsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqyyz9ut9uduhtztjgpxm06394g5qkw7v79g4czw6zxsl3lnrsvljj0qzqrq83yqzscd9h8vmmfvdjjqamfw35zqmtpdeujqenfv4kxgucvqgqsqy9xq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmcq5ecw92k3597h7kdndc64mg2xt709acf2gmxnnag5kq9a6wslznscqsyu5p4eckl7m69k0qpcppkpz3lq4chus9szjkgw9w7mgeknz7m7fpqpq02qmqdj08z62mz0jws0gxt45fyq8udel9jg5gd6xlgdrkdt5qywp0jna8ews7jvdul05nrwff46tvtnv2s5xtkpc9x595e78756q9scfpcqqqpy5sqqqzl5q5gqqqqqqqqqqraqqqqqqqqqq7ysqqqq2q2ctvd93k283pq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmcgqp8ynzpra2m4cmrautzcn9ukcxrwwjhzyfzqfdc7knscnwa24z5fckzkn9yur5jfmdyppx7c3gq332qp479gs9r9gaf3fujpqrtu9jj0wfmuwqu7t8yy6rpts85he7zdxdxve9xsfvqg8pqtszqpanq9q8qsqqgy3a2muqkpsqpr4n4hrgj300vqfjpj57kmjjd6k9nnvm38ajqwpqwxksx0jlggrgyftqsac05anj2p2yjsjak4p6r7wz80crv4a2xlqlqs8a50j3hezs0rv6wgfuwm0k7pmls0tuzy805tfms43nz9k3paw343dscwnxezqvkgp7gukv7uuvy7jn2vxewnex9ef8967txmgg5mcr3lgpxupszqsrl5qnjqq")
     val Success(codedDecoded) = Bolt12Invoice.fromString(invoice.toString)
     assert(codedDecoded.chain == chain)
     assert(codedDecoded.offerId.contains(offerId))
