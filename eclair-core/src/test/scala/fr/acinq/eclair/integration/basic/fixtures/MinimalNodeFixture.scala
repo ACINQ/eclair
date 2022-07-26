@@ -260,13 +260,11 @@ object MinimalNodeFixture extends Assertions with EitherValues {
       val realScid = deterministicShortId(watch.txId)
       val fundingTx = knownFundingTxs().find(_.txid == watch.txId)
         .getOrElse(throw new RuntimeException(s"unknown fundingTxId=${watch.txId}, known=${knownFundingTxs().map(_.txid).mkString(",")}"))
-      Thread.sleep(Random.nextInt(100))
       watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
       TestActor.KeepRunning
     case watch: ZmqWatcher.WatchFundingDeeplyBuried if deepConfirm =>
       val realScid = deterministicShortId(watch.txId)
       val fundingTx = knownFundingTxs().find(_.txid == watch.txId).get
-      Thread.sleep(Random.nextInt(100))
       watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
       TestActor.KeepRunning
     case vr: ZmqWatcher.ValidateRequest =>
@@ -275,7 +273,6 @@ object MinimalNodeFixture extends Assertions with EitherValues {
           .getOrElse(throw new RuntimeException(s"unknown realScid=${vr.ann.shortChannelId}, known=${knownFundingTxs().map(tx => deterministicShortId(tx.txid)).mkString(",")}"))
         (fundingTx, ZmqWatcher.UtxoStatus.Unspent)
       }.toEither
-      Thread.sleep(Random.nextInt(100))
       vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
       TestActor.KeepRunning
     case _ => TestActor.KeepRunning
