@@ -350,7 +350,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Peers Authenticating(5m)"
+                "value": "Peers Authenticating"
               }
             ]
           },
@@ -362,7 +362,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Peers Authenticated(5m)"
+                "value": "Peers Authenticated"
               }
             ]
           }
