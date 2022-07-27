@@ -17,13 +17,14 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Bech32
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceTlvCodec}
-import fr.acinq.eclair.wire.protocol.Offers._
-import fr.acinq.eclair.wire.protocol.{Offers, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
+import fr.acinq.eclair.wire.protocol.OfferTypes._
+import fr.acinq.eclair.wire.protocol.{OfferTypes, TlvStream}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond}
 import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
@@ -34,12 +35,14 @@ import scala.util.Try
  * Lightning Bolt 12 invoice
  * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
  */
-case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[PublicKey]) extends Invoice {
+case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
   import Bolt12Invoice._
 
   require(records.get[Amount].nonEmpty, "bolt 12 invoices must provide an amount")
   require(records.get[NodeId].nonEmpty, "bolt 12 invoices must provide a node id")
+  require(records.get[Paths].exists(_.paths.nonEmpty), "bolt 12 invoices must provide a blinded path")
+  require(records.get[PaymentPathsInfo].exists(_.paymentInfo.length == records.get[Paths].get.paths.length), "bolt 12 invoices must provide a blinded_payinfo for each path")
   require(records.get[PaymentHash].nonEmpty, "bolt 12 invoices must provide a payment hash")
   require(records.get[Description].nonEmpty, "bolt 12 invoices must provide a description")
   require(records.get[CreatedAt].nonEmpty, "bolt 12 invoices must provide a creation timestamp")
@@ -49,7 +52,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
 
-  override val nodeId: Crypto.PublicKey = nodeId_opt.getOrElse(records.get[NodeId].get.nodeId1)
+  override val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
 
   override val paymentHash: ByteVector32 = records.get[PaymentHash].get.hash
 
@@ -78,7 +81,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
 
-  val blindedPaths: Option[Seq[RouteBlinding.BlindedRoute]] = records.get[Paths].map(_.paths)
+  val blindedPaths: Seq[RouteBlinding.BlindedRoute] = records.get[Paths].get.paths
 
   val issuer: Option[String] = records.get[Issuer].map(_.issuer)
 
@@ -102,7 +105,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   // It is assumed that the request is valid for this offer.
   def isValidFor(offer: Offer, request: InvoiceRequest): Boolean = {
-    Offers.xOnlyPublicKey(nodeId) == offer.nodeIdXOnly &&
+    nodeId == offer.nodeId &&
       checkSignature() &&
       offerId.contains(request.offerId) &&
       request.chain == chain &&
@@ -126,10 +129,8 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
   }
 
   def checkSignature(): Boolean = {
-    verifySchnorr(signatureTag("signature"), rootHash(Offers.removeSignature(records), invoiceTlvCodec), signature, Offers.xOnlyPublicKey(nodeId))
+    verifySchnorr(signatureTag("signature"), rootHash(OfferTypes.removeSignature(records), invoiceTlvCodec), signature, OfferTypes.xOnlyPublicKey(nodeId))
   }
-
-  def withNodeId(nodeId: PublicKey): Bolt12Invoice = Bolt12Invoice(records, Some(nodeId))
 }
 
 object Bolt12Invoice {
@@ -145,27 +146,38 @@ object Bolt12Invoice {
    * @param preimage the preimage to use for the payment
    * @param nodeKey  the key that was used to generate the offer, may be different from our public nodeId if we're hiding behind a blinded route
    * @param features invoice features
+   * @param path     the blinded path to use to request an invoice
    */
-  def apply(offer: Offer, request: InvoiceRequest, preimage: ByteVector32, nodeKey: PrivateKey, features: Features[InvoiceFeature]): Bolt12Invoice = {
+  def apply(offer: Offer,
+            request: InvoiceRequest,
+            preimage: ByteVector32,
+            nodeKey: PrivateKey,
+            minFinalCltvExpiryDelta: CltvExpiryDelta,
+            features: Features[InvoiceFeature],
+            path: Sphinx.RouteBlinding.BlindedRoute): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
+    val amount = request.amount.orElse(offer.amount.map(_ * request.quantity)).get
     val tlvs: Seq[InvoiceTlv] = Seq(
       Some(Chain(request.chain)),
-      Some(CreatedAt(TimestampSecond.now())),
-      Some(PaymentHash(Crypto.sha256(preimage))),
       Some(OfferId(offer.offerId)),
-      Some(NodeId(nodeKey.publicKey)),
-      Some(Amount(request.amount.orElse(offer.amount.map(_ * request.quantity)).get)),
+      Some(Amount(amount)),
       Some(Description(offer.description)),
+      if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
+      Some(Paths(Seq(path))),
+      Some(PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty)))),
+      offer.issuer.map(Issuer),
+      Some(NodeId(nodeKey.publicKey)),
       request.quantity_opt.map(Quantity),
       Some(PayerKey(request.payerKey)),
-      request.payerInfo.map(PayerInfo),
       request.payerNote.map(PayerNote),
+      Some(CreatedAt(TimestampSecond.now())),
+      Some(PaymentHash(Crypto.sha256(preimage))),
+      Some(Cltv(minFinalCltvExpiryDelta)),
+      request.payerInfo.map(PayerInfo),
       request.replaceInvoice.map(ReplaceInvoice),
-      offer.issuer.map(Issuer),
-      Some(FeaturesTlv(features.unscoped()))
     ).flatten
     val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
-    Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), Some(nodeKey.publicKey))
+    Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)))
   }
 
   def signatureTag(fieldName: String): String = "lightning" + "invoice" + fieldName
