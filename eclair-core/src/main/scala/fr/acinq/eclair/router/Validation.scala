@@ -206,7 +206,9 @@ object Validation {
         log.debug("received node announcement from {}", ctx.sender())
         None
     }
-    val rebroadcastNode = if (n.shouldRebroadcast) Some(n -> origins) else {
+    val rebroadcastNode = if (n.shouldRebroadcast) {
+      Some(n -> origins)
+    } else {
       log.debug("will not rebroadcast {}", n)
       None
     }

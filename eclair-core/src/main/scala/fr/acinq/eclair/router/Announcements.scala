@@ -94,11 +94,13 @@ object Announcements {
   case class AddressException(message: String) extends IllegalArgumentException(message)
 
   def validateAddresses(addresses: List[NodeAddress]): Option[AddressException] = {
-    if (addresses.count(_.isInstanceOf[DnsHostname]) > 1)
+    if (addresses.count(_.isInstanceOf[DnsHostname]) > 1) {
       Some(AddressException(s"Invalid server.public-ip addresses: can not have more than one DNS host name."))
-    else addresses.collectFirst {
-      case address if address.isInstanceOf[Tor2] => AddressException(s"invalid server.public-ip address `$address`: Tor v2 is deprecated.")
-      case address if address.port == 0 && !address.isInstanceOf[Tor3] => AddressException(s"invalid server.public-ip address `$address`: A non-Tor address can not use port 0.")
+    } else {
+      addresses.collectFirst {
+        case address if address.isInstanceOf[Tor2] => AddressException(s"invalid server.public-ip address `$address`: Tor v2 is deprecated.")
+        case address if address.port == 0 && !address.isInstanceOf[Tor3] => AddressException(s"invalid server.public-ip address `$address`: A non-Tor address can not use port 0.")
+      }
     }
   }
 
