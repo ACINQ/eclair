@@ -221,6 +221,18 @@
                 "value": "Peers Connection Initializing"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Peers Connection Initialized"
+              }
+            ]
           }
         ]
       },
@@ -258,9 +270,21 @@
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "builder",
+          "expr": "peerconnections_connecting_total{state=\"initialized\"}",
+          "hide": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "Peers Initializing",
+      "title": "Peers Initializing/Initialized",
       "type": "timeseries"
     },
     {
