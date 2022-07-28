@@ -1154,9 +1154,9 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 35
+        "w": 12,
+        "x": 12,
+        "y": 37
       },
       "id": 28,
       "options": {
@@ -1182,13 +1182,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "rate(channels_local_feerate_per_kw[1m])",
+          "expr": "channels_local_feerate_per_kw",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Channels local feerate per kq",
+      "title": "Local feerate (sat/kw)",
       "type": "timeseries"
     },
     {
