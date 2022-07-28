@@ -913,7 +913,35 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "thresholds": {
@@ -982,23 +1010,27 @@
         ]
       },
       "gridPos": {
-        "h": 7,
-        "w": 16,
+        "h": 10,
+        "w": 12,
         "x": 0,
-        "y": 35
+        "y": 37
       },
       "id": 4,
       "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "firstNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
+         "legend": {
+           "calcs" : [
+             "max",
+             "min",
+             "firstNotNull",
+             "lastNotNull"
+           ],
+           "displayMode" : "table",
+           "placement" : "bottom"
+         },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "pluginVersion": "9.0.1",
       "targets": [
@@ -1051,7 +1083,7 @@
         }
       ],
       "title": "Channels",
-      "type": "gauge"
+      "type": "timeseries"
     },
     {
       "datasource": {
