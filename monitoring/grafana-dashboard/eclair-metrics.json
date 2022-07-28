@@ -815,7 +815,7 @@
             },
             "lineInterpolation": "linear",
             "lineWidth": 1,
-            "pointSize": 5,
+            "pointSize": 3,
             "scaleDistribution": {
               "type": "linear"
             },
@@ -852,7 +852,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "bitcoin watcher newblock checkconfirmed"
+                "value": "max(bitcoin_mempool_min_feerate_per_kw)"
               }
             ]
           }
@@ -861,17 +861,14 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 26
       },
-      "id": 18,
+      "id": 16,
       "options": {
         "legend": {
-          "calcs": [
-            "max",
-            "min"
-          ],
-          "displayMode": "table",
+          "calcs": [],
+          "displayMode": "list",
           "placement": "bottom"
         },
         "tooltip": {
@@ -886,13 +883,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "rate(bitcoin_watcher_newblock_checkconfirmed_seconds_sum[1m])",
+          "expr": "max(bitcoin_mempool_min_feerate_per_kw)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "bitcoin newblock checkconfirmend",
+      "title": "Bitcoin mempool min feerate per kw",
       "type": "timeseries"
     },
     {
