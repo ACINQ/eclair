@@ -104,7 +104,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // pre-computed route going from A to D
-    val route = Route(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil)
+    val route = Route(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil, None)
     val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata))
     sender.send(paymentFSM, request)
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
@@ -840,7 +840,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // pre-computed route going from A to D
-    val route = Route(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil)
+    val route = Route(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil, None)
     val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata))
     sender.send(paymentFSM, request)
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route

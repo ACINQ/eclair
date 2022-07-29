@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 
+case class BlindedPaymentRoute(route: RouteBlinding.BlindedRoute, paymentInfo: PaymentInfo, capacity_opt: Option[MilliSatoshi])
+
 /**
  * Lightning Bolt 12 invoice
  * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
@@ -43,6 +45,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   require(records.get[NodeId].nonEmpty, "bolt 12 invoices must provide a node id")
   require(records.get[Paths].exists(_.paths.nonEmpty), "bolt 12 invoices must provide a blinded path")
   require(records.get[PaymentPathsInfo].exists(_.paymentInfo.length == records.get[Paths].get.paths.length), "bolt 12 invoices must provide a blinded_payinfo for each path")
+  require(records.get[PaymentPathsCapacities].forall(_.capacities.length == records.get[Paths].get.paths.length), "bolt 12 invoices that provide capacities must hve on capacity per path")
   require(records.get[PaymentHash].nonEmpty, "bolt 12 invoices must provide a payment hash")
   require(records.get[Description].nonEmpty, "bolt 12 invoices must provide a description")
   require(records.get[CreatedAt].nonEmpty, "bolt 12 invoices must provide a creation timestamp")
@@ -81,7 +84,17 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
 
-  val blindedPaths: Seq[RouteBlinding.BlindedRoute] = records.get[Paths].get.paths
+  val blindedPaymentRoutes: Seq[BlindedPaymentRoute] = {
+    val routesAndInfos = records.get[Paths].get.paths.zip(records.get[PaymentPathsInfo].get.paymentInfo)
+    records.get[PaymentPathsCapacities] match {
+      case Some(PaymentPathsCapacities(capacities)) => routesAndInfos.zip(capacities).map {
+        case ((route, payInfo), capacity) => BlindedPaymentRoute(route, payInfo, Some(capacity))
+      }
+      case None => routesAndInfos.map {
+        case (route, payInfo) => BlindedPaymentRoute(route, payInfo, None)
+      }
+    }
+  }
 
   val issuer: Option[String] = records.get[Issuer].map(_.issuer)
 

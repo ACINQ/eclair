@@ -35,6 +35,7 @@ import fr.acinq.eclair.router.Router.{ChannelRelayParams, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
@@ -295,12 +296,12 @@ object ColorSerializer extends MinimalSerializer({
 
 // @formatter:off
 private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams)
-private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHopJson])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))))
+private case class RouteFullJson(amount: MilliSatoshi, clearHops: Seq[ChannelHopJson], blindedEnd: Option[BlindedPaymentRoute])
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.clearHops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params)), route.blinded_opt))
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
-  val nodeIds = route.hops match {
+  val nodeIds = route.clearHops match {
     case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
     case Nil => Nil
   }
@@ -308,7 +309,7 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
 })
 
 private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
-object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.shortChannelId)))
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.clearHops.map(_.shortChannelId)))
 // @formatter:on
 
 // @formatter:off

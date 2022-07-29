@@ -277,8 +277,7 @@ class NodeRelay private(nodeParams: NodeParams,
           payFSM
         } else {
           context.log.debug("sending the payment to non-trampoline recipient without MPP")
-          val finalPayload = PaymentOnion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, payloadOut.paymentMetadata)
-          val payment = SendPaymentToNode(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, extraEdges, routeParams)
+          val payment = SendPaymentToNode(payFsmAdapters, payloadOut.outgoingNodeId, paymentSecret, payloadOut.amountToForward, payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentMetadata, nodeParams.maxPaymentAttempts, extraEdges, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
           payFSM ! payment
           payFSM

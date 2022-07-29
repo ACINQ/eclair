@@ -61,9 +61,8 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.invoice.paymentMetadata, r.invoice.extraEdges, r.routeParams, userCustomTlvs = r.userCustomTlvs)
           context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
         case Some(paymentSecret) =>
-          val finalPayload = PaymentOnion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.invoice.paymentMetadata, r.userCustomTlvs)
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, finalPayload, r.maxAttempts, r.invoice.extraEdges, r.routeParams)
+          fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, paymentSecret, r.recipientAmount, r.recipientAmount, finalExpiry, r.invoice.paymentMetadata, r.maxAttempts, r.invoice.extraEdges, r.routeParams, userCustomTlvs = r.userCustomTlvs)
           context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
       }
 
@@ -72,9 +71,8 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       sender() ! paymentId
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics, Nil)
       val finalExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1)
-      val finalPayload = PaymentOnion.FinalTlvPayload(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(r.recipientAmount), OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry), OnionPaymentPayloadTlv.PaymentData(randomBytes32(), r.recipientAmount), OnionPaymentPayloadTlv.KeySend(r.paymentPreimage)), r.userCustomTlvs))
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-      fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, finalPayload, r.maxAttempts, routeParams = r.routeParams)
+      fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId,randomBytes32(), r.recipientAmount,r.recipientAmount,finalExpiry,None, r.maxAttempts, routeParams = r.routeParams, additionalTlvs = Seq(OnionPaymentPayloadTlv.KeySend(r.paymentPreimage)))
       context become main(pending + (paymentId -> PendingSpontaneousPayment(sender(), r)))
 
     case r: SendTrampolinePayment =>
@@ -113,7 +111,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
               val trampolineSecret = r.trampolineSecret.getOrElse(randomBytes32())
               sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
               val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-              payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, r.invoice.paymentMetadata, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion))), r.invoice.extraEdges)
+              payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, r.invoice.paymentMetadata, r.invoice.extraEdges, additionalTlvs = Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
               context become main(pending + (paymentId -> PendingPaymentToRoute(sender(), r)))
             case Failure(t) =>
               log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
@@ -122,7 +120,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         case Nil =>
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, r.invoice.paymentSecret.get, r.invoice.paymentMetadata), r.invoice.extraEdges)
+          payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route),r.amount, r.recipientAmount, finalExpiry, r.invoice.paymentSecret.get, r.invoice.paymentMetadata, r.invoice.extraEdges)
           context become main(pending + (paymentId -> PendingPaymentToRoute(sender(), r)))
         case _ =>
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineMultiNodeNotSupported) :: Nil)
@@ -195,17 +193,12 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       NodeHop(nodeParams.nodeId, trampolineNodeId, nodeParams.channelConf.expiryDelta, 0 msat),
       NodeHop(trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
     )
-    val finalPayload = if (r.invoice.features.hasFeature(Features.BasicMultiPartPayment)) {
-      PaymentOnion.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.invoice.paymentSecret.get, r.invoice.paymentMetadata)
-    } else {
-      PaymentOnion.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.invoice.paymentSecret.get, r.invoice.paymentMetadata)
-    }
     // We assume that the trampoline node supports multi-part payments (it should).
     val trampolinePacket_opt = if (r.invoice.features.hasFeature(Features.TrampolinePaymentPrototype)) {
-      OutgoingPaymentPacket.buildTrampolinePacket(r.paymentHash, trampolineRoute, finalPayload)
+      OutgoingPaymentPacket.buildTrampolinePacket(r.paymentHash, trampolineRoute, r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.invoice.paymentSecret.get, r.invoice.paymentMetadata, Nil, Nil)
     } else {
       r.invoice match {
-        case invoice: Bolt11Invoice => OutgoingPaymentPacket.buildTrampolineToLegacyPacket(invoice, trampolineRoute, finalPayload)
+        case invoice: Bolt11Invoice => OutgoingPaymentPacket.buildTrampolineToLegacyPacket(invoice, trampolineRoute, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight))
         case _ => Failure(new Exception("Trampoline to legacy is only supported for Bolt11 invoices."))
       }
     }
@@ -422,7 +415,7 @@ object PaymentInitiator {
                                publishEvent: Boolean,
                                recordPathFindingMetrics: Boolean,
                                additionalHops: Seq[NodeHop]) {
-    def fullRoute(route: Route): Seq[Hop] = route.hops ++ additionalHops
+    def fullRoute(route: Route): Seq[Hop] = route.clearHops ++ additionalHops
 
     def createPaymentSent(preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) = PaymentSent(parentId, paymentHash, preimage, recipientAmount, recipientNodeId, parts)
 

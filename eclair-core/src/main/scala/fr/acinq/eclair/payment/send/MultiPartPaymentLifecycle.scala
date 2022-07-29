@@ -404,8 +404,7 @@ object MultiPartPaymentLifecycle {
       Some(cfg.paymentContext))
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
-    val finalPayload = PaymentOnion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.paymentMetadata, request.additionalTlvs, request.userCustomTlvs)
-    SendPaymentToRoute(replyTo, Right(route), finalPayload)
+    SendPaymentToRoute(replyTo, Right(route), route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.paymentMetadata)
   }
 
   /** When we receive an error from the final recipient or payment gets settled on chain, we should fail the whole payment, it's useless to retry. */

@@ -1073,7 +1073,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val amount = 50000 msat
     // These pending HTLCs will have already been taken into account in the edge's `balance_opt` field: findMultiPartRoute
     // should ignore this information.
-    val pendingHtlcs = Seq(Route(10000 msat, graphEdgeToHop(edge_ab_1) :: Nil), Route(5000 msat, graphEdgeToHop(edge_ab_2) :: Nil))
+    val pendingHtlcs = Seq(Route(10000 msat, graphEdgeToHop(edge_ab_1) :: Nil, None), Route(5000 msat, graphEdgeToHop(edge_ab_2) :: Nil, None))
     val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, pendingHtlcs = pendingHtlcs, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(routes.forall(_.length == 1), routes)
     checkRouteAmounts(routes, amount, 0 msat)
@@ -1545,7 +1545,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6L, d, e, 50 msat, 0, minHtlc = 100 msat, capacity = 25 sat),
     ))
 
-    val pendingHtlcs = Seq(Route(5000 msat, graphEdgeToHop(edge_ab) :: graphEdgeToHop(edge_be) :: Nil))
+    val pendingHtlcs = Seq(Route(5000 msat, graphEdgeToHop(edge_ab) :: graphEdgeToHop(edge_be) :: Nil, None))
     val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, pendingHtlcs = pendingHtlcs, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(routes.forall(_.length == 2), routes)
     checkRouteAmounts(routes, amount, maxFee)

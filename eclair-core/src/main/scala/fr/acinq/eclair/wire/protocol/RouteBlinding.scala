@@ -99,6 +99,7 @@ object BlindedRouteData {
   case class PaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends PaymentData {
     private val paymentRelay: PaymentRelay = records.get[PaymentRelay].get
     val outgoingChannelId: ShortChannelId = records.get[OutgoingChannelId].get.shortChannelId
+    val cltvExpiryDelta: CltvExpiryDelta = paymentRelay.cltvExpiryDelta
 
     def amountToForward(amountReceived: MilliSatoshi): MilliSatoshi =
       ((amountReceived - paymentRelay.feeBase).toLong * 1_000_000 + 1_000_000 + paymentRelay.feeProportionalMillionths - 1).msat / (1_000_000 + paymentRelay.feeProportionalMillionths)

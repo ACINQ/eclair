@@ -263,6 +263,11 @@ object PaymentOnion {
     val encryptedRecipientData: ByteVector = records.get[EncryptedRecipientData].get.data
   }
 
+  object BlindedChannelRelayPayload {
+    def apply(encryptedRecipientData: ByteVector, blinding_opt: Option[PublicKey]): BlindedChannelRelayPayload =
+      BlindedChannelRelayPayload(TlvStream(Seq(blinding_opt.map(BlindingPoint), Some(EncryptedRecipientData(encryptedRecipientData))).flatten))
+  }
+
   case class BlindedChannelRelayData(relayData: BlindedRouteData.PaymentRelayData, incomingAmount: MilliSatoshi, incomingCltv: CltvExpiry) extends ChannelRelayData {
     override val amountToForward: MilliSatoshi = relayData.amountToForward(incomingAmount)
     override val outgoingCltv: CltvExpiry = relayData.outgoingCltv(incomingCltv)
@@ -299,6 +304,7 @@ object PaymentOnion {
   case class BlindedFinalPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload {
     override val amount: MilliSatoshi = records.get[AmountToForward].get.amount
     override val expiry: CltvExpiry = records.get[OutgoingCltv].get.cltv
+    val blinding_opt: Option[PublicKey] = records.get[BlindingPoint].map(_.publicKey)
     val encryptedRecipientData: ByteVector = records.get[EncryptedRecipientData].get.data
   }
 
@@ -344,6 +350,16 @@ object PaymentOnion {
   /** Create a trampoline outer payload. */
   def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalTlvPayload = {
     FinalTlvPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount), TrampolineOnion(trampolinePacket)))
+  }
+
+  def createBlindedFinalPayload(amount: MilliSatoshi, expiry: CltvExpiry, encryptedRecipientData: ByteVector, blinding_opt: Option[PublicKey], additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): BlindedFinalPayload ={
+    val tlvs = Seq(
+      blinding_opt.map(BlindingPoint),
+      Some(AmountToForward(amount)),
+      Some(OutgoingCltv(expiry)),
+      Some(EncryptedRecipientData(encryptedRecipientData)),
+    ).flatten
+    BlindedFinalPayload(TlvStream(tlvs ++ additionalTlvs, userCustomTlvs))
   }
 }
 

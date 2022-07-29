@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractShared
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -220,15 +220,41 @@ object OutgoingPaymentPacket {
   /**
    * Build the onion payloads for each hop.
    *
-   * @param hops         the hops as computed by the router + extra routes from the invoice
-   * @param finalPayload payload data for the final node (amount, expiry, etc)
+   * @param clearHops      the hops as computed by the router + extra routes from the invoice
+   * @param blindedEnd_opt blinded part of the route
    * @return a (firstAmount, firstExpiry, payloads) tuple where:
    *         - firstAmount is the amount for the first htlc in the route
    *         - firstExpiry is the cltv expiry for the first htlc in the route
    *         - a sequence of payloads that will be used to build the onion
    */
-  def buildPayloads(hops: Seq[Hop], finalPayload: PaymentOnion.FinalTlvPayload): (MilliSatoshi, CltvExpiry, Seq[PaymentOnion.PerHopPayload]) = {
-    hops.reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PaymentOnion.PerHopPayload](finalPayload))) {
+  def buildPayloads(clearHops: Seq[Hop],
+                    blindedEnd_opt: Option[BlindedPaymentRoute],
+                    amount: MilliSatoshi,
+                    totalAmount: MilliSatoshi,
+                    expiry: CltvExpiry,
+                    paymentSecret: ByteVector32,
+                    paymentMetadata: Option[ByteVector],
+                    additionalTlvs: Seq[OnionPaymentPayloadTlv],
+                    userCustomTlvs: Seq[GenericTlv],
+                    skipIntroduction: Boolean): (MilliSatoshi, CltvExpiry, Seq[PaymentOnion.PerHopPayload]) = {
+    val (endAmount, endExpiry, endPayloads): (MilliSatoshi, CltvExpiry, Seq[PaymentOnion.PerHopPayload]) = blindedEnd_opt match {
+      case Some(blinded) =>
+        val blindedPayloads = if (blinded.route.encryptedPayloads.length > 1) {
+          val middlePayloads = blinded.route.encryptedPayloads.drop(1).dropRight(1).map(PaymentOnion.BlindedChannelRelayPayload(_, None))
+          val finalPayload = PaymentOnion.createBlindedFinalPayload(amount, expiry, blinded.route.encryptedPayloads.last, None, additionalTlvs, userCustomTlvs)
+          if (skipIntroduction) {
+            middlePayloads :+ finalPayload
+          } else {
+            val introductionPayload = PaymentOnion.BlindedChannelRelayPayload(blinded.route.encryptedPayloads.head, Some(blinded.route.blindingKey))
+            introductionPayload +: middlePayloads :+ finalPayload
+          }
+        } else {
+          Seq(PaymentOnion.createBlindedFinalPayload(amount, expiry, blinded.route.encryptedPayloads.last, Some(blinded.route.blindingKey), additionalTlvs, userCustomTlvs))
+        }
+        (amount + blinded.paymentInfo.fee(amount), expiry + blinded.paymentInfo.cltvExpiryDelta, blindedPayloads)
+      case None => (amount, expiry, Seq(PaymentOnion.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, paymentMetadata, additionalTlvs, userCustomTlvs)))
+    }
+    clearHops.reverse.foldLeft((endAmount, endExpiry, endPayloads)) {
       case ((amount, expiry, payloads), hop) =>
         val payload = hop match {
           case hop: ChannelHop => PaymentOnion.ChannelRelayTlvPayload(hop.shortChannelId, amount, expiry)
@@ -241,25 +267,56 @@ object OutgoingPaymentPacket {
   /**
    * Build an encrypted onion packet with the given final payload.
    *
-   * @param hops         the hops as computed by the router + extra routes from the invoice, including ourselves in the first hop
-   * @param finalPayload payload data for the final node (amount, expiry, etc)
+   * @param clearHops    the hops as computed by the router + extra routes from the invoice, including ourselves in the first hop
+   * @param blindedEnd_opt blinded part of the route
    * @return a (firstAmount, firstExpiry, onion) tuple where:
    *         - firstAmount is the amount for the first htlc in the route
    *         - firstExpiry is the cltv expiry for the first htlc in the route
    *         - the onion to include in the HTLC
    */
-  private def buildPacket(packetPayloadLength: Int, paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalTlvPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
-    val (firstAmount, firstExpiry, payloads) = buildPayloads(hops.drop(1), finalPayload)
-    val nodes = hops.map(_.nextNodeId)
+  private def buildPacket(packetPayloadLength: Int,
+                          paymentHash: ByteVector32,
+                          clearHops: Seq[Hop],
+                          blindedEnd_opt: Option[BlindedPaymentRoute],
+                          amount: MilliSatoshi,
+                          totalAmount: MilliSatoshi,
+                          expiry: CltvExpiry,
+                          paymentSecret: ByteVector32,
+                          paymentMetadata: Option[ByteVector],
+                          additionalTlvs: Seq[OnionPaymentPayloadTlv],
+                          userCustomTlvs: Seq[GenericTlv]): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
+    val (firstAmount, firstExpiry, payloads) = buildPayloads(clearHops.drop(1), blindedEnd_opt, amount, totalAmount, expiry, paymentSecret, paymentMetadata, additionalTlvs, userCustomTlvs, clearHops.isEmpty)
+    val clearNodes = clearHops.map(_.nextNodeId)
+    val nodes = blindedEnd_opt match {
+      case Some(blinded) => clearNodes ++ blinded.route.blindedNodeIds.drop(1)
+      case None => clearNodes
+    }
     // BOLT 2 requires that associatedData == paymentHash
     buildOnion(packetPayloadLength, nodes, payloads, paymentHash).map(onion => (firstAmount, firstExpiry, onion))
   }
 
-  def buildPaymentPacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalTlvPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
-    buildPacket(PaymentOnionCodecs.paymentOnionPayloadLength, paymentHash, hops, finalPayload)
+  def buildPaymentPacket(paymentHash: ByteVector32,
+                         clearHops: Seq[Hop],
+                         blindedEnd_opt: Option[BlindedPaymentRoute],
+                         amount: MilliSatoshi,
+                         totalAmount: MilliSatoshi,
+                         expiry: CltvExpiry,
+                         paymentSecret: ByteVector32,
+                         paymentMetadata: Option[ByteVector],
+                         additionalTlvs: Seq[OnionPaymentPayloadTlv],
+                         userCustomTlvs: Seq[GenericTlv]): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
+    buildPacket(PaymentOnionCodecs.paymentOnionPayloadLength, paymentHash, clearHops, blindedEnd_opt, amount, totalAmount, expiry, paymentSecret, paymentMetadata, additionalTlvs, userCustomTlvs)
 
-  def buildTrampolinePacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalTlvPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
-    buildPacket(PaymentOnionCodecs.trampolineOnionPayloadLength, paymentHash, hops, finalPayload)
+  def buildTrampolinePacket(paymentHash: ByteVector32,
+                            hops: Seq[Hop],
+                            amount: MilliSatoshi,
+                            totalAmount: MilliSatoshi,
+                            expiry: CltvExpiry,
+                            paymentSecret: ByteVector32,
+                            paymentMetadata: Option[ByteVector],
+                            additionalTlvs: Seq[OnionPaymentPayloadTlv],
+                            userCustomTlvs: Seq[GenericTlv]): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
+    buildPacket(PaymentOnionCodecs.trampolineOnionPayloadLength, paymentHash, hops, None, amount, totalAmount, expiry, paymentSecret, paymentMetadata, additionalTlvs, userCustomTlvs)
 
   /**
    * Build an encrypted trampoline onion packet when the final recipient doesn't support trampoline.
@@ -267,21 +324,20 @@ object OutgoingPaymentPacket {
    *
    * @param invoice      Bolt 11 invoice (features and routing hints will be provided to the next-to-last node).
    * @param hops         the trampoline hops (including ourselves in the first hop, and the non-trampoline final recipient in the last hop).
-   * @param finalPayload payload data for the final node (amount, expiry, etc)
    * @return a (firstAmount, firstExpiry, onion) tuple where:
    *         - firstAmount is the amount for the trampoline node in the route
    *         - firstExpiry is the cltv expiry for the first trampoline node in the route
    *         - the trampoline onion to include in final payload of a normal onion
    */
-  def buildTrampolineToLegacyPacket(invoice: Bolt11Invoice, hops: Seq[NodeHop], finalPayload: PaymentOnion.FinalTlvPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
+  def buildTrampolineToLegacyPacket(invoice: Bolt11Invoice, hops: Seq[NodeHop], amount: MilliSatoshi, expiry: CltvExpiry): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
     // NB: the final payload will never reach the recipient, since the next-to-last node in the trampoline route will convert that to a non-trampoline payment.
     // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
-    val dummyFinalPayload = PaymentOnion.createSinglePartPayload(finalPayload.amount, finalPayload.expiry, finalPayload.paymentSecret, None)
-    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PaymentOnion.PerHopPayload](dummyFinalPayload))) {
+    val dummyFinalPayload = PaymentOnion.createSinglePartPayload(amount, expiry, invoice.paymentSecret.get, None)
+    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((amount, expiry, Seq[PaymentOnion.PerHopPayload](dummyFinalPayload))) {
       case ((amount, expiry, payloads), hop) =>
         // The next-to-last node in the trampoline route must receive invoice data to indicate the conversion to a non-trampoline payment.
         val payload = if (payloads.length == 1) {
-          PaymentOnion.createNodeRelayToNonTrampolinePayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
+          PaymentOnion.createNodeRelayToNonTrampolinePayload(amount, amount, expiry, hop.nextNodeId, invoice)
         } else {
           PaymentOnion.createNodeRelayPayload(amount, expiry, hop.nextNodeId)
         }
@@ -307,10 +363,40 @@ object OutgoingPaymentPacket {
    *
    * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
    */
-  def buildCommand(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: PaymentOnion.FinalTlvPayload): Try[(CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)])] = {
-    buildPaymentPacket(paymentHash, hops, finalPayload).map {
+  def buildCommand(privateKey: PrivateKey,
+                   replyTo: ActorRef,
+                   upstream: Upstream,
+                   paymentHash: ByteVector32,
+                   clearHops: Seq[ChannelHop],
+                   blindedEnd_opt: Option[BlindedPaymentRoute],
+                   amount: MilliSatoshi,
+                   totalAmount: MilliSatoshi,
+                   expiry: CltvExpiry,
+                   paymentSecret: ByteVector32,
+                   paymentMetadata: Option[ByteVector],
+                   additionalTlvs: Seq[OnionPaymentPayloadTlv],
+                   userCustomTlvs: Seq[GenericTlv]): Try[(CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)], ShortChannelId)] = {
+    val (shortChannelId, nextBlindingKey_opt, blindedRoute_opt) = if (clearHops.nonEmpty) {
+      (clearHops.head.shortChannelId, None, blindedEnd_opt)
+    } else {
+      blindedEnd_opt match {
+        case Some(paymentRoute) if paymentRoute.route.introductionNodeId == privateKey.publicKey =>
+          // TODO: check if we are the recipient
+          RouteBlindingEncryptedDataCodecs.decode(privateKey, paymentRoute.route.blindingKey, paymentRoute.route.encryptedPayloads.head, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec) match {
+            case Failure(e) => return Failure(e)
+            case Success((payload, nextBlindingKey)) =>
+              // We assume that fees were checked in the router.
+              val amountWithFees = amount + paymentRoute.paymentInfo.fee(amount)
+              val remainingFee = amountWithFees - payload.amountToForward(amountWithFees)
+              val tailPaymentInfo = paymentRoute.paymentInfo.copy(feeBase = remainingFee, feeProportionalMillionths = 0, cltvExpiryDelta = paymentRoute.paymentInfo.cltvExpiryDelta - payload.cltvExpiryDelta)
+              (payload.outgoingChannelId, Some(nextBlindingKey), Some(paymentRoute.copy(paymentInfo = tailPaymentInfo)))
+          }
+        case _ => return Failure(???) // TODO
+      }
+    }
+    buildPaymentPacket(paymentHash, clearHops, blindedRoute_opt, amount, totalAmount, expiry, paymentSecret, paymentMetadata, additionalTlvs, userCustomTlvs).map {
       case (firstAmount, firstExpiry, onion) =>
-        CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, None, Origin.Hot(replyTo, upstream), commit = true) -> onion.sharedSecrets
+        (CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, nextBlindingKey_opt, Origin.Hot(replyTo, upstream), commit = true), onion.sharedSecrets, shortChannelId)
     }
   }
 
