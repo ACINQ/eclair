@@ -17,23 +17,54 @@
 package fr.acinq.eclair.plugins.offlinecommands
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
+import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
-import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.channel.{CMD_CLOSE, Register}
-import fr.acinq.eclair.plugins.offlinecommands.OfflineChannelsCloser.{CloseChannels, CloseCommandsRegistered, Response, WaitingForPeer}
-import fr.acinq.eclair.{TestConstants, randomBytes32}
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.plugins.offlinecommands.OfflineChannelsCloser._
+import fr.acinq.eclair.{TestConstants, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
+import scodec.bits.HexStringSyntax
 
-class OfflineChannelsCloserSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
+import scala.concurrent.duration.DurationInt
 
-  test("receive command to close channels") {
-    val probe = TestProbe[Response]()
-    val register = TestProbe[Register.Forward[CMD_CLOSE]]()
-    val channelsCloser = testKit.spawn(OfflineChannelsCloser(TestConstants.Alice.nodeParams, register.ref.toClassic))
+class OfflineChannelsCloserSpec extends ScalaTestWithActorTestKit with AnyFunSuiteLike {
+
+  test("close channels when online") {
     val channel1 = randomBytes32()
     val channel2 = randomBytes32()
-    channelsCloser ! CloseChannels(probe.ref, Seq(channel1, channel2), None, None)
-    probe.expectMessage(CloseCommandsRegistered(Map(channel1 -> WaitingForPeer, channel2 -> WaitingForPeer)))
+    val senderProbe = TestProbe[CloseCommandsRegistered]()
+    val statusProbe = TestProbe[PendingCommands]()
+    val register = TestProbe[Register.Forward[CMD_CLOSE]]()
+    val channelsCloser = testKit.spawn(OfflineChannelsCloser(TestConstants.Alice.nodeParams, register.ref.toClassic))
+
+    channelsCloser ! CloseChannels(senderProbe.ref, Seq(channel1, channel2), Some(hex"001436f83c329274e04b104000fbb27fcfe20a47cdaf"), None)
+    val commands = Seq(
+      register.expectMessageType[Register.Forward[CMD_CLOSE]],
+      register.expectMessageType[Register.Forward[CMD_CLOSE]]
+    )
+    assert(commands.map(_.channelId).toSet == Set(channel1, channel2))
+    commands.foreach(c => assert(c.message.scriptPubKey.contains(hex"001436f83c329274e04b104000fbb27fcfe20a47cdaf")))
+    senderProbe.expectMessage(CloseCommandsRegistered(Map(channel1 -> WaitingForPeer, channel2 -> WaitingForPeer)))
+
+    // The first channel was online and successfully closes.
+    testKit.system.eventStream ! EventStream.Publish(ChannelStateChanged(null, channel1, null, randomKey().publicKey, CLOSING, CLOSED, None))
+    statusProbe.awaitAssert {
+      channelsCloser ! GetPendingCommands(statusProbe.ref)
+      assert(statusProbe.expectMessageType[PendingCommands].channels.keySet == Set(channel2))
+    }
+
+    // The second channel was offline and comes back online.
+    testKit.system.eventStream ! EventStream.Publish(ChannelStateChanged(null, channel2, null, randomKey().publicKey, SYNCING, NORMAL, None))
+    assert(register.expectMessageType[Register.Forward[CMD_CLOSE]].channelId == channel2)
+    register.expectNoMessage(100 millis)
+    channelsCloser ! GetPendingCommands(statusProbe.ref)
+    assert(statusProbe.expectMessageType[PendingCommands].channels.keySet == Set(channel2))
+
+    testKit.system.eventStream ! EventStream.Publish(ChannelStateChanged(null, channel2, null, randomKey().publicKey, CLOSING, CLOSED, None))
+    statusProbe.awaitAssert {
+      channelsCloser ! GetPendingCommands(statusProbe.ref)
+      assert(statusProbe.expectMessageType[PendingCommands].channels.isEmpty)
+    }
   }
 
 }
