@@ -24,6 +24,7 @@ This plugin adds a new API to `eclair` called `offlineclose`, with the following
 
 ```sh
 eclair-cli offlineclose --channelIds=<comma-separated list of channels to close>
+    --forceCloseAfterHours=<force close after this delay if peer is unresponsive>
     --scriptPubKey=<optional closing script>
     --preferredFeerateSatByte=<closing tx feerate>
     --minFeerateSatByte=<closing tx min feerate>

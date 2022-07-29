@@ -28,6 +28,7 @@ import fr.acinq.eclair.channel.ClosingFeerates
 import fr.acinq.eclair.plugins.offlinecommands.OfflineChannelsCloser.CloseChannels
 import scodec.bits.ByteVector
 
+import java.util.concurrent.TimeUnit
 import scala.concurrent.duration._
 
 object ApiHandlers {
@@ -39,8 +40,9 @@ object ApiHandlers {
     import eclairDirectives._
 
     val close: Route = postRequest("offlineclose") { implicit t =>
-      formFields(channelIdsFormParam, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
-        (channelIds, scriptPubKey_opt, preferredFeerate_opt, minFeerate_opt, maxFeerate_opt) =>
+      formFields(channelIdsFormParam, "forceCloseAfterHours".as[Long] ?, "scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
+        (channelIds, forceCloseAfterHours_opt, scriptPubKey_opt, preferredFeerate_opt, minFeerate_opt, maxFeerate_opt) =>
+          val forceCloseAfter_opt = forceCloseAfterHours_opt.map(FiniteDuration(_, TimeUnit.HOURS))
           val closingFeerates_opt = preferredFeerate_opt.map(preferredPerByte => {
             val preferredFeerate = FeeratePerKw(preferredPerByte)
             val minFeerate = minFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate / 2)
@@ -48,7 +50,7 @@ object ApiHandlers {
             ClosingFeerates(preferredFeerate, minFeerate, maxFeerate)
           })
           if (scriptPubKey_opt.forall(Script.isNativeWitnessScript)) {
-            val res = kit.closer.ask(ref => CloseChannels(ref, channelIds, scriptPubKey_opt, closingFeerates_opt))(Timeout(30 seconds), kit.system.scheduler.toTyped)
+            val res = kit.closer.ask(ref => CloseChannels(ref, channelIds, forceCloseAfter_opt, scriptPubKey_opt, closingFeerates_opt))(Timeout(30 seconds), kit.system.scheduler.toTyped)
             complete(res)
           } else {
             reject(MalformedFormFieldRejection("scriptPubKey", "Non-segwit scripts are not allowed"))

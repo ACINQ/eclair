@@ -22,16 +22,19 @@ import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.{NodeParams, TimestampSecond}
 import scodec.bits.ByteVector
+
+import scala.concurrent.duration.FiniteDuration
 
 object OfflineChannelsCloser {
 
   // @formatter:off
   sealed trait Command
-  case class CloseChannels(replyTo: typed.ActorRef[CloseCommandsRegistered], channelIds: Seq[ByteVector32], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates]) extends Command
+  case class CloseChannels(replyTo: typed.ActorRef[CloseCommandsRegistered], channelIds: Seq[ByteVector32], forceCloseAfter_opt: Option[FiniteDuration], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates]) extends Command
   case class GetPendingCommands(replyTo: typed.ActorRef[PendingCommands]) extends Command
+  private case class ForceCloseChannel(channelId: ByteVector32) extends Command
   private case class WrappedChannelStateChanged(channelId: ByteVector32, state: ChannelState) extends Command
   private case class WrappedCommandResponse(channelId: ByteVector32, response: CommandResponse[CloseCommand]) extends Command
   private case class UnknownChannel(channelId: ByteVector32) extends Command
@@ -43,7 +46,7 @@ object OfflineChannelsCloser {
   case class PendingCommands(channels: Map[ByteVector32, ClosingParams])
   // @formatter:on
 
-  case class ClosingParams(scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])
+  case class ClosingParams(forceCloseAfter_opt: Option[TimestampSecond], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])
 
   def apply(nodeParams: NodeParams, register: ActorRef): Behavior[Command] = {
     Behaviors.setup { context =>
@@ -65,11 +68,16 @@ private class OfflineChannelsCloser(nodeParams: NodeParams, register: ActorRef, 
   def run(channels: Map[ByteVector32, ClosingParams]): Behavior[Command] = {
     Behaviors.receiveMessage {
       case cmd: CloseChannels =>
-        val closingParams = ClosingParams(cmd.scriptPubKey_opt, cmd.closingFeerates_opt)
+        val closingParams = ClosingParams(cmd.forceCloseAfter_opt.map(delay => TimestampSecond.now() + delay), cmd.scriptPubKey_opt, cmd.closingFeerates_opt)
         cmd.channelIds.foreach(channelId => sendCloseCommand(channelId, closingParams))
+        cmd.forceCloseAfter_opt.foreach(delay => cmd.channelIds.foreach(channelId => timers.startSingleTimer(ForceCloseChannel(channelId), delay)))
         val channels1 = channels ++ cmd.channelIds.map(_ -> closingParams)
         cmd.replyTo ! CloseCommandsRegistered(cmd.channelIds.map(_ -> WaitingForPeer).toMap)
         run(channels1)
+      case ForceCloseChannel(channelId) =>
+        log.info(s"channel $channelId couldn't be cooperatively closed: initiating force-close")
+        sendForceCloseCommand(channelId)
+        Behaviors.same
       case WrappedChannelStateChanged(channelId, state) =>
         channels.get(channelId) match {
           case Some(closingParams) => state match {
@@ -102,6 +110,11 @@ private class OfflineChannelsCloser(nodeParams: NodeParams, register: ActorRef, 
   private def sendCloseCommand(channelId: ByteVector32, closingParams: ClosingParams): Unit = {
     val close = CMD_CLOSE(context.messageAdapter[CommandResponse[CMD_CLOSE]](r => WrappedCommandResponse(channelId, r)).toClassic, closingParams.scriptPubKey_opt, closingParams.closingFeerates_opt)
     register ! Register.Forward(context.messageAdapter[Register.ForwardFailure[CMD_CLOSE]](r => UnknownChannel(r.fwd.channelId)), channelId, close)
+  }
+
+  private def sendForceCloseCommand(channelId: ByteVector32): Unit = {
+    val forceClose = CMD_FORCECLOSE(context.messageAdapter[CommandResponse[CMD_CLOSE]](r => WrappedCommandResponse(channelId, r)).toClassic)
+    register ! Register.Forward(context.messageAdapter[Register.ForwardFailure[CMD_FORCECLOSE]](r => UnknownChannel(r.fwd.channelId)), channelId, forceClose)
   }
 
 }
