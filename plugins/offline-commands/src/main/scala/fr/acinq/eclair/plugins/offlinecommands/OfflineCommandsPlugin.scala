@@ -16,7 +16,13 @@
 
 package fr.acinq.eclair.plugins.offlinecommands
 
-import fr.acinq.eclair.{Kit, Plugin, PluginParams, Setup}
+import akka.actor.ActorSystem
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
+import akka.actor.typed.{ActorRef, SupervisorStrategy}
+import akka.http.scaladsl.server.Route
+import fr.acinq.eclair.api.directives.EclairDirectives
+import fr.acinq.eclair.{Kit, NodeParams, Plugin, PluginParams, RouteProvider, Setup}
 import grizzled.slf4j.Logging
 
 /**
@@ -26,18 +32,25 @@ import grizzled.slf4j.Logging
 /**
  * This plugin allows node operators to prepare commands that will be executed once the target peer is online.
  */
-class OfflineCommandsPlugin extends Plugin with Logging {
+class OfflineCommandsPlugin extends Plugin with RouteProvider with Logging {
 
-  override def onSetup(setup: Setup): Unit = {
-    // TODO
-  }
-
-  override def onKit(kit: Kit): Unit = {
-    // TODO
-  }
+  var pluginKit: OfflineCommandsKit = _
 
   override def params: PluginParams = new PluginParams {
     override def name: String = "OfflineCommands"
   }
 
+  override def onSetup(setup: Setup): Unit = {
+    // TODO: setup DB?
+  }
+
+  override def onKit(kit: Kit): Unit = {
+    val channelsCloser = kit.system.spawn(Behaviors.supervise(OfflineChannelsCloser(kit.nodeParams, kit.register)).onFailure(SupervisorStrategy.restart), "offline-commands-plugin-channels-closer")
+    pluginKit = OfflineCommandsKit(kit.nodeParams, kit.system, channelsCloser)
+  }
+
+  override def route(eclairDirectives: EclairDirectives): Route = ApiHandlers.registerRoutes(pluginKit, eclairDirectives)
+
 }
+
+case class OfflineCommandsKit(nodeParams: NodeParams, system: ActorSystem, closer: ActorRef[OfflineChannelsCloser.Command])
