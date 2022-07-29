@@ -523,7 +523,7 @@
           "refId": "D"
         }
       ],
-      "title": "Bitcoin Balance(BTC)",
+      "title": "Bitcoin Balance(mBTC)",
       "type": "timeseries"
     },
     {
