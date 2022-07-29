@@ -33,3 +33,9 @@ eclair-cli offlineclose --channelIds=<comma-separated list of channels to close>
 
 The `channelIds` argument is mandatory; all other arguments are optional.
 The plugin will attempt to close the requested channels once they're online and will write a line in the logs when it succeeds.
+
+## Persistence
+
+This plugin stores its data into a sqlite database named `offline-commands.sqlite`.
+It uses that database to ensure commands are correctly executed even after a restart of the node.
+You can check the status of pending commands by reading directly from that database.

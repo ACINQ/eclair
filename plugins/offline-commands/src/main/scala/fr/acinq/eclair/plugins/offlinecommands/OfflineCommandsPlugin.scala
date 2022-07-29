@@ -22,8 +22,11 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import akka.actor.typed.{ActorRef, SupervisorStrategy}
 import akka.http.scaladsl.server.Route
 import fr.acinq.eclair.api.directives.EclairDirectives
+import fr.acinq.eclair.db.sqlite.SqliteUtils
 import fr.acinq.eclair.{Kit, NodeParams, Plugin, PluginParams, RouteProvider, Setup}
 import grizzled.slf4j.Logging
+
+import java.io.File
 
 /**
  * Created by t-bast on 28/07/2022.
@@ -34,6 +37,7 @@ import grizzled.slf4j.Logging
  */
 class OfflineCommandsPlugin extends Plugin with RouteProvider with Logging {
 
+  var db: OfflineCommandsDb = _
   var pluginKit: OfflineCommandsKit = _
 
   override def params: PluginParams = new PluginParams {
@@ -41,16 +45,19 @@ class OfflineCommandsPlugin extends Plugin with RouteProvider with Logging {
   }
 
   override def onSetup(setup: Setup): Unit = {
-    // TODO: setup DB?
+    // We create our DB in the per-chain data directory.
+    val chain = setup.config.getString("chain")
+    val chainDir = new File(setup.datadir, chain)
+    db = new SqliteOfflineCommandsDb(SqliteUtils.openSqliteFile(chainDir, "offline-commands.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "normal"))
   }
 
   override def onKit(kit: Kit): Unit = {
-    val channelsCloser = kit.system.spawn(Behaviors.supervise(OfflineChannelsCloser(kit.nodeParams, kit.register)).onFailure(SupervisorStrategy.restart), "offline-commands-plugin-channels-closer")
-    pluginKit = OfflineCommandsKit(kit.nodeParams, kit.system, channelsCloser)
+    val channelsCloser = kit.system.spawn(Behaviors.supervise(OfflineChannelsCloser(kit.nodeParams, db, kit.register)).onFailure(SupervisorStrategy.restart), "offline-commands-plugin-channels-closer")
+    pluginKit = OfflineCommandsKit(kit.nodeParams, db, kit.system, channelsCloser)
   }
 
   override def route(eclairDirectives: EclairDirectives): Route = ApiHandlers.registerRoutes(pluginKit, eclairDirectives)
 
 }
 
-case class OfflineCommandsKit(nodeParams: NodeParams, system: ActorSystem, closer: ActorRef[OfflineChannelsCloser.Command])
+case class OfflineCommandsKit(nodeParams: NodeParams, db: OfflineCommandsDb, system: ActorSystem, closer: ActorRef[OfflineChannelsCloser.Command])

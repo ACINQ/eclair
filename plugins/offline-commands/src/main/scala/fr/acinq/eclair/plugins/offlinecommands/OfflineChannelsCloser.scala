@@ -39,47 +39,63 @@ object OfflineChannelsCloser {
   private case class WrappedCommandResponse(channelId: ByteVector32, response: CommandResponse[CloseCommand]) extends Command
   private case class UnknownChannel(channelId: ByteVector32) extends Command
 
-  sealed trait ClosingStatus
-  case object WaitingForPeer extends ClosingStatus
-
   case class CloseCommandsRegistered(status: Map[ByteVector32, ClosingStatus])
   case class PendingCommands(channels: Map[ByteVector32, ClosingParams])
   // @formatter:on
 
-  case class ClosingParams(forceCloseAfter_opt: Option[TimestampSecond], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])
-
-  def apply(nodeParams: NodeParams, register: ActorRef): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, db: OfflineCommandsDb, register: ActorRef): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelStateChanged](e => WrappedChannelStateChanged(e.channelId, e.currentState)))
-        new OfflineChannelsCloser(nodeParams, register, context, timers).run(Map.empty)
+        val previous = db.listPendingCloseCommands()
+        new OfflineChannelsCloser(nodeParams, db, register, context, timers).start(previous)
       }
     }
   }
 
 }
 
-private class OfflineChannelsCloser(nodeParams: NodeParams, register: ActorRef, context: ActorContext[OfflineChannelsCloser.Command], timers: TimerScheduler[OfflineChannelsCloser.Command]) {
+private class OfflineChannelsCloser(nodeParams: NodeParams, db: OfflineCommandsDb, register: ActorRef, context: ActorContext[OfflineChannelsCloser.Command], timers: TimerScheduler[OfflineChannelsCloser.Command]) {
 
   import OfflineChannelsCloser._
 
   private val log = context.log
 
-  def run(channels: Map[ByteVector32, ClosingParams]): Behavior[Command] = {
+  def start(previous: Map[ByteVector32, ClosingParams]): Behavior[Command] = {
+    val now = TimestampSecond.now()
+    previous.foreach {
+      case (channelId, closingParams) =>
+        closingParams.forceCloseAfter_opt match {
+          case Some(forceCloseAfter) if forceCloseAfter <= now =>
+            context.self ! ForceCloseChannel(channelId)
+          case Some(forceCloseAfter) =>
+            sendCloseCommand(channelId, closingParams)
+            timers.startSingleTimer(ForceCloseChannel(channelId), forceCloseAfter - now)
+          case None =>
+            sendCloseCommand(channelId, closingParams)
+        }
+    }
+    run(previous)
+  }
+
+  private def run(pending: Map[ByteVector32, ClosingParams]): Behavior[Command] = {
     Behaviors.receiveMessage {
       case cmd: CloseChannels =>
         val closingParams = ClosingParams(cmd.forceCloseAfter_opt.map(delay => TimestampSecond.now() + delay), cmd.scriptPubKey_opt, cmd.closingFeerates_opt)
-        cmd.channelIds.foreach(channelId => sendCloseCommand(channelId, closingParams))
-        cmd.forceCloseAfter_opt.foreach(delay => cmd.channelIds.foreach(channelId => timers.startSingleTimer(ForceCloseChannel(channelId), delay)))
-        val channels1 = channels ++ cmd.channelIds.map(_ -> closingParams)
-        cmd.replyTo ! CloseCommandsRegistered(cmd.channelIds.map(_ -> WaitingForPeer).toMap)
-        run(channels1)
+        cmd.channelIds.foreach(channelId => {
+          db.addCloseCommand(channelId, closingParams)
+          sendCloseCommand(channelId, closingParams)
+          cmd.forceCloseAfter_opt.foreach(delay => timers.startSingleTimer(ForceCloseChannel(channelId), delay))
+        })
+        val pending1 = pending ++ cmd.channelIds.map(_ -> closingParams)
+        cmd.replyTo ! CloseCommandsRegistered(cmd.channelIds.map(_ -> ClosingStatus.Pending).toMap)
+        run(pending1)
       case ForceCloseChannel(channelId) =>
         log.info(s"channel $channelId couldn't be cooperatively closed: initiating force-close")
         sendForceCloseCommand(channelId)
         Behaviors.same
       case WrappedChannelStateChanged(channelId, state) =>
-        channels.get(channelId) match {
+        pending.get(channelId) match {
           case Some(closingParams) => state match {
             case NORMAL =>
               log.info(s"channel $channelId is back online: initiating mutual close")
@@ -87,7 +103,8 @@ private class OfflineChannelsCloser(nodeParams: NodeParams, register: ActorRef, 
               Behaviors.same
             case CLOSED =>
               log.info(s"channel $channelId has been closed")
-              run(channels - channelId)
+              db.updateCloseCommand(channelId, ClosingStatus.ChannelClosed)
+              run(pending - channelId)
             case _ => Behaviors.same
           }
           case None => Behaviors.same
@@ -100,9 +117,10 @@ private class OfflineChannelsCloser(nodeParams: NodeParams, register: ActorRef, 
         Behaviors.same
       case UnknownChannel(channelId) =>
         log.warn(s"cannot close unknown channel $channelId")
-        run(channels - channelId)
+        db.updateCloseCommand(channelId, ClosingStatus.ChannelNotFound)
+        run(pending - channelId)
       case GetPendingCommands(replyTo) =>
-        replyTo ! PendingCommands(channels)
+        replyTo ! PendingCommands(pending)
         Behaviors.same
     }
   }

@@ -17,14 +17,15 @@
 package fr.acinq.eclair.plugins.offlinecommands
 
 import fr.acinq.eclair.json.MinimalSerializer
-import fr.acinq.eclair.plugins.offlinecommands.OfflineChannelsCloser.ClosingStatus
 import org.json4s.{Formats, JString}
 
 object ApiSerializers {
 
   object ClosingStatusSerializer extends MinimalSerializer({
     case status: ClosingStatus => status match {
-      case OfflineChannelsCloser.WaitingForPeer => JString("waiting-for-peer")
+      case ClosingStatus.Pending => JString("pending")
+      case ClosingStatus.ChannelNotFound => JString("unknown-channel")
+      case ClosingStatus.ChannelClosed => JString("closed")
     }
   })
 
