@@ -245,12 +245,15 @@ Here is how to run Eclair with plugins:
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar> <...>
 ```
 
-### Non-exhaustive plugins list
+We maintain some plugins in the [plugins](./plugins/) directory.
+The [offline commands plugin](./plugins/offline-commands/) is a good example of how to write a plugin that interacts with various features of eclair.
 
-Here are some plugins created by the Eclair community.
+There are also plugins provided by external contributors from the Eclair community.
+We provide a non-exhaustive list of these plugins below.
 If you need support for these plugins, head over to their respective github repository.
 
 * [Telegram Bot for Eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
+* [Hosted Channels](https://github.com/btcontract/plugin-hosted-channels)
 
 ## Testnet usage
 
