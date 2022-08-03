@@ -113,6 +113,9 @@
       "iso" : "2019-06-24T09:39:33Z",
       "unix" : 1561369173
     },
+    "messageFlags" : {
+      "isPrivate" : false
+    },
     "channelFlags" : {
       "isEnabled" : true,
       "isNode1" : false

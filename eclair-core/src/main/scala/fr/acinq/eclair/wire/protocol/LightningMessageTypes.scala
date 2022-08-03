@@ -422,6 +422,7 @@ case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
                          shortChannelId: ShortChannelId,
                          timestamp: TimestampSecond,
+                         messageFlags: ChannelUpdate.MessageFlags,
                          channelFlags: ChannelUpdate.ChannelFlags,
                          cltvExpiryDelta: CltvExpiryDelta,
                          htlcMinimumMsat: MilliSatoshi,
@@ -429,7 +430,7 @@ case class ChannelUpdate(signature: ByteVector64,
                          feeProportionalMillionths: Long,
                          htlcMaximumMsat: MilliSatoshi,
                          tlvStream: TlvStream[ChannelUpdateTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
-  def messageFlags: Byte = 1
+  val isPrivate: Boolean = messageFlags.isPrivate
 
   def toStringShort: String = s"cltvExpiryDelta=$cltvExpiryDelta,feeBase=$feeBaseMsat,feeProportionalMillionths=$feeProportionalMillionths"
 
@@ -437,6 +438,8 @@ case class ChannelUpdate(signature: ByteVector64,
 }
 
 object ChannelUpdate {
+  case class MessageFlags(isPrivate: Boolean)
+
   case class ChannelFlags(isEnabled: Boolean, isNode1: Boolean)
 
   object ChannelFlags {

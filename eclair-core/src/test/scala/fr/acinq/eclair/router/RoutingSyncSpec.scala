@@ -264,12 +264,12 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
-    assert(router.stateData.sync.get(remoteNodeId) == Some(Syncing(Nil, 0)))
+    assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
 
     // ask router to send another channel range query
     sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = false, None))
     sender.expectNoMessage(100 millis) // it's a duplicate and should be ignored
-    assert(router.stateData.sync.get(remoteNodeId) == Some(Syncing(Nil, 0)))
+    assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
 
     val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(params.routerConf.channelQueryChunkSize).keys.toList), None, None)
 
@@ -287,7 +287,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
     sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
-    assert(router.stateData.sync.get(remoteNodeId) == Some(Syncing(Nil, 0)))
+    assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
   }
 
   test("reject unsolicited sync") {
@@ -365,7 +365,7 @@ object RoutingSyncSpec {
     makeChannelUpdate(channelUpdate.chainHash, priv, remote, channelUpdate.shortChannelId,
       channelUpdate.cltvExpiryDelta, channelUpdate.htlcMinimumMsat,
       channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths,
-      channelUpdate.htlcMinimumMsat, channelUpdate.channelFlags.isEnabled, channelUpdate.timestamp + 5000)
+      channelUpdate.htlcMinimumMsat, channelUpdate.messageFlags.isPrivate, channelUpdate.channelFlags.isEnabled, channelUpdate.timestamp + 5000)
   }
 
   def makeFakeNodeAnnouncement(pub2priv: mutable.Map[PublicKey, PrivateKey])(nodeId: PublicKey): NodeAnnouncement = {

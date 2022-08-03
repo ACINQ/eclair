@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.ScriptWitness
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt}
-import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.bits.{BinStringSyntax, BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
@@ -317,6 +317,8 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
+  val messageFlagsCodec = ("messageFlags" | (ignore(6) :: bool :: constant(bin"1"))).as[ChannelUpdate.MessageFlags]
+
   val reverseBool: Codec[Boolean] = bool.xmap[Boolean](b => !b, b => !b)
 
   /** BOLT 7 defines a 'disable' bit and a 'direction' bit, but it's easier to understand if we take the reverse. */
@@ -325,7 +327,7 @@ object LightningMessageCodecs {
   val channelUpdateChecksumCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
-      ("messageFlags" | constant(hex"01")) :~>:
+      messageFlagsCodec ::
       channelFlagsCodec ::
       ("cltvExpiryDelta" | cltvExpiryDelta) ::
       ("htlcMinimumMsat" | millisatoshi) ::
@@ -337,7 +339,7 @@ object LightningMessageCodecs {
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | timestampSecond) ::
-      ("messageFlags" | constant(hex"01")) :~>:
+      messageFlagsCodec ::
       channelFlagsCodec ::
       ("cltvExpiryDelta" | cltvExpiryDelta) ::
       ("htlcMinimumMsat" | millisatoshi) ::
