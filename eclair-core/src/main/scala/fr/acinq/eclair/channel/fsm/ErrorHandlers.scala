@@ -83,7 +83,12 @@ trait ErrorHandlers extends CommonHandlers {
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(cause), isFatal = true))
 
     d match {
-      case dd: PersistentChannelData if Closing.nothingAtStake(dd) => goto(CLOSED)
+      case dd: PersistentChannelData if Closing.nothingAtStake(dd) =>
+        // The channel was never used and we don't have any funds: we don't need to publish our commitment, but it's a
+        // nice thing to do because it lets our peer get their funds back without delays.
+        val commitTx = dd.commitments.fullySignedLocalCommitTx(keyManager)
+        txPublisher ! PublishFinalTx(commitTx, 0 sat, None)
+        goto(CLOSED)
       case negotiating@DATA_NEGOTIATING(_, _, _, _, Some(bestUnpublishedClosingTx)) =>
         log.info(s"we have a valid closing tx, publishing it instead of our commitment: closingTxId=${bestUnpublishedClosingTx.tx.txid}")
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
@@ -127,7 +132,13 @@ trait ErrorHandlers extends CommonHandlers {
       case negotiating@DATA_NEGOTIATING(_, _, _, _, Some(bestUnpublishedClosingTx)) =>
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED if Closing.nothingAtStake(d) => goto(CLOSED) // the channel was never used and the funding tx may be double-spent
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED if Closing.nothingAtStake(d) =>
+        // The channel was never used and the funding tx could be double-spent: we don't need to publish our commitment
+        // since we don't have funds in the channel, but it's a nice thing to do because it lets our peer get their
+        // funds back without delays if they can't double-spend the funding tx.
+        val commitTx = d.commitments.fullySignedLocalCommitTx(keyManager)
+        txPublisher ! PublishFinalTx(commitTx, 0 sat, None)
+        goto(CLOSED)
       case hasCommitments: PersistentChannelData => spendLocalCurrent(hasCommitments) // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
       case _: TransientChannelData => goto(CLOSED) // when there is no commitment yet, we just go to CLOSED state in case an error occurs
     }
