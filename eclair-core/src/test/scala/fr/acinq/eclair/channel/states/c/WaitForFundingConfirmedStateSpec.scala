@@ -270,7 +270,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.NoPushMsat)) { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    bob ! Error(ByteVector32.Zeroes, "funding double-spent")
+    bob ! Error(ByteVector32.Zeroes, "please help me recover my funds")
     // We have nothing at stake, but we publish our commitment to help our peer recover their funds more quickly.
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid)
     bob2blockchain.expectNoMessage(100 millis)
