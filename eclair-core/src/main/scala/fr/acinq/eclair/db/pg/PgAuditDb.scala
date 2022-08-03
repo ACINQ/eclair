@@ -309,7 +309,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setLong(4, u.channelUpdate.feeProportionalMillionths)
         statement.setLong(5, u.channelUpdate.cltvExpiryDelta.toInt)
         statement.setLong(6, u.channelUpdate.htlcMinimumMsat.toLong)
-        statement.setLong(7, u.channelUpdate.htlcMaximumMsat.map(_.toLong).getOrElse(-1))
+        statement.setLong(7, u.channelUpdate.htlcMaximumMsat.toLong)
         statement.setTimestamp(8, Timestamp.from(Instant.now()))
         statement.executeUpdate()
       }

@@ -156,8 +156,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     router.expectMsgType[RouteRequest]
     router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil), Route(501000 msat, hop_ac_1 :: hop_ce :: Nil))))
     val childPayments = childPayFsm.expectMsgType[SendPaymentToRoute] :: childPayFsm.expectMsgType[SendPaymentToRoute] :: Nil
-    childPayments.map(_.finalPayload.asInstanceOf[PaymentOnion.FinalTlvPayload]).foreach(p => {
-      assert(p.records.get[OnionPaymentPayloadTlv.TrampolineOnion] == Some(trampolineTlv))
+    childPayments.map(_.finalPayload).foreach(p => {
+      assert(p.records.get[OnionPaymentPayloadTlv.TrampolineOnion].contains(trampolineTlv))
       assert(p.records.unknown.toSeq == Seq(userCustomTlv))
     })
 
@@ -352,7 +352,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     // B doesn't have enough liquidity on this channel.
     // NB: we need a channel update with a valid signature, otherwise we'll ignore the node instead of this specific channel.
     val channelUpdateBE = hop_be.params.asInstanceOf[ChannelRelayParams.FromAnnouncement].channelUpdate
-    val channelUpdateBE1 = Announcements.makeChannelUpdate(channelUpdateBE.chainHash, priv_b, e, channelUpdateBE.shortChannelId, channelUpdateBE.cltvExpiryDelta, channelUpdateBE.htlcMinimumMsat, channelUpdateBE.feeBaseMsat, channelUpdateBE.feeProportionalMillionths, channelUpdateBE.htlcMaximumMsat.get)
+    val channelUpdateBE1 = Announcements.makeChannelUpdate(channelUpdateBE.chainHash, priv_b, e, channelUpdateBE.shortChannelId, channelUpdateBE.cltvExpiryDelta, channelUpdateBE.htlcMinimumMsat, channelUpdateBE.feeBaseMsat, channelUpdateBE.feeProportionalMillionths, channelUpdateBE.htlcMaximumMsat)
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, TemporaryChannelFailure(channelUpdateBE1))))))
     // We update the routing hints accordingly before requesting a new route and ignore the channel.
@@ -381,7 +381,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
         BasicEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), BasicEdge(b, c, ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48)),
         BasicEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144))
       )
-      assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, extraEdges)).forall{case (e1, e2) => e1 == e2})
+      assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, extraEdges)).forall { case (e1, e2) => e1 == e2 })
     }
     {
       val failures = Seq(
@@ -394,7 +394,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
         BasicEdge(a, b, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23)), BasicEdge(b, c, ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21)),
         BasicEdge(a, c, ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22))
       )
-      assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, extraEdges)).forall{case (e1, e2) => e1 == e2})
+      assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, extraEdges)).forall { case (e1, e2) => e1 == e2 })
     }
   }
 
@@ -691,7 +691,7 @@ object MultiPartPaymentLifecycleSpec {
   val channelId_ce = ShortChannelId(13)
   val channelId_ad = ShortChannelId(21)
   val channelId_de = ShortChannelId(22)
-  val defaultChannelUpdate = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, Some(2000000 msat))
+  val defaultChannelUpdate = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat)
   val channelUpdate_ab_1 = defaultChannelUpdate.copy(shortChannelId = channelId_ab_1)
   val channelUpdate_ab_2 = defaultChannelUpdate.copy(shortChannelId = channelId_ab_2)
   val channelUpdate_be = defaultChannelUpdate.copy(shortChannelId = channelId_be)

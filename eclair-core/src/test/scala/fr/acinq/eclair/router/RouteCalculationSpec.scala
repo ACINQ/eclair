@@ -19,7 +19,6 @@ package fr.acinq.eclair.router
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong}
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
@@ -29,7 +28,7 @@ import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, ShortChannelIdSpec, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, randomKey}
 import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.{ParallelTestExecution, Tag}
@@ -419,14 +418,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   test("calculate route and return metadata") {
     val DUMMY_SIG = Transactions.PlaceHolderSig
 
-    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 42 msat, 2500 msat, 140, None)
-    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 43 msat, 2501 msat, 141, None)
-    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 44 msat, 2502 msat, 142, None)
-    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 45 msat, 2503 msat, 143, None)
-    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 46 msat, 2504 msat, 144, Some(500000000 msat))
-    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 47 msat, 2505 msat, 145, None)
-    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 48 msat, 2506 msat, 146, None)
-    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 49 msat, 2507 msat, 147, None)
+    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 42 msat, 2500 msat, 140, DEFAULT_CAPACITY.toMilliSatoshi)
+    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 43 msat, 2501 msat, 141, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 44 msat, 2502 msat, 142, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 45 msat, 2503 msat, 143, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 46 msat, 2504 msat, 144, 500_000_000 msat)
+    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 47 msat, 2505 msat, 145, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 48 msat, 2506 msat, 146, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 49 msat, 2507 msat, 147, DEFAULT_CAPACITY.toMilliSatoshi)
 
     val edges = Seq(
       GraphEdge(ChannelDesc(ShortChannelId(1L), a, b), ChannelRelayParams.FromAnnouncement(uab), DEFAULT_CAPACITY, None),
@@ -898,24 +897,24 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
         ann = makeChannel(ShortChannelId.fromCoordinates("565643x1216x0").success.value.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, Some(4294967295L msat))),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, Some(15000000000L msat))),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, 4_294_967_295L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, 15_000_000_000L msat)),
         meta_opt = None
       ),
       RealShortChannelId(BlockHeight(542280), 2156, 0) -> PublicChannel(
         ann = makeChannel(ShortChannelId.fromCoordinates("542280x2156x0").success.value.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, Some(16777000000L msat))),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, Some(16777000000L msat))),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, 16_777_000_000L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, 16_777_000_000L msat)),
         meta_opt = None
       ),
       RealShortChannelId(BlockHeight(565779), 2711, 0) -> PublicChannel(
         ann = makeChannel(ShortChannelId.fromCoordinates("565779x2711x0").success.value.toLong, PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, Some(230000000L msat))),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, Some(230000000L msat))),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
         meta_opt = None
       )
     )
@@ -1885,7 +1884,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
   test("small local edge with liquidity is better than big remote edge") {
     // A == B == C -- D
-    //  \_________/
+    //  \_______/
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat, balance_opt = Some(10000000 msat)),
       makeEdge(2L, b, c, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
@@ -1955,7 +1954,7 @@ object RouteCalculationSpec {
       htlcMinimumMsat = minHtlc,
       feeBaseMsat = feeBase,
       feeProportionalMillionths = feeProportionalMillionth,
-      htlcMaximumMsat = maxHtlc
+      htlcMaximumMsat = maxHtlc.getOrElse(500_000_000 msat)
     )
 
   def hops2Ids(hops: Seq[ChannelHop]): Seq[Long] = hops.map(hop => hop.shortChannelId.toLong)

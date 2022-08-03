@@ -107,20 +107,20 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       cd.shortChannelId -> PublicChannel(cd, ByteVector32.Zeroes, 0 sat, Some(ucd1), None, None)
     )
 
-    assert(getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(1697591108L, 3692323747L)))
+    assert(getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(3352963162L, 2581904122L)))
 
     // no extended info but we know the channel: we ask for the updates
     assert(computeFlag(channels)(ab.shortChannelId, None, None, includeNodeAnnouncements = false) == (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
     assert(computeFlag(channels)(ab.shortChannelId, None, None, includeNodeAnnouncements = true) == (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     // same checksums, newer timestamps: we don't ask anything
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(1697591108L, 3692323747L)), includeNodeAnnouncements = true) == 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(3352963162L, 2581904122L)), includeNodeAnnouncements = true) == 0)
     // different checksums, newer timestamps: we ask for the updates
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 3692323747L)), includeNodeAnnouncements = true) == (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(1697591108L, 45664546)), includeNodeAnnouncements = true) == (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 2581904122L)), includeNodeAnnouncements = true) == (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(3352963162L, 45664546)), includeNodeAnnouncements = true) == (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546 + 6)), includeNodeAnnouncements = true) == (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     // different checksums, older timestamps: we don't ask anything
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 3692323747L)), includeNodeAnnouncements = true) == 0)
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(1697591108L, 45664546)), includeNodeAnnouncements = true) == 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 2581904122L)), includeNodeAnnouncements = true) == 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(3352963162L, 45664546)), includeNodeAnnouncements = true) == 0)
     assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546)), includeNodeAnnouncements = true) == 0)
 
     // missing channel update: we ask for it

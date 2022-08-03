@@ -440,7 +440,7 @@ object Router {
       override def cltvExpiryDelta: CltvExpiryDelta = channelUpdate.cltvExpiryDelta
       override def relayFees: Relayer.RelayFees = channelUpdate.relayFees
       override def htlcMinimum: MilliSatoshi = channelUpdate.htlcMinimumMsat
-      override def htlcMaximum_opt: Option[MilliSatoshi] = channelUpdate.htlcMaximumMsat
+      override def htlcMaximum_opt: Option[MilliSatoshi] = Some(channelUpdate.htlcMaximumMsat)
     }
     /** We learnt about this channel from hints in an invoice */
     case class FromHint(extraHop: Invoice.ExtraEdge) extends ChannelRelayParams {

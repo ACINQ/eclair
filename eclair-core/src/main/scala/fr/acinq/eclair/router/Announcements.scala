@@ -34,8 +34,8 @@ object Announcements {
   def nodeAnnouncementWitnessEncode(timestamp: TimestampSecond, nodeId: PublicKey, rgbColor: Color, alias: String, features: Features[Feature], addresses: List[NodeAddress], tlvStream: TlvStream[NodeAnnouncementTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.nodeAnnouncementWitnessCodec.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: tlvStream :: HNil))))
 
-  def channelUpdateWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: TimestampSecond, channelFlags: ChannelUpdate.ChannelFlags, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: Option[MilliSatoshi], tlvStream: TlvStream[ChannelUpdateTlv]): ByteVector =
-    sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(chainHash :: shortChannelId :: timestamp :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: tlvStream :: HNil))))
+  def channelUpdateWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: TimestampSecond, channelFlags: ChannelUpdate.ChannelFlags, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, tlvStream: TlvStream[ChannelUpdateTlv]): ByteVector =
+    sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(chainHash :: shortChannelId :: timestamp :: () :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: tlvStream :: HNil))))
 
   def generateChannelAnnouncementWitness(chainHash: ByteVector32, shortChannelId: RealShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, features: Features[Feature]): ByteVector =
     if (isNode1(localNodeId, remoteNodeId)) {
@@ -116,8 +116,7 @@ object Announcements {
 
   def makeChannelUpdate(chainHash: ByteVector32, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now()): ChannelUpdate = {
     val channelFlags = ChannelUpdate.ChannelFlags(isNode1 = isNode1(nodeSecret.publicKey, remoteNodeId), isEnabled = enable)
-    val htlcMaximumMsatOpt = Some(htlcMaximumMsat)
-    val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestamp, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsatOpt, TlvStream.empty)
+    val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestamp, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat, TlvStream.empty)
     val sig = Crypto.sign(witness, nodeSecret)
     ChannelUpdate(
       signature = sig,
@@ -129,7 +128,7 @@ object Announcements {
       htlcMinimumMsat = htlcMinimumMsat,
       feeBaseMsat = feeBaseMsat,
       feeProportionalMillionths = feeProportionalMillionths,
-      htlcMaximumMsat = htlcMaximumMsatOpt
+      htlcMaximumMsat = htlcMaximumMsat
     )
   }
 
