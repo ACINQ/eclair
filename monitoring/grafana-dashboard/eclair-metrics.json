@@ -949,7 +949,7 @@
         }
       ],
       "title": "HTLCs in flight (per channel)",
-      "type": "timeseries"
+      "type": "histogram"
     },
     {
       "datasource": {
@@ -1080,7 +1080,7 @@
         }
       ],
       "title": "HTLC value in flight (sat) (per channel)",
-      "type": "timeseries"
+      "type": "histogram"
     },
     {
       "datasource": {
