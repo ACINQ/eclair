@@ -1817,7 +1817,7 @@
         }
       ],
       "title": "Remote feerate (sat/kw)",
-      "type": "timeseries"
+      "type": "histogram"
     },
     {
       "datasource": {
