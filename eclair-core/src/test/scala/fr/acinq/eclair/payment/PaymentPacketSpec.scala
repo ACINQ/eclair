@@ -28,7 +28,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
-import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
+import fr.acinq.eclair.router.Router.NodeHop
 import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{ChannelRelayTlvPayload, FinalTlvPayload}
@@ -143,7 +143,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_b.totalAmount == finalAmount)
     assert(payload_b.expiry == finalExpiry)
     assert(payload_b.paymentSecret == paymentSecret)
-    assert(payload_b.paymentMetadata == Some(paymentMetadata))
+    assert(payload_b.paymentMetadata.contains(paymentMetadata))
   }
 
   test("build a trampoline payment") {
@@ -174,10 +174,10 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.amountToForward == amount_cd)
     assert(inner_c.outgoingCltv == expiry_cd)
     assert(inner_c.outgoingNodeId == d)
-    assert(inner_c.invoiceRoutingInfo == None)
-    assert(inner_c.invoiceFeatures == None)
-    assert(inner_c.paymentSecret == None)
-    assert(inner_c.paymentMetadata == None)
+    assert(inner_c.invoiceRoutingInfo.isEmpty)
+    assert(inner_c.invoiceFeatures.isEmpty)
+    assert(inner_c.paymentSecret.isEmpty)
+    assert(inner_c.paymentMetadata.isEmpty)
 
     // c forwards the trampoline payment to d.
     val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, channelHopFromUpdate(c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
@@ -192,10 +192,10 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_d.amountToForward == amount_de)
     assert(inner_d.outgoingCltv == expiry_de)
     assert(inner_d.outgoingNodeId == e)
-    assert(inner_d.invoiceRoutingInfo == None)
-    assert(inner_d.invoiceFeatures == None)
-    assert(inner_d.paymentSecret == None)
-    assert(inner_d.paymentMetadata == None)
+    assert(inner_d.invoiceRoutingInfo.isEmpty)
+    assert(inner_d.invoiceFeatures.isEmpty)
+    assert(inner_d.paymentSecret.isEmpty)
+    assert(inner_d.paymentMetadata.isEmpty)
 
     // d forwards the trampoline payment to e.
     val Success((amount_e, expiry_e, onion_e)) = buildPaymentPacket(paymentHash, channelHopFromUpdate(d, e, channelUpdate_de) :: Nil, PaymentOnion.createTrampolinePayload(amount_de, amount_de, expiry_de, randomBytes32(), packet_e))
@@ -236,9 +236,9 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.amountToForward == amount_cd)
     assert(inner_c.outgoingCltv == expiry_cd)
     assert(inner_c.outgoingNodeId == d)
-    assert(inner_c.invoiceRoutingInfo == None)
-    assert(inner_c.invoiceFeatures == None)
-    assert(inner_c.paymentSecret == None)
+    assert(inner_c.invoiceRoutingInfo.isEmpty)
+    assert(inner_c.invoiceFeatures.isEmpty)
+    assert(inner_c.paymentSecret.isEmpty)
 
     // c forwards the trampoline payment to d.
     val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, channelHopFromUpdate(c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
@@ -255,9 +255,9 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_d.outgoingNodeId == e)
     assert(inner_d.totalAmount == finalAmount)
     assert(inner_d.paymentSecret == invoice.paymentSecret)
-    assert(inner_d.paymentMetadata == Some(hex"010203"))
-    assert(inner_d.invoiceFeatures == Some(hex"024100")) // var_onion_optin, payment_secret, basic_mpp
-    assert(inner_d.invoiceRoutingInfo == Some(routingHints))
+    assert(inner_d.paymentMetadata.contains(hex"010203"))
+    assert(inner_d.invoiceFeatures.contains(hex"024100")) // var_onion_optin, payment_secret, basic_mpp
+    assert(inner_d.invoiceRoutingInfo.contains(routingHints))
   }
 
   test("fail to build a trampoline payment when too much invoice data is provided") {
@@ -384,7 +384,7 @@ object PaymentPacketSpec {
   val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.nodeKeyManager.nodeKey, TestConstants.Bob.nodeKeyManager.nodeKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
   val sig = Crypto.sign(Crypto.sha256(ByteVector.empty), priv_a.privateKey)
-  val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(0), 42000 msat, 0 msat, 0, Some(500000000 msat))
+  val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(0), 42000 msat, 0 msat, 0, 500_000_000 msat)
   val channelUpdate_ab = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(1), cltvExpiryDelta = CltvExpiryDelta(4), feeBaseMsat = 642000 msat, feeProportionalMillionths = 7)
   val channelUpdate_bc = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(2), cltvExpiryDelta = CltvExpiryDelta(5), feeBaseMsat = 153000 msat, feeProportionalMillionths = 4)
   val channelUpdate_cd = defaultChannelUpdate.copy(shortChannelId = ShortChannelId(3), cltvExpiryDelta = CltvExpiryDelta(10), feeBaseMsat = 60000 msat, feeProportionalMillionths = 1)

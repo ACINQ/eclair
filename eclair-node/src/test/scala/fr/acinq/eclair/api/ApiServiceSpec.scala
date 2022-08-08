@@ -1006,10 +1006,10 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       timestamp = 0 unixsec,
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(0),
-      htlcMinimumMsat = MilliSatoshi(1),
-      feeBaseMsat = MilliSatoshi(1),
+      htlcMinimumMsat = 1 msat,
+      feeBaseMsat = 1 msat,
       feeProportionalMillionths = 1,
-      htlcMaximumMsat = None
+      htlcMaximumMsat = 20_000_000 msat
     )
     val mockChannelUpdate2 = mockChannelUpdate1.copy(shortChannelId = RealShortChannelId(BlockHeight(1), 2, 4))
     val mockChannelUpdate3 = mockChannelUpdate1.copy(shortChannelId = RealShortChannelId(BlockHeight(1), 2, 5))

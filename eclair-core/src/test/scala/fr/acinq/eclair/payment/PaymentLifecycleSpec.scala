@@ -118,7 +118,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == parentId)
-    assert(ps.parts.head.route == Some(route.hops))
+    assert(ps.parts.head.route.contains(route.hops))
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
 
     metricsListener.expectNoMessage()
@@ -498,7 +498,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     register.expectMsg(ForwardShortId(paymentFSM.toTyped, scid_ab, cmd1))
 
     // we change the cltv expiry
-    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(42), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat.get)
+    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(42), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat)
     val failure = IncorrectCltvExpiry(CltvExpiry(5), channelUpdate_bc_modified)
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))
@@ -515,7 +515,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     register.expectMsg(ForwardShortId(paymentFSM.toTyped, scid_ab, cmd2))
 
     // we change the cltv expiry one more time
-    val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(43), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat.get)
+    val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(43), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat)
     val failure2 = IncorrectCltvExpiry(CltvExpiry(5), channelUpdate_bc_modified_2)
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets2.head._1, failure2)))))
@@ -583,7 +583,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     register.expectMsg(ForwardShortId(paymentFSM.toTyped, scid_ab, cmd1))
 
     // we change the cltv expiry
-    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(42), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat.get)
+    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(42), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat)
     val failure = IncorrectCltvExpiry(CltvExpiry(5), channelUpdate_bc_modified)
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))
@@ -592,7 +592,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsg(channelUpdate_bc_modified)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending)) // 1 failure but not final, the payment is still PENDING
     val extraEdges1 = Seq(
-      extraEdges(0).asInstanceOf[BasicEdge].update(channelUpdate_bc_modified),
+      extraEdges(0).update(channelUpdate_bc_modified),
       extraEdges(1)
     )
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(extraEdges = extraEdges1))
@@ -623,7 +623,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     register.expectMsg(ForwardShortId(paymentFSM.toTyped, scid_ab, cmd1))
 
     // we disable the channel
-    val channelUpdate_cd_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, scid_cd, CltvExpiryDelta(42), update_cd.htlcMinimumMsat, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.htlcMaximumMsat.get, enable = false)
+    val channelUpdate_cd_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, scid_cd, CltvExpiryDelta(42), update_cd.htlcMinimumMsat, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.htlcMaximumMsat, enable = false)
     val failure = ChannelDisabled(channelUpdate_cd_disabled.messageFlags, channelUpdate_cd_disabled.channelFlags, channelUpdate_cd_disabled)
     val failureOnion = Sphinx.FailurePacket.wrap(Sphinx.FailurePacket.create(sharedSecrets1(1)._1, failure), sharedSecrets1.head._1)
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))))
@@ -824,11 +824,11 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     routerForwarder.forward(routerFixture.router)
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
-    assert(nodeParams.db.payments.getOutgoingPayment(id) == None)
+    assert(nodeParams.db.payments.getOutgoingPayment(id).isEmpty)
 
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFulfill(UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentPreimage))))
     sender.expectMsgType[PaymentSent]
-    assert(nodeParams.db.payments.getOutgoingPayment(id) == None)
+    assert(nodeParams.db.payments.getOutgoingPayment(id).isEmpty)
     eventListener.expectNoMessage(100 millis)
 
     assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.nextNodeId) == Seq(b, c, d))
@@ -853,7 +853,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(outgoing.copy(createdAt = 0 unixms) == OutgoingPayment(id, parentId, Some(defaultExternalId), defaultPaymentHash, PaymentType.Standard, defaultAmountMsat, defaultAmountMsat, d, 0 unixms, Some(defaultInvoice), OutgoingPaymentStatus.Pending))
 
     // we change the cltv expiry
-    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(42), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat.get)
+    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(42), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat)
     val failure = IncorrectCltvExpiry(CltvExpiry(5), channelUpdate_bc_modified)
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))

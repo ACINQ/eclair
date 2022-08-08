@@ -20,11 +20,11 @@ import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, ScriptWitness, Transaction}
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
@@ -227,8 +227,8 @@ case class FundingSigned(channelId: ByteVector32,
                          tlvStream: TlvStream[FundingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
 
 case class ChannelReady(channelId: ByteVector32,
-                         nextPerCommitmentPoint: PublicKey,
-                         tlvStream: TlvStream[ChannelReadyTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+                        nextPerCommitmentPoint: PublicKey,
+                        tlvStream: TlvStream[ChannelReadyTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val alias_opt: Option[Alias] = tlvStream.get[ShortChannelIdTlv].map(_.alias)
 }
 
@@ -260,7 +260,7 @@ object UpdateAddHtlc {
             paymentHash: ByteVector32,
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
-            blinding_opt: Option[PublicKey]):UpdateAddHtlc = {
+            blinding_opt: Option[PublicKey]): UpdateAddHtlc = {
     val tlvs = Seq(blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint)).flatten
     UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream[UpdateAddHtlcTlv](tlvs))
   }
@@ -385,10 +385,9 @@ case class ChannelUpdate(signature: ByteVector64,
                          htlcMinimumMsat: MilliSatoshi,
                          feeBaseMsat: MilliSatoshi,
                          feeProportionalMillionths: Long,
-                         htlcMaximumMsat: Option[MilliSatoshi],
+                         htlcMaximumMsat: MilliSatoshi,
                          tlvStream: TlvStream[ChannelUpdateTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
-
-  def messageFlags: Byte = if (htlcMaximumMsat.isDefined) 1 else 0
+  def messageFlags: Byte = 1
 
   def toStringShort: String = s"cltvExpiryDelta=$cltvExpiryDelta,feeBase=$feeBaseMsat,feeProportionalMillionths=$feeProportionalMillionths"
 

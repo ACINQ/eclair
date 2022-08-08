@@ -20,12 +20,11 @@ import akka.actor.{ActorContext, ActorRef}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
+import fr.acinq.eclair.{BlockHeight, RealShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
 import scodec.bits.ByteVector
 import shapeless.HNil
 

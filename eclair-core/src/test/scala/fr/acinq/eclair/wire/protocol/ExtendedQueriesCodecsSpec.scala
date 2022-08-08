@@ -147,7 +147,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
     assert(decoded == replyChannelRange)
   }
 
-  test("compute checksums correctly (CL test #1)") {
+  test("compute checksums correctly") {
     val update = ChannelUpdate(
       chainHash = ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       signature = ByteVector64.fromValidHex("76df7e70c63cc2b63ef1c062b99c6d934a80ef2fd4dae9e1d86d277f47674af3255a97fa52ade7f129263f591ed784996eba6383135896cc117a438c80293282"),
@@ -156,18 +156,18 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(144),
       htlcMinimumMsat = 0 msat,
-      htlcMaximumMsat = None,
+      htlcMaximumMsat = 250_000_000 msat,
       feeBaseMsat = 1000 msat,
       feeProportionalMillionths = 10
     )
-    val check = ByteVector.fromValidHex("010276df7e70c63cc2b63ef1c062b99c6d934a80ef2fd4dae9e1d86d277f47674af3255a97fa52ade7f129263f591ed784996eba6383135896cc117a438c8029328206226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100005d50f933000000900000000000000000000003e80000000a")
+    val check = ByteVector.fromValidHex("010276df7e70c63cc2b63ef1c062b99c6d934a80ef2fd4dae9e1d86d277f47674af3255a97fa52ade7f129263f591ed784996eba6383135896cc117a438c8029328206226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100005d50f933010000900000000000000000000003e80000000a000000000ee6b280")
     assert(LightningMessageCodecs.channelUpdateCodec.encode(update).require.bytes == check.drop(2))
 
     val checksum = Sync.getChecksum(update)
-    assert(checksum == 0x1112fa30L)
+    assert(checksum == 0xeb8277a6L)
   }
 
-  test("compute checksums correctly (CL test #2)") {
+  test("compute checksums correctly (cln test)") {
     val update = ChannelUpdate(
       chainHash = ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       signature = ByteVector64.fromValidHex("06737e9e18d3e4d0ab4066ccaecdcc10e648c5f1c5413f1610747e0d463fa7fa39c1b02ea2fd694275ecfefe4fe9631f24afd182ab75b805e16cd550941f858c"),
@@ -176,7 +176,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(48),
       htlcMinimumMsat = 0 msat,
-      htlcMaximumMsat = Some(100000 msat),
+      htlcMaximumMsat = 100_000 msat,
       feeBaseMsat = 100 msat,
       feeProportionalMillionths = 11
     )

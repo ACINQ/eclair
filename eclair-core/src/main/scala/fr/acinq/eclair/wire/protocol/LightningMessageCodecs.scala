@@ -20,10 +20,9 @@ import fr.acinq.bitcoin.scalacompat.ScriptWitness
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt}
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-import shapeless._
 
 /**
  * Created by PM on 15/11/2016.
@@ -321,10 +320,6 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
-  private case class MessageFlags(optionChannelHtlcMax: Boolean)
-
-  private val messageFlagsCodec = ("messageFlags" | (ignore(7) :: bool)).as[MessageFlags]
-
   val reverseBool: Codec[Boolean] = bool.xmap[Boolean](b => !b, b => !b)
 
   /** BOLT 7 defines a 'disable' bit and a 'direction' bit, but it's easier to understand if we take the reverse. */
@@ -333,36 +328,26 @@ object LightningMessageCodecs {
   val channelUpdateChecksumCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
-      (messageFlagsCodec >>:~ { messageFlags =>
-        channelFlagsCodec ::
-          ("cltvExpiryDelta" | cltvExpiryDelta) ::
-          ("htlcMinimumMsat" | millisatoshi) ::
-          ("feeBaseMsat" | millisatoshi32) ::
-          ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional(messageFlags.optionChannelHtlcMax, millisatoshi))
-      }).derive[MessageFlags].from {
-        // The purpose of this is to tell scodec how to derive the message flags from the data, so we can remove that field
-        // from the codec definition and the case class, making it purely a serialization detail.
-        // see: https://github.com/scodec/scodec/blob/series/1.11.x/unitTests/src/test/scala/scodec/examples/ProductsExample.scala#L108-L127
-        case _ :: _ :: _ :: _ :: _ :: htlcMaximumMsat_opt :: HNil => MessageFlags(optionChannelHtlcMax = htlcMaximumMsat_opt.isDefined)
-      }
+      ("messageFlags" | constant(hex"01")) :~>:
+      channelFlagsCodec ::
+      ("cltvExpiryDelta" | cltvExpiryDelta) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
+      ("feeBaseMsat" | millisatoshi32) ::
+      ("feeProportionalMillionths" | uint32) ::
+      ("htlcMaximumMsat" | millisatoshi)
 
   val channelUpdateWitnessCodec =
-    (("chainHash" | bytes32) ::
+    ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | timestampSecond) ::
-      (messageFlagsCodec >>:~ { messageFlags =>
-        channelFlagsCodec ::
-          ("cltvExpiryDelta" | cltvExpiryDelta) ::
-          ("htlcMinimumMsat" | millisatoshi) ::
-          ("feeBaseMsat" | millisatoshi32) ::
-          ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional(messageFlags.optionChannelHtlcMax, millisatoshi)) ::
-          ("tlvStream" | ChannelUpdateTlv.channelUpdateTlvCodec)
-      })).derive[MessageFlags].from {
-      // same comment above
-      case _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: htlcMaximumMsat_opt :: _ :: HNil => MessageFlags(optionChannelHtlcMax = htlcMaximumMsat_opt.isDefined)
-    }
+      ("messageFlags" | constant(hex"01")) :~>:
+      channelFlagsCodec ::
+      ("cltvExpiryDelta" | cltvExpiryDelta) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
+      ("feeBaseMsat" | millisatoshi32) ::
+      ("feeProportionalMillionths" | uint32) ::
+      ("htlcMaximumMsat" | millisatoshi) ::
+      ("tlvStream" | ChannelUpdateTlv.channelUpdateTlvCodec)
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | bytes64) ::
