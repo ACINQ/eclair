@@ -328,7 +328,7 @@ object LightningMessageCodecs {
   val channelUpdateChecksumCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
-      ("messageFlags" | constant(hex"01")) ::
+      ("messageFlags" | constant(hex"01")) :~>:
       channelFlagsCodec ::
       ("cltvExpiryDelta" | cltvExpiryDelta) ::
       ("htlcMinimumMsat" | millisatoshi) ::
@@ -340,7 +340,7 @@ object LightningMessageCodecs {
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | timestampSecond) ::
-      ("messageFlags" | constant(hex"01")) ::
+      ("messageFlags" | constant(hex"01")) :~>:
       channelFlagsCodec ::
       ("cltvExpiryDelta" | cltvExpiryDelta) ::
       ("htlcMinimumMsat" | millisatoshi) ::
