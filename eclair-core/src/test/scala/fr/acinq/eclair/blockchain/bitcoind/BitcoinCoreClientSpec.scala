@@ -28,7 +28,7 @@ import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpen
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressToPublicKeyScript, randomBytes32, randomKey}
@@ -1321,4 +1321,78 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(sender.expectMsgType[Transaction].txid == tx.txid)
   }
 
+  test("get block header info") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+    val height = sender.expectMsgType[BlockHeight]
+    bitcoinClient.getBlockHash(height.toInt).pipeTo(sender.ref)
+    val lastBlockId = sender.expectMsgType[ByteVector32]
+    bitcoinClient.getBlockHeaderInfo(lastBlockId).pipeTo(sender.ref)
+    val lastBlockInfo = sender.expectMsgType[BlockHeaderInfo]
+    assert(lastBlockInfo.nextBlockHash.isEmpty)
+
+    bitcoinClient.getBlockHash(height.toInt - 1).pipeTo(sender.ref)
+    val blockId = sender.expectMsgType[ByteVector32]
+    bitcoinClient.getBlockHeaderInfo(blockId).pipeTo(sender.ref)
+    val blockInfo = sender.expectMsgType[BlockHeaderInfo]
+    assert(lastBlockInfo.header.hashPreviousBlock == blockInfo.header.hash)
+    assert(blockInfo.nextBlockHash.contains(kmp2scala(lastBlockInfo.header.hash)))
+  }
+
+  test("get chains of block headers") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+
+    bitcoinClient.getBlockHash(140).pipeTo(sender.ref)
+    val blockId = sender.expectMsgType[ByteVector32]
+    bitcoinClient.getBlockInfos(blockId, 5).pipeTo(sender.ref)
+    val blockInfos = sender.expectMsgType[List[BlockHeaderInfo]]
+    for (i <- 0 until blockInfos.size - 1) {
+      require(blockInfos(i).nextBlockHash.contains(kmp2scala(blockInfos(i + 1).header.hash)))
+      require(blockInfos(i + 1).header.hashPreviousBlock == blockInfos(i).header.hash)
+    }
+  }
+
+  test("verify tx publication proofs") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val address = getNewAddress(sender)
+
+    // we create a dummy confirmed tx, we'll use its txout proof later
+    val dummyTx = sendToAddress(address, 5 btc, sender)
+
+    val tx = sendToAddress(address, 5 btc, sender)
+    // transaction is not confirmed yet
+    bitcoinClient.getTxConfirmations(tx.txid).pipeTo(sender.ref)
+    sender.expectMsg(Some(0))
+
+    // let's confirm our transaction.
+    generateBlocks(6)
+    bitcoinClient.getTxConfirmations(tx.txid).pipeTo(sender.ref)
+    sender.expectMsg(Some(6))
+
+    bitcoinClient.getTxOutProof(tx.txid).pipeTo(sender.ref)
+    val proof = sender.expectMsgType[ByteVector]
+    val check = fr.acinq.bitcoin.Block.verifyTxOutProof(proof.toArray)
+    val header = check.getFirst
+    bitcoinClient.getTxConfirmationProof(tx.txid).pipeTo(sender.ref)
+    val headerInfos = sender.expectMsgType[List[BlockHeaderInfo]]
+    assert(header == headerInfos.head.header)
+
+    // try again with a bitcoin client that returns a proof that is not valid for our tx but from the same block where it was confirmed
+    bitcoinClient.getTxOutProof(dummyTx.txid).pipeTo(sender.ref)
+    val dumyProof = sender.expectMsgType[ByteVector]
+    val evilBitcoinClient = new BitcoinCoreClient(new BitcoinJsonRPCClient {
+      override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
+        case "gettxoutproof" => Future.successful(JString(dumyProof.toHex))
+        case _ => bitcoinrpcclient.invoke(method, params: _*)(ec)
+      }
+    })
+    evilBitcoinClient.getTxConfirmationProof(tx.txid).pipeTo(sender.ref)
+    val error = sender.expectMsgType[Failure]
+    assert(error.cause.getMessage.contains("txid not found"))
+  }
 }
