@@ -545,9 +545,6 @@ object Router {
       amountToSend - amount
     }
 
-    /** This method retrieves the channel update that we used when we built the route. */
-    def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.params).collect { case s: ChannelRelayParams.FromAnnouncement => s.channelUpdate }
-
     def printNodes(): String = hops.map(_.nextNodeId).mkString("->")
 
     def printChannels(): String = hops.map(_.shortChannelId).mkString("->")
