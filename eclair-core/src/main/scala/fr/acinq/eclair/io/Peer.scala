@@ -160,7 +160,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
           createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = true, c.fundingAmount).andThen {
             case Success(localParams) => selfRef ! SpawnChannelInitiator(c, ChannelConfig.standard, channelType, localParams, origin)
-            case Failure(t) => origin ! Status.Failure(new RuntimeException("channel creation failed", t))
+            case Failure(t) => origin.tell(Status.Failure(new RuntimeException("channel creation failed", t)), selfRef)
           }
           stay()
         }
@@ -183,22 +183,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None =>
-            validateRemoteChannelType(open.temporaryChannelId, open.channelFlags, open.channelType_opt, d.localFeatures, d.remoteFeatures) match {
-              case Right(channelType) =>
-                // NB: we need to capture parameters in a val to use them in andThen
-                val selfRef = self
-                implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
-                createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = false, open.fundingSatoshis).andThen {
-                  case Success(localParams) => selfRef ! SpawnChannelNonInitiator(Left(open), ChannelConfig.standard, channelType, localParams)
-                  case Failure(_) => selfRef ! Peer.OutgoingMessage(Error(open.temporaryChannelId, "channel creation failed"), d.peerConnection)
-                }
-                stay()
-              case Left(ex) =>
-                log.warning("ignoring open_channel2: {}", ex.getMessage)
-                val err = Error(open.temporaryChannelId, ex.getMessage)
-                self ! Peer.OutgoingMessage(err, d.peerConnection)
-                stay()
-            }
+            handleOpenChannel(Left(open), open.temporaryChannelId, open.fundingSatoshis, open.channelFlags, open.channelType_opt, d)
+            stay()
           case Some(_) =>
             log.warning("ignoring open_channel with duplicate temporaryChannelId={}", open.temporaryChannelId)
             stay()
@@ -207,22 +193,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
-            validateRemoteChannelType(open.temporaryChannelId, open.channelFlags, open.channelType_opt, d.localFeatures, d.remoteFeatures) match {
-              case Right(channelType) =>
-                // NB: we need to capture parameters in a val to use them in andThen
-                val selfRef = self
-                implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
-                createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = false, open.fundingAmount).andThen {
-                  case Success(localParams) => selfRef ! SpawnChannelNonInitiator(Right(open), ChannelConfig.standard, channelType, localParams)
-                  case Failure(_) => selfRef ! Peer.OutgoingMessage(Error(open.temporaryChannelId, "channel creation failed"), d.peerConnection)
-                }
-                stay()
-              case Left(ex) =>
-                log.warning("ignoring open_channel2: {}", ex.getMessage)
-                val err = Error(open.temporaryChannelId, ex.getMessage)
-                self ! Peer.OutgoingMessage(err, d.peerConnection)
-                stay()
-            }
+            handleOpenChannel(Right(open), open.temporaryChannelId, open.fundingAmount, open.channelFlags, open.channelType_opt, d)
+            stay()
           case None =>
             log.info("rejecting open_channel2: dual funding is not supported")
             self ! Peer.OutgoingMessage(Error(open.temporaryChannelId, "dual funding is not supported"), d.peerConnection)
@@ -429,6 +401,23 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
   def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
     val msg = Warning(unknownChannelId, "unknown channel")
     self ! Peer.OutgoingMessage(msg, peerConnection)
+  }
+
+  def handleOpenChannel(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], temporaryChannelId: ByteVector32, fundingAmount: Satoshi, channelFlags: ChannelFlags, channelType_opt: Option[ChannelType], d: ConnectedData): Unit = {
+    validateRemoteChannelType(temporaryChannelId, channelFlags, channelType_opt, d.localFeatures, d.remoteFeatures) match {
+      case Right(channelType) =>
+        // NB: we need to capture parameters in a val to use them in andThen
+        val selfRef = self
+        implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
+        createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = false, fundingAmount).andThen {
+          case Success(localParams) => selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
+          case Failure(_) => selfRef ! Peer.OutgoingMessage(Error(temporaryChannelId, "channel creation failed"), d.peerConnection)
+        }
+      case Left(ex) =>
+        log.warning("ignoring remote channel open: {}", ex.getMessage)
+        val err = Error(temporaryChannelId, ex.getMessage)
+        self ! Peer.OutgoingMessage(err, d.peerConnection)
+    }
   }
 
   def validateRemoteChannelType(temporaryChannelId: ByteVector32, channelFlags: ChannelFlags, remoteChannelType_opt: Option[ChannelType], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): Either[ChannelException, SupportedChannelType] = {
