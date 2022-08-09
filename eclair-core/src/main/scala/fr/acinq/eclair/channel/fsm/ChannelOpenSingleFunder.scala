@@ -72,7 +72,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
                          NORMAL|                                |NORMAL
  */
 
-  when(WAIT_FOR_INIT_SINGLE_FUNDER_CHANNEL)(handleExceptions {
+  when(WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL)(handleExceptions {
     case Event(input: INPUT_INIT_CHANNEL_INITIATOR, _) =>
       val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
       val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)

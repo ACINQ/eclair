@@ -217,7 +217,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       if (input.dualFunded) {
         goto(WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL)
       } else {
-        goto(WAIT_FOR_INIT_SINGLE_FUNDER_CHANNEL)
+        goto(WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL)
       }
 
     case Event(input: INPUT_INIT_CHANNEL_NON_INITIATOR, Nothing) if !input.localParams.isInitiator =>

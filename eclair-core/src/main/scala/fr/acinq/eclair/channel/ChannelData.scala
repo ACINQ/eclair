@@ -48,7 +48,7 @@ import java.util.UUID
 sealed trait ChannelState
 case object WAIT_FOR_INIT_INTERNAL extends ChannelState
 // Single-funder channel opening:
-case object WAIT_FOR_INIT_SINGLE_FUNDER_CHANNEL extends ChannelState
+case object WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_OPEN_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_CHANNEL extends ChannelState
 case object WAIT_FOR_FUNDING_INTERNAL extends ChannelState
