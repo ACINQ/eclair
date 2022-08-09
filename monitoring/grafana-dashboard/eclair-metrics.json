@@ -1403,7 +1403,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Offline"
+                "value": "Wait for funding confirmed"
               }
             ]
           },
@@ -1415,7 +1415,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Closed"
+                "value": "Wait for channel ready"
               }
             ]
           },
@@ -1427,7 +1427,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Wait for accept channel"
+                "value": "Normal"
               }
             ]
           },
@@ -1439,7 +1439,43 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Wait for funding confirmed"
+                "value": "Shutdown"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "E"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Negotiating"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "F"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Closing"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "G"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Offline"
               }
             ]
           }
@@ -1449,7 +1485,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 45
       },
       "id": 4,
       "options": {
@@ -1476,7 +1512,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "channels_count{state=\"OFFLINE\"}",
+          "expr": "channels_count{state=\"WAIT_FOR_FUNDING_CONFIRMED\"}",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -1487,7 +1523,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "channels_count{state=\"CLOSED\"}",
+          "expr": "channels_count{state=\"WAIT_FOR_CHANNEL_READY\"}",
           "hide": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1499,7 +1535,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "channels_count{state=\"WAIT_FOR_ACCEPT_CHANNEL\"}",
+          "expr": "channels_count{state=\"NORMAL\"}",
           "hide": false,
           "legendFormat": "__auto",
           "range": true,
@@ -1511,11 +1547,47 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "channels_count{state=\"WAIT_FOR_FUNDING_CONFIRMED\"}",
+          "expr": "channels_count{state=\"SHUTDOWN\"}",
           "hide": false,
           "legendFormat": "__auto",
           "range": true,
           "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "builder",
+          "expr": "channels_count{state=\"NEGOTIATING\"}",
+          "hide": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "builder",
+          "expr": "channels_count{state=\"CLOSING\"}",
+          "hide": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "builder",
+          "expr": "channels_count{state=\"OFFLINE\"}",
+          "hide": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "G"
         }
       ],
       "title": "Channels",
@@ -1576,73 +1648,13 @@
           }
         },
         "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Accept Channel"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Channel Reestablish"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "D"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "CurrentBlockHeight"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "E"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "ProcessCurrentBlockHeight"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "F"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "ChannelReady"
-              }
-            ]
-          }
         ]
       },
       "gridPos": {
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 45
       },
       "id": 26,
       "options": {
