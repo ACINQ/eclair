@@ -49,6 +49,8 @@ import scala.concurrent.duration._
 object ChannelStateTestsTags {
   /** If set, channels will use option_support_large_channel. */
   val Wumbo = "wumbo"
+  /** If set, channels will use option_dual_fund. */
+  val DualFunding = "dual_funding"
   /** If set, channels will use option_static_remotekey. */
   val StaticRemoteKey = "static_remotekey"
   /** If set, channels will use option_anchor_outputs. */
@@ -61,6 +63,8 @@ object ChannelStateTestsTags {
   val ChannelsPublic = "channels_public"
   /** If set, no amount will be pushed when opening a channel (by default we push a small amount). */
   val NoPushMsat = "no_push_msat"
+  /** If set, the non-initiator of a dual-funded channel will contribute some funds. */
+  val DualFundingContribution = "dual_funding_contribution"
   /** If set, max-htlc-value-in-flight will be set to the highest possible value for Alice and Bob. */
   val NoMaxHtlcValueInFlight = "no_max_htlc_value_in_flight"
   /** If set, max-htlc-value-in-flight will be set to a low value for Alice. */
@@ -168,6 +172,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .initFeatures()
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
@@ -179,6 +184,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ChannelType))(_.updated(Features.ChannelType, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .initFeatures()
 
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
@@ -213,20 +219,19 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val channelFlags = ChannelFlags(announceChannel = tags.contains(ChannelStateTestsTags.ChannelsPublic))
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags, channelFlags)
     val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
-    val (fundingSatoshis, pushMsat) = if (tags.contains(ChannelStateTestsTags.NoPushMsat)) {
-      (TestConstants.fundingSatoshis, 0.msat)
-    } else {
-      (TestConstants.fundingSatoshis, TestConstants.pushMsat)
-    }
+    val fundingAmount = TestConstants.fundingSatoshis
+    val pushMsat = if (tags.contains(ChannelStateTestsTags.NoPushMsat)) 0 msat else TestConstants.pushMsat
+    val nonInitiatorFundingAmount = if (tags.contains(ChannelStateTestsTags.DualFundingContribution)) Some(TestConstants.nonInitiatorFundingSatoshis) else None
+    val dualFunded = tags.contains(ChannelStateTestsTags.DualFunding)
 
     val eventListener = TestProbe()
     systemA.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
 
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, commitTxFeerate, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
+    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded, commitTxFeerate, TestConstants.feeratePerKw, Some(pushMsat), aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+    bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFundingAmount, dualFunded, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)

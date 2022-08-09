@@ -44,7 +44,8 @@ import scala.concurrent.duration._
 object TestConstants {
 
   val defaultBlockHeight = 400000
-  val fundingSatoshis: Satoshi = 1000000L sat
+  val fundingSatoshis: Satoshi = 1000000 sat
+  val nonInitiatorFundingSatoshis: Satoshi = 500000 sat
   val pushMsat: MilliSatoshi = 200000000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2500 sat)

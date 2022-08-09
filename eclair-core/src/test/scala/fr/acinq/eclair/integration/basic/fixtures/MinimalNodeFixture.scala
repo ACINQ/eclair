@@ -25,7 +25,7 @@ import fr.acinq.eclair.payment.relay.{ChannelRelayer, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
@@ -34,7 +34,6 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration.DurationInt
 import scala.util.{Random, Try}
-
 
 /**
  * A minimal node setup, with real actors.
@@ -161,7 +160,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
 
   def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = None)(implicit system: ActorSystem): ChannelOpened = {
     val sender = TestProbe("sender")
-    sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, 0 msat, channelType_opt, None, None, None))
+    sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, channelType_opt, None, None, None, None))
     sender.expectMsgType[ChannelOpened]
   }
 
