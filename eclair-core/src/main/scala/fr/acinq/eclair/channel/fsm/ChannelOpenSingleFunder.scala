@@ -111,7 +111,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_CHANNEL_NON_INITIATOR(_, _, _, localParams, _, remoteInit, channelConfig, channelType))) =>
-      Helpers.validateParamsFundee(nodeParams, channelType, localParams.initFeatures, open, remoteNodeId, remoteInit.features) match {
+      Helpers.validateParamsSingleFundedFundee(nodeParams, channelType, localParams.initFeatures, open, remoteNodeId, remoteInit.features) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.feeratePerKw, None))
@@ -168,7 +168,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, fundingSatoshis, _, commitTxFeerate, fundingTxFeerate, pushMsat_opt, localParams, _, remoteInit, _, channelConfig, channelType), open)) =>
-      Helpers.validateParamsFunder(nodeParams, channelType, localParams.initFeatures, remoteInit.features, open, accept) match {
+      Helpers.validateParamsSingleFundedFunder(nodeParams, channelType, localParams.initFeatures, remoteInit.features, open, accept) match {
         case Left(t) =>
           channelOpenReplyToUser(Left(LocalError(t)))
           handleLocalError(t, d, Some(accept))
