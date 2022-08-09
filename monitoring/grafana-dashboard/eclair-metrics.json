@@ -1680,58 +1680,10 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "builder",
-          "expr": "channels_messages_processed_seconds_count{MessageType=\"AcceptChannel\"}",
+          "expr": "channels_messages_processed_seconds_count",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "builder",
-          "expr": "channels_messages_processed_seconds_count{MessageType=\"ChannelReestablish\"}",
-          "hide": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "builder",
-          "expr": "channels_messages_processed_seconds_count{MessageType=\"CurrentBlockHeight\"}",
-          "hide": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "builder",
-          "expr": "channels_messages_processed_seconds_count{MessageType=\"ProcessCurrentBlockHeight\"}",
-          "hide": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "E"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "builder",
-          "expr": "channels_messages_processed_seconds_count{MessageType=\"ChannelReady\"}",
-          "hide": false,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "F"
         }
       ],
       "title": "Channel Messages Processed",
