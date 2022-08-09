@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.testutils
 
-import akka.actor.{ActorSystem, Props}
+import akka.actor.Props
 import akka.event.Logging.{LogEvent, StdOutLogger}
-import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
+import fr.acinq.eclair.integration.basic.fixtures.composite.{ThreeNodesFixture, TwoNodesFixture}
 import org.scalatest.concurrent.Eventually
 import org.scalatest.funsuite.FixtureAnyFunSuite
 import org.scalatest.{Assertions, Outcome, TestData}
@@ -97,16 +97,11 @@ class MyLogCapture extends StdOutLogger {
   private val logEvents: ListBuffer[LogEvent] = ListBuffer[LogEvent]()
 
   def setup(f: Any): Unit = {
-    // we use reflection to find actorsystems to listen to
-    val testSystem = f.getClass.getDeclaredMethods
-      .collect {
-        case m if m.getReturnType == classOf[ActorSystem] => m.invoke(f).asInstanceOf[ActorSystem]
-      }.head
-    val systems = f.getClass.getDeclaredMethods
-      .collect {
-        case m if m.getReturnType == classOf[MinimalNodeFixture] => m.invoke(f).asInstanceOf[MinimalNodeFixture].system
-      }
-      .toSet
+    // we find actorsystems to listen to
+    val (testSystem, systems) = f match {
+      case f: TwoNodesFixture => (f.system, Set(f.alice.system, f.bob.system))
+      case f: ThreeNodesFixture => (f.system, Set(f.alice.system, f.bob.system, f.carol.system))
+    }
     val l = testSystem.actorOf(Props(new LogListener(logEvents)))
     systems.foreach(l ! LogListener.ListenTo(_))
   }
