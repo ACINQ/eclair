@@ -2,7 +2,7 @@ package fr.acinq.eclair.integration.basic
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.MilliSatoshiLong
-import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
+import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import org.scalatest.TestData
 import org.scalatest.concurrent.IntegrationPatience
@@ -16,7 +16,7 @@ class ThreeNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
   type FixtureParam = ThreeNodesFixture
 
-  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture._
+  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendSuccessfulPayment, watcherAutopilot}
 
   override def createFixture(testData: TestData): FixtureParam = {
     // seeds have been chosen so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.

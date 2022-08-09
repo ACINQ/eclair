@@ -1,4 +1,4 @@
-package fr.acinq.eclair.integration.basic
+package fr.acinq.eclair.integration.basic.zeroconf
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
@@ -6,7 +6,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ScidAlias, ZeroConf}
 import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.integration.basic.fixtures.ThreeNodesFixture
+import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.RouteNotFound
@@ -26,7 +26,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   val ScidAliasBobCarol = "scid_alias_bob_carol"
   val PublicBobCarol = "public_bob_carol"
 
-  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture._
+  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelData, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendFailingPayment, sendPayment, sendSuccessfulPayment, watcherAutopilot}
 
   override def createFixture(testData: TestData): FixtureParam = {
     // seeds have been chosen so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
@@ -64,7 +64,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     (channelId_ab, channelId_bc)
   }
 
-  private def createBobToCarolTestHint(f: FixtureParam, useHint: Boolean, overrideHintScid_opt: Option[RealShortChannelId]): Seq[ExtraHop] = {
+  private def createBobToCarolTestHint(f: FixtureParam, useHint: Boolean, overrideHintScid_opt: Option[RealShortChannelId]): List[ExtraHop] = {
     import f._
     if (useHint) {
       val Some(carolHint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
@@ -72,9 +72,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.shortIds.localAlias
       // the hint is always using the alias
       assert(carolHint.shortChannelId == bobAlias)
-      Seq(carolHint.modify(_.shortChannelId).setToIfDefined(overrideHintScid_opt))
+      List(carolHint.modify(_.shortChannelId).setToIfDefined(overrideHintScid_opt))
     } else {
-      Seq.empty
+      Nil
     }
   }
 
@@ -82,7 +82,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
   private def sendPaymentAliceToCarol(f: FixtureParam, expected: Either[Either[Throwable, FailureMessage], Ok.type], useHint: Boolean = false, overrideHintScid_opt: Option[RealShortChannelId] = None): Unit = {
     import f._
-    val result = sendPayment(alice, carol, 100_000 msat, hints = Seq(createBobToCarolTestHint(f, useHint, overrideHintScid_opt))) match {
+    val result = sendPayment(alice, carol, 100_000 msat, hints = List(createBobToCarolTestHint(f, useHint, overrideHintScid_opt))) match {
       case Left(paymentFailed) =>
         Left(PaymentFailure.transformForUser(paymentFailed.failures).last match {
           case LocalFailure(_, _, t) => Left(t)
@@ -255,7 +255,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     sendSuccessfulPayment(bob, carol, 60_000_000 msat)
 
     // The channel update returned in failures doesn't leak the real scid.
-    val failure = sendFailingPayment(alice, carol, 50_000_000 msat, hints = Seq(Seq(carolHint)))
+    val failure = sendFailingPayment(alice, carol, 50_000_000 msat, hints = List(List(carolHint)))
     val failureWithChannelUpdate = failure.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f }
     assert(failureWithChannelUpdate.length == 1)
     assert(failureWithChannelUpdate.head.update.shortChannelId == bobAlias)
