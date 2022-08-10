@@ -32,8 +32,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
-import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
@@ -171,10 +171,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(TickPruneStaleChannels, d) =>
       stay() using StaleChannels.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight)
 
-    case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
-      val banDuration = nodeParams.routerConf.channelExcludeDuration
-      log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId, nodeId, banDuration)
-      context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
+    case Event(ExcludeChannel(desc, duration_opt), d) =>
+      log.info("excluding shortChannelId={} from nodeId={} for duration={}", desc.shortChannelId, desc.a, duration_opt.getOrElse("n/a"))
+      duration_opt.foreach(banDuration => context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc)))
       stay() using d.copy(excludedChannels = d.excludedChannels + desc)
 
     case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
@@ -580,7 +579,7 @@ object Router {
 
   // @formatter:off
   /** This is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed) */
-  case class ExcludeChannel(desc: ChannelDesc)
+  case class ExcludeChannel(desc: ChannelDesc, duration_opt: Option[FiniteDuration])
   case class LiftChannelExclusion(desc: ChannelDesc)
   // @formatter:on
 

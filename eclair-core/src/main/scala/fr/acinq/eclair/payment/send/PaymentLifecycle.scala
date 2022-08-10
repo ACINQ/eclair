@@ -185,7 +185,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         failureMessage match {
           case TemporaryChannelFailure(update) =>
             d.route.hops.find(_.nodeId == nodeId) match {
-              case Some(failingHop) if ChannelRelayParams.areSame(failingHop.params, ChannelRelayParams.FromAnnouncement(update), true) =>
+              case Some(failingHop) if ChannelRelayParams.areSame(failingHop.params, ChannelRelayParams.FromAnnouncement(update), ignoreHtlcSize = true) =>
                 router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
               case _ => // otherwise the relay parameters may have changed, so it's not necessarily a liquidity issue
             }
@@ -272,12 +272,12 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
         log.info(s"received exact same update from nodeId=$nodeId, excluding the channel from futures routes")
         val nextNodeId = data.route.hops.find(_.nodeId == nodeId).get.nextNodeId
-        router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
+        router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
       case Some(u) if PaymentFailure.hasAlreadyFailedOnce(nodeId, data.failures) =>
         // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
         log.warning(s"it is the second time nodeId=$nodeId answers with a new update, excluding it: old=$u new=${failure.update}")
         val nextNodeId = data.route.hops.find(_.nodeId == nodeId).get.nextNodeId
-        router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
+        router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
       case Some(u) =>
         log.info(s"got a new update for shortChannelId=${u.shortChannelId}: old=$u new=${failure.update}")
       case None =>
@@ -296,7 +296,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       // channel flags to indicate that it's disabled
       data.c.extraEdges
         .find { case edge: BasicEdge => edge.shortChannelId == failure.update.shortChannelId }
-        .foreach { case edge: BasicEdge => router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId)) } // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
+        .foreach { case edge: BasicEdge => router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId), Some(nodeParams.routerConf.channelExcludeDuration)) } // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
       data.c.extraEdges
     }
   }
