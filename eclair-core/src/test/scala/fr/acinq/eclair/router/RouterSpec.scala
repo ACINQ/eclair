@@ -22,22 +22,20 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong, Transaction, TxOut}
-import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate, RealScidStatus, ShortIds}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Graph.RoutingHeuristics
 import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, DEFAULT_ROUTE_PARAMS}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, nodeFee, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, randomKey}
 import scodec.bits._
 
 import scala.concurrent.duration._
@@ -431,7 +429,7 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsgType[RouteResponse]
     val bc = ChannelDesc(scid_bc, b, c)
     // let's exclude channel b->c
-    sender.send(router, ExcludeChannel(bc))
+    sender.send(router, ExcludeChannel(bc, Some(1 hour)))
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
     // note that cb is still available!
@@ -620,7 +618,7 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, GetRoutingState)
     val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-    assert(channel_ab.meta_opt == None)
+    assert(channel_ab.meta_opt.isEmpty)
 
     {
       // When the local channel comes back online, it will send a LocalChannelUpdate to the router.
@@ -637,7 +635,7 @@ class RouterSpec extends BaseRouterSpec {
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
       assert(balances.contains(edge_ab.balance_opt))
-      assert(edge_ba.balance_opt == None)
+      assert(edge_ba.balance_opt.isEmpty)
     }
 
     {
@@ -660,7 +658,7 @@ class RouterSpec extends BaseRouterSpec {
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
       assert(balances.contains(edge_ab.balance_opt))
-      assert(edge_ba.balance_opt == None)
+      assert(edge_ba.balance_opt.isEmpty)
     }
 
     {
@@ -678,7 +676,7 @@ class RouterSpec extends BaseRouterSpec {
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
       assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
       assert(balances.contains(edge_ab.balance_opt))
-      assert(edge_ba.balance_opt == None)
+      assert(edge_ba.balance_opt.isEmpty)
     }
 
     {
@@ -693,7 +691,7 @@ class RouterSpec extends BaseRouterSpec {
       // And the graph should be updated too.
       val edge_ag = data.graphWithBalances.graph.getEdge(ChannelDesc(alias_ag_private, a, g)).get
       assert(edge_ag.capacity == channel_ag.capacity)
-      assert(edge_ag.balance_opt == Some(33000000 msat))
+      assert(edge_ag.balance_opt.contains(33000000 msat))
     }
   }
 
