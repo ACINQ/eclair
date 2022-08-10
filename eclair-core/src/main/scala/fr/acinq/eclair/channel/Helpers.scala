@@ -1197,41 +1197,6 @@ object Helpers {
     }
 
     /**
-     * Before eclair v0.6.0, we didn't store the mapping between htlc txs and the htlc id.
-     * This function is only used for channels that were closing before upgrading to eclair v0.6.0 (released in may 2021).
-     * TODO: remove once we're confident all eclair nodes on the network have been upgraded.
-     *
-     * We may have multiple HTLCs with the same payment hash because of MPP.
-     * When a timeout transaction is confirmed, we need to find the best matching HTLC to fail upstream.
-     * We need to handle potentially duplicate HTLCs (same amount and expiry): this function will use a deterministic
-     * ordering of transactions and HTLCs to handle this.
-     */
-    private def findTimedOutHtlc(tx: Transaction, paymentHash160: ByteVector, htlcs: Seq[UpdateAddHtlc], timeoutTxs: Seq[Transaction], extractPaymentHash: PartialFunction[ScriptWitness, ByteVector])(implicit log: LoggingAdapter): Option[UpdateAddHtlc] = {
-      // We use a deterministic ordering to match HTLCs to their corresponding timeout tx.
-      // We don't match on the expected amounts because this is error-prone: computing the correct weight of a timeout tx
-      // is hard because signatures can be either 71, 72 or 73 bytes long (ECDSA DER encoding).
-      // It's simpler to just use the amount as the first ordering key: since the feerate is the same for all timeout
-      // transactions we will find the right HTLC to fail upstream.
-      val matchingHtlcs = htlcs
-        .filter(add => add.cltvExpiry.toLong == tx.lockTime && Crypto.ripemd160(add.paymentHash) == paymentHash160)
-        .sortBy(add => (add.amountMsat.toLong, add.id))
-      val matchingTxs = timeoutTxs
-        .filter(timeoutTx => timeoutTx.lockTime == tx.lockTime && timeoutTx.txIn.map(_.witness).collect(extractPaymentHash).contains(paymentHash160))
-        .sortBy(timeoutTx => (timeoutTx.txOut.map(_.amount.toLong).sum, timeoutTx.txIn.head.outPoint.index))
-      if (matchingTxs.size != matchingHtlcs.size) {
-        log.error(s"some htlcs don't have a corresponding timeout transaction: tx=$tx, htlcs=$matchingHtlcs, timeout-txs=$matchingTxs")
-      }
-      matchingHtlcs.zip(matchingTxs).collectFirst {
-        // HTLC transactions cannot change when anchor outputs is not used, so we could just check that the txids match.
-        // But claim-htlc transactions can be updated to pay more or less fees by changing the output amount, so we cannot
-        // rely on txid equality for them.
-        // We instead check that the mempool transaction spends exactly the same inputs and sends the funds to exactly
-        // the same addresses as our transaction.
-        case (add, timeoutTx) if timeoutTx.txIn.map(_.outPoint).toSet == tx.txIn.map(_.outPoint).toSet && timeoutTx.txOut.map(_.publicKeyScript).toSet == tx.txOut.map(_.publicKeyScript).toSet => add
-      }
-    }
-
-    /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
      * more htlcs have timed out and need to be failed in an upstream channel. Trimmed htlcs can be failed as soon as
      * the commitment tx has been confirmed.
@@ -1246,30 +1211,18 @@ object Helpers {
         localCommit.spec.htlcs.collect(outgoing) -- untrimmedHtlcs
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
-        val isMissingHtlcIndex = localCommitPublished.htlcTxs.values.collect { case Some(HtlcTimeoutTx(_, _, htlcId, _)) => htlcId }.toSet == Set(0)
-        if (isMissingHtlcIndex && commitmentFormat == DefaultCommitmentFormat) {
-          tx.txIn
-            .map(_.witness)
-            .collect(Scripts.extractPaymentHashFromHtlcTimeout)
-            .flatMap { paymentHash160 =>
-              log.info(s"htlc-timeout tx for paymentHash160=${paymentHash160.toHex} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
-              val timeoutTxs = localCommitPublished.htlcTxs.values.collect { case Some(HtlcTimeoutTx(_, tx, _, _)) => tx }.toSeq
-              findTimedOutHtlc(tx, paymentHash160, untrimmedHtlcs, timeoutTxs, Scripts.extractPaymentHashFromHtlcTimeout)
-            }.toSet
-        } else {
-          tx.txIn.flatMap(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
-            case Some(Some(HtlcTimeoutTx(_, _, htlcId, _))) if isHtlcTimeout(tx, localCommitPublished) =>
-              untrimmedHtlcs.find(_.id == htlcId) match {
-                case Some(htlc) =>
-                  log.info(s"htlc-timeout tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
-                  Some(htlc)
-                case None =>
-                  log.error(s"could not find htlc #$htlcId for htlc-timeout tx=$tx")
-                  None
-              }
-            case _ => None
-          }).toSet
-        }
+        tx.txIn.flatMap(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
+          case Some(Some(HtlcTimeoutTx(_, _, htlcId, _))) if isHtlcTimeout(tx, localCommitPublished) =>
+            untrimmedHtlcs.find(_.id == htlcId) match {
+              case Some(htlc) =>
+                log.info(s"htlc-timeout tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
+                Some(htlc)
+              case None =>
+                log.error(s"could not find htlc #$htlcId for htlc-timeout tx=$tx")
+                None
+            }
+          case _ => None
+        }).toSet
       }
     }
 
@@ -1288,30 +1241,18 @@ object Helpers {
         remoteCommit.spec.htlcs.collect(incoming) -- untrimmedHtlcs
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
-        val isMissingHtlcIndex = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(ClaimHtlcTimeoutTx(_, _, htlcId, _)) => htlcId }.toSet == Set(0)
-        if (isMissingHtlcIndex && commitmentFormat == DefaultCommitmentFormat) {
-          tx.txIn
-            .map(_.witness)
-            .collect(Scripts.extractPaymentHashFromClaimHtlcTimeout)
-            .flatMap { paymentHash160 =>
-              log.info(s"claim-htlc-timeout tx for paymentHash160=${paymentHash160.toHex} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
-              val timeoutTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(ClaimHtlcTimeoutTx(_, tx, _, _)) => tx }.toSeq
-              findTimedOutHtlc(tx, paymentHash160, untrimmedHtlcs, timeoutTxs, Scripts.extractPaymentHashFromClaimHtlcTimeout)
-            }.toSet
-        } else {
-          tx.txIn.flatMap(txIn => remoteCommitPublished.claimHtlcTxs.get(txIn.outPoint) match {
-            case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId, _))) if isClaimHtlcTimeout(tx, remoteCommitPublished) =>
-              untrimmedHtlcs.find(_.id == htlcId) match {
-                case Some(htlc) =>
-                  log.info(s"claim-htlc-timeout tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
-                  Some(htlc)
-                case None =>
-                  log.error(s"could not find htlc #$htlcId for claim-htlc-timeout tx=$tx")
-                  None
-              }
-            case _ => None
-          }).toSet
-        }
+        tx.txIn.flatMap(txIn => remoteCommitPublished.claimHtlcTxs.get(txIn.outPoint) match {
+          case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId, _))) if isClaimHtlcTimeout(tx, remoteCommitPublished) =>
+            untrimmedHtlcs.find(_.id == htlcId) match {
+              case Some(htlc) =>
+                log.info(s"claim-htlc-timeout tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
+                Some(htlc)
+              case None =>
+                log.error(s"could not find htlc #$htlcId for claim-htlc-timeout tx=$tx")
+                None
+            }
+          case _ => None
+        }).toSet
       }
     }
 
