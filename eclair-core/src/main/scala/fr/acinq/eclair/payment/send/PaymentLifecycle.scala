@@ -264,24 +264,24 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[ExtraEdge] = {
     val extraEdges1 = data.route.hops.find(_.nodeId == nodeId) match {
       case Some(hop) => hop.params match {
-        case ChannelRelayParams.FromAnnouncement(u) =>
-          if (u.shortChannelId != failure.update.shortChannelId) {
+        case ann: ChannelRelayParams.FromAnnouncement =>
+          if (ann.channelUpdate.shortChannelId != failure.update.shortChannelId) {
             // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
-            log.info("received an update for a different channel than the one we asked: requested={} actual={} update={}", u.shortChannelId, failure.update.shortChannelId, failure.update)
-          } else if (Announcements.areSame(u, failure.update)) {
+            log.info("received an update for a different channel than the one we asked: requested={} actual={} update={}", ann.channelUpdate.shortChannelId, failure.update.shortChannelId, failure.update)
+          } else if (Announcements.areSame(ann.channelUpdate, failure.update)) {
             // node returned the exact same update we used, this can happen e.g. if the channel is imbalanced
             // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
             log.info("received exact same update from nodeId={}, excluding the channel from futures routes", nodeId)
-            router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
+            router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
           } else if (PaymentFailure.hasAlreadyFailedOnce(nodeId, data.failures)) {
             // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
-            log.warning("it is the second time nodeId={} answers with a new update, excluding it: old={} new={}", nodeId, u, failure.update)
-            router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
+            log.warning("it is the second time nodeId={} answers with a new update, excluding it: old={} new={}", nodeId, ann.channelUpdate, failure.update)
+            router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
           } else {
-            log.info("got a new update for shortChannelId={}: old={} new={}", u.shortChannelId, u, failure.update)
+            log.info("got a new update for shortChannelId={}: old={} new={}", ann.channelUpdate.shortChannelId, ann.channelUpdate, failure.update)
           }
           data.c.extraEdges
-        case ChannelRelayParams.FromHint(_) =>
+        case _: ChannelRelayParams.FromHint =>
           log.info("received an update for a routing hint (shortChannelId={} nodeId={} enabled={} update={})", failure.update.shortChannelId, nodeId, failure.update.channelFlags.isEnabled, failure.update)
           if (failure.update.channelFlags.isEnabled) {
             data.c.extraEdges.map {
@@ -304,6 +304,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         data.c.extraEdges
     }
     // in all cases, we forward the update to the router: if the channel is disabled, the router will remove it from its routing table
+    // if the channel is not announced (e.g. was from a hint), the router will simply ignore the update
     router ! failure.update
     // we return updated assisted routes: they take precedence over the router's routing table
     extraEdges1
