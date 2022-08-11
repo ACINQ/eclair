@@ -50,10 +50,10 @@ object Poly1305 {
  * see https://tools.ietf.org/html/rfc7539#section-2.5
  */
 object ChaCha20 {
-  def encrypt(plaintext: ByteVector, key: ByteVector, nonce: ByteVector, counter: Int = 0): ByteVector = {
+  def xor(input: ByteVector, key: ByteVector, nonce: ByteVector, counter: Int = 0): ByteVector = {
     val engine = new ChaCha7539Engine()
     engine.init(true, new ParametersWithIV(new KeyParameter(key.toArray), nonce.toArray))
-    val ciphertext: Array[Byte] = new Array[Byte](plaintext.length.toInt)
+    val output: Array[Byte] = new Array[Byte](input.length.toInt)
     counter match {
       case 0 => ()
       case 1 =>
@@ -62,26 +62,9 @@ object ChaCha20 {
         engine.processBytes(new Array[Byte](64), 0, 64, dummy, 0)
       case _ => throw InvalidCounter()
     }
-    val len = engine.processBytes(plaintext.toArray, 0, plaintext.length.toInt, ciphertext, 0)
-    if (len != plaintext.length) throw EncryptionError()
-    ByteVector.view(ciphertext)
-  }
-
-  def decrypt(ciphertext: ByteVector, key: ByteVector, nonce: ByteVector, counter: Int = 0): ByteVector = {
-    val engine = new ChaCha7539Engine
-    engine.init(false, new ParametersWithIV(new KeyParameter(key.toArray), nonce.toArray))
-    val plaintext: Array[Byte] = new Array[Byte](ciphertext.length.toInt)
-    counter match {
-      case 0 => ()
-      case 1 =>
-        // skip 1 block == set counter to 1 instead of 0
-        val dummy = new Array[Byte](64)
-        engine.processBytes(new Array[Byte](64), 0, 64, dummy, 0)
-      case _ => throw InvalidCounter()
-    }
-    val len = engine.processBytes(ciphertext.toArray, 0, ciphertext.length.toInt, plaintext, 0)
-    if (len != ciphertext.length) throw DecryptionError()
-    ByteVector.view(plaintext)
+    val len = engine.processBytes(input.toArray, 0, input.length.toInt, output, 0)
+    if (len != input.length) throw EncryptionError()
+    ByteVector.view(output)
   }
 }
 
@@ -109,8 +92,8 @@ object ChaCha20Poly1305 extends Logging {
    * @return a (ciphertext, mac) tuple
    */
   def encrypt(key: ByteVector, nonce: ByteVector, plaintext: ByteVector, aad: ByteVector): (ByteVector, ByteVector) = {
-    val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
-    val ciphertext = ChaCha20.encrypt(plaintext, key, nonce, 1)
+    val polykey = ChaCha20.xor(ByteVector32.Zeroes, key, nonce)
+    val ciphertext = ChaCha20.xor(plaintext, key, nonce, 1)
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
     logger.debug(s"encrypt($key, $nonce, $aad, $plaintext) = ($ciphertext, $tag)")
     (ciphertext, tag)
@@ -125,10 +108,10 @@ object ChaCha20Poly1305 extends Logging {
    * @return the decrypted plaintext if the mac is valid.
    */
   def decrypt(key: ByteVector, nonce: ByteVector, ciphertext: ByteVector, aad: ByteVector, mac: ByteVector): ByteVector = {
-    val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
+    val polykey = ChaCha20.xor(ByteVector32.Zeroes, key, nonce)
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
     if (tag != mac) throw InvalidMac()
-    val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
+    val plaintext = ChaCha20.xor(ciphertext, key, nonce, 1)
     logger.debug(s"decrypt($key, $nonce, $aad, $ciphertext, $mac) = $plaintext")
     plaintext
   }

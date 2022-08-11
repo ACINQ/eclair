@@ -50,7 +50,7 @@ object Sphinx extends Logging {
 
   def zeroes(length: Int): ByteVector = ByteVector.fill(length)(0)
 
-  def generateStream(key: ByteVector, length: Int): ByteVector = ChaCha20.encrypt(zeroes(length), key, zeroes(12))
+  def generateStream(key: ByteVector, length: Int): ByteVector = ChaCha20.xor(zeroes(length), key, zeroes(12))
 
   def computeSharedSecret(pub: PublicKey, secret: PrivateKey): ByteVector32 = Crypto.sha256(pub.multiply(secret).value)
 
