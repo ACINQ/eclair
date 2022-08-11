@@ -31,6 +31,7 @@ import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncement
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.bits.HexStringSyntax
 
 import scala.collection.{SortedMap, mutable}
 import scala.util.Random
@@ -63,7 +64,7 @@ class NetworkDbSpec extends AnyFunSuite {
       assert(db.listNodes().toSet == Set.empty)
       db.addNode(node_1)
       db.addNode(node_1) // duplicate is ignored
-      assert(db.getNode(node_1.nodeId) == Some(node_1))
+      assert(db.getNode(node_1.nodeId).contains(node_1))
       assert(db.listNodes().size == 1)
       db.addNode(node_2)
       db.addNode(node_3)
@@ -324,6 +325,40 @@ class NetworkDbSpec extends AnyFunSuite {
         assert(dbs.network.listChannels().values.toSet == channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, tc.update_1_opt, tc.update_2_opt, None)).toSet)
       }
     )
+  }
+
+  test("remove channel updates without htlc_maximum_msat") {
+    forAllDbs { dbs =>
+      val t1 = channelTestCases(0)
+      val t2 = channelTestCases(1)
+      val db1 = dbs.network
+      db1.addChannel(t1.channel, t1.txid, t2.capacity)
+      db1.addChannel(t2.channel, t2.txid, t2.capacity)
+      // The DB contains a channel update missing the `htlc_maximum_msat` field.
+      val channelUpdateWithoutHtlcMax = hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002"
+      dbs match {
+        case sqlite: TestSqliteDatabases =>
+          using(sqlite.connection.prepareStatement("UPDATE channels SET channel_update_1=? WHERE short_channel_id=?")) { statement =>
+            statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
+            statement.setLong(2, t1.shortChannelId.toLong)
+            statement.executeUpdate()
+          }
+        case pg: TestPgDatabases =>
+          using(pg.connection.prepareStatement("UPDATE network.public_channels SET channel_update_1=? WHERE short_channel_id=?")) { statement =>
+            statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
+            statement.setLong(2, t1.shortChannelId.toLong)
+            statement.executeUpdate()
+          }
+      }
+      assertThrows[IllegalArgumentException](db1.listChannels())
+      // We restart eclair and automatically clean up invalid entries.
+      val db2 = dbs match {
+        case sqlite: TestSqliteDatabases => new SqliteNetworkDb(sqlite.connection)
+        case pg: TestPgDatabases => new PgNetworkDb()(pg.datasource)
+      }
+      val channels = db2.listChannels()
+      assert(channels.keySet == Set(t2.shortChannelId))
+    }
   }
 
   test("json column reset (postgres)") {

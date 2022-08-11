@@ -41,7 +41,7 @@ trait NetworkDb {
 
   def updateChannel(u: ChannelUpdate): Unit
 
-  def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Set(shortChannelId)): Unit
+  def removeChannel(shortChannelId: ShortChannelId): Unit = removeChannels(Set(shortChannelId))
 
   def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit
 

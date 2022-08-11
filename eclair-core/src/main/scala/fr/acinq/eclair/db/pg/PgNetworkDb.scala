@@ -17,14 +17,13 @@
 package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
-import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -80,7 +79,16 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
           if (v < 4) {
             migration34(statement)
           }
-        case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+        case Some(CURRENT_VERSION) =>
+          // We clean up channels that contain an invalid channel update (e.g. missing htlc_maximum_msat).
+          statement.executeQuery("SELECT short_channel_id, channel_update_1, channel_update_2 FROM network.public_channels").map(rs => {
+            val shortChannelId = rs.getLong("short_channel_id")
+            val validChannelUpdate1 = rs.getBitVectorOpt("channel_update_1").forall(channelUpdateCodec.decode(_).isSuccessful)
+            val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
+            (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
+          }).collect {
+            case (scid, false) => statement.executeUpdate(s"DELETE FROM network.public_channels WHERE short_channel_id=$scid")
+          }
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
       setVersion(statement, DB_NAME, CURRENT_VERSION)
