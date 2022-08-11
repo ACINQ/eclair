@@ -78,7 +78,7 @@ object InteractiveTxBuilder {
 
   // @formatter:off
   sealed trait Command
-  case class Start(replyTo: ActorRef[Response], previousAttempts: Seq[SignedSharedTransaction]) extends Command
+  case class Start(replyTo: ActorRef[Response], previousTransactions: Seq[SignedSharedTransaction]) extends Command
   sealed trait ReceiveMessage extends Command
   case class ReceiveTxMessage(msg: InteractiveTxConstructionMessage) extends ReceiveMessage
   case class ReceiveCommitSig(msg: CommitSig) extends ReceiveMessage
@@ -202,8 +202,8 @@ object InteractiveTxBuilder {
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
-            case Start(replyTo, previousAttempts) =>
-              val actor = new InteractiveTxBuilder(replyTo, fundingParams, keyManager, localParams, remoteParams, commitTxFeerate, remoteFirstPerCommitmentPoint, channelFlags, channelConfig, channelFeatures, wallet, previousAttempts, timers, context)
+            case Start(replyTo, previousTransactions) =>
+              val actor = new InteractiveTxBuilder(replyTo, fundingParams, keyManager, localParams, remoteParams, commitTxFeerate, remoteFirstPerCommitmentPoint, channelFlags, channelConfig, channelFeatures, wallet, previousTransactions, timers, context)
               actor.start()
             case Abort => Behaviors.stopped
           }
@@ -260,7 +260,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                                    channelConfig: ChannelConfig,
                                    channelFeatures: ChannelFeatures,
                                    wallet: OnChainChannelFunder,
-                                   previousAttempts: Seq[InteractiveTxBuilder.SignedSharedTransaction],
+                                   previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction],
                                    timers: TimerScheduler[InteractiveTxBuilder.Command],
                                    context: ActorContext[InteractiveTxBuilder.Command])(implicit ec: ExecutionContext) {
 
@@ -286,7 +286,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       // We always double-spend all our previous inputs. It's technically overkill because we only really need to double
       // spend one input of each previous tx, but it's simpler and less error-prone this way. It also ensures that in
       // most cases, we won't need to add new inputs and will simply lower the change amount.
-      val previousInputs = previousAttempts.flatMap(_.tx.localInputs).distinctBy(_.serialId)
+      val previousInputs = previousTransactions.flatMap(_.tx.localInputs).distinctBy(_.serialId)
       val dummyTx = Transaction(2, previousInputs.map(i => TxIn(toOutPoint(i), ByteVector.empty, i.sequence)), Seq(TxOut(toFund, fundingParams.fundingPubkeyScript)), fundingParams.lockTime)
       fund(dummyTx, previousInputs, Set.empty)
     }
@@ -299,9 +299,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
     Behaviors.receiveMessagePartial {
       case FundTransactionResult(fundedTx) =>
-        filterInputs(fundedTx, currentInputs, unusableInputs)
+        val reusedUnusableInputs = fundedTx.txIn.map(_.outPoint).filter(o => unusableInputs.map(_.outpoint).contains(o))
+        if (reusedUnusableInputs.nonEmpty) {
+          // We're keeping unusable inputs locked to ensure that bitcoind doesn't use them for funding, otherwise we
+          // could be stuck in an infinite loop where bitcoind constantly adds the same inputs that we cannot use.
+          log.error("could not fund interactive tx: bitcoind included already known unusable inputs that should have been locked: {}", reusedUnusableInputs.mkString(","))
+          unlockAndStop(currentInputs.map(toOutPoint).toSet ++ fundedTx.txIn.map(_.outPoint) ++ unusableInputs.map(_.outpoint))
+        } else {
+          filterInputs(fundedTx, currentInputs, unusableInputs)
+        }
       case WalletFailure(t) =>
-        log.error("could not fund dual-funded channel: ", t)
+        log.error("could not fund interactive tx: ", t)
         // We use a generic exception and don't send the internal error to the peer.
         replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
         unlockAndStop(currentInputs.map(toOutPoint).toSet ++ unusableInputs.map(_.outpoint))
@@ -579,9 +587,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     // The transaction must double-spent every previous attempt, otherwise there is a risk that two funding transactions
     // confirm for the same channel.
     val currentInputs = tx.txIn.map(_.outPoint).toSet
-    val doubleSpendsPreviousAttempts = previousAttempts.forall(previousTx => previousTx.tx.buildUnsignedTx().txIn.map(_.outPoint).exists(o => currentInputs.contains(o)))
-    if (!doubleSpendsPreviousAttempts) {
-      log.warn("invalid interactive tx: it doesn't double-spend all previous attempts")
+    val doubleSpendsPreviousTransactions = previousTransactions.forall(previousTx => previousTx.tx.buildUnsignedTx().txIn.map(_.outPoint).exists(o => currentInputs.contains(o)))
+    if (!doubleSpendsPreviousTransactions) {
+      log.warn("invalid interactive tx: it doesn't double-spend all previous transactions")
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
     }
 
@@ -710,7 +718,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   def unlockAndStop(txInputs: Set[OutPoint]): Behavior[Command] = {
     // We don't unlock previous inputs as the corresponding funding transaction may confirm.
-    val previousInputs = previousAttempts.flatMap(_.tx.localInputs.map(toOutPoint)).toSet
+    val previousInputs = previousTransactions.flatMap(_.tx.localInputs.map(toOutPoint)).toSet
     val toUnlock = txInputs -- previousInputs
     log.debug("unlocking inputs: {}", toUnlock.map(o => s"${o.txid}:${o.index}").mkString(","))
     context.pipeToSelf(unlock(toUnlock))(_ => UtxosUnlocked)
