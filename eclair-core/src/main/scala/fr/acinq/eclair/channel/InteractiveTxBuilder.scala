@@ -85,7 +85,7 @@ object InteractiveTxBuilder {
   case class ReceiveTxSigs(msg: TxSignatures) extends ReceiveMessage
   case object Abort extends Command
   private case class FundTransactionResult(tx: Transaction) extends Command
-  private case class InputDetails(usableInputs: Seq[TxAddInput], unusableInputs: Set[OutPoint]) extends Command
+  private case class InputDetails(usableInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]) extends Command
   private case class SignTransactionResult(signedTx: PartiallySignedSharedTransaction, remoteSigs_opt: Option[TxSignatures]) extends Command
   private case class WalletFailure(t: Throwable) extends Command
   private case object UtxosUnlocked extends Command
@@ -137,6 +137,9 @@ object InteractiveTxBuilder {
   object RemoteTxAddOutput {
     def apply(o: TxAddOutput): RemoteTxAddOutput = RemoteTxAddOutput(o.serialId, o.amount, o.pubkeyScript)
   }
+
+  /** A wallet input that doesn't match interactive-tx construction requirements. */
+  case class UnusableInput(outpoint: OutPoint)
 
   /** Unsigned transaction created collaboratively. */
   case class SharedTransaction(localInputs: Seq[TxAddInput], remoteInputs: Seq[RemoteTxAddInput], localOutputs: Seq[TxAddOutput], remoteOutputs: Seq[RemoteTxAddOutput], lockTime: Long) {
@@ -285,7 +288,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def fund(txNotFunded: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[OutPoint]): Behavior[Command] = {
+  def fund(txNotFunded: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, lockUtxos = true)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx)
@@ -297,7 +300,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         log.error("could not fund dual-funded channel: ", t)
         // We use a generic exception and don't send the internal error to the peer.
         replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
-        unlockAndStop(currentInputs.map(toOutPoint).toSet ++ unusableInputs)
+        unlockAndStop(currentInputs.map(toOutPoint).toSet ++ unusableInputs.map(_.outpoint))
       case msg: ReceiveMessage =>
         timers.startSingleTimer(msg, 1 second)
         Behaviors.same
@@ -307,7 +310,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def filterInputs(fundedTx: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[OutPoint]): Behavior[Command] = {
+  def filterInputs(fundedTx: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     context.pipeToSelf(Future.sequence(fundedTx.txIn.map(txIn => getInputDetails(txIn, currentInputs)))) {
       case Failure(t) => WalletFailure(t)
       case Success(results) => InputDetails(results.collect { case Right(i) => i }, results.collect { case Left(i) => i }.toSet)
@@ -319,6 +322,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           val changeOutputs = fundedTx.txOut
             .filter(_.publicKeyScript != fundingParams.fundingPubkeyScript)
             .map(txOut => TxAddOutput(fundingParams.channelId, generateSerialId(), txOut.amount, txOut.publicKeyScript))
+          if (changeOutputs.length > 1) {
+            log.warn(s"bitcoind should never add more than one change output (${changeOutputs.length} found)")
+          }
           val outputs = if (fundingParams.isInitiator) {
             // If the initiator doesn't want to contribute, we should cancel out the dust amount artificially added previously.
             val initiatorChangeOutputs = if (fundingParams.localAmount == 0.sat) {
@@ -337,13 +343,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           }
           log.info("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
           // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this protocol.
-          unlock(unusableInputs)
+          unlock(unusableInputs.map(_.outpoint))
           buildTx(FundingContributions(inputDetails.usableInputs, outputs))
         } else {
           // Some wallet inputs are unusable, so we must fund again to obtain usable inputs instead.
-          log.info("retrying funding as some utxos cannot be used for interactive-tx construction: {}", inputDetails.unusableInputs.map(o => s"${o.txid}:${o.index}").mkString(","))
+          log.info("retrying funding as some utxos cannot be used for interactive-tx construction: {}", inputDetails.unusableInputs.map(i => s"${i.outpoint.txid}:${i.outpoint.index}").mkString(","))
           val sanitizedTx = fundedTx.copy(
-            txIn = fundedTx.txIn.filter(txIn => !inputDetails.unusableInputs.contains(txIn.outPoint)),
+            txIn = fundedTx.txIn.filter(txIn => !inputDetails.unusableInputs.map(_.outpoint).contains(txIn.outPoint)),
             // We remove the change output added by this funding iteration.
             txOut = fundedTx.txOut.filter(txOut => txOut.publicKeyScript == fundingParams.fundingPubkeyScript),
           )
@@ -353,7 +359,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         log.error("could not get input details: ", t)
         // We use a generic exception and don't send the internal error to the peer.
         replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
-        unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs)
+        unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
       case msg: ReceiveMessage =>
         timers.startSingleTimer(msg, 1 second)
         Behaviors.same
@@ -363,16 +369,21 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  private def getInputDetails(txIn: TxIn, currentInputs: Seq[TxAddInput]): Future[Either[OutPoint, TxAddInput]] = {
+  /**
+   * @param txIn          input we'd like to include in the transaction, if suitable.
+   * @param currentInputs already known valid inputs, we don't need to fetch the details again for those.
+   * @return the input is either unusable (left) or we'll send a [[TxAddInput]] command to add it to the transaction (right).
+   */
+  private def getInputDetails(txIn: TxIn, currentInputs: Seq[TxAddInput]): Future[Either[UnusableInput, TxAddInput]] = {
     currentInputs.find(i => txIn.outPoint == toOutPoint(i)) match {
       case Some(previousInput) => Future.successful(Right(previousInput))
       case None => wallet.getTransaction(txIn.outPoint.txid).map(previousTx => {
         if (Transaction.write(previousTx).length > 65000) {
           // Wallet input transaction is too big to fit inside tx_add_input.
-          Left(txIn.outPoint)
+          Left(UnusableInput(txIn.outPoint))
         } else if (!Script.isNativeWitnessScript(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript)) {
           // Wallet input must be a native segwit input.
-          Left(txIn.outPoint)
+          Left(UnusableInput(txIn.outPoint))
         } else {
           Right(TxAddInput(fundingParams.channelId, generateSerialId(), previousTx, txIn.outPoint.index, txIn.sequence))
         }
