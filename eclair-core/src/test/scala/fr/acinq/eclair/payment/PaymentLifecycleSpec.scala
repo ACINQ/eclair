@@ -629,8 +629,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))))
 
     assert(routerForwarder.expectMsgType[RouteCouldRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, update_bc).map(_.shortChannelId))
-    routerForwarder.expectMsg(channelUpdate_cd_disabled)
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_cd.shortChannelId, c, d), Some(nodeParams.routerConf.channelExcludeDuration)))
+    routerForwarder.expectMsg(channelUpdate_cd_disabled)
   }
 
   def testPermanentFailure(router: ActorRef, failure: FailureMessage): Unit = {

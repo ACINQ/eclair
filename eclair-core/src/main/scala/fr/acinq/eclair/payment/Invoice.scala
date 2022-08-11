@@ -55,17 +55,20 @@ trait Invoice {
 }
 
 object Invoice {
+  /** An extra edge that can be used to pay a given invoice and may not be part of the public graph. */
   sealed trait ExtraEdge {
+    // @formatter:off
     def sourceNodeId: PublicKey
     def feeBase: MilliSatoshi
     def feeProportionalMillionths: Long
     def cltvExpiryDelta: CltvExpiryDelta
     def htlcMinimum: MilliSatoshi
     def htlcMaximum_opt: Option[MilliSatoshi]
-
     def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
+    // @formatter:on
   }
 
+  /** A normal graph edge, that should be handled exactly like public graph edges. */
   case class BasicEdge(sourceNodeId: PublicKey,
                        targetNodeId: PublicKey,
                        shortChannelId: ShortChannelId,
