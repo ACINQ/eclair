@@ -662,12 +662,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             replyTo ! RemoteFailure(cause)
             unlockAndStop(completeTx)
           case Right(fullySignedTx) =>
-            log.info("interactive-tx successfully signed (remote signatures already received)")
+            log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
             replyTo ! Succeeded(fundingParams, fullySignedTx, commitments)
             Behaviors.stopped
         }
       case SignTransactionResult(signedTx, None) =>
-        log.info("interactive-tx successfully signed (remote signatures not received yet)")
+        log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
         replyTo ! Succeeded(fundingParams, signedTx, commitments)
         Behaviors.stopped
       case ReceiveTxSigs(remoteSigs) =>
