@@ -80,7 +80,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectMsgType[Rebroadcast]
     }
-
     {
       // valid channel announcement, stashing while validating channel announcement
       val priv_u = randomKey()
@@ -110,7 +109,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectMsgType[Rebroadcast]
     }
-
     {
       // duplicates
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_b))
@@ -126,7 +124,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
-
     {
       // invalid signatures
       val invalid_node_b = node_b.copy(timestamp = node_b.timestamp + 10)
@@ -159,7 +156,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
-
     {
       // stale channel update
       val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, chan_ab.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = TimestampSecond.now() - 15.days)
@@ -170,7 +166,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
-
     {
       // unknown channel
       val priv_y = randomKey()
@@ -186,7 +181,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
-
     {
       // invalid announcement + reject stashed
       val priv_y = randomKey()
@@ -209,7 +203,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
-
     {
       // validation failure
       val priv_x = randomKey()
@@ -223,7 +216,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
-
     {
       // funding tx spent (funding tx not confirmed)
       val priv_z = randomKey()
@@ -238,7 +230,6 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
-
     {
       // funding tx spent (funding tx confirmed)
       val priv_z = randomKey()
@@ -255,7 +246,6 @@ class RouterSpec extends BaseRouterSpec {
     }
 
     watcher.expectNoMessage(100 millis)
-
   }
 
   test("properly announce lost channels and nodes") { fixture =>
@@ -281,6 +271,30 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectMsgAllOf(NodeLost(b), NodeLost(c))
     eventListener.expectNoMessage(200 milliseconds)
 
+  }
+
+  test("properly identify stale channels (new channel)") { () =>
+    // we don't want to prune new channels for which we haven't received channel updates yet
+    val currentBlockHeight = BlockHeight(102_000)
+    val ann = chan_ab.copy(shortChannelId = RealShortChannelId(BlockHeight(100_000), 0, 0))
+    assert(!StaleChannels.isStale(ann, None, None, currentBlockHeight))
+    val update1 = update_ab.copy(timestamp = TimestampSecond.now() - 1.day)
+    assert(!StaleChannels.isStale(ann, Some(update1), None, currentBlockHeight))
+  }
+
+  test("properly identify stale channels (old channel)") { () =>
+    // we prune old channels for which we haven't received a channel update or which have an outdated channel update
+    val currentBlockHeight = BlockHeight(105_000)
+    val ann = chan_ab.copy(shortChannelId = RealShortChannelId(BlockHeight(100_000), 0, 0))
+    val staleUpdate1 = update_ab.copy(timestamp = TimestampSecond.now() - 15.days)
+    val update1 = update_ab.copy(timestamp = TimestampSecond.now() - 1.day)
+    val staleUpdate2 = update_ba.copy(timestamp = TimestampSecond.now() - 15.days)
+    val update2 = update_ba.copy(timestamp = TimestampSecond.now() - 7.days)
+    assert(StaleChannels.isStale(ann, None, None, currentBlockHeight))
+    assert(StaleChannels.isStale(ann, Some(update1), None, currentBlockHeight))
+    assert(StaleChannels.isStale(ann, Some(update1), Some(staleUpdate2), currentBlockHeight))
+    assert(StaleChannels.isStale(ann, Some(staleUpdate1), Some(staleUpdate2), currentBlockHeight))
+    assert(!StaleChannels.isStale(ann, Some(update1), Some(update2), currentBlockHeight))
   }
 
   test("handle bad signature for ChannelAnnouncement") { fixture =>
