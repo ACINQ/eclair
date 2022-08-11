@@ -371,12 +371,17 @@ object Helpers {
     }
 
     /**
-     * When using dual funding, we may need to wait for multiple confirmations even if we're the initiator if our peer
-     * also contributes to the funding transaction.
+     * When using dual funding, we wait for multiple confirmations even if we're the initiator because:
+     *  - our peer may also contribute to the funding transaction
+     *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
      */
     def minDepthDualFunding(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingParams: InteractiveTxBuilder.InteractiveTxParams): Option[Long] = {
       if (fundingParams.isInitiator && fundingParams.remoteAmount == 0.sat) {
-        minDepthFunder(channelFeatures)
+        if (channelFeatures.hasFeature(Features.ZeroConf)) {
+          None
+        } else {
+          Some(channelConf.minDepthBlocks)
+        }
       } else {
         minDepthFundee(channelConf, channelFeatures, fundingParams.fundingAmount)
       }
