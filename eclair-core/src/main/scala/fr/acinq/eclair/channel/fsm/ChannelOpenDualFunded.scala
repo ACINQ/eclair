@@ -139,7 +139,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.commitmentFeerate, Some(open.fundingFeerate)))
-          val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
+          val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, d.init.channelConfig)
           val totalFundingAmount = open.fundingAmount + d.init.fundingContribution_opt.getOrElse(0 sat)
           val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, channelFeatures, totalFundingAmount)
@@ -157,7 +157,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             minimumDepth = minimumDepth.getOrElse(0),
             toSelfDelay = localParams.toSelfDelay,
             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-            fundingPubkey = fundingPubkey,
+            fundingPubkey = localFundingPubkey,
             revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
             paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
             delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
@@ -186,8 +186,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           txPublisher ! SetChannelId(remoteNodeId, channelId)
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, accept.temporaryChannelId, channelId))
           // We start the interactive-tx funding protocol.
-          val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-          val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
+          val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
           val fundingParams = InteractiveTxParams(channelId, localParams.isInitiator, accept.fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, open.dustLimit.max(accept.dustLimit), open.fundingFeerate)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
@@ -316,7 +315,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             }
           case None =>
             val (_, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown)
-            // TODO: skip waiting for confirmation, directly go to the channel_ready state
             val nextData = DATA_WAIT_FOR_DUAL_FUNDING_PLACEHOLDER(commitments, fundingTx, fundingParams, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, None, None)
             fundingTx match {
               case fundingTx: PartiallySignedSharedTransaction =>

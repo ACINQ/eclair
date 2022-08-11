@@ -45,7 +45,7 @@ import scala.util.{Failure, Success, Try}
 /**
  * This trait contains the state machine for the single-funder channel funding flow.
  */
-trait ChannelOpenSingleFunder extends SingleFundingHandlers with ErrorHandlers {
+trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   this: Channel =>
 
@@ -216,7 +216,7 @@ trait ChannelOpenSingleFunder extends SingleFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
     case Event(MakeFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), d@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingAmount, pushMsat, commitTxFeerate, remoteFirstPerCommitmentPoint, channelConfig, channelFeatures, open)) =>
       // let's create the first commitment tx that spends the yet uncommitted funding tx
-      Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, temporaryChannelId, localParams, remoteParams, fundingAmount, 0 sat, pushMsat, commitTxFeerate, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint) match {
+      Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, temporaryChannelId, localParams, remoteParams, localFundingAmount = fundingAmount, remoteFundingAmount = 0 sat, pushMsat, commitTxFeerate, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint) match {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
@@ -261,7 +261,7 @@ trait ChannelOpenSingleFunder extends SingleFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
     case Event(FundingCreated(_, fundingTxHash, fundingTxOutputIndex, remoteSig, _), d@DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId, localParams, remoteParams, fundingAmount, pushMsat, commitTxFeerate, remoteFirstPerCommitmentPoint, channelFlags, channelConfig, channelFeatures, _)) =>
       // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
-      Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, temporaryChannelId, localParams, remoteParams, 0 sat, fundingAmount, pushMsat, commitTxFeerate, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint) match {
+      Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, temporaryChannelId, localParams, remoteParams, localFundingAmount = 0 sat, remoteFundingAmount = fundingAmount, pushMsat, commitTxFeerate, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint) match {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           // check remote signature validity

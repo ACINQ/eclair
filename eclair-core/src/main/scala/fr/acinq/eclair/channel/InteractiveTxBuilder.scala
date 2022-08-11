@@ -271,17 +271,21 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   def start(): Behavior[Command] = {
     val toFund = if (fundingParams.isInitiator) {
       // If we're the initiator, we need to pay the fees of the common fields of the transaction, even if we don't want
-      // to contribute to the shared output.
+      // to contribute to the shared output. We create a non-zero amount here to ensure that bitcoind will fund the
+      // fees for the shared output (because it would otherwise reject a txOut with an amount of zero).
       fundingParams.localAmount.max(fundingParams.dustLimit)
     } else {
       fundingParams.localAmount
     }
+    require(toFund >= 0.sat, "funding amount cannot be negative")
     log.debug("contributing {} to interactive-tx construction", toFund)
-    if (toFund <= 0.sat) {
+    if (toFund == 0.sat) {
       // We're not the initiator and we don't want to contribute to the funding transaction.
       buildTx(FundingContributions(Nil, Nil))
     } else {
-      // We always double-spend all our previous inputs.
+      // We always double-spend all our previous inputs. It's technically overkill because we only really need to double
+      // spend one input of each previous tx, but it's simpler and less error-prone this way. It also ensures that in
+      // most cases, we won't need to add new inputs and will simply lower the change amount.
       val previousInputs = previousAttempts.flatMap(_.tx.localInputs).distinctBy(_.serialId)
       val dummyTx = Transaction(2, previousInputs.map(i => TxIn(toOutPoint(i), ByteVector.empty, i.sequence)), Seq(TxOut(toFund, fundingParams.fundingPubkeyScript)), fundingParams.lockTime)
       fund(dummyTx, previousInputs, Set.empty)
@@ -310,6 +314,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
+  /** Not all inputs are suitable for interactive tx construction. */
   def filterInputs(fundedTx: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     context.pipeToSelf(Future.sequence(fundedTx.txIn.map(txIn => getInputDetails(txIn, currentInputs)))) {
       case Failure(t) => WalletFailure(t)
@@ -649,10 +654,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             replyTo ! RemoteFailure(cause)
             unlockAndStop(completeTx)
           case Right(fullySignedTx) =>
+            log.info("interactive-tx successfully signed (remote signatures already received)")
             replyTo ! Succeeded(fundingParams, fullySignedTx, commitments)
             Behaviors.stopped
         }
       case SignTransactionResult(signedTx, None) =>
+        log.info("interactive-tx successfully signed (remote signatures not received yet)")
         replyTo ! Succeeded(fundingParams, signedTx, commitments)
         Behaviors.stopped
       case ReceiveTxSigs(remoteSigs) =>
