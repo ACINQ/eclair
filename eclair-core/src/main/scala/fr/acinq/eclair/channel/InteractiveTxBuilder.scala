@@ -338,21 +338,26 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case Success(results) => InputDetails(results.collect { case Right(i) => i }, results.collect { case Left(i) => i }.toSet)
     }
     Behaviors.receiveMessagePartial {
-      case inputDetails: InputDetails =>
-        if (inputDetails.unusableInputs.isEmpty) {
-          // This funding iteration did not add any unusable inputs, so we can directly return the results.
-          require(fundedTx.txOut.length <= 2, s"bitcoind should never add more than one change output (${fundedTx.txOut.length - 1} found)")
-          val changeOutput_opt = fundedTx.txOut
-            .filter(_.publicKeyScript != fundingParams.fundingPubkeyScript)
-            .map(txOut => TxAddOutput(fundingParams.channelId, generateSerialId(), txOut.amount, txOut.publicKeyScript))
-            .headOption
-          // There are at most two outputs: the shared output (if we are the initiator) and the (optional) change output.
+      case inputDetails: InputDetails if inputDetails.unusableInputs.isEmpty =>
+        // This funding iteration did not add any unusable inputs, so we can directly return the results.
+        val (fundingOutputs, otherOutputs) = fundedTx.txOut.partition(_.publicKeyScript == fundingParams.fundingPubkeyScript)
+        // The transaction should still contain the funding output, with at most one change output added by bitcoind.
+        if (fundingOutputs.length != 1) {
+          log.error("funded transaction is missing the funding output: {}", fundedTx)
+          replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
+          unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
+        } else if (otherOutputs.length > 1) {
+          log.error("funded transaction contains unexpected outputs: {}", fundedTx)
+          replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
+          unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
+        } else {
+          val changeOutput_opt = otherOutputs.headOption.map(txOut => TxAddOutput(fundingParams.channelId, generateSerialId(), txOut.amount, txOut.publicKeyScript))
           val outputs = if (fundingParams.isInitiator) {
-            // If the initiator doesn't want to contribute, we should cancel out the dummy amount artificially added previously.
             val initiatorChangeOutput = changeOutput_opt match {
               case Some(changeOutput) if fundingParams.localAmount == 0.sat =>
-                val dummyOutputAmount = fundedTx.txOut.filter(_.publicKeyScript == fundingParams.fundingPubkeyScript).map(_.amount).sum
-                Seq(changeOutput.copy(amount = changeOutput.amount + dummyOutputAmount))
+                // If the initiator doesn't want to contribute, we should cancel the dummy amount artificially added previously.
+                val dummyFundingAmount = fundingOutputs.head.amount
+                Seq(changeOutput.copy(amount = changeOutput.amount + dummyFundingAmount))
               case Some(changeOutput) => Seq(changeOutput)
               case None => Nil
             }
@@ -377,16 +382,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this session.
           unlock(unusableInputs.map(_.outpoint))
           stash.unstashAll(buildTx(FundingContributions(inputDetails.usableInputs, outputs)))
-        } else {
-          // Some wallet inputs are unusable, so we must fund again to obtain usable inputs instead.
-          log.info("retrying funding as some utxos cannot be used for interactive-tx construction: {}", inputDetails.unusableInputs.map(i => s"${i.outpoint.txid}:${i.outpoint.index}").mkString(","))
-          val sanitizedTx = fundedTx.copy(
-            txIn = fundedTx.txIn.filter(txIn => !inputDetails.unusableInputs.map(_.outpoint).contains(txIn.outPoint)),
-            // We remove the change output added by this funding iteration.
-            txOut = fundedTx.txOut.filter(txOut => txOut.publicKeyScript == fundingParams.fundingPubkeyScript),
-          )
-          fund(sanitizedTx, inputDetails.usableInputs, unusableInputs ++ inputDetails.unusableInputs)
         }
+      case inputDetails: InputDetails if inputDetails.unusableInputs.nonEmpty =>
+        // Some wallet inputs are unusable, so we must fund again to obtain usable inputs instead.
+        log.info("retrying funding as some utxos cannot be used for interactive-tx construction: {}", inputDetails.unusableInputs.map(i => s"${i.outpoint.txid}:${i.outpoint.index}").mkString(","))
+        val sanitizedTx = fundedTx.copy(
+          txIn = fundedTx.txIn.filter(txIn => !inputDetails.unusableInputs.map(_.outpoint).contains(txIn.outPoint)),
+          // We remove the change output added by this funding iteration.
+          txOut = fundedTx.txOut.filter(txOut => txOut.publicKeyScript == fundingParams.fundingPubkeyScript),
+        )
+        fund(sanitizedTx, inputDetails.usableInputs, unusableInputs ++ inputDetails.unusableInputs)
       case WalletFailure(t) =>
         log.error("could not get input details: ", t)
         // We use a generic exception and don't send the internal error to the peer.
