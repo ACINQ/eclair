@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -33,7 +33,6 @@ import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshiLong, UInt64, randomBytes, randomKey}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
-import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
@@ -199,11 +198,14 @@ object InteractiveTxBuilder {
             channelFeatures: ChannelFeatures,
             wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
-      Behaviors.withTimers { timers =>
+      // The stash is used to buffer messages that arrive while we're funding the transaction.
+      // Since the interactive-tx protocol is turn-based, we should not have more than one stashed lightning message.
+      // We may also receive commands from our parent, but we shouldn't receive many, so we can keep the stash size small.
+      Behaviors.withStash(10) { stash =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
             case Start(replyTo, previousTransactions) =>
-              val actor = new InteractiveTxBuilder(replyTo, fundingParams, keyManager, localParams, remoteParams, commitTxFeerate, remoteFirstPerCommitmentPoint, channelFlags, channelConfig, channelFeatures, wallet, previousTransactions, timers, context)
+              val actor = new InteractiveTxBuilder(replyTo, fundingParams, keyManager, localParams, remoteParams, commitTxFeerate, remoteFirstPerCommitmentPoint, channelFlags, channelConfig, channelFeatures, wallet, previousTransactions, stash, context)
               actor.start()
             case Abort => Behaviors.stopped
           }
@@ -262,7 +264,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                                    channelFeatures: ChannelFeatures,
                                    wallet: OnChainChannelFunder,
                                    previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction],
-                                   timers: TimerScheduler[InteractiveTxBuilder.Command],
+                                   stash: StashBuffer[InteractiveTxBuilder.Command],
                                    context: ActorContext[InteractiveTxBuilder.Command])(implicit ec: ExecutionContext) {
 
   import InteractiveTxBuilder._
@@ -321,10 +323,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
         unlockAndStop(currentInputs.map(toOutPoint).toSet ++ unusableInputs.map(_.outpoint))
       case msg: ReceiveMessage =>
-        timers.startSingleTimer(msg, 1 second)
+        stash.stash(msg)
         Behaviors.same
       case Abort =>
-        timers.startSingleTimer(Abort, 1 second)
+        stash.stash(Abort)
         Behaviors.same
     }
   }
@@ -374,7 +376,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           log.info("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
           // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this session.
           unlock(unusableInputs.map(_.outpoint))
-          buildTx(FundingContributions(inputDetails.usableInputs, outputs))
+          stash.unstashAll(buildTx(FundingContributions(inputDetails.usableInputs, outputs)))
         } else {
           // Some wallet inputs are unusable, so we must fund again to obtain usable inputs instead.
           log.info("retrying funding as some utxos cannot be used for interactive-tx construction: {}", inputDetails.unusableInputs.map(i => s"${i.outpoint.txid}:${i.outpoint.index}").mkString(","))
@@ -391,10 +393,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
         unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
       case msg: ReceiveMessage =>
-        timers.startSingleTimer(msg, 1 second)
+        stash.stash(msg)
         Behaviors.same
       case Abort =>
-        timers.startSingleTimer(Abort, 1 second)
+        stash.stash(Abort)
         Behaviors.same
     }
   }
