@@ -318,8 +318,7 @@ object NodeAddress {
    * We don't attempt to resolve onion addresses (it will be done by the tor proxy), so we just recognize them based on
    * the .onion TLD and rely on their length to separate v2/v3.
    *
-   * We resolve host names comprised of only numbers and periods (IPv4) or that contain a colon (IPv6).
-   * Other host names are assumed to be a DNS name and are not immediately resolved.
+   * Host names that are not Tor, IPv4 or IPv6 are assumed to be a DNS name and are not immediately resolved.
    *
    */
   def fromParts(host: String, port: Int): Try[NodeAddress] = Try {
