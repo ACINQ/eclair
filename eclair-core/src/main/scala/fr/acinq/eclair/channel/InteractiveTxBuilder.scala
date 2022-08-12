@@ -359,10 +359,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             fundingOutput +: initiatorChangeOutput
           } else {
             // The protocol only requires the non-initiator to pay the fees for its inputs and outputs, discounting the
-            // common fields (shared output, version, nLockTime, etc). However, this is really hard to compute here,
-            // because we don't know the witness size of our inputs (we let bitcoind handle that). For simplicity's sake,
-            // we simply accept that we'll slightly overpay the fee (which speeds up channel confirmation).
-            changeOutput_opt.toSeq
+            // common fields (shared output, version, nLockTime, etc). By using bitcoind's fundrawtransaction we are
+            // currently paying fees for those fields, but we can fix that by increasing our change output accordingly.
+            // If we don't have a change output, we will slightly overpay the fees: fixing this is not worth the extra
+            // complexity of adding a change output, which would invalidate bitcoind's weight estimation.
+            changeOutput_opt match {
+              case Some(changeOutput) =>
+                val commonWeight = Transaction(2, Nil, Seq(TxOut(fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)), 0).weight()
+                val overpaidFees = Transactions.weight2fee(fundingParams.targetFeerate, commonWeight)
+                Seq(changeOutput.copy(amount = changeOutput.amount + overpaidFees))
+              case None => Nil
+            }
           }
           log.info("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
           // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this session.
