@@ -156,26 +156,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     identifyHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)))
   }
 
-  private def removeHtlcId(htlcTx: HtlcTx): HtlcTx = htlcTx match {
-    case htlcTx: HtlcSuccessTx => htlcTx.copy(htlcId = 0)
-    case htlcTx: HtlcTimeoutTx => htlcTx.copy(htlcId = 0)
-  }
-
-  private def removeHtlcIds(htlcTxs: Map[OutPoint, Option[HtlcTx]]): Map[OutPoint, Option[HtlcTx]] = {
-    htlcTxs.map { case (outpoint, htlcTx_opt) => (outpoint, htlcTx_opt.map(removeHtlcId)) }
-  }
-
-  private def removeHtlcId(claimHtlcTx: ClaimHtlcTx): ClaimHtlcTx = claimHtlcTx match {
-    case claimHtlcTx: LegacyClaimHtlcSuccessTx => claimHtlcTx.copy(htlcId = 0)
-    case claimHtlcTx: ClaimHtlcSuccessTx => claimHtlcTx.copy(htlcId = 0)
-    case claimHtlcTx: ClaimHtlcTimeoutTx => claimHtlcTx.copy(htlcId = 0)
-  }
-
-  private def removeClaimHtlcIds(claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]]): Map[OutPoint, Option[ClaimHtlcTx]] = {
-    claimHtlcTxs.map { case (outpoint, claimHtlcTx_opt) => (outpoint, claimHtlcTx_opt.map(removeHtlcId)) }
-  }
-
-  def findTimedOutHtlcs(f: Fixture, withoutHtlcId: Boolean): Unit = {
+  def findTimedOutHtlcs(f: Fixture): Unit = {
     import f._
 
     val dustLimit = alice.underlyingActor.nodeParams.channelConf.dustLimit
@@ -183,64 +164,55 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.localCommit
     val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.remoteCommit
 
-    // Channels without anchor outputs that were closing before eclair v0.6.0 will not have their htlcId set after the
-    // update, but still need to be able to identify timed out htlcs.
-    val localCommitPublished = if (withoutHtlcId) aliceCommitPublished.copy(htlcTxs = removeHtlcIds(aliceCommitPublished.htlcTxs)) else aliceCommitPublished
-    val remoteCommitPublished = if (withoutHtlcId) bobCommitPublished.copy(claimHtlcTxs = removeClaimHtlcIds(bobCommitPublished.claimHtlcTxs)) else bobCommitPublished
-
-    val htlcTimeoutTxs = getHtlcTimeoutTxs(localCommitPublished)
-    val htlcSuccessTxs = getHtlcSuccessTxs(localCommitPublished)
+    val htlcTimeoutTxs = getHtlcTimeoutTxs(aliceCommitPublished)
+    val htlcSuccessTxs = getHtlcSuccessTxs(aliceCommitPublished)
     // Claim-HTLC txs can be modified to pay more (or less) fees by changing the output amount.
-    val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(remoteCommitPublished)
+    val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(bobCommitPublished)
     val claimHtlcTimeoutTxsModifiedFees = claimHtlcTimeoutTxs.map(tx => tx.modify(_.tx.txOut).setTo(Seq(tx.tx.txOut.head.copy(amount = 5000 sat))))
-    val claimHtlcSuccessTxs = getClaimHtlcSuccessTxs(remoteCommitPublished)
+    val claimHtlcSuccessTxs = getClaimHtlcSuccessTxs(bobCommitPublished)
     val claimHtlcSuccessTxsModifiedFees = claimHtlcSuccessTxs.map(tx => tx.modify(_.tx.txOut).setTo(Seq(tx.tx.txOut.head.copy(amount = 5000 sat))))
 
     val aliceTimedOutHtlcs = htlcTimeoutTxs.map(htlcTimeout => {
-      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, htlcTimeout.tx)
+      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, htlcTimeout.tx)
       assert(timedOutHtlcs.size == 1)
       timedOutHtlcs.head
     })
     assert(aliceTimedOutHtlcs.toSet == aliceHtlcs)
 
     val bobTimedOutHtlcs = claimHtlcTimeoutTxs.map(claimHtlcTimeout => {
-      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcTimeout.tx)
+      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, claimHtlcTimeout.tx)
       assert(timedOutHtlcs.size == 1)
       timedOutHtlcs.head
     })
     assert(bobTimedOutHtlcs.toSet == bobHtlcs)
 
     val bobTimedOutHtlcs2 = claimHtlcTimeoutTxsModifiedFees.map(claimHtlcTimeout => {
-      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcTimeout.tx)
+      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, claimHtlcTimeout.tx)
       assert(timedOutHtlcs.size == 1)
       timedOutHtlcs.head
     })
     assert(bobTimedOutHtlcs2.toSet == bobHtlcs)
 
-    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
-    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    htlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, htlcTimeout.tx).isEmpty))
-    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, claimHtlcTimeout.tx).isEmpty))
+    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
+    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
+    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
+    claimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
+    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
+    claimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
+    htlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, htlcTimeout.tx).isEmpty))
+    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, claimHtlcTimeout.tx).isEmpty))
   }
 
   test("find timed out htlcs") {
-    findTimedOutHtlcs(setupHtlcs(), withoutHtlcId = false)
-  }
-
-  test("find timed out htlcs (without htlc id)") {
-    findTimedOutHtlcs(setupHtlcs(), withoutHtlcId = true)
+    findTimedOutHtlcs(setupHtlcs())
   }
 
   test("find timed out htlcs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
-    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)), withoutHtlcId = false)
+    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)))
   }
 
   test("find timed out htlcs (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
-    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)), withoutHtlcId = false)
+    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)))
   }
 
   test("check closing tx amounts above dust") {
