@@ -20,7 +20,6 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import akka.util.BoxedType
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, SignTransactionResponse}
@@ -148,7 +147,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     private def forwardMessage[T <: LightningMessage](s2r: TestProbe, r: ActorRef[InteractiveTxBuilder.Command])(implicit t: ClassTag[T]): T = {
       val msg = s2r.expectMsgType[SendMessage].msg
       val c = t.runtimeClass.asInstanceOf[Class[T]]
-      assert(BoxedType(c).isInstance(msg), s"expected $c, found ${msg.getClass} ($msg)")
+      assert(c.isInstance(msg), s"expected $c, found ${msg.getClass} ($msg)")
       msg match {
         case msg: InteractiveTxConstructionMessage => r ! ReceiveTxMessage(msg)
         case msg: CommitSig => r ! ReceiveCommitSig(msg)
