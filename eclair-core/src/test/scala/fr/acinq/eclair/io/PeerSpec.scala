@@ -143,6 +143,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
 
     val invalidDnsHostname_opt = NodeAddress.fromParts("eclair.invalid", 9735).toOption
+    assert(invalidDnsHostname_opt.nonEmpty)
+    assert(invalidDnsHostname_opt.get == DnsHostname("eclair.invalid", 9735))
 
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
