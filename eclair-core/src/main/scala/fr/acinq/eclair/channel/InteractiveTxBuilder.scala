@@ -362,7 +362,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             // common fields (shared output, version, nLockTime, etc). By using bitcoind's fundrawtransaction we are
             // currently paying fees for those fields, but we can fix that by increasing our change output accordingly.
             // If we don't have a change output, we will slightly overpay the fees: fixing this is not worth the extra
-            // complexity of adding a change output, which would invalidate bitcoind's weight estimation.
+            // complexity of adding a change output, which would require a call to bitcoind to get a change address.
             changeOutput_opt match {
               case Some(changeOutput) =>
                 val commonWeight = Transaction(2, Nil, Seq(TxOut(fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)), 0).weight()
