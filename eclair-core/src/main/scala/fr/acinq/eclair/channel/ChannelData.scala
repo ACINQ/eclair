@@ -16,10 +16,12 @@
 
 package fr.acinq.eclair.channel
 
+import akka.actor.typed
 import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.InteractiveTxBuilder.{InteractiveTxParams, SignedSharedTransaction}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
@@ -60,7 +62,8 @@ case object WAIT_FOR_CHANNEL_READY extends ChannelState
 case object WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL extends ChannelState
-case object WAIT_FOR_DUAL_FUNDING_INTERNAL extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_CREATED extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_PLACEHOLDER extends ChannelState
 // Channel opened:
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
@@ -397,6 +400,9 @@ object RealScidStatus {
  */
 case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Option[Alias])
 
+/** Once a dual funding tx has been signed, we must remember the associated commitments. */
+case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: Commitments)
+
 sealed trait ChannelData extends PossiblyHarmful {
   def channelId: ByteVector32
 }
@@ -470,10 +476,19 @@ final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL
 final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenDualFundedChannel) extends TransientChannelData {
   val channelId: ByteVector32 = lastSent.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL(channelId: ByteVector32,
-                                                     localParams: LocalParams,
-                                                     remoteParams: RemoteParams,
-                                                     channelFeatures: ChannelFeatures) extends TransientChannelData
+final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
+                                                    txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
+                                                    deferred: Option[ChannelReady]) extends TransientChannelData
+final case class DATA_WAIT_FOR_DUAL_FUNDING_PLACEHOLDER(commitments: Commitments,
+                                                        fundingTx: SignedSharedTransaction,
+                                                        fundingParams: InteractiveTxParams,
+                                                        previousFundingTxs: Seq[DualFundingTx],
+                                                        waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
+                                                        lastChecked: BlockHeight, // last time we checked if the channel was double-spent
+                                                        rbfAttempt: Option[typed.ActorRef[InteractiveTxBuilder.Command]],
+                                                        deferred: Option[ChannelReady]) extends TransientChannelData {
+  val channelId: ByteVector32 = commitments.channelId
+}
 
 final case class DATA_NORMAL(commitments: Commitments,
                              shortIds: ShortIds,

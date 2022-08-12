@@ -16,15 +16,14 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
-import fr.acinq.eclair.{Alias, BlockHeight, RealShortChannelId, ShortChannelId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse, WatchFundingLost, WatchFundingSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT, FUNDING_TIMEOUT_FUNDEE}
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
 import fr.acinq.eclair.wire.protocol.{ChannelReady, ChannelReadyTlv, Error, TlvStream}
+import fr.acinq.eclair.{BlockHeight, ShortChannelId}
 
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
@@ -34,32 +33,33 @@ import scala.util.{Failure, Success}
  */
 
 /**
- * This trait contains handlers related to funding channel transactions.
+ * This trait contains handlers related to single-funder channel transactions.
  */
-trait FundingHandlers extends CommonHandlers {
+trait SingleFundingHandlers extends CommonHandlers {
 
   this: Channel =>
 
-  /**
-   * This function is used to return feedback to user at channel opening
-   */
-  def channelOpenReplyToUser(message: Either[ChannelOpenError, ChannelOpenResponse]): Unit = {
-    val m = message match {
-      case Left(LocalError(t)) => Status.Failure(t)
-      case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}"))
-      case Right(s) => s
+  def publishFundingTx(commitments: Commitments, fundingTx: Transaction, fundingTxFee: Satoshi): Unit = {
+    wallet.commit(fundingTx).onComplete {
+      case Success(true) =>
+        context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
+        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(commitments.channelId)))
+      case Success(false) =>
+        channelOpenReplyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
+        self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
+      case Failure(t) =>
+        channelOpenReplyToUser(Left(LocalError(t)))
+        log.error(t, "error while committing funding tx: ") // tx may still have been published, can't fail-fast
     }
-    origin_opt.foreach(_ ! m)
   }
 
   def watchFundingTx(commitments: Commitments, additionalKnownSpendingTxs: Set[ByteVector32] = Set.empty): Unit = {
     // TODO: should we wait for an acknowledgment from the watcher?
+    // TODO: implement WatchFundingLost?
     val knownSpendingTxs = Set(commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments.remoteCommit.txid) ++ commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit.txid).toSet ++ additionalKnownSpendingTxs
     blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, knownSpendingTxs)
-    // TODO: implement this? (not needed if we use a reasonable min_depth)
-    //blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks, BITCOIN_FUNDING_LOST)
   }
-  
+
   def acceptFundingTx(commitments: Commitments, realScidStatus: RealScidStatus): (ShortIds, ChannelReady) = {
     blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
     val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -30,10 +30,22 @@ import scala.concurrent.{ExecutionContext, Future}
 /** This trait lets users fund lightning channels. */
 trait OnChainChannelFunder {
 
-  import OnChainWallet.MakeFundingTxResponse
+  import OnChainWallet._
 
-  /** Create a channel funding transaction with the provided pubkeyScript. */
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
+  /** Fund the provided transaction by adding inputs (and a change output if necessary). */
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse]
+
+  /** Sign the wallet inputs of the provided transaction. */
+  def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse]
+
+  /**
+   * Publish a transaction on the bitcoin network.
+   * This method must be idempotent: if the tx was already published, it must return a success.
+   */
+  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32]
+
+  /** Create a fully signed channel funding transaction with the provided pubkeyScript. */
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
 
   /**
    * Committing *must* include publishing the transaction on the network.
@@ -47,9 +59,10 @@ trait OnChainChannelFunder {
    */
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
-  /**
-   * Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos".
-   */
+  /** Return the transaction if it exists, either in the blockchain or in the mempool. */
+  def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction]
+
+  /** Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos". */
   def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
   /**
@@ -96,5 +109,11 @@ object OnChainWallet {
   final case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi)
 
   final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
+
+  final case class FundTransactionResponse(tx: Transaction, fee: Satoshi, changePosition: Option[Int]) {
+    val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
+  }
+
+  final case class SignTransactionResponse(tx: Transaction, complete: Boolean)
 
 }
