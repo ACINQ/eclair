@@ -215,10 +215,6 @@ object InteractiveTxBuilder {
   // We restrict the number of inputs / outputs that our peer can send us to ensure the protocol eventually ends.
   val MAX_INPUTS_OUTPUTS_RECEIVED = 4096
 
-  def spendSameOutpoint(input1: TxAddInput, input2: TxAddInput): Boolean = {
-    input1.previousTx.txid == input2.previousTx.txid && input1.previousTxOutput == input2.previousTxOutput
-  }
-
   def toOutPoint(input: TxAddInput): OutPoint = OutPoint(input.previousTx, input.previousTxOutput.toInt)
 
   def addRemoteSigs(fundingParams: InteractiveTxParams, partiallySignedTx: PartiallySignedSharedTransaction, remoteSigs: TxSignatures): Either[ChannelException, FullySignedSharedTransaction] = {
@@ -249,6 +245,11 @@ object InteractiveTxBuilder {
 
 }
 
+/**
+ * @param previousTransactions interactive transactions are replaceable and can be RBF-ed, but we need to make sure that
+ *                             only one of them ends up confirming. We guarantee this by having the latest transaction
+ *                             always double-spend all its predecessors.
+ */
 private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Response],
                                    fundingParams: InteractiveTxBuilder.InteractiveTxParams,
                                    keyManager: ChannelKeyManager,
@@ -292,6 +293,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
+  /**
+   * We (ab)use bitcoind's `fundrawtransaction` to select available utxos from our wallet. Not all utxos are suitable
+   * for dual funding though (e.g. they need to use segwit), so we filter them and iterate until we have a valid set of
+   * inputs.
+   */
   def fund(txNotFunded: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, lockUtxos = true)) {
       case Failure(t) => WalletFailure(t)
@@ -299,11 +305,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
     Behaviors.receiveMessagePartial {
       case FundTransactionResult(fundedTx) =>
-        val reusedUnusableInputs = fundedTx.txIn.map(_.outPoint).filter(o => unusableInputs.map(_.outpoint).contains(o))
-        if (reusedUnusableInputs.nonEmpty) {
+        // Those inputs were already selected by bitcoind and considered unsuitable for interactive tx.
+        val lockedUnusableInputs = fundedTx.txIn.map(_.outPoint).filter(o => unusableInputs.map(_.outpoint).contains(o))
+        if (lockedUnusableInputs.nonEmpty) {
           // We're keeping unusable inputs locked to ensure that bitcoind doesn't use them for funding, otherwise we
           // could be stuck in an infinite loop where bitcoind constantly adds the same inputs that we cannot use.
-          log.error("could not fund interactive tx: bitcoind included already known unusable inputs that should have been locked: {}", reusedUnusableInputs.mkString(","))
+          log.error("could not fund interactive tx: bitcoind included already known unusable inputs that should have been locked: {}", lockedUnusableInputs.mkString(","))
           unlockAndStop(currentInputs.map(toOutPoint).toSet ++ fundedTx.txIn.map(_.outPoint) ++ unusableInputs.map(_.outpoint))
         } else {
           filterInputs(fundedTx, currentInputs, unusableInputs)
@@ -332,30 +339,33 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case inputDetails: InputDetails =>
         if (inputDetails.unusableInputs.isEmpty) {
           // This funding iteration did not add any unusable inputs, so we can directly return the results.
-          val changeOutputs = fundedTx.txOut
+          require(fundedTx.txOut.length <= 2, s"bitcoind should never add more than one change output (${fundedTx.txOut.length - 1} found)")
+          val changeOutput_opt = fundedTx.txOut
             .filter(_.publicKeyScript != fundingParams.fundingPubkeyScript)
             .map(txOut => TxAddOutput(fundingParams.channelId, generateSerialId(), txOut.amount, txOut.publicKeyScript))
-          if (changeOutputs.length > 1) {
-            log.warn(s"bitcoind should never add more than one change output (${changeOutputs.length} found)")
-          }
+            .headOption
+          // There are at most two outputs: the shared output (if we are the initiator) and the (optional) change output.
           val outputs = if (fundingParams.isInitiator) {
-            // If the initiator doesn't want to contribute, we should cancel out the dust amount artificially added previously.
-            val initiatorChangeOutputs = if (fundingParams.localAmount == 0.sat) {
-              changeOutputs.map(o => o.copy(amount = o.amount + fundingParams.dustLimit))
-            } else {
-              changeOutputs
+            // If the initiator doesn't want to contribute, we should cancel out the dummy amount artificially added previously.
+            val initiatorChangeOutput = changeOutput_opt match {
+              case Some(changeOutput) if fundingParams.localAmount == 0.sat =>
+                val dummyOutputAmount = fundedTx.txOut.filter(_.publicKeyScript == fundingParams.fundingPubkeyScript).map(_.amount).sum
+                Seq(changeOutput.copy(amount = changeOutput.amount + dummyOutputAmount))
+              case Some(changeOutput) => Seq(changeOutput)
+              case None => Nil
             }
             // The initiator is responsible for adding the shared output.
-            TxAddOutput(fundingParams.channelId, generateSerialId(), fundingParams.fundingAmount, fundingParams.fundingPubkeyScript) +: initiatorChangeOutputs
+            val fundingOutput = TxAddOutput(fundingParams.channelId, generateSerialId(), fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)
+            fundingOutput +: initiatorChangeOutput
           } else {
             // The protocol only requires the non-initiator to pay the fees for its inputs and outputs, discounting the
             // common fields (shared output, version, nLockTime, etc). However, this is really hard to compute here,
             // because we don't know the witness size of our inputs (we let bitcoind handle that). For simplicity's sake,
             // we simply accept that we'll slightly overpay the fee (which speeds up channel confirmation).
-            changeOutputs
+            changeOutput_opt.toSeq
           }
           log.info("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
-          // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this protocol.
+          // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this session.
           unlock(unusableInputs.map(_.outpoint))
           buildTx(FundingContributions(inputDetails.usableInputs, outputs))
         } else {
@@ -416,28 +426,21 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   }
 
   def send(session: InteractiveTxSession): Behavior[Command] = {
-    session.toSend.headOption match {
-      case Some(Left(addInput)) =>
-        val next = session.copy(toSend = session.toSend.tail, localInputs = session.localInputs :+ addInput, txCompleteSent = false)
+    session.toSend match {
+      case Left(addInput) +: tail =>
         replyTo ! SendMessage(addInput)
+        val next = session.copy(toSend = tail, localInputs = session.localInputs :+ addInput, txCompleteSent = false)
         receive(next)
-      case Some(Right(addOutput)) =>
-        val next = session.copy(toSend = session.toSend.tail, localOutputs = session.localOutputs :+ addOutput, txCompleteSent = false)
+      case Right(addOutput) +: tail =>
         replyTo ! SendMessage(addOutput)
+        val next = session.copy(toSend = tail, localOutputs = session.localOutputs :+ addOutput, txCompleteSent = false)
         receive(next)
-      case None =>
-        val next = session.copy(txCompleteSent = true)
+      case Nil =>
         replyTo ! SendMessage(TxComplete(fundingParams.channelId))
+        val next = session.copy(txCompleteSent = true)
         if (next.isComplete) {
-          validateTx(next) match {
-            case Left(cause) =>
-              replyTo ! RemoteFailure(cause)
-              unlockAndStop(next)
-            case Right((completeTx, fundingOutputIndex)) =>
-              signCommitTx(completeTx, fundingOutputIndex)
-          }
-        }
-        else {
+          validateAndSign(next)
+        } else {
           receive(next)
         }
     }
@@ -456,7 +459,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           } else if (session.remoteInputs.exists(_.serialId == addInput.serialId)) {
             replyTo ! RemoteFailure(DuplicateSerialId(fundingParams.channelId, addInput.serialId))
             unlockAndStop(session)
-          } else if (session.localInputs.exists(i => spendSameOutpoint(i, addInput)) || session.remoteInputs.exists(i => spendSameOutpoint(i, addInput))) {
+          } else if (session.localInputs.exists(i => toOutPoint(i) == toOutPoint(addInput)) || session.remoteInputs.exists(i => toOutPoint(i) == toOutPoint(addInput))) {
             replyTo ! RemoteFailure(DuplicateInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput))
             unlockAndStop(session)
           } else if (addInput.previousTx.txOut.length <= addInput.previousTxOutput) {
@@ -521,13 +524,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case _: TxComplete =>
           val next = session.copy(txCompleteReceived = true)
           if (next.isComplete) {
-            validateTx(next) match {
-              case Left(cause) =>
-                replyTo ! RemoteFailure(cause)
-                unlockAndStop(next)
-              case Right((completeTx, fundingOutputIndex)) =>
-                signCommitTx(completeTx, fundingOutputIndex)
-            }
+            validateAndSign(next)
           } else {
             send(next)
           }
@@ -540,6 +537,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         unlockAndStop(session)
       case Abort =>
         unlockAndStop(session)
+    }
+  }
+
+  def validateAndSign(session: InteractiveTxSession): Behavior[Command] = {
+    require(session.isComplete, "interactive session was not completed")
+    validateTx(session) match {
+      case Left(cause) =>
+        replyTo ! RemoteFailure(cause)
+        unlockAndStop(session)
+      case Right((completeTx, fundingOutputIndex)) =>
+        signCommitTx(completeTx, fundingOutputIndex)
     }
   }
 
