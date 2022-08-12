@@ -178,6 +178,7 @@ object NodeParams extends Logging {
         useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
         useForTor = config.getBoolean("socks5.use-for-tor"),
         useForWatchdogs = config.getBoolean("socks5.use-for-watchdogs"),
+        useForDnsHostnames = config.getBoolean("socks5.use-for-dnshostnames"),
       ))
     } else {
       None

@@ -107,7 +107,8 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       useForIPv4 = true,
       useForIPv6 = true,
       useForTor = true,
-      useForWatchdogs = true)
+      useForWatchdogs = true,
+      useForDnsHostnames = true)
 
     if (proxyAcceptsConnections(proxyParams)) {
       val eventListener = TestProbe[DangerousBlocksSkew]()
