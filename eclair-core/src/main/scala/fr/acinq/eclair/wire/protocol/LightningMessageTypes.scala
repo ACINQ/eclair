@@ -24,6 +24,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
+import sun.net.util.IPAddressUtil.{isIPv4LiteralAddress, isIPv6LiteralAddress}
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 import java.nio.charset.StandardCharsets
@@ -322,11 +323,10 @@ object NodeAddress {
    *
    */
   def fromParts(host: String, port: Int): Try[NodeAddress] = Try {
-    val ipv4v6 = "^([0-9.]*)?$|(:)".r
     host match {
       case _ if host.endsWith(".onion") && host.length == 22 => Tor2(host.dropRight(6), port)
       case _ if host.endsWith(".onion") && host.length == 62 => Tor3(host.dropRight(6), port)
-      case _ if ipv4v6.findFirstIn(host).isDefined => IPAddress(InetAddress.getByName(host), port)
+      case _ if isIPv4LiteralAddress(host) || isIPv6LiteralAddress(host) => IPAddress(InetAddress.getByName(host), port)
       case _ => DnsHostname(host, port)
     }
   }
