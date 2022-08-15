@@ -169,7 +169,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         ActorRef.noSender,
         nodeId = aliceNodeId,
         state = Peer.CONNECTED,
-        address = Some(NodeAddress.fromParts("localhost", 9731).get),
+        address = Some(NodeAddress.fromParts("127.0.0.1", 9731).get),
         channels = 1),
       PeerInfo(
         ActorRef.noSender,
@@ -254,7 +254,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       network = "regtest",
       blockHeight = 9999,
-      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
+      publicAddresses = NodeAddress.fromParts("127.0.0.1", 9731).get :: Nil,
       onionAddress = None,
       instanceId = "01234567-0123-4567-89ab-0123456789ab"
     ))
