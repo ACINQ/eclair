@@ -363,7 +363,7 @@ object NodeAddress {
     host match {
       case _ if host.endsWith(".onion") && host.length == 22 => Tor2(host.dropRight(6), port)
       case _ if host.endsWith(".onion") && host.length == 62 => Tor3(host.dropRight(6), port)
-      case _ if InetAddresses.isInetAddress(host) => IPAddress(InetAddress.getByName(host), port)
+      case _ if InetAddresses.isInetAddress(host.filterNot(Set('[', ']'))) => IPAddress(InetAddress.getByName(host), port)
       case _ => DnsHostname(host, port)
     }
   }
