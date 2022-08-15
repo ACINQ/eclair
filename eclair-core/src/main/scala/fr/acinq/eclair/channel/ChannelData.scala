@@ -16,15 +16,17 @@
 
 package fr.acinq.eclair.channel
 
+import akka.actor.typed
 import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.InteractiveTxBuilder.{InteractiveTxParams, SignedSharedTransaction}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, RealShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -47,13 +49,22 @@ import java.util.UUID
  */
 sealed trait ChannelState
 case object WAIT_FOR_INIT_INTERNAL extends ChannelState
+// Single-funder channel opening:
+case object WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_OPEN_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_CHANNEL extends ChannelState
 case object WAIT_FOR_FUNDING_INTERNAL extends ChannelState
 case object WAIT_FOR_FUNDING_CREATED extends ChannelState
 case object WAIT_FOR_FUNDING_SIGNED extends ChannelState
 case object WAIT_FOR_FUNDING_CONFIRMED extends ChannelState
-case object WAIT_FOR_FUNDING_LOCKED extends ChannelState
+case object WAIT_FOR_CHANNEL_READY extends ChannelState
+// Dual-funded channel opening:
+case object WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL extends ChannelState
+case object WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL extends ChannelState
+case object WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_CREATED extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_PLACEHOLDER extends ChannelState
+// Channel opened:
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
 case object NEGOTIATING extends ChannelState
@@ -75,23 +86,29 @@ case object ERR_INFORMATION_LEAK extends ChannelState
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
-                             fundingAmount: Satoshi,
-                             pushAmount: MilliSatoshi,
-                             initialFeeratePerKw: FeeratePerKw,
-                             fundingTxFeeratePerKw: FeeratePerKw,
-                             localParams: LocalParams,
-                             remote: ActorRef,
-                             remoteInit: Init,
-                             channelFlags: ChannelFlags,
-                             channelConfig: ChannelConfig,
-                             channelType: SupportedChannelType)
-case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
-                             localParams: LocalParams,
-                             remote: ActorRef,
-                             remoteInit: Init,
-                             channelConfig: ChannelConfig,
-                             channelType: SupportedChannelType)
+case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
+                                        fundingAmount: Satoshi,
+                                        dualFunded: Boolean,
+                                        commitTxFeerate: FeeratePerKw,
+                                        fundingTxFeerate: FeeratePerKw,
+                                        pushAmount_opt: Option[MilliSatoshi],
+                                        localParams: LocalParams,
+                                        remote: ActorRef,
+                                        remoteInit: Init,
+                                        channelFlags: ChannelFlags,
+                                        channelConfig: ChannelConfig,
+                                        channelType: SupportedChannelType) {
+  require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
+}
+case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
+                                            fundingContribution_opt: Option[Satoshi],
+                                            dualFunded: Boolean,
+                                            localParams: LocalParams,
+                                            remote: ActorRef,
+                                            remoteInit: Init,
+                                            channelConfig: ChannelConfig,
+                                            channelType: SupportedChannelType)
+
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
@@ -161,7 +178,7 @@ sealed trait Command extends PossiblyHarmful
 sealed trait HasReplyToCommand extends Command { def replyTo: ActorRef }
 sealed trait HasOptionalReplyToCommand extends Command { def replyTo_opt: Option[ActorRef] }
 
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand
+final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand
 sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand { def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
@@ -196,7 +213,7 @@ final case class CMD_GET_CHANNEL_INFO(replyTo: ActorRef)extends HasReplyToComman
 /** response to [[Command]] requests */
 sealed trait CommandResponse[+C <: Command]
 sealed trait CommandSuccess[+C <: Command] extends CommandResponse[C]
-sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: Throwable }
+sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: T }
 
 /** generic responses */
 final case class RES_SUCCESS[+C <: Command](cmd: C, channelId: ByteVector32) extends CommandSuccess[C]
@@ -361,6 +378,31 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
   }
 }
 
+sealed trait RealScidStatus { def toOption: Option[RealShortChannelId] }
+object RealScidStatus {
+  /** The funding transaction has been confirmed but hasn't reached min_depth, we must be ready for a reorg. */
+  case class Temporary(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
+  /** The funding transaction has been deeply confirmed. */
+  case class Final(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
+  /** We don't know the status of the funding transaction. */
+  case object Unknown extends RealScidStatus { override def toOption: Option[RealShortChannelId] = None }
+}
+
+/**
+ * Short identifiers for the channel
+ *
+ * @param real            the real scid, it may change if a reorg happens before the channel reaches 6 conf
+ * @param localAlias      we must remember the alias that we sent to our peer because we use it to:
+ *                          - identify incoming [[ChannelUpdate]] at the connection level
+ *                          - route outgoing payments to that channel
+ * @param remoteAlias_opt we only remember the last alias received from our peer, we use this to generate
+ *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
+ */
+case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Option[Alias])
+
+/** Once a dual funding tx has been signed, we must remember the associated commitments. */
+case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: Commitments)
+
 sealed trait ChannelData extends PossiblyHarmful {
   def channelId: ByteVector32
 }
@@ -376,10 +418,10 @@ sealed trait PersistentChannelData extends ChannelData {
   def commitments: Commitments
 }
 
-final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends TransientChannelData {
+final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = initFundee.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends TransientChannelData {
+final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel) extends TransientChannelData {
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32,
@@ -387,7 +429,7 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32
                                                 remoteParams: RemoteParams,
                                                 fundingAmount: Satoshi,
                                                 pushAmount: MilliSatoshi,
-                                                initialFeeratePerKw: FeeratePerKw,
+                                                commitTxFeerate: FeeratePerKw,
                                                 remoteFirstPerCommitmentPoint: PublicKey,
                                                 channelConfig: ChannelConfig,
                                                 channelFeatures: ChannelFeatures,
@@ -399,7 +441,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
                                                remoteParams: RemoteParams,
                                                fundingAmount: Satoshi,
                                                pushAmount: MilliSatoshi,
-                                               initialFeeratePerKw: FeeratePerKw,
+                                               commitTxFeerate: FeeratePerKw,
                                                remoteFirstPerCommitmentPoint: PublicKey,
                                                channelFlags: ChannelFlags,
                                                channelConfig: ChannelConfig,
@@ -422,12 +464,34 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
-                                                 deferred: Option[FundingLocked],
+                                                 deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends PersistentChannelData
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
+                                             shortIds: ShortIds,
+                                             lastSent: ChannelReady) extends PersistentChannelData
+
+final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
+  val channelId: ByteVector32 = init.temporaryChannelId
+}
+final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenDualFundedChannel) extends TransientChannelData {
+  val channelId: ByteVector32 = lastSent.temporaryChannelId
+}
+final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
+                                                    txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
+                                                    deferred: Option[ChannelReady]) extends TransientChannelData
+final case class DATA_WAIT_FOR_DUAL_FUNDING_PLACEHOLDER(commitments: Commitments,
+                                                        fundingTx: SignedSharedTransaction,
+                                                        fundingParams: InteractiveTxParams,
+                                                        previousFundingTxs: Seq[DualFundingTx],
+                                                        waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
+                                                        lastChecked: BlockHeight, // last time we checked if the channel was double-spent
+                                                        rbfAttempt: Option[typed.ActorRef[InteractiveTxBuilder.Command]],
+                                                        deferred: Option[ChannelReady]) extends TransientChannelData {
+  val channelId: ByteVector32 = commitments.channelId
+}
+
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortChannelId: ShortChannelId,
-                             buried: Boolean,
+                             shortIds: ShortIds,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
@@ -466,7 +530,7 @@ case class LocalParams(nodeId: PublicKey,
                        fundingKeyPath: DeterministicWallet.KeyPath,
                        dustLimit: Satoshi,
                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                       channelReserve: Satoshi,
+                       requestedChannelReserve_opt: Option[Satoshi],
                        htlcMinimum: MilliSatoshi,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
@@ -481,7 +545,7 @@ case class LocalParams(nodeId: PublicKey,
 case class RemoteParams(nodeId: PublicKey,
                         dustLimit: Satoshi,
                         maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                        channelReserve: Satoshi,
+                        requestedChannelReserve_opt: Option[Satoshi],
                         htlcMinimum: MilliSatoshi,
                         toSelfDelay: CltvExpiryDelta,
                         maxAcceptedHtlcs: Int,

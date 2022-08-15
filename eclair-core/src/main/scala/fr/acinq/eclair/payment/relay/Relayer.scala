@@ -23,12 +23,13 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, typed}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
@@ -132,7 +133,13 @@ object Relayer extends Logging {
   }
 
   case class RelayForward(add: UpdateAddHtlc)
-  case class ChannelBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
+  case class ChannelBalance(remoteNodeId: PublicKey, shortIds: ShortIds, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
+
+  sealed trait OutgoingChannelParams {
+    def channelId: ByteVector32
+    def channelUpdate: ChannelUpdate
+    def prevChannelUpdate: Option[ChannelUpdate]
+  }
 
   /**
    * Get the list of local outgoing channels.
@@ -140,10 +147,11 @@ object Relayer extends Logging {
    * @param enabledOnly if true, filter out disabled channels.
    */
   case class GetOutgoingChannels(enabledOnly: Boolean = true)
-  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: AbstractCommitments) {
+  case class OutgoingChannel(shortIds: ShortIds, nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: AbstractCommitments) extends OutgoingChannelParams {
+    override val channelId: ByteVector32 = commitments.channelId
     def toChannelBalance: ChannelBalance = ChannelBalance(
       remoteNodeId = nextNodeId,
-      shortChannelId = channelUpdate.shortChannelId,
+      shortIds = shortIds,
       canSend = commitments.availableBalanceForSend,
       canReceive = commitments.availableBalanceForReceive,
       isPublic = commitments.announceChannel,

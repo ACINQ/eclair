@@ -17,7 +17,7 @@
 package fr.acinq.eclair.integration
 
 import akka.actor.ActorRef
-import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
@@ -32,7 +32,6 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer
@@ -41,7 +40,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTra
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
@@ -114,22 +113,21 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }
   }
 
-  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int): Unit = {
+  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, privateChannels: Int, publicChannels: Int, privateUpdates: Int, publicUpdates: Int): Unit = {
     val sender = TestProbe()
     subset.foreach {
-      case (_, setup) =>
-        awaitCond({
-          sender.send(setup.router, Router.GetNodes)
-          sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes
-        }, max = 60 seconds, interval = 1 second)
-        awaitCond({
-          sender.send(setup.router, Router.GetChannels)
-          sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
-        }, max = 60 seconds, interval = 1 second)
-        awaitCond({
-          sender.send(setup.router, Router.GetChannelUpdates)
-          sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
-        }, max = 60 seconds, interval = 1 second)
+      case (node, setup) =>
+        withClue(node) {
+          awaitAssert({
+            sender.send(setup.router, Router.GetRouterData)
+            val data = sender.expectMsgType[Router.Data]
+            assert(data.nodes.size == nodes)
+            assert(data.privateChannels.size == privateChannels)
+            assert(data.channels.size == publicChannels)
+            assert(data.privateChannels.values.flatMap(pc => pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).size == privateUpdates)
+            assert(data.channels.values.flatMap(pc => pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).size == publicUpdates)
+          }, max = 10 seconds, interval = 1 second)
+        }
     }
   }
 
@@ -139,8 +137,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
-    awaitAnnouncements(nodes.view.filterKeys(key => List("A", "B").contains(key)).toMap, 6, 8, 18)
-    awaitAnnouncements(nodes.view.filterKeys(key => List("C", "D", "E", "G").contains(key)).toMap, 6, 8, 16)
+    awaitAnnouncements(nodes.view.filterKeys(key => List("A", "B").contains(key)).toMap, nodes = 6, privateChannels = 1, publicChannels = 8, privateUpdates = 2, publicUpdates = 16)
+    awaitAnnouncements(nodes.view.filterKeys(key => List("C", "D", "E", "G").contains(key)).toMap, nodes = 6, privateChannels = 0, publicChannels = 8, privateUpdates = 0, publicUpdates = 16)
   }
 
   test("wait for channels balance") {
@@ -151,7 +149,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val routingState = sender.expectMsgType[Router.RoutingState]
     val publicChannels = routingState.channels.filter(pc => Set(pc.ann.nodeId1, pc.ann.nodeId2).contains(nodeId))
     assert(publicChannels.nonEmpty)
-    publicChannels.foreach(pc => assert(pc.meta_opt.map(m => m.balance1 > 0.msat || m.balance2 > 0.msat) === Some(true), pc))
+    publicChannels.foreach(pc => assert(pc.meta_opt.exists(m => m.balance1 > 0.msat || m.balance2 > 0.msat), pc))
   }
 
   test("send an HTLC A->D") {
@@ -169,7 +167,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val paymentId = sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
-    assert(Crypto.sha256(ps.paymentPreimage) === invoice.paymentHash)
+    assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
   }
 
@@ -180,12 +178,12 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").router, Router.GetChannels)
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
     // we also need the full commitment
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
-    val commitmentBC = sender.expectMsgType[RES_GET_CHANNEL_INFO].data.asInstanceOf[DATA_NORMAL].commitments
+    nodes("B").register ! Register.ForwardShortId(sender.ref.toTyped[Any], shortIdBC, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
+    val normalBC = sender.expectMsgType[RES_GET_CHANNEL_INFO].data.asInstanceOf[DATA_NORMAL]
     // we then forge a new channel_update for B-C...
     val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.channelConf.expiryDelta + 1, nodes("C").nodeParams.channelConf.htlcMinimum, nodes("B").nodeParams.relayParams.publicChannelFees.feeBase, nodes("B").nodeParams.relayParams.publicChannelFees.feeProportionalMillionths, 500000000 msat)
     // ...and notify B's relayer
-    nodes("B").system.eventStream.publish(LocalChannelUpdate(system.deadLetters, commitmentBC.channelId, shortIdBC, commitmentBC.remoteParams.nodeId, None, channelUpdateBC, commitmentBC))
+    nodes("B").system.eventStream.publish(LocalChannelUpdate(system.deadLetters, normalBC.channelId, normalBC.shortIds, normalBC.commitments.remoteParams.nodeId, normalBC.channelAnnouncement, channelUpdateBC, normalBC.commitments))
     // we retrieve a payment hash from D
     val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
@@ -197,7 +195,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val paymentId = sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
-    assert(Crypto.sha256(ps.paymentPreimage) === invoice.paymentHash)
+    assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
 
     def updateFor(n: PublicKey, pc: PublicChannel): Option[ChannelUpdate] = if (n == pc.ann.nodeId1) pc.update_1_opt else if (n == pc.ann.nodeId2) pc.update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
 
@@ -211,8 +209,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
     sender.expectNoMessage(3 seconds)
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, BroadcastChannelUpdate(PeriodicRefresh))
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
+    nodes("B").register ! Register.ForwardShortId(sender.ref.toTyped[Any], shortIdBC, BroadcastChannelUpdate(PeriodicRefresh))
+    nodes("B").register ! Register.ForwardShortId(sender.ref.toTyped[Any], shortIdBC, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
     val channelUpdateBC_new = sender.expectMsgType[RES_GET_CHANNEL_INFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
     logger.info(s"channelUpdateBC=$channelUpdateBC")
     logger.info(s"channelUpdateBC_new=$channelUpdateBC_new")
@@ -250,9 +248,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val paymentId = sender.expectMsgType[UUID]
     val failed = sender.expectMsgType[PaymentFailed]
     assert(failed.id == paymentId)
-    assert(failed.paymentHash === invoice.paymentHash)
-    assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(amount, getBlockHeight())))
+    assert(failed.paymentHash == invoice.paymentHash)
+    assert(failed.failures.size == 1)
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(amount, getBlockHeight())))
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -270,9 +268,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val paymentId = sender.expectMsgType[UUID]
     val failed = sender.expectMsgType[PaymentFailed]
     assert(failed.id == paymentId)
-    assert(failed.paymentHash === invoice.paymentHash)
-    assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000 msat, getBlockHeight())))
+    assert(failed.paymentHash == invoice.paymentHash)
+    assert(failed.failures.size == 1)
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000 msat, getBlockHeight())))
   }
 
   test("send an HTLC A->D with too much overpayment") {
@@ -290,9 +288,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val paymentId = sender.expectMsgType[UUID]
     val failed = sender.expectMsgType[PaymentFailed]
     assert(paymentId == failed.id)
-    assert(failed.paymentHash === invoice.paymentHash)
-    assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000 msat, getBlockHeight())))
+    assert(failed.paymentHash == invoice.paymentHash)
+    assert(failed.failures.size == 1)
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000 msat, getBlockHeight())))
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {
@@ -348,30 +346,30 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 5, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
-    assert(paymentSent.id === paymentId, paymentSent)
-    assert(paymentSent.paymentHash === invoice.paymentHash, paymentSent)
+    assert(paymentSent.id == paymentId, paymentSent)
+    assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
     assert(paymentSent.parts.length > 1, paymentSent)
-    assert(paymentSent.recipientNodeId === nodes("D").nodeParams.nodeId, paymentSent)
-    assert(paymentSent.recipientAmount === amount, paymentSent)
+    assert(paymentSent.recipientNodeId == nodes("D").nodeParams.nodeId, paymentSent)
+    assert(paymentSent.recipientAmount == amount, paymentSent)
     assert(paymentSent.feesPaid > 0.msat, paymentSent)
     assert(paymentSent.parts.forall(p => p.id != paymentSent.id), paymentSent)
     assert(paymentSent.parts.forall(p => p.route.isDefined), paymentSent)
 
     val paymentParts = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     assert(paymentParts.length == paymentSent.parts.length, paymentParts)
-    assert(paymentParts.map(_.amount).sum === amount, paymentParts)
+    assert(paymentParts.map(_.amount).sum == amount, paymentParts)
     assert(paymentParts.forall(p => p.parentId == paymentId), paymentParts)
     assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat), paymentParts)
 
     awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
     val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now())
-    assert(sent.length === 1, sent)
-    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
+    assert(sent.length == 1, sent)
+    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(receivedAmount === amount)
+    assert(receivedAmount == amount)
   }
 
   // NB: this test may take 20 seconds to complete (multi-part payment timeout).
@@ -391,11 +389,11 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
-    assert(paymentFailed.id === paymentId, paymentFailed)
-    assert(paymentFailed.paymentHash === invoice.paymentHash, paymentFailed)
+    assert(paymentFailed.id == paymentId, paymentFailed)
+    assert(paymentFailed.paymentHash == invoice.paymentHash, paymentFailed)
     assert(paymentFailed.failures.length > 1, paymentFailed)
 
-    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
 
     sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
     val canSend2 = sender.expectMsgType[Relayer.OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
@@ -414,21 +412,21 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 3, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
-    assert(paymentSent.id === paymentId, paymentSent)
-    assert(paymentSent.paymentHash === invoice.paymentHash, paymentSent)
+    assert(paymentSent.id == paymentId, paymentSent)
+    assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
     assert(paymentSent.parts.length > 1, paymentSent)
-    assert(paymentSent.recipientAmount === amount, paymentSent)
-    assert(paymentSent.feesPaid === 0.msat, paymentSent) // no fees when using direct channels
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.feesPaid == 0.msat, paymentSent) // no fees when using direct channels
 
     val paymentParts = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(paymentParts.map(_.amount).sum === amount, paymentParts)
+    assert(paymentParts.map(_.amount).sum == amount, paymentParts)
     assert(paymentParts.forall(p => p.parentId == paymentId), paymentParts)
     assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid == 0.msat), paymentParts)
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(receivedAmount === amount)
+    assert(receivedAmount == amount)
   }
 
   test("send a multi-part payment D->C greater than balance D->C (temporary local failure)") {
@@ -446,11 +444,11 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
-    assert(paymentFailed.id === paymentId, paymentFailed)
-    assert(paymentFailed.paymentHash === invoice.paymentHash, paymentFailed)
+    assert(paymentFailed.id == paymentId, paymentFailed)
+    assert(paymentFailed.paymentHash == invoice.paymentHash, paymentFailed)
 
     val incoming = nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(incoming.get.status === IncomingPaymentStatus.Pending, incoming)
+    assert(incoming.get.status == IncomingPaymentStatus.Pending, incoming)
 
     sender.send(nodes("D").relayer, Relayer.GetOutgoingChannels())
     val canSend2 = sender.expectMsgType[Relayer.OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
@@ -475,16 +473,16 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
-    assert(paymentSent.id === paymentId, paymentSent)
-    assert(paymentSent.paymentHash === invoice.paymentHash, paymentSent)
-    assert(paymentSent.recipientNodeId === nodes("F").nodeParams.nodeId, paymentSent)
-    assert(paymentSent.recipientAmount === amount, paymentSent)
-    assert(paymentSent.feesPaid === 1210100.msat, paymentSent)
-    assert(paymentSent.nonTrampolineFees === 0.msat, paymentSent)
+    assert(paymentSent.id == paymentId, paymentSent)
+    assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
+    assert(paymentSent.recipientNodeId == nodes("F").nodeParams.nodeId, paymentSent)
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.feesPaid == 1210100.msat, paymentSent)
+    assert(paymentSent.nonTrampolineFees == 0.msat, paymentSent)
 
     awaitCond(nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(receivedAmount === amount)
+    assert(receivedAmount == amount)
 
     awaitCond({
       val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == invoice.paymentHash)
@@ -496,10 +494,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val outgoingSuccess = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     outgoingSuccess.collect { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
-      assert(recipientNodeId === nodes("F").nodeParams.nodeId, p)
-      assert(route.lastOption === Some(HopSummary(nodes("G").nodeParams.nodeId, nodes("F").nodeParams.nodeId)), p)
+      assert(recipientNodeId == nodes("F").nodeParams.nodeId, p)
+      assert(route.lastOption == Some(HopSummary(nodes("G").nodeParams.nodeId, nodes("F").nodeParams.nodeId)), p)
     }
-    assert(outgoingSuccess.map(_.amount).sum === amount + 1210100.msat, outgoingSuccess)
+    assert(outgoingSuccess.map(_.amount).sum == amount + 1210100.msat, outgoingSuccess)
   }
 
   test("send a trampoline payment D->B (via trampoline C)") {
@@ -521,15 +519,15 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
-    assert(paymentSent.id === paymentId, paymentSent)
-    assert(paymentSent.paymentHash === invoice.paymentHash, paymentSent)
-    assert(paymentSent.recipientAmount === amount, paymentSent)
-    assert(paymentSent.feesPaid === 750000.msat, paymentSent)
-    assert(paymentSent.nonTrampolineFees === 0.msat, paymentSent)
+    assert(paymentSent.id == paymentId, paymentSent)
+    assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.feesPaid == 750000.msat, paymentSent)
+    assert(paymentSent.nonTrampolineFees == 0.msat, paymentSent)
 
     awaitCond(nodes("B").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("B").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(receivedAmount === amount)
+    assert(receivedAmount == amount)
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
 
     awaitCond({
@@ -542,15 +540,15 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val outgoingSuccess = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     outgoingSuccess.collect { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
-      assert(recipientNodeId === nodes("B").nodeParams.nodeId, p)
-      assert(route.lastOption === Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("B").nodeParams.nodeId)), p)
+      assert(recipientNodeId == nodes("B").nodeParams.nodeId, p)
+      assert(route.lastOption == Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("B").nodeParams.nodeId)), p)
     }
-    assert(outgoingSuccess.map(_.amount).sum === amount + 750000.msat, outgoingSuccess)
+    assert(outgoingSuccess.map(_.amount).sum == amount + 750000.msat, outgoingSuccess)
 
     awaitCond(nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
     val sent = nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now())
-    assert(sent.length === 1, sent)
-    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
+    assert(sent.length == 1, sent)
+    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
   }
 
   test("send a trampoline payment F1->A (via trampoline C, non-trampoline recipient)") {
@@ -558,9 +556,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val start = TimestampMilli.now()
     val (sender, eventListener) = (TestProbe(), TestProbe())
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
-    sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
-    val channelUpdate_ba = sender.expectMsgType[Relayer.OutgoingChannels].channels.filter(c => c.nextNodeId == nodes("A").nodeParams.nodeId).head.channelUpdate
-    val routingHints = List(List(ExtraHop(nodes("B").nodeParams.nodeId, channelUpdate_ba.shortChannelId, channelUpdate_ba.feeBaseMsat, channelUpdate_ba.feeProportionalMillionths, channelUpdate_ba.cltvExpiryDelta)))
+
+    sender.send(nodes("A").router, Router.GetRouterData)
+    val routingHints = List(sender.expectMsgType[Router.Data].privateChannels.head._2.toIncomingExtraHop.toList)
 
     val amount = 3000000000L.msat
     sender.send(nodes("A").paymentHandler, ReceivePayment(Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
@@ -573,14 +571,14 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("F").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
-    assert(paymentSent.id === paymentId, paymentSent)
-    assert(paymentSent.paymentHash === invoice.paymentHash, paymentSent)
-    assert(paymentSent.recipientAmount === amount, paymentSent)
-    assert(paymentSent.trampolineFees === 1500000.msat, paymentSent)
+    assert(paymentSent.id == paymentId, paymentSent)
+    assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.trampolineFees == 1500000.msat, paymentSent)
 
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(receivedAmount === amount)
+    assert(receivedAmount == amount)
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
 
     awaitCond({
@@ -593,10 +591,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val outgoingSuccess = nodes("F").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     outgoingSuccess.collect { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
-      assert(recipientNodeId === nodes("A").nodeParams.nodeId, p)
-      assert(route.lastOption === Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("A").nodeParams.nodeId)), p)
+      assert(recipientNodeId == nodes("A").nodeParams.nodeId, p)
+      assert(route.lastOption == Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("A").nodeParams.nodeId)), p)
     }
-    assert(outgoingSuccess.map(_.amount).sum === amount + 1500000.msat, outgoingSuccess)
+    assert(outgoingSuccess.map(_.amount).sum == amount + 1500000.msat, outgoingSuccess)
   }
 
   test("send a trampoline payment B->D (temporary local failure at trampoline)") {
@@ -620,10 +618,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
-    assert(paymentFailed.id === paymentId, paymentFailed)
-    assert(paymentFailed.paymentHash === invoice.paymentHash, paymentFailed)
+    assert(paymentFailed.id == paymentId, paymentFailed)
+    assert(paymentFailed.paymentHash == invoice.paymentHash, paymentFailed)
 
-    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
     val outgoingPayments = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId)
     assert(outgoingPayments.nonEmpty, outgoingPayments)
     assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
@@ -641,10 +639,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("A").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
-    assert(paymentFailed.id === paymentId, paymentFailed)
-    assert(paymentFailed.paymentHash === invoice.paymentHash, paymentFailed)
+    assert(paymentFailed.id == paymentId, paymentFailed)
+    assert(paymentFailed.paymentHash == invoice.paymentHash, paymentFailed)
 
-    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
     val outgoingPayments = nodes("A").nodeParams.db.payments.listOutgoingPayments(paymentId)
     assert(outgoingPayments.nonEmpty, outgoingPayments)
     assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)

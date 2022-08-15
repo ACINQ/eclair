@@ -43,7 +43,6 @@ import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.protocol.NodeAddress
 import grizzled.slf4j.Logging
@@ -158,6 +157,7 @@ class Setup(val datadir: File,
       }
       case "password" => BitcoinJsonRPCAuthMethod.UserPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
+
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       rpcAuthMethod = rpcAuthMethod,
       host = config.getString("bitcoind.host"),
@@ -254,11 +254,17 @@ class Setup(val datadir: File,
       })
       _ <- feeratesRetrieved.future
 
-      bitcoinClient = new BitcoinCoreClient(new BatchingBitcoinJsonRPCClient(bitcoin))
+      bitcoinClient = new BitcoinCoreClient(bitcoin)
+
       watcher = {
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
-        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockHeight, bitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "watcher")
+        val watcherBitcoinClient = if (config.getBoolean("bitcoind.batch-watcher-requests")) {
+          new BitcoinCoreClient(new BatchingBitcoinJsonRPCClient(bitcoin))
+        } else {
+          new BitcoinCoreClient(bitcoin)
+        }
+        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockHeight, watcherBitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "watcher")
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
@@ -287,7 +293,7 @@ class Setup(val datadir: File,
         system.deadLetters
       }
       dbEventHandler = system.actorOf(SimpleSupervisor.props(DbEventHandler.props(nodeParams), "db-event-handler", SupervisorStrategy.Resume))
-      register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
+      register = system.actorOf(SimpleSupervisor.props(Register.props(), "register", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register), "payment-handler", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
@@ -351,7 +357,6 @@ class Setup(val datadir: File,
         case "safecookie" => TorProtocolHandler.SafeCookie()
       }
       val protocolHandlerProps = TorProtocolHandler.props(
-        version = OnionServiceVersion(config.getString("tor.protocol")),
         authentication = auth,
         privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).toPath,
         virtualPort = config.getInt("server.port"),

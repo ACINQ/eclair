@@ -25,14 +25,14 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     val keyPath = KeyPath(Seq(0L, 0L, 0L, 0L))
     val encoded = keyPathCodec.encode(keyPath).require
     val decoded = keyPathCodec.decode(encoded).require
-    assert(keyPath === decoded.value)
+    assert(keyPath == decoded.value)
   }
 
   test("encode/decode key paths (all 1s)") {
     val keyPath = KeyPath(Seq(0xffffffffL, 0xffffffffL, 0xffffffffL, 0xffffffffL))
     val encoded = keyPathCodec.encode(keyPath).require
     val decoded = keyPathCodec.decode(encoded).require
-    assert(keyPath === decoded.value)
+    assert(keyPath == decoded.value)
   }
 
   test("encode/decode channel version") {
@@ -41,21 +41,21 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     val current04 = hex"0000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
     val current05 = hex"0000000703d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
-    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(4).bits)))
-    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(4).bits)))
-    assert(channelVersionCodec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(4).bits)))
-    assert(channelVersionCodec.decode(current05.bits) === Attempt.successful(DecodeResult(ChannelVersion.ANCHOR_OUTPUTS, current05.drop(4).bits)))
+    assert(channelVersionCodec.decode(current02.bits) == Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(4).bits)))
+    assert(channelVersionCodec.decode(current03.bits) == Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(4).bits)))
+    assert(channelVersionCodec.decode(current04.bits) == Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(4).bits)))
+    assert(channelVersionCodec.decode(current05.bits) == Attempt.successful(DecodeResult(ChannelVersion.ANCHOR_OUTPUTS, current05.drop(4).bits)))
 
-    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"00000001".bits))
-    assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"00000003".bits))
-    assert(channelVersionCodec.encode(ChannelVersion.ANCHOR_OUTPUTS) === Attempt.successful(hex"00000007".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) == Attempt.successful(hex"00000001".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) == Attempt.successful(hex"00000003".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.ANCHOR_OUTPUTS) == Attempt.successful(hex"00000007".bits))
   }
 
-  test("encode/decode localparams") {
+  test("encode/decode local params") {
     def roundtrip(localParams: LocalParams, codec: Codec[LocalParams]) = {
       val encoded = codec.encode(localParams).require
       val decoded = codec.decode(encoded).require
-      assert(localParams === decoded.value)
+      assert(localParams == decoded.value)
     }
 
     val o = LocalParams(
@@ -63,7 +63,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      requestedChannelReserve_opt = Some(Satoshi(Random.nextInt(Int.MaxValue))),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
@@ -78,12 +78,12 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     roundtrip(o, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
   }
 
-  test("encode/decode remoteparams") {
+  test("encode/decode remote params") {
     val o = RemoteParams(
       nodeId = randomKey().publicKey,
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      requestedChannelReserve_opt = Some(Satoshi(Random.nextInt(Int.MaxValue))),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
@@ -96,12 +96,12 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       shutdownScript = None)
     val encoded = remoteParamsCodec.encode(o).require
     val decoded = remoteParamsCodec.decodeValue(encoded).require
-    assert(o === decoded)
+    assert(o == decoded)
 
-    // Backwards-compatibility: decode remoteparams with global features.
+    // Backwards-compatibility: decode remote params with global features.
     val withGlobalFeatures = hex"03c70c3b813815a8b79f41622b6f2c343fa24d94fb35fa7110bbb3d4d59cd9612e0000000059844cbc000000001b1524ea000000001503cbac000000006b75d3272e38777e029fa4e94066163024177311de7ba1befec2e48b473c387bbcee1484bf276a54460215e3dfb8e6f262222c5f343f5e38c5c9a43d2594c7f06dd7ac1a4326c665dd050347aba4d56d7007a7dcf03594423dccba9ed700d11e665d261594e1154203df31020d457ee336ba6eeb328d00f1b8bd8bfefb8a4dcd5af6db4c438b7ec5106c7edc0380df17e1beb0f238e51a39122ac4c6fb57f3c4f5b7bc9432f991b1ef4a8af3570002020000018a"
     val withGlobalFeaturesDecoded = remoteParamsCodec.decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.initFeatures.toByteVector === hex"028a")
+    assert(withGlobalFeaturesDecoded.initFeatures.toByteVector == hex"028a")
   }
 
   test("encode/decode htlc") {
@@ -111,11 +111,12 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32(),
-      onionRoutingPacket = TestConstants.emptyOnionPacket)
+      onionRoutingPacket = TestConstants.emptyOnionPacket,
+      blinding_opt = None)
     val htlc1 = IncomingHtlc(add)
     val htlc2 = OutgoingHtlc(add)
-    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require === htlc1)
-    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require === htlc2)
+    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require == htlc1)
+    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require == htlc2)
   }
 
   test("encode/decode commitment spec") {
@@ -125,18 +126,20 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32(),
-      onionRoutingPacket = TestConstants.emptyOnionPacket)
+      onionRoutingPacket = TestConstants.emptyOnionPacket,
+      blinding_opt = None)
     val add2 = UpdateAddHtlc(
       channelId = randomBytes32(),
       id = Random.nextInt(Int.MaxValue),
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32(),
-      onionRoutingPacket = TestConstants.emptyOnionPacket)
+      onionRoutingPacket = TestConstants.emptyOnionPacket,
+      blinding_opt = None)
     val htlc1 = IncomingHtlc(add1)
     val htlc2 = OutgoingHtlc(add2)
     val htlcs = Set[DirectedHtlc](htlc1, htlc2)
-    assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
+    assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require == htlcs)
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
       commitTxFeerate = FeeratePerKw(Random.nextInt(Int.MaxValue).sat),
@@ -145,7 +148,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     )
     val encoded = commitmentSpecCodec.encode(o).require
     val decoded = commitmentSpecCodec.decode(encoded).require
-    assert(o === decoded.value)
+    assert(o == decoded.value)
   }
 
   test("encode/decode origin") {
@@ -153,24 +156,24 @@ class ChannelCodecs1Spec extends AnyFunSuite {
 
     val localHot = Origin.LocalHot(replyTo, UUID.randomUUID())
     val localCold = Origin.LocalCold(localHot.id)
-    assert(originCodec.decodeValue(originCodec.encode(localHot).require).require === localCold)
-    assert(originCodec.decodeValue(originCodec.encode(localCold).require).require === localCold)
+    assert(originCodec.decodeValue(originCodec.encode(localHot).require).require == localCold)
+    assert(originCodec.decodeValue(originCodec.encode(localCold).require).require == localCold)
 
-    val add = UpdateAddHtlc(randomBytes32(), 4324, 11000000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(randomBytes32(), 4324, 11000000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None)
     val relayedHot = Origin.ChannelRelayedHot(replyTo, add, 11000000 msat)
     val relayedCold = Origin.ChannelRelayedCold(add.channelId, add.id, add.amountMsat, relayedHot.amountOut)
-    assert(originCodec.decodeValue(originCodec.encode(relayedHot).require).require === relayedCold)
-    assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require === relayedCold)
+    assert(originCodec.decodeValue(originCodec.encode(relayedHot).require).require == relayedCold)
+    assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require == relayedCold)
 
     val adds = Seq(
-      UpdateAddHtlc(randomBytes32(), 1L, 1000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(randomBytes32(), 1L, 2000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(randomBytes32(), 2L, 3000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32(), 1L, 1000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None),
+      UpdateAddHtlc(randomBytes32(), 1L, 2000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None),
+      UpdateAddHtlc(randomBytes32(), 2L, 3000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None),
     )
     val trampolineRelayedHot = Origin.TrampolineRelayedHot(replyTo, adds)
     val trampolineRelayedCold = Origin.TrampolineRelayedCold(trampolineRelayedHot.htlcs)
-    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedHot).require).require === trampolineRelayedCold)
-    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedCold).require).require === trampolineRelayedCold)
+    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedHot).require).require == trampolineRelayedCold)
+    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedCold).require).require == trampolineRelayedCold)
   }
 
   test("encode/decode map of origins") {
@@ -184,7 +187,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       -32L -> Origin.ChannelRelayedCold(randomBytes32(), 54, 15000000 msat, 14000000 msat),
       -54L -> Origin.TrampolineRelayedCold((randomBytes32(), 1L) :: (randomBytes32(), 2L) :: Nil),
       -4L -> Origin.LocalCold(UUID.randomUUID()))
-    assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
+    assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require == map)
   }
 
   test("encode/decode map of spending txes") {
@@ -194,7 +197,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       OutPoint(randomBytes32(), 0) -> randomBytes32(),
       OutPoint(randomBytes32(), 454513) -> randomBytes32()
     )
-    assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
+    assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require == map)
   }
 
 }

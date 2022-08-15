@@ -188,7 +188,4 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         .toSeq
     }
   }
-
-  // used by mobile apps
-  override def close(): Unit = sqlite.close()
 }

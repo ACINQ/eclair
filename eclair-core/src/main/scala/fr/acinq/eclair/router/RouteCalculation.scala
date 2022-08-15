@@ -20,16 +20,13 @@ import akka.actor.{ActorContext, ActorRef, Status}
 import akka.event.DiagnosticLoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight, RoutingHeuristics}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec
@@ -46,11 +43,7 @@ object RouteCalculation {
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.route.targetNodeId, fr.amount)).toMap
-      val extraEdges = assistedChannels.values.map(ac =>
-        GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
-      ).toSet
-      val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
+      val g = fr.extraEdges.map(GraphEdge(_)).foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       fr.route match {
         case PredefinedNodeRoute(hops) =>
@@ -59,33 +52,34 @@ object RouteCalculation {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
-              val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
+              val hops = selectedEdges.map(d => ChannelHop(d.desc.shortChannelId, d.desc.a, d.desc.b, d.params))
               ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
               ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
-        case PredefinedChannelRoute(targetNodeId, channels) =>
-          val (end, hops) = channels.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
-            case ((start, current), shortChannelId) =>
-              val channelDesc_opt = d.channels.get(shortChannelId).flatMap(c => start match {
-                case c.ann.nodeId1 => Some(ChannelDesc(shortChannelId, c.ann.nodeId1, c.ann.nodeId2))
-                case c.ann.nodeId2 => Some(ChannelDesc(shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
-                case _ => None
-              }).orElse(d.privateChannels.get(shortChannelId).flatMap(c => start match {
-                case c.nodeId1 => Some(ChannelDesc(shortChannelId, c.nodeId1, c.nodeId2))
-                case c.nodeId2 => Some(ChannelDesc(shortChannelId, c.nodeId2, c.nodeId1))
-                case _ => None
-              })).orElse(assistedChannels.get(shortChannelId).flatMap(c => start match {
-                case c.extraHop.nodeId => Some(ChannelDesc(shortChannelId, c.extraHop.nodeId, c.nextNodeId))
-                case _ => None
-              }))
+        case PredefinedChannelRoute(targetNodeId, shortChannelIds) =>
+          val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
+            case ((currentNode, previousHops), shortChannelId) =>
+              val channelDesc_opt = d.resolve(shortChannelId) match {
+                case Some(c: PublicChannel) => currentNode match {
+                  case c.nodeId1 => Some(ChannelDesc(shortChannelId, c.nodeId1, c.nodeId2))
+                  case c.nodeId2 => Some(ChannelDesc(shortChannelId, c.nodeId2, c.nodeId1))
+                  case _ => None
+                }
+                case Some(c: PrivateChannel) => currentNode match {
+                  case c.nodeId1 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId1, c.nodeId2))
+                  case c.nodeId2 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId2, c.nodeId1))
+                  case _ => None
+                }
+                case None => fr.extraEdges.map(GraphEdge(_)).find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)
+              }
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
-                case Some(edge) => (edge.desc.b, current :+ ChannelHop(edge.desc.a, edge.desc.b, edge.update))
-                case None => (start, current)
+                case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.params))
+                case None => (currentNode, previousHops)
               }
           }
-          if (end != targetNodeId || hops.length != channels.length) {
+          if (end != targetNodeId || hops.length != shortChannelIds.length) {
             ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
             ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
@@ -104,27 +98,20 @@ object RouteCalculation {
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      // we convert extra routing info provided in the invoice to fake channel_update
-      // it takes precedence over all other channel_updates we know
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount))
-        .filterNot { case (_, ac) => ac.extraHop.nodeId == r.source } // we ignore routing hints for our own channels, we have more accurate information
-        .toMap
-      val extraEdges = assistedChannels.values.map(ac =>
-        GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
-      ).toSet
+      val extraEdges = r.extraEdges.map(GraphEdge(_)).filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
-      log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", extraEdges.map(_.desc.shortChannelId).mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
       log.info("finding routes with params={}, multiPart={}", params, r.allowMultiPart)
-      log.info("local channels to recipient: {}", d.graph.getEdgesBetween(r.source, r.target).map(e => s"${e.desc.shortChannelId} (${e.balance_opt}/${e.capacity})").mkString(", "))
+      log.info("local channels to recipient: {}", d.graphWithBalances.graph.getEdgesBetween(r.source, r.target).map(e => s"${e.desc.shortChannelId} (${e.balance_opt}/${e.capacity})").mkString(", "))
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
       KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
         val result = if (r.allowMultiPart) {
-          findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, params, currentBlockHeight)
+          findMultiPartRoute(d.graphWithBalances.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, params, currentBlockHeight)
         } else {
-          findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight)
+          findRoute(d.graphWithBalances.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight)
         }
         result match {
           case Success(routes) =>
@@ -140,7 +127,7 @@ object RouteCalculation {
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
             ctx.sender() ! Status.Failure(failure)
           case Failure(t) =>
-            val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
+            val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
             ctx.sender() ! Status.Failure(failure)
         }
@@ -148,35 +135,6 @@ object RouteCalculation {
       d
     }
   }
-
-  private def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
-    // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
-    // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, TimestampSecond.now(), channelFlags = ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = true), extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, Some(htlcMaximum))
-  }
-
-  def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey, amount: MilliSatoshi): Map[ShortChannelId, AssistedChannel] = {
-    // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
-    // The invoice doesn't explicitly specify the channel's htlcMaximumMsat, but we can safely assume that the channel
-    // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
-    // We could also get the channel capacity from the blockchain (since we have the shortChannelId) but that's more expensive.
-    // We also need to make sure the channel isn't excluded by our heuristics.
-    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW)
-    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
-    extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
-      case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
-        val nextAmount = amount + nodeFee(extraHop.feeBase, extraHop.feeProportionalMillionths, amount)
-        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId, nextAmount)))
-    }._2
-  }
-
-  def toChannelDescs(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Seq[ChannelDesc] = {
-    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
-    extraRoute.zip(nextNodeIds).map { case (hop, nextNodeId) => ChannelDesc(hop.shortChannelId, hop.nodeId, nextNodeId) }
-  }
-
-  /** Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount. */
-  private def htlcMaxToCapacity(htlcMaximum: MilliSatoshi): Satoshi = htlcMaximum.truncateToSatoshi + 1.sat
 
   /** This method is used after a payment failed, and we want to exclude some nodes that we know are failing */
   def getIgnoredChannelDesc(channels: Map[ShortChannelId, PublicChannel], ignoreNodes: Set[PublicKey]): Iterable[ChannelDesc] = {
@@ -334,7 +292,7 @@ object RouteCalculation {
       val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).collect {
         // We should always have balance information available for local channels.
         // NB: htlcMinimumMsat is set by our peer and may be 0 msat (even though it's not recommended).
-        case GraphEdge(_, update, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < update.htlcMinimumMsat)
+        case GraphEdge(_, params, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < params.htlcMinimum)
       }
       // If we have direct channels to the target, we can use them all.
       // We also count empty channels, which allows replacing them with a non-direct route (multiple hops).
@@ -388,12 +346,12 @@ object RouteCalculation {
 
   /** Compute the maximum amount that we can send through the given route. */
   private def computeRouteMaxAmount(route: Seq[GraphEdge], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Route = {
-    val firstHopMaxAmount = route.head.maxHtlcAmount(usedCapacity.getOrElse(route.head.update.shortChannelId, 0 msat))
+    val firstHopMaxAmount = route.head.maxHtlcAmount(usedCapacity.getOrElse(route.head.desc.shortChannelId, 0 msat))
     val amount = route.drop(1).foldLeft(firstHopMaxAmount) { case (amount, edge) =>
       // We compute fees going forward instead of backwards. That means we will slightly overestimate the fees of some
       // edges, but we will always stay inside the capacity bounds we computed.
       val amountMinusFees = amount - edge.fee(amount)
-      val edgeMaxAmount = edge.maxHtlcAmount(usedCapacity.getOrElse(edge.update.shortChannelId, 0 msat))
+      val edgeMaxAmount = edge.maxHtlcAmount(usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat))
       amountMinusFees.min(edgeMaxAmount)
     }
     Route(amount.max(0 msat), route.map(graphEdgeToHop))
@@ -411,7 +369,7 @@ object RouteCalculation {
   /** Update used capacity by taking into account an HTLC sent to the given route. */
   private def updateUsedCapacity(route: Route, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Unit = {
     route.hops.reverse.foldLeft(route.amount) { case (amount, hop) =>
-      usedCapacity.updateWith(hop.lastUpdate.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
+      usedCapacity.updateWith(hop.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
       amount + hop.fee(amount)
     }
   }

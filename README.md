@@ -206,7 +206,8 @@ before copying that file to your final backup location.
 
 ## Docker
 
-A [Dockerfile](Dockerfile) image is built on each commit on [docker hub](https://hub.docker.com/r/acinq/eclair) for running a dockerized eclair-node.
+A [Dockerfile](Dockerfile) x86_64 image is built on each commit on [docker hub](https://hub.docker.com/r/acinq/eclair) for running a dockerized eclair-node.
+For arm64 platforms you can use an [arm64 Dockerfile](contrib/arm64v8.Dockerfile) to build your own arm64 container. 
 
 You can use the `JAVA_OPTS` environment variable to set arguments to `eclair-node`.
 

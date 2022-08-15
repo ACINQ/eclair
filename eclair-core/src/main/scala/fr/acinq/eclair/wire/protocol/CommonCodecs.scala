@@ -19,9 +19,9 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelFlags
+import fr.acinq.eclair.channel.{ChannelFlags, RealScidStatus, ShortIds}
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, UnspecifiedShortChannelId}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -100,9 +100,6 @@ object CommonCodecs {
   // It is useful in combination with variableSizeBytesLong to encode/decode TLV lengths because those will always be < 2^63.
   val varintoverflow: Codec[Long] = varint.narrow(l => if (l <= UInt64(Long.MaxValue)) Attempt.successful(l.toBigInt.toLong) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
 
-  // This codec can be safely used for values < 2^32 and will fail otherwise.
-  val smallvarint: Codec[Int] = varint.narrow(l => if (l <= UInt64(Int.MaxValue)) Attempt.successful(l.toBigInt.toInt) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
-
   val bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
 
   val bytes64: Codec[ByteVector64] = limitedSizeBytes(64, bytesStrict(64).xmap(d => ByteVector64(d), d => d.bytes))
@@ -114,11 +111,6 @@ object CommonCodecs {
   val listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
 
   val channelflags: Codec[ChannelFlags] = (ignore(7) dropLeft bool).as[ChannelFlags]
-
-  val extendedChannelFlags: Codec[ChannelFlags] = variableSizeBytesLong(varintoverflow, bytes).xmap(
-    bin => ChannelFlags(bin.lastOption.exists(_ % 2 == 1)),
-    flags => if (flags.announceChannel) ByteVector(1) else ByteVector(0)
-  )
 
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 
@@ -139,7 +131,22 @@ object CommonCodecs {
   // number of bytes we can just skip to the next field
   val listofnodeaddresses: Codec[List[NodeAddress]] = variableSizeBytes(uint16, list(nodeaddress))
 
-  val shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
+  val shortchannelid: Codec[ShortChannelId] = int64.xmap(l => UnspecifiedShortChannelId(l), s => s.toLong)
+
+  val realshortchannelid: Codec[RealShortChannelId] = shortchannelid.narrow[RealShortChannelId](scid => Attempt.successful(RealShortChannelId(scid.toLong)), scid => scid)
+
+  val alias: Codec[Alias] = shortchannelid.narrow[Alias](scid => Attempt.successful(Alias(scid.toLong)), scid => scid)
+
+  val realShortChannelIdStatus: Codec[RealScidStatus] = discriminated[RealScidStatus].by(uint8)
+    .typecase(0, provide(RealScidStatus.Unknown))
+    .typecase(1, realshortchannelid.as[RealScidStatus.Temporary])
+    .typecase(2, realshortchannelid.as[RealScidStatus.Final])
+
+  val shortids: Codec[ShortIds] = (
+    ("real" | realShortChannelIdStatus) ::
+      ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) :: // forward-compatible with listOfN(uint16, aliashortchannelid) in case we want to store a list of local aliases later
+      ("remoteAlias_opt" | optional(bool8, alias))
+    ).as[ShortIds]
 
   val privateKey: Codec[PrivateKey] = Codec[PrivateKey](
     (priv: PrivateKey) => bytes(32).encode(priv.value),

@@ -40,7 +40,7 @@ object Postman {
                          replyTo: ActorRef[OnionMessageResponse],
                          timeout: FiniteDuration) extends Command
   private case class Unsubscribe(pathId: ByteVector32) extends Command
-  private case class WrappedMessage(finalPayload: FinalPayload, pathId: Option[ByteVector]) extends Command
+  private case class WrappedMessage(finalPayload: FinalPayload, pathId_opt: Option[ByteVector]) extends Command
   sealed trait OnionMessageResponse
   case object NoReply extends OnionMessageResponse
   case class Response(payload: FinalPayload) extends OnionMessageResponse
@@ -49,7 +49,7 @@ object Postman {
 
   def apply(switchboard: ActorRef[Switchboard.RelayMessage]): Behavior[Command] = {
     Behaviors.setup(context => {
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ReceiveMessage](r => WrappedMessage(r.finalPayload, r.pathId)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ReceiveMessage](r => WrappedMessage(r.finalPayload, r.pathId_opt)))
 
       val relayMessageStatusAdapter = context.messageAdapter[MessageRelay.Status](SendingStatus)
 

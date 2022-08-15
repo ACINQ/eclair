@@ -80,6 +80,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean,
                       balanceCheckInterval: FiniteDuration,
+                      blockchainWatchdogThreshold: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration]) {
@@ -114,6 +115,7 @@ object NodeParams extends Logging {
     ConfigFactory.systemProperties()
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load())
+      .resolve()
 
   private def readSeedFromFile(seedPath: File): ByteVector = {
     logger.info(s"use seed file: ${seedPath.getCanonicalPath}")
@@ -245,7 +247,8 @@ object NodeParams extends Logging {
       // v0.7.1
       "payment-request-expiry" -> "invoice-expiry",
       "override-features" -> "override-init-features",
-      "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis"
+      "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
+      "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -315,6 +318,7 @@ object NodeParams extends Logging {
     val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
     val features = Features.fromConfiguration(config.getConfig("features"))
     validateFeatures(features)
+    require(!features.hasFeature(Features.ZeroConf), s"${Features.ZeroConf.rfcName} cannot be enabled for all peers: you have to use override-init-features to enable it on a per-peer basis")
 
     require(pluginMessageParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
     require(pluginMessageParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
@@ -327,7 +331,7 @@ object NodeParams extends Logging {
 
     val overrideInitFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-init-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f })
+      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f }, features.initFeatures())
       validateFeatures(f.unscoped())
       p -> (f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
     }.toMap
@@ -382,6 +386,7 @@ object NodeParams extends Logging {
           lockedFundsRisk = config.getDouble("locked-funds-risk"),
           failureCost = getRelayFees(config.getConfig("failure-cost")),
           hopCost = getRelayFees(config.getConfig("hop-cost")),
+          useLogProbability = config.getBoolean("use-log-probability"),
         ))
       },
       mpp = MultiPartParams(
@@ -399,11 +404,6 @@ object NodeParams extends Logging {
     val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {
       case "local-close" => UnhandledExceptionStrategy.LocalClose
       case "stop" => UnhandledExceptionStrategy.Stop
-    }
-
-    val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
-      case "uncompressed" => EncodingType.UNCOMPRESSED
-      case "zlib" => EncodingType.COMPRESSED_ZLIB
     }
 
     val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
@@ -457,6 +457,7 @@ object NodeParams extends Logging {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
+        spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),
         defaultFeerateTolerance = FeerateTolerance(
@@ -503,22 +504,25 @@ object NodeParams extends Logging {
         pingDisconnect = config.getBoolean("peer-connection.ping-disconnect"),
         maxRebroadcastDelay = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS), // it makes sense to not delay rebroadcast by more than the rebroadcast period
         killIdleDelay = FiniteDuration(config.getDuration("onion-messages.kill-transient-connection-after").getSeconds, TimeUnit.SECONDS),
-        maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second")
+        maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second"),
+        sendRemoteAddressInit = config.getBoolean("peer-connection.send-remote-address-init"),
       ),
       routerConf = RouterConf(
         watchSpentWindow = watchSpentWindow,
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
-        encodingType = routerSyncEncodingType,
+        encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
-        pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments"))
+        pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments")),
+        balanceEstimateHalfLife = FiniteDuration(config.getDuration("router.balance-estimate-half-life").getSeconds, TimeUnit.SECONDS),
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
       balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
+      blockchainWatchdogThreshold = config.getInt("blockchain-watchdog.missing-blocks-threshold"),
       blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = onionMessageRelayPolicy,

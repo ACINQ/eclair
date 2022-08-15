@@ -46,18 +46,19 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val bobNodeParams = Bob.nodeParams
       .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(1))
 
-    val setup = init(nodeParamsB = bobNodeParams)
+    val setup = init(nodeParamsB = bobNodeParams, tags = test.tags)
 
     import setup._
     val channelConfig = ChannelConfig.standard
-    val (aliceParams, bobParams, defaultChannelType) = computeFeatures(setup, test.tags)
+    val channelFlags = ChannelFlags.Private
+    val (aliceParams, bobParams, defaultChannelType) = computeFeatures(setup, test.tags, channelFlags)
     val channelType = if (test.tags.contains("standard-channel-type")) ChannelTypes.Standard else defaultChannelType
-    val initialFeeratePerKw = if (channelType == ChannelTypes.AnchorOutputs || channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val commitTxFeerate = if (channelType == ChannelTypes.AnchorOutputs || channelType.isInstanceOf[ChannelTypes.AnchorOutputsZeroFeeHtlcTx]) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, commitTxFeerate, TestConstants.feeratePerKw, Some(TestConstants.pushMsat), aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, bob2blockchain)))
     }
@@ -67,39 +68,48 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
-    assert(open.upfrontShutdownScript_opt === Some(ByteVector.empty))
+    assert(open.upfrontShutdownScript_opt.contains(ByteVector.empty))
     // We always send a channel type, even for standard channels.
-    assert(open.channelType_opt === Some(ChannelTypes.Standard))
+    assert(open.channelType_opt.contains(ChannelTypes.Standard))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType === ChannelTypes.Standard)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType == ChannelTypes.Standard)
   }
 
   test("recv OpenChannel (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    assert(open.channelType_opt === Some(ChannelTypes.AnchorOutputs))
+    assert(open.channelType_opt.contains(ChannelTypes.AnchorOutputs))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType === ChannelTypes.AnchorOutputs)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType == ChannelTypes.AnchorOutputs)
   }
 
   test("recv OpenChannel (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    assert(open.channelType_opt === Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))
+    assert(open.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false))
+  }
+
+  test("recv OpenChannel (anchor outputs zero fee htlc txs and scid alias)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ScidAlias)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    assert(open.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false)))
+    alice2bob.forward(bob)
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false))
   }
 
   test("recv OpenChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag("standard-channel-type")) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    assert(open.channelType_opt === Some(ChannelTypes.Standard))
+    assert(open.channelType_opt.contains(ChannelTypes.Standard))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType === ChannelTypes.Standard)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType == ChannelTypes.Standard)
   }
 
   test("recv OpenChannel (invalid chain)") { f =>
@@ -109,7 +119,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val livenetChainHash = Block.LivenetGenesisBlock.hash
     bob ! open.copy(chainHash = livenetChainHash)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidChainHash(open.temporaryChannelId, Block.RegtestGenesisBlock.hash, livenetChainHash).getMessage))
+    assert(error == Error(open.temporaryChannelId, InvalidChainHash(open.temporaryChannelId, Block.RegtestGenesisBlock.hash, livenetChainHash).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -120,7 +130,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val announceChannel = true
     bob ! open.copy(fundingSatoshis = lowFunding, channelFlags = ChannelFlags(announceChannel))
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    assert(error == Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -131,7 +141,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val announceChannel = false
     bob ! open.copy(fundingSatoshis = lowFunding, channelFlags = ChannelFlags(announceChannel))
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    assert(error == Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -141,7 +151,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val highFundingMsat = 100000000.sat
     bob ! open.copy(fundingSatoshis = highFundingMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    assert(error == Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Bob.nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -151,7 +161,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val highFundingSat = Bob.nodeParams.channelConf.maxFundingSatoshis + Btc(1)
     bob ! open.copy(fundingSatoshis = highFundingSat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingSat, Bob.nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    assert(error == Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingSat, Bob.nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
   }
 
   test("recv OpenChannel (invalid max accepted htlcs)") { f =>
@@ -160,7 +170,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val invalidMaxAcceptedHtlcs = Channel.MAX_ACCEPTED_HTLCS + 1
     bob ! open.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage))
+    assert(error == Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -170,7 +180,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val invalidPushMsat = 100000000000L.msat
     bob ! open.copy(pushMsat = invalidPushMsat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, open.fundingSatoshis.toMilliSatoshi).getMessage))
+    assert(error == Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, open.fundingSatoshis.toMilliSatoshi).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -180,7 +190,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val delayTooHigh = CltvExpiryDelta(10000)
     bob ! open.copy(toSelfDelay = delayTooHigh)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Alice.nodeParams.channelConf.maxToLocalDelay).getMessage))
+    assert(error == Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Alice.nodeParams.channelConf.maxToLocalDelay).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -191,7 +201,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val reserveTooHigh = TestConstants.fundingSatoshis * 0.3
     bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, ChannelReserveTooHigh(open.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
+    assert(error == Error(open.temporaryChannelId, ChannelReserveTooHigh(open.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -203,7 +213,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     bob ! open.copy(feeratePerKw = tinyFee)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
-    assert(error === Error(open.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=253 localFeeratePerKw=10000"))
+    assert(error == Error(open.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=253 localFeeratePerKw=10000"))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -215,7 +225,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     bob ! open.copy(feeratePerKw = tinyFee)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
-    assert(error === Error(open.temporaryChannelId, "remote fee rate is too small: remoteFeeratePerKw=252"))
+    assert(error == Error(open.temporaryChannelId, "remote fee rate is too small: remoteFeeratePerKw=252"))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -226,7 +236,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     bob ! open.copy(channelReserveSatoshis = reserveTooSmall)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
-    assert(error === Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, reserveTooSmall).getMessage))
+    assert(error == Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, reserveTooSmall).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -236,7 +246,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val dustLimitTooHigh = 2000.sat
     bob ! open.copy(dustLimitSatoshis = dustLimitTooHigh)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, dustLimitTooHigh, Bob.nodeParams.channelConf.maxRemoteDustLimit).getMessage))
+    assert(error == Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, dustLimitTooHigh, Bob.nodeParams.channelConf.maxRemoteDustLimit).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -248,7 +258,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     bob ! open.copy(fundingSatoshis = fundingSatoshis, pushMsat = pushMsat)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
-    assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, pushMsat, (open.channelReserveSatoshis - 1.sat).toMilliSatoshi, open.channelReserveSatoshis).getMessage))
+    assert(error == Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, pushMsat, (open.channelReserveSatoshis - 1.sat).toMilliSatoshi, open.channelReserveSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -261,7 +271,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
   }
 
-  test("recv OpenChannel (upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv OpenChannel (upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     assert(open.upfrontShutdownScript_opt.contains(alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder.localParams.defaultFinalScriptPubKey))
@@ -270,7 +280,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].remoteParams.shutdownScript == open.upfrontShutdownScript_opt)
   }
 
-  test("recv OpenChannel (empty upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv OpenChannel (empty upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)))
@@ -279,12 +289,20 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].remoteParams.shutdownScript.isEmpty)
   }
 
-  test("recv OpenChannel (invalid upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv OpenChannel (invalid upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.fromValidHex("deadbeef"))))
     alice2bob.forward(bob, open1)
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenChannel (zeroconf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    alice2bob.forward(bob, open)
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    assert(accept.minimumDepth == 0)
   }
 
   test("recv Error") { f =>

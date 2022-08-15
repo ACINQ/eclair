@@ -22,21 +22,21 @@ class ChannelCodecs0Spec extends AnyFunSuite {
     val current03 = hex"010000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
     val current04 = hex"010000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
-    assert(codec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
-    assert(codec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
-    assert(codec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
-    assert(codec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
-    assert(codec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(5).bits)))
+    assert(codec.decode(legacy02.bits) == Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
+    assert(codec.decode(legacy03.bits) == Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
+    assert(codec.decode(current02.bits) == Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
+    assert(codec.decode(current03.bits) == Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
+    assert(codec.decode(current04.bits) == Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(5).bits)))
 
-    assert(codec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
-    assert(codec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"0100000003".bits))
+    assert(codec.encode(ChannelVersion.STANDARD) == Attempt.successful(hex"0100000001".bits))
+    assert(codec.encode(ChannelVersion.STATIC_REMOTEKEY) == Attempt.successful(hex"0100000003".bits))
   }
 
   test("backward compatibility local params with global features") {
     // Backwards-compatibility: decode localparams with global features.
     val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
     val withGlobalFeaturesDecoded = localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.initFeatures.toByteVector === hex"0a8a")
+    assert(withGlobalFeaturesDecoded.initFeatures.toByteVector == hex"0a8a")
   }
 
   test("backward compatibility of htlc codec") {
@@ -57,7 +57,8 @@ class ChannelCodecs0Spec extends AnyFunSuite {
         0,
         hex"1e3a0e7c55b9f74b209e3704695e38874dd0950c54089a2be675bbf1a83679f6ff",
         hex"2db02ba44906455d5ba19cf75979889cc23ecd86b88728478133ccf180ee407abf882bd86f6f318d8e993dda100dcd9641e56c270aaee5810d9dcc0c85677387232c4f90ef4c54afb9ed9c0077db8a7516f41af552364609df16a25fc3534087c821af9a6013dbff96ba980b9f6a8b59da95fd5177c4d8bfe924c05dbf3a9d6e62a83cc1c91fa35cbc676094c2868df62dc1399b3797120ffd3f850eeafd525014068c4533d2a144e983b8a7f75d18843ccfafbc6ae13db41e2379a82f81e42accfd171995c206ba05024295e4b7ed202056301cba96ae647a0556b9dcba6cd368600a73a05dfeaa6287e10b9ae1ca8516f5e64c483154ecc9aad87fa5380145f114d4bdd2d0be8b6c30588ba925642e16125c96b12248f79ffd04c4770cc6f7d85239943b8e53eae8fb085d9be5f849d5f2b8a4597d7d35083cf9ff06fce2b6d13e166cd725450a10eac6d2c574850c756dbe25dd2715b4dcd5cf2bf169f7d035bd48f19553133fda1ad99bef442e76d365a7fe372790581189b4c7684da5f2922421332fd1dcb0618bffc76c192e8715c2a43452adce7534c1e2db8274bccacb209c097ecd9db47b6d27f8f418d5a9efb9196fe3dea8a4f822b136f86b9cb641cfe47415620f480df4e8e86bfe1012d4ea675156feba6c61ab841922c2203f2458ec0f292fc01c794c579c06765760cbd42e678a16b40c925a568ce2b024007e5350ea96bb82c92105127cf7cecaa18b1b31d02aadc9bbe414489e6c77847cead92a44866ba1dd99a7b40d522c3898e55c7b275fd205500dd5ba42cfa2b8099e6051f8c3a10877a4e1fae05458b5f11356b78f3452908f229f1ba81353732152c72fb208d870b953021f6f8f658c29238ce4c84af4c037cffd188f50b36ad5e8395e0d7cfd439b6a80e33f87784c06ceb6f3fa6d4de52220876f1b53e30da5403e2413a1b22a11d1d7d99c13fae5047a182cca85eda0b3f50e4bb3ae3344a64513911ef45234d77c03eb63f07984465ae2defbf8d4207f70c6faeb35572735544f19ffc094c9e8284ac82261004ed7dcfa7d8c5c7f10f071c7043e1bae2666f2e5bf3282c1db853997372c6188353d8f932997de4a034c21c386d09cd2fbe461fadede20a4d9288dd060f43f6fc93119beff9154659141240c227b048f555c85c728581ffa523acf06fa591046390b104cceb05d943a4acc26989dc2603bd1c2c6fe128cf68e7747c6a73249100917a6964db98dede8e8ea36f58b775a8d18c9db455d57fcd5242a149f556284453af2698944884e8830a1a1bd5cbb700560528086be739d550bc5a7a44d2a21103564d24d862ce90f54271a71739eca1eb3e154170852e8f24e3840139bcc3cb8b184d7f142b5750d0d35f07283d8292e5b276d5c94dd9ecb084702a14c290fad7a729b681421ae21fa5a0cb0a1ca5d4ca6d4e9b1128e890443839c927fd97e40e1331c09aa4c726a9118526be5a75fda9a1f8e8e5807cca5f251cd431ef0052087e433eca5b325c208a5229352f1cb8cc180103fcd42f3b7cc5b96b2fe769c92f8c093604abf1e60dc963192f86739304e157f0d49d635f27629b101ddb440776774b6dc6227a1c007f1cabe7a88d7a9b9b4d0d66af9415be3fc4a720ecf481fe10d524b1a09833608e8911555f58643e10fa57a1b81c0ad5b3eb6b5f4be7b05787e31667bd2088a52c6ffda0b0f3ed7a881e66380c011ba7185f7045845f88403d2ff3df3f86a300f808bbd9c28fa33fa034d0c098796d6bc1b6369a3d7c70ece00420cfb2840df7b93da67583e93b0ff2c396ba89e9100bcabf0c6f947bc9d93bb2d3289",
-        ByteVector32(hex"dac3bc8b2e16fdf2db3e627483bc395c701c1fc96ace53e4ebc54150e807921d"))
+        ByteVector32(hex"dac3bc8b2e16fdf2db3e627483bc395c701c1fc96ace53e4ebc54150e807921d")),
+      None
     )
     val remaining = bin"0000000" // 7 bits remainder because the direction is encoded with 1 bit and we are dealing with bytes
 
@@ -69,8 +70,8 @@ class ChannelCodecs0Spec extends AnyFunSuite {
     assert(r1 == remaining)
     assert(r2 == remaining)
 
-    assert(codec.encode(h1).require.bytes === encodedHtlc1)
-    assert(codec.encode(h2).require.bytes === encodedHtlc2)
+    assert(codec.encode(h1).require.bytes == encodedHtlc1)
+    assert(codec.encode(h2).require.bytes == encodedHtlc2)
   }
 
   test("tell channel_update length") {

@@ -17,13 +17,13 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
 import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
@@ -60,7 +60,16 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
       case Some(v@1) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)
-      case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+      case Some(CURRENT_VERSION) =>
+        // We clean up channels that contain an invalid channel update (e.g. missing htlc_maximum_msat).
+        statement.executeQuery("SELECT short_channel_id, channel_update_1, channel_update_2 FROM channels").map(rs => {
+          val shortChannelId = rs.getLong("short_channel_id")
+          val validChannelUpdate1 = rs.getBitVectorOpt("channel_update_1").forall(channelUpdateCodec.decode(_).isSuccessful)
+          val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
+          (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
+        }).collect {
+          case (scid, false) => statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$scid")
+        }
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
     setVersion(statement, DB_NAME, CURRENT_VERSION)
@@ -124,16 +133,16 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def listChannels(): SortedMap[ShortChannelId, PublicChannel] = withMetrics("network/list-channels", DbBackends.Sqlite) {
+  override def listChannels(): SortedMap[RealShortChannelId, PublicChannel] = withMetrics("network/list-channels", DbBackends.Sqlite) {
     using(sqlite.createStatement()) { statement =>
       statement.executeQuery("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM channels")
-        .foldLeft(SortedMap.empty[ShortChannelId, PublicChannel]) { (m, rs) =>
-            val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
-            val txId = ByteVector32.fromValidHex(rs.getString("txid"))
-            val capacity = rs.getLong("capacity_sat")
-            val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
-            val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
-            m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
+        .foldLeft(SortedMap.empty[RealShortChannelId, PublicChannel]) { (m, rs) =>
+          val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
+          val txId = ByteVector32.fromValidHex(rs.getString("txid"))
+          val capacity = rs.getLong("capacity_sat")
+          val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
+          val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
+          m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
         }
     }
   }
@@ -142,18 +151,19 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
     val batchSize = 100
     using(sqlite.prepareStatement(s"DELETE FROM channels WHERE short_channel_id IN (${List.fill(batchSize)("?").mkString(",")})")) { statement =>
       shortChannelIds
+        .map(_.toLong)
         .grouped(batchSize)
         .foreach { group =>
-          val padded = group.toArray.padTo(batchSize, ShortChannelId(0L))
+          val padded = group.toArray.padTo(batchSize, 0L)
           for (i <- 0 until batchSize) {
-            statement.setLong(1 + i, padded(i).toLong) // index for jdbc parameters starts at 1
+            statement.setLong(1 + i, padded(i)) // index for jdbc parameters starts at 1
           }
           statement.executeUpdate()
         }
     }
   }
 
-  override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = withMetrics("network/add-to-pruned", DbBackends.Sqlite) {
+  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = withMetrics("network/add-to-pruned", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), inTransaction = true) { statement =>
       shortChannelIds.foreach(shortChannelId => {
         statement.setLong(1, shortChannelId.toLong)
@@ -163,8 +173,8 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def removeFromPruned(shortChannelId: ShortChannelId): Unit = withMetrics("network/remove-from-pruned", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement(s"DELETE FROM pruned WHERE short_channel_id=?")) { statement =>
+  override def removeFromPruned(shortChannelId: RealShortChannelId): Unit = withMetrics("network/remove-from-pruned", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("DELETE FROM pruned WHERE short_channel_id=?")) { statement =>
       statement.setLong(1, shortChannelId.toLong)
       statement.executeUpdate()
     }
@@ -176,7 +186,4 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
       statement.executeQuery().nonEmpty
     }
   }
-
-  // used by mobile apps
-  override def close(): Unit = sqlite.close()
 }

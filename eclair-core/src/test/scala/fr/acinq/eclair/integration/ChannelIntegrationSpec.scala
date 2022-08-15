@@ -17,6 +17,7 @@
 package fr.acinq.eclair.integration
 
 import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
@@ -127,15 +128,25 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(minerAddress) = sender.expectMsgType[JValue]
-    // we create and announce a channel between C and F; we use push_msat to ensure both nodes have an output in the commit tx
-    connect(nodes("C"), nodes("F"), 5000000 sat, 500000000 msat)
-    generateBlocks(6, Some(minerAddress))
-    awaitAnnouncements(2)
     // we subscribe to channel state transitions
     val stateListenerC = TestProbe()
     val stateListenerF = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListenerC.ref, classOf[ChannelStateChanged])
     nodes("F").system.eventStream.subscribe(stateListenerF.ref, classOf[ChannelStateChanged])
+    // we create and announce a channel between C and F; we use push_msat to ensure both nodes have an output in the commit tx
+    connect(nodes("C"), nodes("F"), 5000000 sat, 500000000 msat)
+    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED, max = 30 seconds)
+    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED, max = 30 seconds)
+    generateBlocks(1, Some(minerAddress))
+    // the funder sends its channel_ready after only one block
+    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_CHANNEL_READY, max = 30 seconds)
+    generateBlocks(2, Some(minerAddress))
+    // the fundee sends its channel_ready after 3 blocks
+    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
+    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
+    // we generate more blocks for the funding tx to be deeply buried and the channel to be announced
+    generateBlocks(3, Some(minerAddress))
+    awaitAnnouncements(2)
     // first we make sure we are in sync with current blockchain height
     val currentBlockHeight = getBlockHeight()
     awaitCond(getBlockHeight() == currentBlockHeight, max = 20 seconds, interval = 1 second)
@@ -152,13 +163,13 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // F gets the htlc
     val htlc = htlcReceiver.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds).add
     // now that we have the channel id, we retrieve channels default final addresses
-    sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(dataC.commitments.commitmentFormat === commitmentFormat)
+    assert(dataC.commitments.commitmentFormat == commitmentFormat)
     val finalAddressC = scriptPubKeyToAddress(dataC.commitments.localParams.defaultFinalScriptPubKey)
-    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(dataF.commitments.commitmentFormat === commitmentFormat)
+    assert(dataF.commitments.commitmentFormat == commitmentFormat)
     val finalAddressF = scriptPubKeyToAddress(dataF.commitments.localParams.defaultFinalScriptPubKey)
     ForceCloseFixture(sender, paymentSender, stateListenerC, stateListenerF, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
@@ -172,14 +183,14 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then kill the connection between C and F
     disconnectCF(htlc.channelId, sender)
     // we then have C unilaterally close the channel (which will make F redeem the htlc onchain)
-    sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE(sender.ref)))
+    sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FORCECLOSE(sender.ref)))
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     // we then wait for F to detect the unilateral close and go to CLOSING state
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(3, Some(minerAddress))
     // we then fulfill the htlc, which will make F redeem it on-chain
-    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
     // we don't need to generate blocks to confirm the htlc-success; C should extract the preimage as soon as it enters
     // the mempool and fulfill the payment upstream.
     paymentSender.expectMsgType[PaymentSent](max = 60 seconds)
@@ -209,14 +220,14 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then kill the connection between C and F
     disconnectCF(htlc.channelId, sender)
     // then we have F unilaterally close the channel
-    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE(sender.ref)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FORCECLOSE(sender.ref)))
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(3, Some(minerAddress))
     // we then fulfill the htlc (it won't be sent to C, and will be used to pull funds on-chain)
-    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
     // we don't need to generate blocks to confirm the htlc-success; C should extract the preimage as soon as it enters
     // the mempool and fulfill the payment upstream.
     paymentSender.expectMsgType[PaymentSent](max = 60 seconds)
@@ -251,7 +262,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks((htlc.cltvExpiry.blockHeight - getBlockHeight()).toInt, Some(minerAddress))
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
-    sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val Some(localCommit) = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_CLOSING]].data.localCommitPublished
     // we wait until the commit tx has been broadcast
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
@@ -259,16 +270,16 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(3, Some(minerAddress))
     // we wait until the htlc-timeout has been broadcast
-    assert(localCommit.htlcTxs.size === 1)
+    assert(localCommit.htlcTxs.size == 1)
     waitForOutputSpent(localCommit.htlcTxs.keys.head, bitcoinClient, sender)
     // we generate more blocks for the htlc-timeout to reach enough confirmations
     generateBlocks(3, Some(minerAddress))
     // this will fail the htlc
     val failed = paymentSender.expectMsgType[PaymentFailed](max = 60 seconds)
     assert(failed.id == paymentId)
-    assert(failed.paymentHash === htlc.paymentHash)
+    assert(failed.paymentHash == htlc.paymentHash)
     assert(failed.failures.nonEmpty)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(25, Some(minerAddress))
     // C should have 2 recv transactions: its main output and the htlc timeout
@@ -295,32 +306,32 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then kill the connection between C and F to ensure the close can only be detected on-chain
     disconnectCF(htlc.channelId, sender)
     // we ask F to unilaterally close the channel
-    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE(sender.ref)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FORCECLOSE(sender.ref)))
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     // we wait for C to detect the unilateral close
     awaitCond({
-      sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+      sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
       sender.expectMsgType[RES_GET_CHANNEL_DATA[ChannelData]].data match {
         case d: DATA_CLOSING if d.remoteCommitPublished.nonEmpty => true
         case _ => false
       }
     }, max = 30 seconds, interval = 1 second)
-    sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val Some(remoteCommit) = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_CLOSING]].data.remoteCommitPublished
     // we generate enough blocks to make the htlc timeout
     generateBlocks((htlc.cltvExpiry.blockHeight - getBlockHeight()).toInt, Some(minerAddress))
     // we wait until the claim-htlc-timeout has been broadcast
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
-    assert(remoteCommit.claimHtlcTxs.size === 1)
+    assert(remoteCommit.claimHtlcTxs.size == 1)
     waitForOutputSpent(remoteCommit.claimHtlcTxs.keys.head, bitcoinClient, sender)
     // and we generate blocks for the claim-htlc-timeout to reach enough confirmations
     generateBlocks(3, Some(minerAddress))
     // this will fail the htlc
     val failed = paymentSender.expectMsgType[PaymentFailed](max = 60 seconds)
     assert(failed.id == paymentId)
-    assert(failed.paymentHash === htlc.paymentHash)
+    assert(failed.paymentHash == htlc.paymentHash)
     assert(failed.failures.nonEmpty)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(25, Some(minerAddress))
     // C should have 2 recv transactions: its main output and the htlc timeout
@@ -391,17 +402,17 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMessage(1 second)
-    assert(commitmentsF.commitmentFormat === commitmentFormat)
+    assert(commitmentsF.commitmentFormat == commitmentFormat)
     // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
     val localCommitF = commitmentsF.localCommit
     commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
-      case _: Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size === 8)
+      case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 6)
+      case _: Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 8)
     }
     val htlcTimeoutTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcTimeoutTx, _) => h }
     val htlcSuccessTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcSuccessTx, _) => h }
-    assert(htlcTimeoutTxs.size === 2)
-    assert(htlcSuccessTxs.size === 2)
+    assert(htlcTimeoutTxs.size == 2)
+    assert(htlcSuccessTxs.size == 2)
     // we fulfill htlcs to get the preimages
     buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
@@ -422,7 +433,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then generate blocks to make htlcs timeout (nothing will happen in the channel because all of them have already been fulfilled)
     generateBlocks(40)
     // we retrieve C's default final address
-    sender.send(nodes("C").register, Register.Forward(sender.ref, commitmentsF.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], commitmentsF.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey)
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
@@ -494,33 +505,33 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     sender.send(fundeeChannel, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
     val channelId = sender.expectMsgType[RES_GET_CHANNEL_DATA[PersistentChannelData]].data.channelId
     awaitCond({
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
-      sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_FUNDING_LOCKED
+      funder.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+      sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_CHANNEL_READY
     })
 
     generateBlocks(6)
 
     // after 8 blocks the fundee is still waiting for more confirmations
-    fundee.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+    fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
     assert(sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_FUNDING_CONFIRMED)
 
     // after 8 blocks the funder is still waiting for funding_locked from the fundee
-    funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
-    assert(sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_FUNDING_LOCKED)
+    funder.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+    assert(sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_CHANNEL_READY)
 
     // simulate a disconnection
     sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
     assert(sender.expectMsgType[String] == "disconnecting")
 
     awaitCond({
-      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+      fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
       val fundeeState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+      funder.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
       val funderState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
       fundeeState == OFFLINE && funderState == OFFLINE
     })
 
-    // reconnect and check the fundee is waiting for more conf, funder is waiting for fundee to send funding_locked
+    // reconnect and check the fundee is waiting for more conf, funder is waiting for fundee to send channel_ready
     awaitCond({
       // reconnection
       sender.send(fundee.switchboard, Peer.Connect(
@@ -531,20 +542,20 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       ))
       sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](30 seconds)
 
-      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+      fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
       val fundeeState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+      funder.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
       val funderState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
-      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
+      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_CHANNEL_READY
     }, max = 30 seconds, interval = 10 seconds)
 
     // 5 extra blocks make it 13, just the amount of confirmations needed
     generateBlocks(5)
 
     awaitCond({
-      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+      fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
       val fundeeState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
+      funder.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
       val funderState = sender.expectMsgType[RES_GET_CHANNEL_STATE].state
       fundeeState == NORMAL && funderState == NORMAL
     })
@@ -555,14 +566,14 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     funder.system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
 
     // close that wumbo channel
-    sender.send(funder.register, Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(funder.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val commitmentsC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments
     val finalPubKeyScriptC = commitmentsC.localParams.defaultFinalScriptPubKey
     val fundingOutpoint = commitmentsC.commitInput.outPoint
-    sender.send(fundee.register, Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(fundee.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val finalPubKeyScriptF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey
 
-    fundee.register ! Register.Forward(sender.ref, channelId, CMD_CLOSE(sender.ref, Some(finalPubKeyScriptF), None))
+    fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, Some(finalPubKeyScriptF), None))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // we then wait for C and F to negotiate the closing fee
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
@@ -570,14 +581,14 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     awaitCond({
       bitcoinClient.getMempool().pipeTo(sender.ref)
-      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint.txid === fundingOutpoint.txid)
+      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint.txid == fundingOutpoint.txid)
     }, max = 20 seconds, interval = 1 second)
     generateBlocks(3)
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
 
     bitcoinClient.lookForSpendingTx(None, fundingOutpoint.txid, fundingOutpoint.index.toInt).pipeTo(sender.ref)
     val closingTx = sender.expectMsgType[Transaction]
-    assert(closingTx.txOut.map(_.publicKeyScript).toSet === Set(finalPubKeyScriptC, finalPubKeyScriptF))
+    assert(closingTx.txOut.map(_.publicKeyScript).toSet == Set(finalPubKeyScriptC, finalPubKeyScriptF))
 
     awaitAnnouncements(1)
   }
@@ -645,7 +656,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
         val stateEvent = eventListener.expectMsgType[ChannelStateChanged](max = 60 seconds)
         if (stateEvent.currentState == NORMAL) {
           assert(stateEvent.commitments_opt.nonEmpty)
-          assert(stateEvent.commitments_opt.get.asInstanceOf[Commitments].channelType === expectedChannelType)
+          assert(stateEvent.commitments_opt.get.asInstanceOf[Commitments].channelType == expectedChannelType)
           count = count + 1
         }
       }
@@ -667,9 +678,9 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     // retrieve the channelId of C <--> F
     val Some(channelId) = sender.expectMsgType[Map[ByteVector32, PublicKey]].find(_._2 == nodes("C").nodeParams.nodeId).map(_._1)
 
-    sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val initialStateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(initialStateDataF.commitments.channelType === expectedChannelType)
+    assert(initialStateDataF.commitments.channelType == expectedChannelType)
     val initialCommitmentIndex = initialStateDataF.commitments.localCommit.index
 
     // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
@@ -688,16 +699,16 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val paymentId = sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent](60 seconds)
     assert(ps.id == paymentId)
-    assert(Crypto.sha256(ps.paymentPreimage) === invoice.paymentHash)
+    assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
 
     // we make sure the htlc has been removed from F's commitment before we force-close
     awaitCond({
-      sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+      sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
       val stateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
       stateDataF.commitments.localCommit.spec.htlcs.isEmpty
     }, max = 20 seconds, interval = 1 second)
 
-    sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val stateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     val commitmentIndex = stateDataF.commitments.localCommit.index
     val commitTx = stateDataF.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
@@ -716,7 +727,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     // we kill the connection between C and F to ensure the close can only be detected on-chain
     disconnectCF(channelId, sender)
     // now let's force close the channel and check the toRemote is what we had at the beginning
-    sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_FORCECLOSE(sender.ref)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_FORCECLOSE(sender.ref)))
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     // we then wait for C to detect the unilateral close and go to CLOSING state
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
@@ -734,7 +745,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val mainOutputC = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == toRemoteOutC.publicKeyScript))
     awaitCond({
       bitcoinClient.getMempool().pipeTo(sender.ref)
-      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint === mainOutputC)
+      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint == mainOutputC)
     }, max = 20 seconds, interval = 1 second)
 
     // get the claim-remote-output confirmed, then the channel can go to the CLOSED state
@@ -829,7 +840,7 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
   }
 
   test("open channel C <-> F, send payments and close (anchor outputs zero fee htlc txs)") {
-    testOpenPayClose(ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
+    testOpenPayClose(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false))
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs zero fee htlc txs)") {

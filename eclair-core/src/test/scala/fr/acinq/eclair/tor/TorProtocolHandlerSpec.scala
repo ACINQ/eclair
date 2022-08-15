@@ -54,7 +54,6 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     val promiseOnionAddress = Promise[NodeAddress]()
 
     val protocolHandlerProps = TorProtocolHandler.props(
-      version = OnionServiceVersion("v2"),
       authentication = Password(PASSWORD),
       privateKeyPath = PkFilePath,
       virtualPort = 9999,
@@ -70,7 +69,6 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     val promiseOnionAddress = Promise[NodeAddress]()
 
     val protocolHandler = TestActorRef(props(
-      version = OnionServiceVersion("v2"),
       authentication = Password(PASSWORD),
       privateKeyPath = PkFilePath,
       virtualPort = 9999,
@@ -86,31 +84,15 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
         "250 OK\r\n"
     )
 
-    expectMsg(ByteString(s"""AUTHENTICATE "$PASSWORD"\r\n"""))
-    protocolHandler ! ByteString(
-      "250 OK\r\n"
-    )
+    awaitCond(promiseOnionAddress.isCompleted)
 
-    expectMsg(ByteString("ADD_ONION NEW:RSA1024 Port=9999,9999\r\n"))
-    protocolHandler ! ByteString(
-      "250-ServiceID=z4zif3fy7fe7bpg3\r\n" +
-        "250-PrivateKey=RSA1024:private-key\r\n" +
-        "250 OK\r\n"
-    )
-    protocolHandler ! GetOnionAddress
-    expectMsg(Some(Tor2("z4zif3fy7fe7bpg3", 9999)))
-
-    val address = Await.result(promiseOnionAddress.future, 3 seconds)
-    assert(address === Tor2("z4zif3fy7fe7bpg3", 9999))
-
-    assert(readString(PkFilePath) === "RSA1024:private-key")
+    assertThrows[TorException](Await.result(promiseOnionAddress.future, Duration.Inf))
   }
 
   test("happy path v3") {
     val promiseOnionAddress = Promise[NodeAddress]()
 
     val protocolHandler = TestActorRef(props(
-      version = OnionServiceVersion("v3"),
       authentication = Password(PASSWORD),
       privateKeyPath = PkFilePath,
       virtualPort = 9999,
@@ -142,26 +124,24 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     expectMsg(Some(Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999)))
 
     val address = Await.result(promiseOnionAddress.future, 3 seconds)
-    assert(address === Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999))
+    assert(address == Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 9999))
 
-    assert(readString(PkFilePath) === "ED25519-V3:private-key")
+    assert(readString(PkFilePath) == "ED25519-V3:private-key")
   }
 
   test("v2/v3 compatibility check against tor version") {
-    assert(OnionServiceVersion.isCompatible(V3, "0.3.3.6"))
-    assert(!OnionServiceVersion.isCompatible(V3, "0.3.3.5"))
-    assert(OnionServiceVersion.isCompatible(V3, "0.3.3.6-devel"))
-    assert(OnionServiceVersion.isCompatible(V3, "0.4"))
-    assert(!OnionServiceVersion.isCompatible(V3, "0.2"))
-    assert(OnionServiceVersion.isCompatible(V3, "0.5.1.2.3.4"))
-
+    assert(isCompatible("0.3.3.6"))
+    assert(!isCompatible("0.3.3.5"))
+    assert(isCompatible("0.3.3.6-devel"))
+    assert(isCompatible("0.4"))
+    assert(!isCompatible("0.2"))
+    assert(isCompatible("0.5.1.2.3.4"))
   }
 
   test("authentication method errors") {
     val promiseOnionAddress = Promise[NodeAddress]()
 
     val protocolHandler = TestActorRef(props(
-      version = OnionServiceVersion("v2"),
       authentication = Password(PASSWORD),
       privateKeyPath = PkFilePath,
       virtualPort = 9999,
@@ -173,13 +153,13 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     protocolHandler ! ByteString(
       "250-PROTOCOLINFO 1\r\n" +
         "250-AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE=\"" + CookieFilePath + "\"\r\n" +
-        "250-VERSION Tor=\"0.3.3.5\"\r\n" +
+        "250-VERSION Tor=\"0.3.3.6\"\r\n" +
         "250 OK\r\n"
     )
 
     assert(intercept[TorException] {
       Await.result(promiseOnionAddress.future, 3 seconds)
-    } === TorException("cannot use authentication 'password', supported methods are 'COOKIE,SAFECOOKIE'"))
+    } == TorException("cannot use authentication 'password', supported methods are 'COOKIE,SAFECOOKIE'"))
   }
 
   test("invalid server hash") {
@@ -188,7 +168,6 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     Files.write(CookieFilePath, fr.acinq.eclair.randomBytes32().toArray)
 
     val protocolHandler = TestActorRef(props(
-      version = OnionServiceVersion("v2"),
       authentication = SafeCookie(ClientNonce),
       privateKeyPath = PkFilePath,
       virtualPort = 9999,
@@ -200,7 +179,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     protocolHandler ! ByteString(
       "250-PROTOCOLINFO 1\r\n" +
         "250-AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE=\"" + CookieFilePath + "\"\r\n" +
-        "250-VERSION Tor=\"0.3.3.5\"\r\n" +
+        "250-VERSION Tor=\"0.3.3.6\"\r\n" +
         "250 OK\r\n"
     )
 
@@ -211,7 +190,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
 
     assert(intercept[TorException] {
       Await.result(promiseOnionAddress.future, 3 seconds)
-    } === TorException("unexpected server hash"))
+    } == TorException("unexpected server hash"))
   }
 
 
@@ -221,7 +200,6 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     Files.write(CookieFilePath, AuthCookie.toArray)
 
     val protocolHandler = TestActorRef(props(
-      version = OnionServiceVersion("v2"),
       authentication = SafeCookie(ClientNonce),
       privateKeyPath = PkFilePath,
       virtualPort = 9999,
@@ -233,7 +211,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     protocolHandler ! ByteString(
       "250-PROTOCOLINFO 1\r\n" +
         "250-AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE=\"" + CookieFilePath + "\"\r\n" +
-        "250-VERSION Tor=\"0.3.3.5\"\r\n" +
+        "250-VERSION Tor=\"0.3.3.6\"\r\n" +
         "250 OK\r\n"
     )
 
@@ -249,7 +227,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
 
     assert(intercept[TorException] {
       Await.result(promiseOnionAddress.future, 3 seconds)
-    } === TorException("server returned error: 515 Authentication failed: Safe cookie response did not match expected value."))
+    } == TorException("server returned error: 515 Authentication failed: Safe cookie response did not match expected value."))
   }
 
   test("ADD_ONION failure") {
@@ -258,7 +236,6 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     Files.write(CookieFilePath, AuthCookie.toArray)
 
     val protocolHandler = TestActorRef(props(
-      version = OnionServiceVersion("v2"),
       authentication = SafeCookie(ClientNonce),
       privateKeyPath = PkFilePath,
       virtualPort = 9999,
@@ -270,7 +247,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
     protocolHandler ! ByteString(
       "250-PROTOCOLINFO 1\r\n" +
         "250-AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE=\"" + CookieFilePath + "\"\r\n" +
-        "250-VERSION Tor=\"0.3.3.5\"\r\n" +
+        "250-VERSION Tor=\"0.3.3.6\"\r\n" +
         "250 OK\r\n"
     )
 
@@ -284,7 +261,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
       "250 OK\r\n"
     )
 
-    expectMsg(ByteString("ADD_ONION NEW:RSA1024 Port=9999,9999\r\n"))
+    expectMsg(ByteString("ADD_ONION NEW:ED25519-V3 Port=9999,9999\r\n"))
     protocolHandler ! ByteString(
       "513 Invalid argument\r\n"
     )
@@ -295,7 +272,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
 
     assert(intercept[TorException] {
       Await.result(promiseOnionAddress.future, 3 seconds)
-    } === TorException("server returned error: 513 Invalid argument"))
+    } == TorException("server returned error: 513 Invalid argument"))
   }
 
 

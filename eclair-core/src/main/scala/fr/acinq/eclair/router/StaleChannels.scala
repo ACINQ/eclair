@@ -53,14 +53,14 @@ object StaleChannels {
       staleChannelsToRemove += ChannelDesc(ca.ann.shortChannelId, ca.ann.nodeId2, ca.ann.nodeId1)
     })
 
-    val graph1 = d.graph.removeEdges(staleChannelsToRemove)
+    val graphWithBalances1 = d.graphWithBalances.removeEdges(staleChannelsToRemove)
     staleNodes.foreach {
       nodeId =>
         log.info("pruning nodeId={} (stale)", nodeId)
         db.removeNode(nodeId)
         ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    d.copy(nodes = d.nodes -- staleNodes, channels = channels1, graph = graph1)
+    d.copy(nodes = d.nodes -- staleNodes, channels = channels1, graphWithBalances = graphWithBalances1)
   }
 
   def isStale(u: ChannelUpdate): Boolean = isStale(u.timestamp)
@@ -79,21 +79,23 @@ object StaleChannels {
   }
 
   /**
-   * Is stale a channel that:
-   * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
-   * AND
-   * (2) has no channel_update younger than 2 weeks
+   * A channel is stale if:
+   *  - it is older than 2 weeks (2*7*144 = 2016 blocks): we don't want to prune brand new channels for which we didn't
+   *    yet receive a channel update
+   *  - and has a channel update that is older than 2 weeks
+   *
+   * Note that we should not wait for *both* channel updates to be stale: as long as one of the peers is inactive, it's
+   * very likely that we won't be able to route payments through that channel, so we should ignore it.
    *
    * @param update1_opt update corresponding to one side of the channel, if we have it
    * @param update2_opt update corresponding to the other side of the channel, if we have it
-   * @return
    */
   def isStale(channel: ChannelAnnouncement, update1_opt: Option[ChannelUpdate], update2_opt: Option[ChannelUpdate], currentBlockHeight: BlockHeight): Boolean = {
-    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
-    // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
     val staleThresholdBlocks = currentBlockHeight - 2016
     val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(channel.shortChannelId)
-    blockHeight < staleThresholdBlocks && update1_opt.forall(isStale) && update2_opt.forall(isStale)
+    val channelIsOldEnough = blockHeight < staleThresholdBlocks
+    val channelUpdateIsStale = update1_opt.forall(isStale) || update2_opt.forall(isStale)
+    channelIsOldEnough && channelUpdateIsStale
   }
 
   def getStaleChannels(channels: Iterable[PublicChannel], currentBlockHeight: BlockHeight): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt, currentBlockHeight))

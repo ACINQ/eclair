@@ -16,44 +16,60 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
+import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.Register._
+import fr.acinq.eclair.{SubscriptionsComplete, ShortChannelId}
 
 /**
  * Created by PM on 26/01/2016.
  */
 
-class Register extends Actor with ActorLogging {
+class Register() extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[ChannelCreated])
   context.system.eventStream.subscribe(self, classOf[AbstractChannelRestored])
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
+  context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
+
+  // @formatter:off
+  private case class ChannelTerminated(channel: ActorRef, channelId: ByteVector32)
+  // @formatter:on
 
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
   def main(channels: Map[ByteVector32, ActorRef], shortIds: Map[ShortChannelId, ByteVector32], channelsTo: Map[ByteVector32, PublicKey]): Receive = {
     case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId, _, _) =>
-      context.watch(channel)
+      context.watchWith(channel, ChannelTerminated(channel, temporaryChannelId))
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
 
     case event: AbstractChannelRestored =>
-      context.watch(event.channel)
+      context.watchWith(event.channel, ChannelTerminated(event.channel, event.channelId))
       context become main(channels + (event.channelId -> event.channel), shortIds, channelsTo + (event.channelId -> event.remoteNodeId))
 
     case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
+      context.unwatch(channel)
+      context.watchWith(channel, ChannelTerminated(channel, channelId))
       context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId)
 
-    case ShortChannelIdAssigned(_, channelId, shortChannelId, _) =>
-      context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo)
+    case scidAssigned: ShortChannelIdAssigned =>
+      // We map all known scids (real or alias) to the channel_id. The relayer is in charge of deciding whether a real
+      // scid can be used or not for routing (see option_scid_alias), but the register is neutral.
+      val m = (scidAssigned.shortIds.real.toOption.toSeq :+ scidAssigned.shortIds.localAlias).map(_ -> scidAssigned.channelId).toMap
+      // duplicate check for aliases (we use a random value in a large enough space that there should never be collisions)
+      shortIds.get(scidAssigned.shortIds.localAlias) match {
+        case Some(channelId) if channelId != scidAssigned.channelId =>
+          log.error("duplicate alias={} for channelIds={},{} this should never happen!", scidAssigned.shortIds.localAlias, channelId, scidAssigned.channelId)
+        case _ => ()
+      }
+      context become main(channels, shortIds ++ m, channelsTo)
 
-    case Terminated(actor) if channels.values.toSet.contains(actor) =>
-      val channelId = channels.find(_._2 == actor).get._1
-      val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(ShortChannelId(0L))
-      context become main(channels - channelId, shortIds - shortChannelId, channelsTo - channelId)
+    case ChannelTerminated(_, channelId) =>
+      val shortChannelIds = shortIds.collect { case (key, value) if value == channelId => key }
+      context become main(channels - channelId, shortIds -- shortChannelIds, channelsTo - channelId)
 
     case Symbol("channels") => sender() ! channels
 
@@ -63,7 +79,7 @@ class Register extends Actor with ActorLogging {
 
     case fwd@Forward(replyTo, channelId, msg) =>
       // for backward compatibility with legacy ask, we use the replyTo as sender
-      val compatReplyTo = if (replyTo == ActorRef.noSender) sender() else replyTo
+      val compatReplyTo = if (replyTo == null) sender() else replyTo.toClassic
       channels.get(channelId) match {
         case Some(channel) => channel.tell(msg, compatReplyTo)
         case None => compatReplyTo ! ForwardFailure(fwd)
@@ -71,7 +87,7 @@ class Register extends Actor with ActorLogging {
 
     case fwd@ForwardShortId(replyTo, shortChannelId, msg) =>
       // for backward compatibility with legacy ask, we use the replyTo as sender
-      val compatReplyTo = if (replyTo == ActorRef.noSender) sender() else replyTo
+      val compatReplyTo = if (replyTo == null) sender() else replyTo.toClassic
       shortIds.get(shortChannelId).flatMap(channels.get) match {
         case Some(channel) => channel.tell(msg, compatReplyTo)
         case None => compatReplyTo ! ForwardShortIdFailure(fwd)
@@ -81,9 +97,11 @@ class Register extends Actor with ActorLogging {
 
 object Register {
 
+  def props(): Props = Props(new Register())
+
   // @formatter:off
-  case class Forward[T](replyTo: ActorRef, channelId: ByteVector32, message: T)
-  case class ForwardShortId[T](replyTo: ActorRef, shortChannelId: ShortChannelId, message: T)
+  case class Forward[T](replyTo: akka.actor.typed.ActorRef[ForwardFailure[T]], channelId: ByteVector32, message: T)
+  case class ForwardShortId[T](replyTo: akka.actor.typed.ActorRef[ForwardShortIdFailure[T]], shortChannelId: ShortChannelId, message: T)
 
   case class ForwardFailure[T](fwd: Forward[T])
   case class ForwardShortIdFailure[T](fwd: ForwardShortId[T])

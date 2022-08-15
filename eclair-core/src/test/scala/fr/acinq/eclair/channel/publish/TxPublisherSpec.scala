@@ -75,7 +75,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, "final-tx", 5 sat, None)
     txPublisher ! cmd
     val child = factory.expectMsgType[FinalTxPublisherSpawned].actor
-    assert(child.expectMsgType[FinalTxPublisher.Publish].cmd === cmd)
+    assert(child.expectMsgType[FinalTxPublisher.Publish].cmd == cmd)
   }
 
   test("publish final tx duplicate") { f =>
@@ -107,7 +107,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     txPublisher ! cmd
     val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     val p = child.expectMsgType[ReplaceableTxPublisher.Publish]
-    assert(p.cmd === cmd)
+    assert(p.cmd == cmd)
   }
 
   test("publish replaceable tx duplicate") { f =>
@@ -119,7 +119,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val cmd = PublishReplaceableTx(anchorTx, null)
     txPublisher ! cmd
     val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
-    assert(child.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
+    assert(child.expectMsgType[ReplaceableTxPublisher.Publish].cmd == cmd)
 
     // We ignore duplicates that don't use a more aggressive confirmation target:
     txPublisher ! PublishReplaceableTx(anchorTx, null)
@@ -192,7 +192,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // We automatically retry the failed attempt with new wallet inputs:
     val attempt3 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
-    assert(attempt3.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd2)
+    assert(attempt3.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd == cmd2)
   }
 
   test("publishing attempt fails (main input gone)") { f =>
@@ -212,7 +212,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
     system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned]
-    assert(attempt2.actor.expectMsgType[FinalTxPublisher.Publish].cmd === cmd)
+    assert(attempt2.actor.expectMsgType[FinalTxPublisher.Publish].cmd == cmd)
   }
 
   test("publishing attempt fails (not enough funds)") { f =>
@@ -233,7 +233,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
     system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
-    assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
+    assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd == cmd)
   }
 
   test("publishing attempt fails (transaction skipped)") { f =>
@@ -259,7 +259,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
     val attempt3 = factory.expectMsgType[FinalTxPublisherSpawned]
-    assert(attempt3.actor.expectMsgType[publish.FinalTxPublisher.Publish].cmd === cmd2)
+    assert(attempt3.actor.expectMsgType[publish.FinalTxPublisher.Publish].cmd == cmd2)
     factory.expectNoMessage(100 millis)
   }
 
@@ -297,7 +297,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We retry when a new block is found:
     system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 1))
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
-    assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
+    assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd == cmd)
   }
 
   test("publishing attempt fails (confirmed conflicting transaction)") { f =>
@@ -334,14 +334,14 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
   }
 
-  test("update publishing attempts") { _ =>
+  test("update publishing attempts") { () =>
     {
       // No attempts.
       val attempts = PublishAttempts.empty
       assert(attempts.isEmpty)
-      assert(attempts.count === 0)
+      assert(attempts.count == 0)
       assert(attempts.attempts.isEmpty)
-      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
+      assert(attempts.remove(UUID.randomUUID()) == (Nil, attempts))
     }
     {
       // Only final attempts.
@@ -349,19 +349,19 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val attempt2 = FinalAttempt(UUID.randomUUID(), null, null)
       val attempts = PublishAttempts.empty.add(attempt1).add(attempt2)
       assert(!attempts.isEmpty)
-      assert(attempts.count === 2)
+      assert(attempts.count == 2)
       assert(attempts.replaceableAttempt_opt.isEmpty)
-      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
-      assert(attempts.remove(attempt1.id) === (Seq(attempt1), PublishAttempts(Seq(attempt2), None)))
+      assert(attempts.remove(UUID.randomUUID()) == (Nil, attempts))
+      assert(attempts.remove(attempt1.id) == (Seq(attempt1), PublishAttempts(Seq(attempt2), None)))
     }
     {
       // Only replaceable attempts.
       val attempt = ReplaceableAttempt(UUID.randomUUID(), null, BlockHeight(0), null)
       val attempts = PublishAttempts(Nil, Some(attempt))
       assert(!attempts.isEmpty)
-      assert(attempts.count === 1)
-      assert(attempts.remove(UUID.randomUUID()) === (Nil, attempts))
-      assert(attempts.remove(attempt.id) === (Seq(attempt), PublishAttempts.empty))
+      assert(attempts.count == 1)
+      assert(attempts.remove(UUID.randomUUID()) == (Nil, attempts))
+      assert(attempts.remove(attempt.id) == (Seq(attempt), PublishAttempts.empty))
     }
     {
       // Mix of final and replaceable attempts with the same id.
@@ -370,9 +370,9 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val attempt3 = FinalAttempt(UUID.randomUUID(), null, null)
       val attempts = PublishAttempts(Seq(attempt2), Some(attempt1)).add(attempt3)
       assert(!attempts.isEmpty)
-      assert(attempts.count === 3)
-      assert(attempts.remove(attempt3.id) === (Seq(attempt3), PublishAttempts(Seq(attempt2), Some(attempt1))))
-      assert(attempts.remove(attempt1.id) === (Seq(attempt2, attempt1), PublishAttempts(Seq(attempt3), None)))
+      assert(attempts.count == 3)
+      assert(attempts.remove(attempt3.id) == (Seq(attempt3), PublishAttempts(Seq(attempt2), Some(attempt1))))
+      assert(attempts.remove(attempt1.id) == (Seq(attempt2, attempt1), PublishAttempts(Seq(attempt3), None)))
     }
   }
 

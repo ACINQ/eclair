@@ -81,12 +81,12 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     for (testCase <- testCases) {
       if (testCase.valid) {
         val init = initCodec.decode(testCase.encoded.bits).require.value
-        assert(init.features.toByteVector === testCase.rawFeatures)
-        assert(init.networks === testCase.networks)
-        assert(init.remoteAddress_opt === testCase.address)
+        assert(init.features.toByteVector == testCase.rawFeatures)
+        assert(init.networks == testCase.networks)
+        assert(init.remoteAddress_opt == testCase.address)
         val encoded = initCodec.encode(init).require
-        assert(encoded.bytes === testCase.reEncoded.getOrElse(testCase.encoded))
-        assert(initCodec.decode(encoded).require.value === init)
+        assert(encoded.bytes == testCase.reEncoded.getOrElse(testCase.encoded))
+        assert(initCodec.decode(encoded).require.value == init)
       } else {
         assert(initCodec.decode(testCase.encoded.bits).isFailure)
       }
@@ -102,8 +102,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
 
     for ((warning, expected) <- testCases) {
-      assert(lightningMessageCodec.encode(warning).require.bytes === expected)
-      assert(lightningMessageCodec.decode(expected.bits).require.value === warning)
+      assert(lightningMessageCodec.encode(warning).require.bytes == expected)
+      assert(lightningMessageCodec.decode(expected.bits).require.value == warning)
     }
   }
 
@@ -142,8 +142,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
 
     refs.foreach { case ((bin, remainder), msg) =>
-      assert(lightningMessageCodec.decode(bin.bits ++ remainder.bits).require === DecodeResult(msg, remainder.bits))
-      assert(lightningMessageCodec.encode(msg).require === bin.bits)
+      assert(lightningMessageCodec.decode(bin.bits ++ remainder.bits).require == DecodeResult(msg, remainder.bits))
+      assert(lightningMessageCodec.encode(msg).require == bin.bits)
     }
   }
 
@@ -153,7 +153,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     val node = nodeAnnouncementCodec.decode(bin).require.value
     val bin2 = nodeAnnouncementCodec.encode(node).require
-    assert(bin === bin2)
+    assert(bin == bin2)
   }
 
   test("encode/decode interactive-tx messages") {
@@ -166,30 +166,30 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val txBin2 = hex"0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000"
     val tx2 = Transaction.read(txBin2.toArray)
     val testCases = Seq(
-      TxAddInput(channelId1, UInt64(561), tx1, 1, 5, None) -> hex"0042 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000231 f7 020000000001014ade359c5deb7c1cde2e94f401854658f97d7fa31c17ce9a831db253120a0a410100000017160014eb9a5bd79194a23d19d6ec473c768fb74f9ed32cffffffff021ca408000000000017a914946118f24bb7b37d5e9e39579e4a411e70f5b6a08763e703000000000017a9143638b2602d11f934c04abc6adb1494f69d1f14af8702473044022059ddd943b399211e4266a349f26b3289979e29f9b067792c6cfa8cc5ae25f44602204d627a5a5b603d0562e7969011fb3d64908af90a3ec7c876eaa9baf61e1958af012102f5188df1da92ed818581c29778047800ed6635788aa09d9469f7d17628f7323300000000 00000001 00000005 00",
-      TxAddInput(channelId2, UInt64(0), tx2, 2, 0, None) -> hex"0042 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0000000000000000 fd0100 0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000 00000002 00000000 00",
-      TxAddInput(channelId1, UInt64(561), tx1, 0, 0, Some(hex"00bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")) -> hex"0042 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000231 f7 020000000001014ade359c5deb7c1cde2e94f401854658f97d7fa31c17ce9a831db253120a0a410100000017160014eb9a5bd79194a23d19d6ec473c768fb74f9ed32cffffffff021ca408000000000017a914946118f24bb7b37d5e9e39579e4a411e70f5b6a08763e703000000000017a9143638b2602d11f934c04abc6adb1494f69d1f14af8702473044022059ddd943b399211e4266a349f26b3289979e29f9b067792c6cfa8cc5ae25f44602204d627a5a5b603d0562e7969011fb3d64908af90a3ec7c876eaa9baf61e1958af012102f5188df1da92ed818581c29778047800ed6635788aa09d9469f7d17628f7323300000000 00000000 00000000 15 00bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      TxAddOutput(channelId1, UInt64(1105), 2047 sat, hex"00149357014afd0ccd265658c9ae81efa995e771f472") -> hex"0043 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000451 00000000000007ff 16 00149357014afd0ccd265658c9ae81efa995e771f472",
-      TxAddOutput(channelId1, UInt64(1105), 2047 sat, hex"00149357014afd0ccd265658c9ae81efa995e771f472", TlvStream(Nil, Seq(GenericTlv(UInt64(301), hex"2a")))) -> hex"0043 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000451 00000000000007ff 16 00149357014afd0ccd265658c9ae81efa995e771f472 fd012d012a",
+      TxAddInput(channelId1, UInt64(561), tx1, 1, 5) -> hex"0042 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000231 00f7 020000000001014ade359c5deb7c1cde2e94f401854658f97d7fa31c17ce9a831db253120a0a410100000017160014eb9a5bd79194a23d19d6ec473c768fb74f9ed32cffffffff021ca408000000000017a914946118f24bb7b37d5e9e39579e4a411e70f5b6a08763e703000000000017a9143638b2602d11f934c04abc6adb1494f69d1f14af8702473044022059ddd943b399211e4266a349f26b3289979e29f9b067792c6cfa8cc5ae25f44602204d627a5a5b603d0562e7969011fb3d64908af90a3ec7c876eaa9baf61e1958af012102f5188df1da92ed818581c29778047800ed6635788aa09d9469f7d17628f7323300000000 00000001 00000005",
+      TxAddInput(channelId2, UInt64(0), tx2, 2, 0) -> hex"0042 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0000000000000000 0100 0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000 00000002 00000000",
+      TxAddInput(channelId1, UInt64(561), tx1, 0, 0) -> hex"0042 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000231 00f7 020000000001014ade359c5deb7c1cde2e94f401854658f97d7fa31c17ce9a831db253120a0a410100000017160014eb9a5bd79194a23d19d6ec473c768fb74f9ed32cffffffff021ca408000000000017a914946118f24bb7b37d5e9e39579e4a411e70f5b6a08763e703000000000017a9143638b2602d11f934c04abc6adb1494f69d1f14af8702473044022059ddd943b399211e4266a349f26b3289979e29f9b067792c6cfa8cc5ae25f44602204d627a5a5b603d0562e7969011fb3d64908af90a3ec7c876eaa9baf61e1958af012102f5188df1da92ed818581c29778047800ed6635788aa09d9469f7d17628f7323300000000 00000000 00000000",
+      TxAddOutput(channelId1, UInt64(1105), 2047 sat, hex"00149357014afd0ccd265658c9ae81efa995e771f472") -> hex"0043 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000451 00000000000007ff 0016 00149357014afd0ccd265658c9ae81efa995e771f472",
+      TxAddOutput(channelId1, UInt64(1105), 2047 sat, hex"00149357014afd0ccd265658c9ae81efa995e771f472", TlvStream(Nil, Seq(GenericTlv(UInt64(301), hex"2a")))) -> hex"0043 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000451 00000000000007ff 0016 00149357014afd0ccd265658c9ae81efa995e771f472 fd012d012a",
       TxRemoveInput(channelId2, UInt64(561)) -> hex"0044 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0000000000000231",
       TxRemoveOutput(channelId1, UInt64(1)) -> hex"0045 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000001",
       TxComplete(channelId1) -> hex"0046 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       TxComplete(channelId1, TlvStream(Nil, Seq(GenericTlv(UInt64(231), hex"deadbeef"), GenericTlv(UInt64(507), hex"")))) -> hex"0046 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa e704deadbeef fd01fb00",
-      TxSignatures(channelId1, tx2.txid, Seq(ScriptWitness(Seq(hex"dead", hex"beef")), ScriptWitness(Seq(hex"", hex"01010101", hex"", hex"02")))) -> hex"0047 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa f169ed4bcb4ca97646845ec063d4deddcbe704f77f1b2c205929195f84a87afc 02 0202dead02beef 04 000401010101000102",
-      TxSignatures(channelId2, tx1.txid, Nil) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 06f125a8ef64eb5a25826190dc28f15b85dc1adcfc7a178eef393ea325c02e1f 00",
+      TxSignatures(channelId1, tx2.txid, Seq(ScriptWitness(Seq(hex"dead", hex"beef")), ScriptWitness(Seq(hex"", hex"01010101", hex"", hex"02")))) -> hex"0047 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa f169ed4bcb4ca97646845ec063d4deddcbe704f77f1b2c205929195f84a87afc 0002 00020002dead0002beef 0004 00000004010101010000000102",
+      TxSignatures(channelId2, tx1.txid, Nil) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 06f125a8ef64eb5a25826190dc28f15b85dc1adcfc7a178eef393ea325c02e1f 0000",
       TxInitRbf(channelId1, 8388607, FeeratePerKw(4000 sat)) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 007fffff 00000fa0",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream(SharedOutputContributionTlv(5000 sat))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00021388",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream[TxInitRbfTlv](SharedOutputContributionTlv(5000 sat))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00021388",
       TxAckRbf(channelId2) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      TxAckRbf(channelId2, TlvStream(SharedOutputContributionTlv(450000 sat))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 000306ddd0",
-      TxAbort(channelId1, hex"") -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00",
-      TxAbort(channelId1, ByteVector.view("internal error".getBytes(Charsets.US_ASCII))) -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0e 696e7465726e616c206572726f72",
+      TxAckRbf(channelId2, TlvStream[TxAckRbfTlv](SharedOutputContributionTlv(450000 sat))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 000306ddd0",
+      TxAbort(channelId1, hex"") -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000",
+      TxAbort(channelId1, ByteVector.view("internal error".getBytes(Charsets.US_ASCII))) -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 000e 696e7465726e616c206572726f72",
     )
     testCases.foreach { case (message, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require
       assert(decoded.remainder.isEmpty)
-      assert(decoded.value === message)
+      assert(decoded.value == message)
       val encoded = lightningMessageCodec.encode(message).require.bytes
-      assert(encoded === bin)
+      assert(encoded == bin)
     }
   }
 
@@ -221,14 +221,20 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultEncoded ++ hex"0000" ++ hex"01021000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.StaticRemoteKey))),
       // non-empty upfront_shutdown_script + channel type
       defaultEncoded ++ hex"0004 01abcdef" ++ hex"0103101000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"01abcdef"), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs))),
-      defaultEncoded ++ hex"0002 abcd" ++ hex"0103401000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"abcd"), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))),
+      defaultEncoded ++ hex"0002 abcd" ++ hex"0103401000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"abcd"), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))),
+      // empty upfront_shutdown_script + channel type (scid-alias)
+      defaultEncoded ++ hex"0000" ++ hex"0106 400000401000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false)))),
+      // empty upfront_shutdown_script + channel type (zeroconf)
+      defaultEncoded ++ hex"0000" ++ hex"0107 04000000401000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)))),
+      // empty upfront_shutdown_script + channel type (scid-alias + zeroconf)
+      defaultEncoded ++ hex"0000" ++ hex"0107 04400000401000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)))),
     )
 
     for ((encoded, expected) <- testCases) {
       val decoded = openChannelCodec.decode(encoded.bits).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
       val reEncoded = openChannelCodec.encode(decoded).require.bytes
-      assert(reEncoded === encoded)
+      assert(reEncoded == encoded)
     }
   }
 
@@ -252,17 +258,17 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
   test("encode/decode open_channel (dual funding)") {
     val defaultOpen = OpenDualFundedChannel(ByteVector32.Zeroes, ByteVector32.One, FeeratePerKw(5000 sat), FeeratePerKw(4000 sat), 250_000 sat, 500 sat, UInt64(50_000), 15 msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), ChannelFlags(true))
-    val defaultEncoded = hex"0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 0101"
+    val defaultEncoded = hex"0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 01"
     val testCases = Seq(
       defaultOpen -> defaultEncoded,
-      defaultOpen.copy(channelFlags = ChannelFlags(false), tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))) -> (defaultEncoded.dropRight(2) ++ hex"0100" ++ hex"0103401000"),
-      defaultOpen.copy(tlvStream = TlvStream(UpfrontShutdownScriptTlv(hex"00143adb2d0445c4d491cc7568b10323bd6615a91283"), ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))) -> (defaultEncoded ++ hex"001600143adb2d0445c4d491cc7568b10323bd6615a91283 0103401000"),
+      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))) -> (defaultEncoded ++ hex"0103401000"),
+      defaultOpen.copy(tlvStream = TlvStream(UpfrontShutdownScriptTlv(hex"00143adb2d0445c4d491cc7568b10323bd6615a91283"), ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))) -> (defaultEncoded ++ hex"001600143adb2d0445c4d491cc7568b10323bd6615a91283 0103401000"),
     )
     testCases.foreach { case (open, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
-      assert(decoded === open)
+      assert(decoded == open)
       val encoded = lightningMessageCodec.encode(open).require.bytes
-      assert(encoded === bin)
+      assert(encoded == bin)
     }
   }
 
@@ -271,12 +277,12 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val defaultEncodedWithoutFlags = hex"0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a"
     val testCases = Seq(
       defaultEncodedWithoutFlags ++ hex"00" -> ChannelFlags(false),
-      defaultEncodedWithoutFlags ++ hex"01a2" -> ChannelFlags(false),
-      defaultEncodedWithoutFlags ++ hex"037a2a1f" -> ChannelFlags(true),
+      defaultEncodedWithoutFlags ++ hex"a2" -> ChannelFlags(false),
+      defaultEncodedWithoutFlags ++ hex"ff" -> ChannelFlags(true),
     )
     testCases.foreach { case (bin, flags) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
-      assert(decoded === defaultOpen.copy(channelFlags = flags))
+      assert(decoded == defaultOpen.copy(channelFlags = flags))
     }
   }
 
@@ -300,39 +306,24 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     for ((encoded, expected) <- testCases) {
       val decoded = acceptChannelCodec.decode(encoded.bits).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
       val reEncoded = acceptChannelCodec.encode(decoded).require.bytes
-      assert(reEncoded === encoded)
+      assert(reEncoded == encoded)
     }
   }
 
   test("encode/decode accept_channel (dual funding)") {
-    val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000 sat, 473 sat, UInt64(100_000_000), 1 msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags(true))
-    val defaultEncoded = hex"0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 0101"
+    val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000 sat, 473 sat, UInt64(100_000_000), 1 msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6))
+    val defaultEncoded = hex"0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a"
     val testCases = Seq(
       defaultAccept -> defaultEncoded,
-      defaultAccept.copy(channelFlags = ChannelFlags(false), tlvStream = TlvStream(UpfrontShutdownScriptTlv(hex"00143adb2d0445c4d491cc7568b10323bd6615a91283"))) -> (defaultEncoded.dropRight(2) ++ hex"0100" ++ hex"001600143adb2d0445c4d491cc7568b10323bd6615a91283"),
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey))) -> (defaultEncoded ++ hex"01021000"),
     )
     testCases.foreach { case (accept, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
-      assert(decoded === accept)
+      assert(decoded == accept)
       val encoded = lightningMessageCodec.encode(accept).require.bytes
-      assert(encoded === bin)
-    }
-  }
-
-  test("decode accept_channel with unknown channel flags (dual funding)") {
-    val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000 sat, 473 sat, UInt64(100_000_000), 1 msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags(true))
-    val defaultEncodedWithoutFlags = hex"0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a"
-    val testCases = Seq(
-      defaultEncodedWithoutFlags ++ hex"00" -> ChannelFlags(false),
-      defaultEncodedWithoutFlags ++ hex"01a2" -> ChannelFlags(false),
-      defaultEncodedWithoutFlags ++ hex"037a2a1f" -> ChannelFlags(true),
-    )
-    testCases.foreach { case (bin, flags) =>
-      val decoded = lightningMessageCodec.decode(bin.bits).require.value
-      assert(decoded === defaultAccept.copy(channelFlags = flags))
+      assert(encoded == bin)
     }
   }
 
@@ -349,62 +340,58 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     for ((encoded, expected) <- testCases) {
       val decoded = closingSignedCodec.decode(encoded.bits).require.value
-      assert(decoded === expected)
+      assert(decoded == expected)
       val reEncoded = closingSignedCodec.encode(decoded).require.bytes
-      assert(reEncoded === encoded)
+      assert(reEncoded == encoded)
     }
   }
 
   test("encode/decode all channel messages") {
-    val open = OpenChannel(randomBytes32(), randomBytes32(), 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, FeeratePerKw(9 sat), CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags.Private)
-    val accept = AcceptChannel(randomBytes32(), 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6))
-    val funding_created = FundingCreated(randomBytes32(), bin32(0), 3, randomBytes64())
-    val funding_signed = FundingSigned(randomBytes32(), randomBytes64())
-    val funding_locked = FundingLocked(randomBytes32(), point(2))
-    val update_fee = UpdateFee(randomBytes32(), FeeratePerKw(2 sat))
-    val shutdown = Shutdown(randomBytes32(), bin(47, 0))
-    val closing_signed = ClosingSigned(randomBytes32(), 2 sat, randomBytes64())
-    val update_add_htlc = UpdateAddHtlc(randomBytes32(), 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket)
-    val update_fulfill_htlc = UpdateFulfillHtlc(randomBytes32(), 2, bin32(0))
-    val update_fail_htlc = UpdateFailHtlc(randomBytes32(), 2, bin(154, 0))
-    val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes32(), 2, randomBytes32(), 1111)
-    val commit_sig = CommitSig(randomBytes32(), randomBytes64(), randomBytes64() :: randomBytes64() :: randomBytes64() :: Nil)
-    val revoke_and_ack = RevokeAndAck(randomBytes32(), scalar(0), point(1))
-    val channel_announcement = ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(bin(7, 9)), Block.RegtestGenesisBlock.hash, ShortChannelId(1), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
-    val node_announcement = NodeAnnouncement(randomBytes64(), Features(DataLossProtect -> Optional), 1 unixsec, randomKey().publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil)
-    val channel_update = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(3), 4 msat, 5 msat, 6, None)
-    val announcement_signatures = AnnouncementSignatures(randomBytes32(), ShortChannelId(42), randomBytes64(), randomBytes64())
-    val gossip_timestamp_filter = GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, 100000 unixsec, 1500)
-    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty)
     val unknownTlv = GenericTlv(UInt64(5), ByteVector.fromValidHex("deadbeef"))
-    val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId,
-      BlockHeight(100000),
-      1500,
-      TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL) :: Nil, unknownTlv :: Nil))
-    val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId,
-      BlockHeight(100000), 1500, 1,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
-      TlvStream(
-        EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))) :: EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3))) :: Nil,
-        unknownTlv :: Nil)
+    val msgs = List(
+      OpenChannel(randomBytes32(), randomBytes32(), 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, FeeratePerKw(9 sat), CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags.Private),
+      AcceptChannel(randomBytes32(), 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6)),
+      FundingCreated(randomBytes32(), bin32(0), 3, randomBytes64()),
+      FundingSigned(randomBytes32(), randomBytes64()),
+      ChannelReady(randomBytes32(), point(2)),
+      ChannelReady(randomBytes32(), point(2), TlvStream(ChannelReadyTlv.ShortChannelIdTlv(Alias(123456)))),
+      UpdateFee(randomBytes32(), FeeratePerKw(2 sat)),
+      Shutdown(randomBytes32(), bin(47, 0)),
+      ClosingSigned(randomBytes32(), 2 sat, randomBytes64()),
+      UpdateAddHtlc(randomBytes32(), 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket, None),
+      UpdateFulfillHtlc(randomBytes32(), 2, bin32(0)),
+      UpdateFailHtlc(randomBytes32(), 2, bin(154, 0)),
+      UpdateFailMalformedHtlc(randomBytes32(), 2, randomBytes32(), 1111),
+      CommitSig(randomBytes32(), randomBytes64(), randomBytes64() :: randomBytes64() :: randomBytes64() :: Nil),
+      RevokeAndAck(randomBytes32(), scalar(0), point(1)),
+      ChannelAnnouncement(randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64(), Features(bin(7, 9)), Block.RegtestGenesisBlock.hash, RealShortChannelId(1), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey),
+      NodeAnnouncement(randomBytes64(), Features(DataLossProtect -> Optional), 1 unixsec, randomKey().publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil),
+      ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(3), 4 msat, 5 msat, 6, 25_000_000 msat),
+      AnnouncementSignatures(randomBytes32(), RealShortChannelId(42), randomBytes64(), randomBytes64()),
+      GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, 100000 unixsec, 1500),
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream.empty),
+      QueryChannelRange(Block.RegtestGenesisBlock.blockId,
+        BlockHeight(100000),
+        1500,
+        TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL) :: Nil, unknownTlv :: Nil)),
+      ReplyChannelRange(Block.RegtestGenesisBlock.blockId,
+        BlockHeight(100000), 1500, 1,
+        EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
+        TlvStream(
+          EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))) :: EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3))) :: Nil,
+          unknownTlv :: Nil)
+      ),
+      Ping(100, bin(10, 1)),
+      Pong(bin(10, 1)),
+      ChannelReestablish(randomBytes32(), 242842L, 42L, randomKey(), randomKey().publicKey),
+      UnknownMessage(tag = 60000, data = ByteVector32.One.bytes),
     )
-    val ping = Ping(100, bin(10, 1))
-    val pong = Pong(bin(10, 1))
-    val channel_reestablish = ChannelReestablish(randomBytes32(), 242842L, 42L, randomKey(), randomKey().publicKey)
-
-    val unknown_message = UnknownMessage(tag = 60000, data = ByteVector32.One.bytes)
-
-    val msgs: List[LightningMessage] =
-      open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
-        update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures ::
-        ping :: pong :: channel_reestablish :: unknown_message :: Nil
 
     msgs.foreach {
       msg => {
         val encoded = lightningMessageCodecWithFallback.encode(msg).require
         val decoded = lightningMessageCodecWithFallback.decode(encoded).require
-        assert(msg === decoded.value)
+        assert(msg == decoded.value)
       }
     }
   }
@@ -416,19 +403,19 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val encoded1 = lightningMessageCodecWithFallback.encode(unknown).require
     val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value
     assert(lightningMessageCodec.decode(encoded1).isFailure)
-    assert(decoded1 === unknown)
+    assert(decoded1 == unknown)
   }
 
   test("non-reg encoding type") {
     val refs = Map(
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream.empty),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001601789c636000833e08659309a65c971d0100126e02e3"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream.empty),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4010400010204"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1, 2, 4)))),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1, 2, 4)))),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001601789c636000833e08659309a65c971d0100126e02e3010c01789c6364620100000e0008"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
     )
 
     refs.forall {
@@ -440,44 +427,44 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   case class TestItem(msg: Any, hex: String)
 
   test("test vectors for extended channel queries ") {
-    val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(100000), 1500, TlvStream.empty)
-    val query_channel_range_timestamps_checksums = QueryChannelRange(Block.RegtestGenesisBlock.blockId,
-      BlockHeight(35000),
-      100,
-      TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)))
-    val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(756230), 1500, 1,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None, None)
-    val reply_channel_range_zlib = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(1600), 110, 1,
-      EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(265462))), None, None)
-    val reply_channel_range_timestamps_checksums = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(122334), 1500, 1,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12355), ShortChannelId(489686), ShortChannelId(4645313))),
-      Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
-      Some(EncodedChecksums(List(Checksums(1111, 2222), Checksums(3333, 4444), Checksums(5555, 6666)))))
-    val reply_channel_range_timestamps_checksums_zlib = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(122334), 1500, 1,
-      EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(12355), ShortChannelId(489686), ShortChannelId(4645313))),
-      Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
-      Some(EncodedChecksums(List(Checksums(1111, 2222), Checksums(3333, 4444), Checksums(5555, 6666)))))
-    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty)
-    val query_short_channel_id_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(4564), ShortChannelId(178622), ShortChannelId(4564676))), TlvStream.empty)
-    val query_short_channel_id_flags = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12232), ShortChannelId(15556), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
-    val query_short_channel_id_flags_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(14200), ShortChannelId(46645), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
 
     val refs = Map(
-      query_channel_range -> hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000186a0000005dc",
-      query_channel_range_timestamps_checksums -> hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000088b800000064010103",
-      reply_channel_range -> hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000b8a06000005dc01001900000000000000008e0000000000003c69000000000045a6c4",
-      reply_channel_range_zlib -> hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000006400000006e01001601789c636000833e08659309a65878be010010a9023a",
-      reply_channel_range_timestamps_checksums -> hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060001ddde000005dc01001900000000000000304300000000000778d6000000000046e1c1011900000282c1000e77c5000778ad00490ab00000b57800955bff031800000457000008ae00000d050000115c000015b300001a0a",
-      reply_channel_range_timestamps_checksums_zlib -> hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060001ddde000005dc01001801789c63600001036730c55e710d4cbb3d3c080017c303b1012201789c63606a3ac8c0577e9481bd622d8327d7060686ad150c53a3ff0300554707db031800000457000008ae00000d050000115c000015b300001a0a",
-      query_short_channel_id -> hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4",
-      query_short_channel_id_zlib -> hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001c12b608a69e73e30edbaec0800203b040e",
-      query_short_channel_id_flags -> hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060019000000000000002fc80000000000003cc4000000000045a6c4010c01789c6364620100000e0008",
-      query_short_channel_id_flags_zlib -> hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001f30a30c5b0cd144cb92e3b020017c6034a010c01789c6364620100000e0008"
+      QueryChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(100000), 1500, TlvStream.empty) ->
+        hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000186a0000005dc",
+      QueryChannelRange(Block.RegtestGenesisBlock.blockId,
+        BlockHeight(35000),
+        100,
+        TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))) ->
+        hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000088b800000064010103",
+      ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(756230), 1500, 1,
+        EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), None, None) ->
+        hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000b8a06000005dc01001900000000000000008e0000000000003c69000000000045a6c4",
+      ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(1600), 110, 1,
+        EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(265462))), None, None) ->
+        hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000006400000006e01001601789c636000833e08659309a65878be010010a9023a",
+      ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(122334), 1500, 1,
+        EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(12355), RealShortChannelId(489686), RealShortChannelId(4645313))),
+        Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
+        Some(EncodedChecksums(List(Checksums(1111, 2222), Checksums(3333, 4444), Checksums(5555, 6666))))) ->
+        hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060001ddde000005dc01001900000000000000304300000000000778d6000000000046e1c1011900000282c1000e77c5000778ad00490ab00000b57800955bff031800000457000008ae00000d050000115c000015b300001a0a",
+      ReplyChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(122334), 1500, 1,
+        EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(12355), RealShortChannelId(489686), RealShortChannelId(4645313))),
+        Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
+        Some(EncodedChecksums(List(Checksums(1111, 2222), Checksums(3333, 4444), Checksums(5555, 6666))))) ->
+        hex"01080f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060001ddde000005dc01001801789c63600001036730c55e710d4cbb3d3c080017c303b1012201789c63606a3ac8c0577e9481bd622d8327d7060686ad150c53a3ff0300554707db031800000457000008ae00000d050000115c000015b300001a0a",
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))), TlvStream.empty) ->
+        hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4",
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(4564), RealShortChannelId(178622), RealShortChannelId(4564676))), TlvStream.empty) ->
+        hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001c12b608a69e73e30edbaec0800203b040e",
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(12232), RealShortChannelId(15556), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4)))) ->
+        hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e22060019000000000000002fc80000000000003cc4000000000045a6c4010c01789c6364620100000e0008",
+      QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(14200), RealShortChannelId(46645), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4)))) ->
+        hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001f30a30c5b0cd144cb92e3b020017c6034a010c01789c6364620100000e0008"
     )
 
     val items = refs.map { case (obj, refbin) =>
       val bin = lightningMessageCodec.encode(obj).require
-      assert(refbin.bits === bin)
+      assert(refbin.bits == bin)
       TestItem(obj, bin.toHex)
     }
 
@@ -535,23 +522,25 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     // this was generated by c-lightning
     val bin = hex"010258fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf1792306226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f0005a100000200005bc75919010100060000000000000001000000010000000a000000003a699d00"
     val update = lightningMessageCodec.decode(bin.bits).require.value.asInstanceOf[ChannelUpdate]
-    assert(update === ChannelUpdate(ByteVector64(hex"58fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf17923"), ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"), ShortChannelId(0x5a10000020000L), 1539791129 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(6), 1 msat, 1 msat, 10, Some(980000000 msat)))
+    assert(update == ChannelUpdate(ByteVector64(hex"58fff7d0e987e2cdd560e3bb5a046b4efe7b26c969c2f51da1dceec7bcb8ae1b634790503d5290c1a6c51d681cf8f4211d27ed33a257dcc1102862571bf17923"), ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"), ShortChannelId(0x5a10000020000L), 1539791129 unixsec, ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(6), 1 msat, 1 msat, 10, 980_000_000 msat))
     val nodeId = PublicKey(hex"03370c9bac836e557eb4f017fe8f9cc047f44db39c1c4e410ff0f7be142b817ae4")
     assert(Announcements.checkSig(update, nodeId))
     val bin2 = ByteVector(lightningMessageCodec.encode(update).require.toByteArray)
-    assert(bin === bin2)
+    assert(bin == bin2)
+  }
+
+  test("reject channel_update without htlc_maximum_msat") {
+    // {"signature":"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b3","chainHash":"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000","shortChannelId":"558351x1422x1","timestamp":{"iso":"2020-03-12T17:58:06Z","unix":1584035886},"channelFlags":{"isEnabled":true,"isNode1":true},"cltvExpiryDelta":144,"htlcMinimumMsat":1000,"feeBaseMsat":1000,"feeProportionalMillionths":2}
+    val bin = hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002"
+    assert(channelUpdateCodec.decode(bin.bits).isFailure)
   }
 
   test("non-regression on channel_update") {
     val bins = Map(
       hex"3b6bb4872825450ff29d0b46f5835751329b0394a10ac792e4ba2a23b4f17bcc4e5834d1424787830be0ee3d22ac99e674d121f25d19ed931aaabb8ed0eec0fb6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000086a4e000a9700016137e9e9010200900000000000000001000003e800000001000000001dcd6500" ->
         """{"signature":"3b6bb4872825450ff29d0b46f5835751329b0394a10ac792e4ba2a23b4f17bcc4e5834d1424787830be0ee3d22ac99e674d121f25d19ed931aaabb8ed0eec0fb","chainHash":"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000","shortChannelId":"551502x2711x1","timestamp":{"iso":"2021-09-07T22:38:33Z","unix":1631054313},"channelFlags":{"isEnabled":false,"isNode1":true},"cltvExpiryDelta":144,"htlcMinimumMsat":1,"feeBaseMsat":1000,"feeProportionalMillionths":1,"htlcMaximumMsat":500000000,"tlvStream":{"records":[],"unknown":[]}}""",
-      hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002" ->
-        """{"signature":"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b3","chainHash":"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000","shortChannelId":"558351x1422x1","timestamp":{"iso":"2020-03-12T17:58:06Z","unix":1584035886},"channelFlags":{"isEnabled":true,"isNode1":true},"cltvExpiryDelta":144,"htlcMinimumMsat":1000,"feeBaseMsat":1000,"feeProportionalMillionths":2,"tlvStream":{"records":[],"unknown":[]}}""",
       hex"8efb98c939aba422a1f2ccd3e05e5471be41c54ac5d7cb27b9aaaecea45f3abb363907644c44b385d83ef6b577061847396d6d3464e4f1fa9e779395e36703ef6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d61900000000000a79dd00098800006137f9ba0100002800000000000003e800000000000003e800000000938580c0" ->
         """{"signature":"8efb98c939aba422a1f2ccd3e05e5471be41c54ac5d7cb27b9aaaecea45f3abb363907644c44b385d83ef6b577061847396d6d3464e4f1fa9e779395e36703ef","chainHash":"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000","shortChannelId":"686557x2440x0","timestamp":{"iso":"2021-09-07T23:46:02Z","unix":1631058362},"channelFlags":{"isEnabled":true,"isNode1":true},"cltvExpiryDelta":40,"htlcMinimumMsat":1000,"feeBaseMsat":0,"feeProportionalMillionths":1000,"htlcMaximumMsat":2475000000,"tlvStream":{"records":[],"unknown":[]}}""",
-      hex"4d77b955573527208ac391cf0aeffdfd5efbd99f365ef59f050e373dfbbec69337023a2ce66439cf9c56255486785af0760a08fec51cefce57e0b85ba3c594f46fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008409700047800005df69f480000009000000000000003e8000003e800000001" ->
-        """{"signature":"4d77b955573527208ac391cf0aeffdfd5efbd99f365ef59f050e373dfbbec69337023a2ce66439cf9c56255486785af0760a08fec51cefce57e0b85ba3c594f4","chainHash":"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000","shortChannelId":"540823x1144x0","timestamp":{"iso":"2019-12-15T21:02:00Z","unix":1576443720},"channelFlags":{"isEnabled":true,"isNode1":true},"cltvExpiryDelta":144,"htlcMinimumMsat":1000,"feeBaseMsat":1000,"feeProportionalMillionths":1,"tlvStream":{"records":[],"unknown":[]}}""",
       hex"b212e4d88a5ce3201ec34160d90a07eeb0601207d7d53bcf2b8f99b21146d7eb00d6a5b4b80b878eac0d25c2209eda05c913851730a65260c943fec8956cb22e6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d61900000000000a48ce0006900000613792e40100002800000000000003e8000003e8000000010000000056d35b20" ->
         """{"signature":"b212e4d88a5ce3201ec34160d90a07eeb0601207d7d53bcf2b8f99b21146d7eb00d6a5b4b80b878eac0d25c2209eda05c913851730a65260c943fec8956cb22e","chainHash":"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000","shortChannelId":"673998x1680x0","timestamp":{"iso":"2021-09-07T16:27:16Z","unix":1631032036},"channelFlags":{"isEnabled":true,"isNode1":true},"cltvExpiryDelta":40,"htlcMinimumMsat":1000,"feeBaseMsat":1000,"feeProportionalMillionths":1,"htlcMaximumMsat":1456692000,"tlvStream":{"records":[],"unknown":[]}}""",
       hex"29396591aee1bfd292193b4329d24eb9f57ddb143f303d029ae004113a7402af015c721ddc3e5d2e36cc67c92af3bdcd22d55eaf1e532503f9972207b226984f6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000096f010006ea000061375a440102002800000000000003e8000003e800000001000000024e160300" ->
@@ -564,10 +553,10 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     for ((bin, ref) <- bins) {
       val decoded = channelUpdateCodec.decode(bin.bits).require
       // not only must decoding succeed, it must also produce the same object
-      assert(Serialization.write(decoded.value)(JsonSerializers.formats) === ref)
+      assert(Serialization.write(decoded.value)(JsonSerializers.formats) == ref)
       assert(decoded.remainder.isEmpty)
       // encoding must produce the same buffer
-      assert(channelUpdateCodec.encode(decoded.value).require.bytes === bin)
+      assert(channelUpdateCodec.encode(decoded.value).require.bytes == bin)
     }
   }
 
@@ -580,9 +569,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     )
     for ((bin, ref) <- testCases) {
       val decoded = channelFlagsCodec.decode(bin).require
-      assert(decoded.value === ref)
+      assert(decoded.value == ref)
       assert(decoded.remainder.isEmpty)
-      assert(channelFlagsCodec.encode(ref).require === bin)
+      assert(channelFlagsCodec.encode(ref).require == bin)
     }
   }
 

@@ -267,18 +267,18 @@ class NodeRelay private(nodeParams: NodeParams,
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     val payFSM = payloadOut.invoiceFeatures match {
       case Some(features) =>
-        val routingHints = payloadOut.invoiceRoutingInfo.map(_.map(_.toSeq).toSeq).getOrElse(Nil)
+        val extraEdges = payloadOut.invoiceRoutingInfo.getOrElse(Nil).flatMap(Bolt11Invoice.toExtraEdges(_, payloadOut.outgoingNodeId))
         val paymentSecret = payloadOut.paymentSecret.get // NB: we've verified that there was a payment secret in validateRelay
         if (Features(features).hasFeature(Features.BasicMultiPartPayment)) {
           context.log.debug("sending the payment to non-trampoline recipient using MPP")
-          val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, payloadOut.paymentMetadata, routingHints, routeParams)
+          val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, payloadOut.paymentMetadata, extraEdges, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
           payFSM ! payment
           payFSM
         } else {
           context.log.debug("sending the payment to non-trampoline recipient without MPP")
           val finalPayload = PaymentOnion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, payloadOut.paymentMetadata)
-          val payment = SendPaymentToNode(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, routeParams)
+          val payment = SendPaymentToNode(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, extraEdges, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
           payFSM ! payment
           payFSM

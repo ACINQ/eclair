@@ -104,10 +104,10 @@ object BlockchainWatchdog {
           case CheckLatestHeaders(blockHeight) =>
             val id = UUID.randomUUID()
             if (headersOverDnsEnabled) {
-              context.spawn(HeadersOverDns(nodeParams.chainHash, blockHeight), s"${HeadersOverDns.Source}-${blockHeight.toLong}-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
+              context.spawn(HeadersOverDns(nodeParams.chainHash, blockHeight), s"${HeadersOverDns.Source}-${blockHeight}-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
             }
             explorers.foreach { explorer =>
-              context.spawn(ExplorerApi(nodeParams.chainHash, blockHeight, explorer), s"${explorer.name}-${blockHeight.toLong}-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
+              context.spawn(ExplorerApi(nodeParams.chainHash, blockHeight, explorer), s"${explorer.name}-${blockHeight}-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
             }
             Behaviors.same
           case headers@LatestHeaders(blockHeight, blockHeaders, source) =>
@@ -115,7 +115,7 @@ object BlockchainWatchdog {
               case h if h.isEmpty => 0
               case _ => blockHeaders.map(_.blockHeight).max - blockHeight
             }
-            if (missingBlocks >= 6) {
+            if (missingBlocks >= nodeParams.blockchainWatchdogThreshold) {
               context.log.warn("{}: we are {} blocks late: we may be eclipsed from the bitcoin network", source, missingBlocks)
               context.system.eventStream ! EventStream.Publish(DangerousBlocksSkew(headers))
               context.system.eventStream ! EventStream.Publish(NotifyNodeOperator(NotificationsLogger.Warning, s"we are $missingBlocks late according to $source: we may be eclipsed from the bitcoin network, check your bitcoind node."))

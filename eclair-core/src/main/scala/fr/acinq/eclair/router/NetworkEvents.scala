@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
@@ -37,7 +38,7 @@ case class SingleChannelDiscovered(ann: ChannelAnnouncement, capacity: Satoshi, 
 
 case class ChannelsDiscovered(c: Iterable[SingleChannelDiscovered]) extends NetworkEvent
 
-case class ChannelLost(shortChannelId: ShortChannelId) extends NetworkEvent
+case class ChannelLost(shortChannelId: RealShortChannelId) extends NetworkEvent
 
 case class ChannelUpdatesReceived(ann: Iterable[ChannelUpdate]) extends NetworkEvent
 

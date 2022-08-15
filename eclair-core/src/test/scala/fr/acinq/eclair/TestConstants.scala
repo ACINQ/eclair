@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -44,7 +44,8 @@ import scala.concurrent.duration._
 object TestConstants {
 
   val defaultBlockHeight = 400000
-  val fundingSatoshis: Satoshi = 1000000L sat
+  val fundingSatoshis: Satoshi = 1000000 sat
+  val nonInitiatorFundingSatoshis: Satoshi = 500000 sat
   val pushMsat: MilliSatoshi = 200000000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2500 sat)
@@ -71,7 +72,7 @@ object TestConstants {
   )
 
   object Alice {
-    val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
+    val seed: ByteVector32 = ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3") // 02aaaa...
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
@@ -125,6 +126,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
         feeEstimator = new TestFeeEstimator,
+        spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
         defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw, DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)),
@@ -156,12 +158,13 @@ object TestConstants {
         pingDisconnect = true,
         maxRebroadcastDelay = 5 seconds,
         killIdleDelay = 1 seconds,
-        maxOnionMessagesPerSecond = 10
+        maxOnionMessagesPerSecond = 10,
+        sendRemoteAddressInit = true,
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
-        routerBroadcastInterval = 5 seconds,
+        routerBroadcastInterval = 1 day, // "disables" rebroadcast
         requestNodeAnnouncements = true,
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
@@ -185,13 +188,15 @@ object TestConstants {
             maxParts = 10,
           ),
           experimentName = "alice-test-experiment",
-          experimentPercentage = 100)))
+          experimentPercentage = 100))),
+        balanceEstimateHalfLife = 1 day,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
       balanceCheckInterval = 1 hour,
+      blockchainWatchdogThreshold = 6,
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
@@ -208,12 +213,12 @@ object TestConstants {
       isInitiator = true,
       fundingSatoshis
     ).copy(
-      channelReserve = 10000 sat // Bob will need to keep that much satoshis as direct payment
+      requestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
     )
   }
 
   object Bob {
-    val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(2))
+    val seed: ByteVector32 = ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492") // 02bbbb...
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
@@ -263,6 +268,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
         feeEstimator = new TestFeeEstimator,
+        spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
         defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw, DustTolerance(30_000 sat, closeOnUpdateFeeOverflow = true)),
@@ -294,12 +300,13 @@ object TestConstants {
         pingDisconnect = true,
         maxRebroadcastDelay = 5 seconds,
         killIdleDelay = 10 seconds,
-        maxOnionMessagesPerSecond = 10
+        maxOnionMessagesPerSecond = 10,
+        sendRemoteAddressInit = true,
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
-        routerBroadcastInterval = 5 seconds,
+        routerBroadcastInterval = 1 day, // "disables" rebroadcast
         requestNodeAnnouncements = true,
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,
@@ -323,13 +330,15 @@ object TestConstants {
             maxParts = 10,
           ),
           experimentName = "bob-test-experiment",
-          experimentPercentage = 100)))
+          experimentPercentage = 100))),
+        balanceEstimateHalfLife = 1 day,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
       balanceCheckInterval = 1 hour,
+      blockchainWatchdogThreshold = 6,
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
@@ -346,7 +355,7 @@ object TestConstants {
       isInitiator = false,
       fundingSatoshis
     ).copy(
-      channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
+      requestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance
     )
   }
 

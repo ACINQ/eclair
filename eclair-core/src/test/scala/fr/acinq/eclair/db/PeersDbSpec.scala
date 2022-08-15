@@ -56,20 +56,20 @@ class PeersDbSpec extends AnyFunSuite {
       val peer_2 = TestCase(randomKey().publicKey, Tor2("z4zif3fy7fe7bpg3", 4231))
       val peer_3 = TestCase(randomKey().publicKey, Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 4231))
 
-      assert(db.listPeers().toSet === Set.empty)
+      assert(db.listPeers().toSet == Set.empty)
       db.addOrUpdatePeer(peer_1.nodeId, peer_1.nodeAddress)
-      assert(db.getPeer(peer_1.nodeId) === Some(peer_1.nodeAddress))
-      assert(db.getPeer(peer_2.nodeId) === None)
+      assert(db.getPeer(peer_1.nodeId) == Some(peer_1.nodeAddress))
+      assert(db.getPeer(peer_2.nodeId) == None)
       db.addOrUpdatePeer(peer_1.nodeId, peer_1.nodeAddress) // duplicate is ignored
-      assert(db.listPeers().size === 1)
+      assert(db.listPeers().size == 1)
       db.addOrUpdatePeer(peer_2.nodeId, peer_2.nodeAddress)
       db.addOrUpdatePeer(peer_3.nodeId, peer_3.nodeAddress)
-      assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet === Set(peer_1, peer_2, peer_3))
+      assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet == Set(peer_1, peer_2, peer_3))
       db.removePeer(peer_2.nodeId)
-      assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet === Set(peer_1, peer_3))
+      assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet == Set(peer_1, peer_3))
       db.addOrUpdatePeer(peer_1_bis.nodeId, peer_1_bis.nodeAddress)
-      assert(db.getPeer(peer_1.nodeId) === Some(peer_1_bis.nodeAddress))
-      assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet === Set(peer_1_bis, peer_3))
+      assert(db.getPeer(peer_1.nodeId) == Some(peer_1_bis.nodeAddress))
+      assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet == Set(peer_1_bis, peer_3))
     }
   }
 
@@ -93,17 +93,17 @@ class PeersDbSpec extends AnyFunSuite {
       val a = randomKey().publicKey
       val b = randomKey().publicKey
 
-      assert(db.getRelayFees(a) === None)
-      assert(db.getRelayFees(b) === None)
+      assert(db.getRelayFees(a) == None)
+      assert(db.getRelayFees(b) == None)
       db.addOrUpdateRelayFees(a, RelayFees(1 msat, 123))
-      assert(db.getRelayFees(a) === Some(RelayFees(1 msat, 123)))
-      assert(db.getRelayFees(b) === None)
+      assert(db.getRelayFees(a) == Some(RelayFees(1 msat, 123)))
+      assert(db.getRelayFees(b) == None)
       db.addOrUpdateRelayFees(a, RelayFees(2 msat, 456))
-      assert(db.getRelayFees(a) === Some(RelayFees(2 msat, 456)))
-      assert(db.getRelayFees(b) === None)
+      assert(db.getRelayFees(a) == Some(RelayFees(2 msat, 456)))
+      assert(db.getRelayFees(b) == None)
       db.addOrUpdateRelayFees(b, RelayFees(3 msat, 789))
-      assert(db.getRelayFees(a) === Some(RelayFees(2 msat, 456)))
-      assert(db.getRelayFees(b) === Some(RelayFees(3 msat, 789)))
+      assert(db.getRelayFees(a) == Some(RelayFees(2 msat, 456)))
+      assert(db.getRelayFees(b) == Some(RelayFees(3 msat, 789)))
     }
   }
 

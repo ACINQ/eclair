@@ -125,7 +125,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey)
 
   val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, isInitiator = true, Local.payment_basepoint, Remote.payment_basepoint)
-  assert(obscured_tx_number === (0x2bb038521914L ^ 42L))
+  assert(obscured_tx_number == (0x2bb038521914L ^ 42L))
 
   logger.info(s"local_payment_basepoint: ${Local.payment_basepoint}")
   logger.info(s"remote_payment_basepoint: ${Remote.payment_basepoint}")
@@ -151,13 +151,13 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   )
 
   val htlcs = Seq[DirectedHtlc](
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 5000001.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(505), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket))
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 5000001.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(505), TestConstants.emptyOnionPacket, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket, None))
   )
   val htlcScripts = htlcs.map {
     case OutgoingHtlc(add) => Scripts.htlcOffered(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), commitmentFormat)
@@ -227,7 +227,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       }
     })
 
-    assert(Transactions.getCommitTxNumber(commitTx.tx, isInitiator = true, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
+    assert(Transactions.getCommitTxNumber(commitTx.tx, isInitiator = true, Local.payment_basepoint, Remote.payment_basepoint) == Local.commitTxNumber)
     Transaction.correctlySpends(commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     logger.info(s"output commit_tx: ${commitTx.tx}")
 
@@ -276,7 +276,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val check = (0 to 4).flatMap(i =>
       tests(name).get(s"htlc_success_tx (htlc #$i)").toSeq ++ tests(name).get(s"htlc_timeout_tx (htlc #$i)").toSeq
     ).toSet.map((tx: String) => Transaction.read(tx))
-    assert(htlcTxs.map(_.tx).toSet === check)
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("simple commitment tx with no HTLCs") {

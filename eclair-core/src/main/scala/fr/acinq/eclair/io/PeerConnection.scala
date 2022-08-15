@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Stash, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Feature, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -56,7 +56,7 @@ import scala.util.Random
  *
  * Created by PM on 11/03/2020.
  */
-class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[PeerConnection.State, PeerConnection.Data] {
+class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[PeerConnection.State, PeerConnection.Data] with Stash {
 
   import PeerConnection._
 
@@ -95,6 +95,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       log.warning(s"authentication timed out after ${conf.authTimeout}")
       d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("authentication timed out"))
       stop(FSM.Normal)
+
+    case Event(_: protocol.Init, _) =>
+      log.debug("stashing remote init")
+      stash()
+      stay()
   }
 
   when(BEFORE_INIT) {
@@ -103,12 +108,18 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.info(s"using features=$localFeatures")
       val localInit = d.pendingAuth.address match {
-        case remoteAddress if !d.pendingAuth.outgoing && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
+        case remoteAddress if !d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
         case _ => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
       }
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
+      unstashAll() // unstash remote init if it already arrived
       goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync, d.isPersistent)
+
+    case Event(_: protocol.Init, _) =>
+      log.debug("stashing remote init")
+      stash()
+      stay()
   }
 
   when(INITIALIZING) {
@@ -236,6 +247,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
             // we use the pong size to correlate between pings and pongs
             val latency = TimestampMilli.now() - timestamp
+			context.system.eventStream.publish(PongReceived(d.remoteNodeId, latency))
             log.debug(s"received pong with latency=$latency")
             cancelTimer(PingTimeout.toString())
           // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
@@ -528,7 +540,8 @@ object PeerConnection {
                   pingDisconnect: Boolean,
                   maxRebroadcastDelay: FiniteDuration,
                   killIdleDelay: FiniteDuration,
-                  maxOnionMessagesPerSecond: Int)
+                  maxOnionMessagesPerSecond: Int,
+                  sendRemoteAddressInit: Boolean)
 
   // @formatter:off
 

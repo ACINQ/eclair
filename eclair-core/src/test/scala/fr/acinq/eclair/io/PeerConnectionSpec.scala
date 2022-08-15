@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
@@ -76,7 +77,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, aliceParams.chainHash, aliceParams.features.initFeatures(), doSync))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
-    assert(localInit.networks === List(Block.RegtestGenesisBlock.hash))
+    assert(localInit.networks == List(Block.RegtestGenesisBlock.hash))
     transport.send(peerConnection, remoteInit)
     transport.expectMsgType[TransportHandler.ReadAck]
     if (doSync) {
@@ -85,7 +86,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       router.expectNoMessage(1 second)
     }
     peer.expectMsg(PeerConnection.ConnectionReady(peerConnection, remoteNodeId, address, outgoing = true, localInit, remoteInit))
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    assert(peerConnection.stateName == PeerConnection.CONNECTED)
   }
 
   test("establish connection") { f =>
@@ -104,7 +105,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = false))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
-    assert(localInit.remoteAddress_opt === Some(fakeIPAddress))
+    assert(localInit.remoteAddress_opt == Some(fakeIPAddress))
   }
 
   test("handle connection closed during authentication") { f =>
@@ -215,7 +216,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val ping = Ping(42, randomBytes(127))
     transport.send(peerConnection, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
-    assert(transport.expectMsgType[Pong].data.size === ping.pongLength)
+    assert(transport.expectMsgType[Pong].data.size == ping.pongLength)
   }
 
   test("send a ping if no message after init") { f =>
@@ -246,7 +247,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val ping = Ping(Int.MaxValue, randomBytes(127))
     transport.send(peerConnection, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
-    assert(transport.expectMsgType[Warning].channelId === Peer.CHANNELID_ZERO)
+    assert(transport.expectMsgType[Warning].channelId == Peer.CHANNELID_ZERO)
     transport.expectNoMessage()
   }
 
@@ -333,7 +334,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(42000))),
       TlvStream.empty)
 
     // make sure that routing messages go through
@@ -376,14 +377,14 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     router.send(peerConnection, GossipDecision.InvalidAnnouncement(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val warn1 = transport.expectMsgType[Warning]
-    assert(warn1.channelId === Peer.CHANNELID_ZERO)
+    assert(warn1.channelId == Peer.CHANNELID_ZERO)
     assert(new String(warn1.data.toArray).startsWith("invalid announcement, couldn't verify channel"))
 
     // let's assume that one of the sigs were invalid
     router.send(peerConnection, GossipDecision.InvalidSignature(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val warn2 = transport.expectMsgType[Warning]
-    assert(warn2.channelId === Peer.CHANNELID_ZERO)
+    assert(warn2.channelId == Peer.CHANNELID_ZERO)
     assert(new String(warn2.data.toArray).startsWith("invalid announcement sig"))
   }
 
@@ -403,22 +404,16 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.expectMsg(())
   }
 
-  test("keep using transient connection") { f =>
+  test("keep transient connection open for a short while") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
     val probe = TestProbe()
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
-    probe.send(peerConnection, message)
     probe watch peerConnection
-    sleep(900 millis)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
     probe.send(peerConnection, message)
-    sleep(900 millis)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
-    probe.send(peerConnection, message)
-    sleep(900 millis)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
-    sleep(200 millis)
+    // The connection is still open for a short while.
+    assert(peerConnection.stateName == PeerConnection.CONNECTED)
+    sleep(1 second)
     probe.expectTerminated(peerConnection, max = Duration.Zero)
   }
 
@@ -428,8 +423,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     probe.send(peerConnection, message)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
-    probe.send(peerConnection, FundingLocked(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
+    assert(peerConnection.stateName == PeerConnection.CONNECTED)
+    probe.send(peerConnection, ChannelReady(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
     peerConnection.stateData match {
       case d: PeerConnection.ConnectedData => assert(d.isPersistent)
       case _ => fail()
@@ -474,7 +469,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsg(message)
   }
 
-  test("filter private IP addresses") { _ =>
+  test("filter private IP addresses") { () =>
     val testCases = Seq(
       NodeAddress.fromParts("127.0.0.1", 9735).get -> false,
       NodeAddress.fromParts("0.0.0.0", 9735).get -> false,
@@ -487,7 +482,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     )
     for ((address, expected) <- testCases) {
       val isPublicIP = NodeAddress.isPublicIPAddress(address)
-      assert(isPublicIP === expected)
+      assert(isPublicIP == expected)
     }
   }
 

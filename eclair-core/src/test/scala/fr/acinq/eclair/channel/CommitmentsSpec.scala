@@ -44,6 +44,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   val feeConfNoMismatch = OnChainFeeConf(
     FeeTargets(6, 2, 12, 2, 6, 1),
     new TestFeeEstimator(),
+    spendAnchorWithoutHtlcs = true,
     closeOnOfflineMismatch = false,
     1.0,
     FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw, DustTolerance(100000 sat, closeOnUpdateFeeOverflow = false)),
@@ -385,7 +386,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val c = CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isInitiator)
     val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
     val Right((c1, _)) = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
-    assert(c1.availableBalanceForSend === 0.msat)
+    assert(c1.availableBalanceForSend == 0.msat)
 
     // We should be able to handle a fee increase.
     val Right((c2, _)) = sendFee(c1, CMD_UPDATE_FEE(FeeratePerKw(3000 sat)), feeConfNoMismatch)
@@ -407,7 +408,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("can receive availableForReceive") { f =>
     for (isInitiator <- Seq(true, false)) {
       val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
-      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
       receiveAdd(c, add, feeConfNoMismatch)
     }
   }
@@ -456,13 +457,13 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
-        val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+        val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
         receiveAdd(c, add, feeConfNoMismatch) match {
           case Right(cc) => c = cc
           case Left(e) => fail(s"$t -> could not setup initial htlcs: $e")
         }
       }
-      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
       receiveAdd(c, add, feeConfNoMismatch) match {
         case Right(_) => ()
         case Left(e) => fail(s"$t -> $e")
@@ -480,8 +481,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isInitiator: Boolean = true, announceChannel: Boolean = true): Commitments = {
-    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, None, Features.empty)
-    val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
+    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, None, 1 msat, CltvExpiryDelta(144), 50, isInitiator, ByteVector.empty, None, Features.empty)
+    val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, None, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
     Commitments(
       channelId = randomBytes32(),
@@ -503,8 +504,8 @@ object CommitmentsSpec {
   }
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments = {
-    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, None, Features.empty)
-    val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
+    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, None, 1 msat, CltvExpiryDelta(144), 50, isInitiator = true, ByteVector.empty, None, Features.empty)
+    val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, None, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
     Commitments(
       channelId = randomBytes32(),

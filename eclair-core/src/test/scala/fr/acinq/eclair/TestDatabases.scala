@@ -3,8 +3,11 @@ package fr.acinq.eclair
 import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.zaxxer.hikari.HikariConfig
+import fr.acinq.eclair.TestDatabases.TestPgDatabases.getNewDatabase
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.Databases.PostgresDatabases
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.db.jdbc.JdbcUtils
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils.{PgLock, getVersion, using}
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
@@ -60,8 +63,9 @@ object TestDatabases {
 
       def freeze1(input: Origin): Origin = input match {
         case h: Origin.LocalHot => Origin.LocalCold(h.id)
+        case h: Origin.ChannelRelayedHot => Origin.ChannelRelayedCold(h.originChannelId, h.originHtlcId, h.amountIn, h.amountOut)
         case h: Origin.TrampolineRelayedHot => Origin.TrampolineRelayedCold(h.htlcs)
-        case _ => input
+        case c: Origin.Cold => c
       }
 
       def freeze2(input: Commitments): Commitments = input.copy(originChannels = input.originChannels.view.mapValues(o => freeze1(o)).toMap)
@@ -70,7 +74,7 @@ object TestDatabases {
       // serialized and deserialized we need to turn "hot" payments into cold ones
       def freeze3(input: PersistentChannelData): PersistentChannelData = input match {
         case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))
@@ -94,13 +98,13 @@ object TestDatabases {
       val dbs = Databases.SqliteDatabases(connection, connection, connection, jdbcUrlFile_opt = Some(jdbcUrlFile))
       dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
     }
-    override def close(): Unit = ()
+    override def close(): Unit = connection.close()
     // @formatter:on
   }
 
   case class TestPgDatabases() extends TestDatabases {
-    private val pg = EmbeddedPostgres.start()
-    val datasource: DataSource = pg.getPostgresDatabase
+
+    val datasource: DataSource = getNewDatabase()
     val hikariConfig = new HikariConfig
     hikariConfig.setDataSource(datasource)
     val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, LockFailureHandler.logAndThrow, autoReleaseAtShutdown = false)
@@ -111,11 +115,32 @@ object TestDatabases {
     implicit val system: ActorSystem = ActorSystem()
 
     // @formatter:off
-    override val connection: PgConnection = pg.getPostgresDatabase.getConnection.asInstanceOf[PgConnection]
+    override val connection: PgConnection = datasource.getConnection.asInstanceOf[PgConnection]
     // NB: we use a lazy val here: databases won't be initialized until we reference that variable
     override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile), readOnlyUser_opt = None, resetJsonColumns = false, safetyChecks_opt = None)
-    override def close(): Unit = pg.close()
+    override def close(): Unit = {
+      db.asInstanceOf[PostgresDatabases].dataSource.close()
+      connection.close()
+      system.terminate()
+    }
     // @formatter:on
+  }
+
+  object TestPgDatabases {
+    /** single instance */
+    private val pg = EmbeddedPostgres.start()
+
+    def getNewDatabase(): DataSource = {
+      implicit val datasource: DataSource = pg.getPostgresDatabase
+      val dbName = s"db_${randomBytes(8).toHex}"
+      JdbcUtils.withConnection { connection =>
+        connection
+          .createStatement()
+          .executeUpdate(s"CREATE DATABASE $dbName")
+      }
+      pg.getDatabase("postgres", dbName)
+    }
+
   }
 
   def forAllDbs(f: TestDatabases => Unit): Unit = {

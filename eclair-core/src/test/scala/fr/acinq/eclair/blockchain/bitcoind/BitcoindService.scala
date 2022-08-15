@@ -173,8 +173,11 @@ trait BitcoindService extends Logging {
     new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
   }
 
-  def getNewAddress(sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): String = {
-    rpcClient.invoke("getnewaddress").pipeTo(sender.ref)
+  def getNewAddress(sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient, addressType_opt: Option[String] = None): String = {
+    addressType_opt match {
+      case Some(addressType) => rpcClient.invoke("getnewaddress", "", addressType).pipeTo(sender.ref)
+      case None => rpcClient.invoke("getnewaddress").pipeTo(sender.ref)
+    }
     val JString(address) = sender.expectMsgType[JValue]
     address
   }

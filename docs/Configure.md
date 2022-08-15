@@ -102,22 +102,50 @@ When experimenting with non-default features, we recommend using this to scope t
 This is done with the `override-init-features` configuration parameter in your `eclair.conf`:
 
 ```conf
+eclair.features {
+  var_onion_optin = mandatory
+  payment_secret = mandatory
+  option_support_large_channel = optional
+  option_static_remotekey = optional
+  option_channel_type = optional
+}
 eclair.override-init-features = [
     {
-        nodeId = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"
+        nodeId = "<alice_node_id>"
         features {
             option_support_large_channel = disabled
-            option_static_remotekey = optional
+            option_static_remotekey = mandatory
+            option_anchors_zero_fee_htlc_tx = optional
         }
     },
     {
-        nodeId = "<another nodeId>"
+        nodeId = "<bob_node_id>"
         features {
-            option_static_remotekey = optional
-            option_support_large_channel = optional
+            option_support_large_channel = mandatory
+            option_static_remotekey = disabled
+            option_channel_type = mandatory
         }
     },
 ]
+```
+
+In this example, the features that will be activated with Alice are:
+
+```conf
+var_onion_optin = mandatory
+payment_secret = mandatory
+option_static_remotekey = mandatory
+option_anchors_zero_fee_htlc_tx = optional
+option_channel_type = optional
+```
+
+The features that will be activated with Bob are:
+
+```conf
+var_onion_optin = mandatory
+payment_secret = mandatory
+option_support_large_channel = mandatory
+option_channel_type = mandatory
 ```
 
 ## Customize feerate tolerance

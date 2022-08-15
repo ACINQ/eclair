@@ -16,20 +16,21 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, VariableLengthOnion}
 import fr.acinq.eclair.wire.protocol.OfferCodecs.invoiceRequestTlvCodec
-import fr.acinq.eclair.wire.protocol.Offers._
+import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.{Features, MilliSatoshiLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.util.Success
 
-class OffersSpec extends AnyFunSuite {
-  val nodeId = ByteVector32(hex"4b9a1fa8e006f1e3937f65f66c408e6da8e1ca728ea43222a7381df1cc449605")
+class OfferTypesSpec extends AnyFunSuite {
+  val nodeKey = PrivateKey(hex"85d08273493e489b9330c85a3e54123874c8cd67c1bf531f4b926c9c555f8e1d")
+  val nodeId = nodeKey.publicKey
 
   test("sign and check offer") {
     val key = randomKey()
@@ -48,43 +49,63 @@ class OffersSpec extends AnyFunSuite {
   }
 
   test("basic offer") {
-    val encoded = "lno1pg257enxv4ezqcneype82um50ynhxgrwdajx283qfwdpl28qqmc78ymlvhmxcsywdk5wrjnj36jryg488qwlrnzyjczs"
-    val offer = Offer.decode(encoded).get
+    val offer = Offer(TlvStream[OfferTlv](
+      Description("basic offer"),
+      NodeId(nodeId)))
+    val encoded = "lno1pg9kyctnd93jqmmxvejhy83pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrj"
+    assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.isEmpty)
     assert(offer.signature.isEmpty)
-    assert(offer.description === "Offer by rusty's node")
-    assert(offer.nodeIdXOnly === nodeId)
+    assert(offer.description == "basic offer")
+    assert(offer.nodeId == nodeId)
   }
 
   test("basic signed offer") {
-    val encodedSigned = "lno1pg257enxv4ezqcneype82um50ynhxgrwdajx283qfwdpl28qqmc78ymlvhmxcsywdk5wrjnj36jryg488qwlrnzyjczlqs85ck65ycmkdk92smwt9zuewdzfe7v4aavvaz5kgv9mkk63v3s0ge0f099kssh3yc95qztx504hu92hnx8ctzhtt08pgk0texz0509tk"
-    val Success(signedOffer) = Offer.decode(encodedSigned)
+    val signedOffer = Offer(TlvStream[OfferTlv](
+      Description("basic signed offer"),
+      NodeId(nodeId))).sign(nodeKey)
+    val encoded = "lno1pgfxyctnd93jqumfvahx2epqdanxvetjrcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe7pqr8k27dajwvrehuprj08ggamld6pgnj9ydp3whx6kz5hjaavh8rhfjzkhyxsjwakelepqxmx26aqhlaslxn8ljn4mtm2cx76xz72kxkc"
+    assert(Offer.decode(encoded).get == signedOffer)
     assert(signedOffer.checkSignature())
     assert(signedOffer.amount.isEmpty)
-    assert(signedOffer.description === "Offer by rusty's node")
-    assert(signedOffer.nodeIdXOnly === nodeId)
+    assert(signedOffer.description == "basic signed offer")
+    assert(signedOffer.nodeId == nodeId)
   }
 
   test("offer with amount and quantity") {
-    val encoded = "lno1pqqnyzsmx5cx6umpwssx6atvw35j6ut4v9h8g6t50ysx7enxv4epgrmjw4ehgcm0wfczucm0d5hxzagkqyq3ugztng063cqx783exlm97ekyprnd4rsu5u5w5sez9fecrhcuc3ykq5"
-    val Success(offer) = Offer.decode(encoded)
-    assert(offer.amount === Some(50 msat))
+    val offer = Offer(TlvStream[OfferTlv](
+      Chains(Seq(Block.TestnetGenesisBlock.hash)),
+      Amount(50 msat),
+      Description("offer with quantity"),
+      Issuer("alice@bigshop.com"),
+      QuantityMin(1),
+      NodeId(nodeKey.publicKey)))
+    val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968j9q3v9kxjcm9gp3xjemndphhqtnrdak3vqgprcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe"
+    assert(Offer.decode(encoded).get == offer)
+    assert(offer.amount.contains(50 msat))
     assert(offer.signature.isEmpty)
-    assert(offer.description === "50msat multi-quantity offer")
-    assert(offer.nodeIdXOnly === nodeId)
-    assert(offer.issuer === Some("rustcorp.com.au"))
-    assert(offer.quantityMin === Some(1))
+    assert(offer.description == "offer with quantity")
+    assert(offer.nodeId == nodeId)
+    assert(offer.issuer.contains("alice@bigshop.com"))
+    assert(offer.quantityMin.contains(1))
   }
 
   test("signed offer with amount and quantity") {
-    val encodedSigned = "lno1pqqnyzsmx5cx6umpwssx6atvw35j6ut4v9h8g6t50ysx7enxv4epgrmjw4ehgcm0wfczucm0d5hxzagkqyq3ugztng063cqx783exlm97ekyprnd4rsu5u5w5sez9fecrhcuc3ykqhcypjju7unu05vav8yvhn27lztf46k9gqlga8uvu4uq62kpuywnu6me8srgh2q7puczukr8arectaapfl5d4rd6uc7st7tnqf0ttx39n40s"
-    val Success(signedOffer) = Offer.decode(encodedSigned)
+    val signedOffer = Offer(TlvStream[OfferTlv](
+      Chains(Seq(Block.TestnetGenesisBlock.hash)),
+      Amount(50 msat),
+      Description("offer with quantity"),
+      Issuer("alice@bigshop.com"),
+      QuantityMin(1),
+      NodeId(nodeKey.publicKey))).sign(nodeKey)
+    val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968j9q3v9kxjcm9gp3xjemndphhqtnrdak3vqgprcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe7pqte5yn8m6mtk5racz9c0hgw6smxhp5t0ns77huttmy4632f6t2ns3jdwkxh9qy9f2eun2329gswcz38dn5f2us4us2r76zxvhkj9uecv"
+    assert(Offer.decode(encoded).get == signedOffer)
     assert(signedOffer.checkSignature())
-    assert(signedOffer.amount === Some(50 msat))
-    assert(signedOffer.description === "50msat multi-quantity offer")
-    assert(signedOffer.nodeIdXOnly === nodeId)
-    assert(signedOffer.issuer === Some("rustcorp.com.au"))
-    assert(signedOffer.quantityMin === Some(1))
+    assert(signedOffer.amount.contains(50 msat))
+    assert(signedOffer.description == "offer with quantity")
+    assert(signedOffer.nodeId == nodeId)
+    assert(signedOffer.issuer.contains("alice@bigshop.com"))
+    assert(signedOffer.quantityMin.contains(1))
   }
 
   test("decode invalid offer") {
@@ -198,16 +219,16 @@ class OffersSpec extends AnyFunSuite {
   test("decode invoice request") {
     val encoded = "lnr1qvsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqqyypz8xu3xwsqpar9dd26lgrrvc7s63ljt0pgh6ag2utv5udez7n2mjzqzz47qcqczqgqzqqgzycsv2tmjgzc5l546aldq699wj9pdusvfred97l352p4aa862vqvzw5p8pdyjqctdyppxzardv9hrypx74klwluzqd0rqgeew2uhuagttuv6aqwklvm0xmlg52lfnagzw8ygt0wrtnv2tsx69m6tgug7njaw5ypa5fn369n9yzc87v02rqccj9h04dxf3nzc"
     val Success(request) = InvoiceRequest.decode(encoded)
-    assert(request.amount === Some(5500 msat))
-    assert(request.offerId === ByteVector32(hex"4473722674001e8cad6ab5f40c6cc7a1a8fe4b78517d750ae2d94e3722f4d5b9"))
-    assert(request.quantity === 2)
-    assert(request.features === Features(VariableLengthOnion -> Optional, BasicMultiPartPayment -> Optional))
+    assert(request.amount == Some(5500 msat))
+    assert(request.offerId == ByteVector32(hex"4473722674001e8cad6ab5f40c6cc7a1a8fe4b78517d750ae2d94e3722f4d5b9"))
+    assert(request.quantity == 2)
+    assert(request.features == Features(VariableLengthOnion -> Optional, BasicMultiPartPayment -> Optional))
     assert(request.records.get[Chain].nonEmpty)
-    assert(request.chain === Block.LivenetGenesisBlock.hash)
-    assert(request.payerKey === ByteVector32(hex"c52f7240b14fd2baefda0d14ae9142de41891e5a5f7e34506bde9f4a60182750"))
-    assert(request.payerInfo === Some(hex"deadbeef"))
-    assert(request.payerNote === Some("I am Batman"))
-    assert(request.encode() === encoded)
+    assert(request.chain == Block.LivenetGenesisBlock.hash)
+    assert(request.payerKey == ByteVector32(hex"c52f7240b14fd2baefda0d14ae9142de41891e5a5f7e34506bde9f4a60182750"))
+    assert(request.payerInfo == Some(hex"deadbeef"))
+    assert(request.payerNote == Some("I am Batman"))
+    assert(request.encode() == encoded)
   }
 
   test("decode invalid invoice request") {
@@ -274,9 +295,9 @@ class OffersSpec extends AnyFunSuite {
       case TestCase(tlvStream, tlvCount, expectedRoot) =>
         val genericTlvStream: Codec[TlvStream[GenericTlv]] = list(TlvCodecs.genericTlv).xmap(tlvs => TlvStream(tlvs), tlvs => tlvs.records.toList)
         val tlvs = genericTlvStream.decode(tlvStream.bits).require.value
-        assert(tlvs.records.size === tlvCount)
-        val root = Offers.rootHash(tlvs, genericTlvStream)
-        assert(root === expectedRoot)
+        assert(tlvs.records.size == tlvCount)
+        val root = OfferTypes.rootHash(tlvs, genericTlvStream)
+        assert(root == expectedRoot)
     }
   }
 

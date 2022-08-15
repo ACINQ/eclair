@@ -49,14 +49,14 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
     channelType match {
       case ChannelTypes.Standard | ChannelTypes.StaticRemoteKey =>
         proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
-      case ChannelTypes.AnchorOutputs | ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
+      case ChannelTypes.AnchorOutputs | _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
         // when using anchor outputs, we allow any feerate: fees will be set with CPFP and RBF at broadcast time
         false
     }
   }
 }
 
-case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
+case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
 
   def feerateToleranceFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
 

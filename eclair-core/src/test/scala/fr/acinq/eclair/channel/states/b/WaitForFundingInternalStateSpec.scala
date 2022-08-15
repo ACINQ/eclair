@@ -40,15 +40,16 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init(wallet = new NoOpOnChainWallet())
+    val setup = init(wallet_opt = Some(new NoOpOnChainWallet()), tags = test.tags)
     import setup._
     val channelConfig = ChannelConfig.standard
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
+    val channelFlags = ChannelFlags.Private
+    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(TestConstants.pushMsat), aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]

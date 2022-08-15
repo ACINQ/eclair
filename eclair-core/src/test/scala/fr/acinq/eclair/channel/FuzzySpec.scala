@@ -28,7 +28,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
-import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -42,7 +42,6 @@ import org.scalatest.{Outcome, Tag}
 
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
-import scala.collection.immutable.Nil
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -52,7 +51,7 @@ import scala.util.Random
 
 class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase with Logging {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], pipe: ActorRef, alice2relayer: ActorRef, bob2relayer: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val fuzzy = test.tags.contains("fuzzy")
@@ -65,24 +64,24 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     TestUtils.forwardOutgoingToPipe(bobPeer, pipe)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val registerA = system.actorOf(Props(new TestRegister()))
-    val registerB = system.actorOf(Props(new TestRegister()))
-    val paymentHandlerA = system.actorOf(Props(new PaymentHandler(aliceParams, registerA)))
-    val paymentHandlerB = system.actorOf(Props(new PaymentHandler(bobParams, registerB)))
-    val relayerA = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, registerA, paymentHandlerA))
-    val relayerB = system.actorOf(Relayer.props(bobParams, TestProbe().ref, registerB, paymentHandlerB))
+    val aliceRegister = system.actorOf(Props(new TestRegister()))
+    val bobRegister = system.actorOf(Props(new TestRegister()))
+    val alicePaymentHandler = system.actorOf(Props(new PaymentHandler(aliceParams, aliceRegister)))
+    val bobPaymentHandler = system.actorOf(Props(new PaymentHandler(bobParams, bobRegister)))
+    val aliceRelayer = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, aliceRegister, alicePaymentHandler))
+    val bobRelayer = system.actorOf(Relayer.props(bobParams, TestProbe().ref, bobRegister, bobPaymentHandler))
     val wallet = new DummyOnChainWallet()
-    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceParams, wallet, bobParams.nodeId, alice2blockchain.ref, relayerA, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
-    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobParams, wallet, aliceParams.nodeId, bob2blockchain.ref, relayerB, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceParams, wallet, bobParams.nodeId, alice2blockchain.ref, aliceRelayer, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobParams, wallet, aliceParams.nodeId, bob2blockchain.ref, bobRelayer, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.initFeatures)
       val bobInit = Init(Bob.channelParams.initFeatures)
-      registerA ! alice
-      registerB ! bob
+      aliceRegister ! alice
+      bobRegister ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = ChannelFlags.Private, ChannelConfig.standard, ChannelTypes.Standard)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(TestConstants.pushMsat), Alice.channelParams, pipe, bobInit, channelFlags = ChannelFlags.Private, ChannelConfig.standard, ChannelTypes.Standard)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
@@ -100,7 +99,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       awaitCond(alice.stateName == NORMAL, 1 minute)
       awaitCond(bob.stateName == NORMAL, 1 minute)
     }
-    withFixture(test.toNoArgTest(FixtureParam(alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB)))
+    withFixture(test.toNoArgTest(FixtureParam(alice, bob, pipe, aliceRelayer, bobRelayer, alicePaymentHandler, bobPaymentHandler)))
   }
 
   class TestRegister() extends Actor with ActorLogging {
@@ -123,7 +122,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight = BlockHeight(400000))
-      OutgoingPaymentPacket.buildCommand(self, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, dest, null) :: Nil, PaymentOnion.createSinglePartPayload(amount, expiry, paymentSecret, None)).get._1
+      OutgoingPaymentPacket.buildCommand(self, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, null, dest, null) :: Nil, PaymentOnion.createSinglePartPayload(amount, expiry, paymentSecret, None)).get._1
     }
 
     def initiatePaymentOrStop(remaining: Int): Unit =

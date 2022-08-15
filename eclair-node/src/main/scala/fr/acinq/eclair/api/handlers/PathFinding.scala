@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.{EclairDirectives, RouteFormat}
 import fr.acinq.eclair.api.serde.FormParamExtractors._
-import fr.acinq.eclair.payment.Bolt11Invoice
 
 import scala.concurrent.ExecutionContext
 
@@ -34,10 +33,10 @@ trait PathFinding {
 
   val findRoute: Route = postRequest("findroute") { implicit t =>
     formFields(invoiceFormParam, amountMsatFormParam.?, "pathFindingExperimentName".?, routeFormatFormParam.?, "includeLocalChannelCost".as[Boolean].?, ignoreNodeIdsFormParam.?, ignoreShortChannelIdsFormParam.?, maxFeeMsatFormParam.?) {
-      case (invoice@Bolt11Invoice(_, Some(amount), _, nodeId, _, _), None, pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt) =>
-        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, invoice.routingInfo, includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
+      case (invoice, None, pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt) if invoice.amount_opt.nonEmpty =>
+        complete(eclairApi.findRoute(invoice.nodeId, invoice.amount_opt.get, pathFindingExperimentName_opt, invoice.extraEdges, includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
       case (invoice, Some(overrideAmount), pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt) =>
-        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, pathFindingExperimentName_opt, invoice.routingInfo, includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
+        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, pathFindingExperimentName_opt, invoice.extraEdges, includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
       case _ => reject(MalformedFormFieldRejection(
         "invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"
       ))

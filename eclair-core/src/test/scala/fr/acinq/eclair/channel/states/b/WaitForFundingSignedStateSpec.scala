@@ -55,17 +55,18 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
 
-    val setup = init(aliceNodeParams, bobNodeParams)
+    val setup = init(aliceNodeParams, bobNodeParams, tags = test.tags)
 
     import setup._
     val channelConfig = ChannelConfig.standard
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
+    val channelFlags = ChannelFlags.Private
+    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(pushMsat), aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -82,16 +83,28 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv FundingSigned with valid signature") { f =>
     import f._
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val fundingTxId = alice2blockchain.expectMsgType[WatchFundingSpent].txId
     val txPublished = listener.expectMsgType[TransactionPublished]
-    assert(txPublished.tx.txid === fundingTxId)
+    assert(txPublished.tx.txid == fundingTxId)
     assert(txPublished.miningFee > 0.sat)
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(watchConfirmed.minDepth === Alice.nodeParams.channelConf.minDepthBlocks)
+    assert(watchConfirmed.minDepth == 1) // when funder we trust ourselves so we never wait more than 1 block
+    aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
+  }
+
+  test("recv FundingSigned with valid signature (zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+    import f._
+    bob2alice.expectMsgType[FundingSigned]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateName == WAIT_FOR_CHANNEL_READY)
+    // alice doesn't watch for the funding tx to confirm
+    alice2blockchain.expectMsgType[WatchFundingSpent]
+    alice2blockchain.expectMsgType[WatchFundingLost]
+    alice2blockchain.expectNoMessage(100 millis)
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
   }
 
@@ -102,8 +115,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     alice2blockchain.expectMsgType[WatchFundingSpent]
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    // when we are funder, we keep our regular min depth even for wumbo channels
-    assert(watchConfirmed.minDepth === Alice.nodeParams.channelConf.minDepthBlocks)
+    assert(watchConfirmed.minDepth == 1) // when funder we trust ourselves so we never wait more than 1 block
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
   }
 

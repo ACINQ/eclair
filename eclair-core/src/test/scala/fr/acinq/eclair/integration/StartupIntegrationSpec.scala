@@ -41,7 +41,7 @@ class StartupIntegrationSpec extends IntegrationSpec {
     val thrown = intercept[BitcoinDefaultWalletException] {
       instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.bitcoind.wallet" -> "", "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
     }
-    assert(thrown === BitcoinDefaultWalletException(List(defaultWallet, "")))
+    assert(thrown == BitcoinDefaultWalletException(List(defaultWallet, "")))
   }
 
   test("explicit bitcoind wallet configured and two wallets loaded") {
@@ -58,7 +58,7 @@ class StartupIntegrationSpec extends IntegrationSpec {
     val thrown = intercept[BitcoinWalletNotLoadedException] {
       instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.bitcoind.wallet" -> "notloaded", "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
     }
-    assert(thrown === BitcoinWalletNotLoadedException("notloaded", List(defaultWallet, "")))
+    assert(thrown == BitcoinWalletNotLoadedException("notloaded", List(defaultWallet, "")))
   }
 
   test("bitcoind started with wallets disabled") {
@@ -66,6 +66,6 @@ class StartupIntegrationSpec extends IntegrationSpec {
     val thrown = intercept[BitcoinWalletDisabledException] {
       instantiateEclairNode("F", ConfigFactory.load().getConfig("eclair").withFallback(withDefaultCommitment).withFallback(commonConfig))
     }
-    assert(thrown === BitcoinWalletDisabledException(e = JsonRPCError(Error(-32601, "Method not found"))))
+    assert(thrown == BitcoinWalletDisabledException(e = JsonRPCError(Error(-32601, "Method not found"))))
   }
 }

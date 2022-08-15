@@ -128,8 +128,4 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
         )
     }
   }
-
-
-  // used by mobile apps
-  override def close(): Unit = sqlite.close()
 }

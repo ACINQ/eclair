@@ -19,13 +19,13 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
-import java.io.Closeable
 import scala.collection.immutable.SortedMap
 
-trait NetworkDb extends Closeable {
+trait NetworkDb {
 
   def addNode(n: NodeAnnouncement): Unit
 
@@ -41,15 +41,15 @@ trait NetworkDb extends Closeable {
 
   def updateChannel(u: ChannelUpdate): Unit
 
-  def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Set(shortChannelId)): Unit
+  def removeChannel(shortChannelId: ShortChannelId): Unit = removeChannels(Set(shortChannelId))
 
   def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit
 
-  def listChannels(): SortedMap[ShortChannelId, PublicChannel]
+  def listChannels(): SortedMap[RealShortChannelId, PublicChannel]
 
-  def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit
+  def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit
 
-  def removeFromPruned(shortChannelId: ShortChannelId): Unit
+  def removeFromPruned(shortChannelId: RealShortChannelId): Unit
 
   def isPruned(shortChannelId: ShortChannelId): Boolean
 

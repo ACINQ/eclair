@@ -31,7 +31,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.queryFlagsCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InitFeature}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features}
 import scodec._
 import scodec.codecs._
 
@@ -67,7 +67,8 @@ object EclairInternalsSerializer {
   val heuristicsConstantsCodec: Codec[HeuristicsConstants] = (
     ("lockedFundsRisk" | double) ::
       ("failureCost" | relayFeesCodec) ::
-      ("hopCost" | relayFeesCodec)).as[HeuristicsConstants]
+      ("hopCost" | relayFeesCodec) ::
+      ("useLogProbability" | bool(8))).as[HeuristicsConstants]
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::
@@ -95,9 +96,10 @@ object EclairInternalsSerializer {
         .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
-      ("pathFindingExperimentConf" | pathFindingExperimentConfCodec)).as[RouterConf]
+      ("pathFindingExperimentConf" | pathFindingExperimentConfCodec) ::
+      ("balanceEstimateHalfLife" | finiteDurationCodec)).as[RouterConf]
 
-  val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[Feature])]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
+  val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[Feature])]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, lengthPrefixedFeaturesCodec))
 
   val peerConnectionConfCodec: Codec[PeerConnection.Conf] = (
     ("authTimeout" | finiteDurationCodec) ::
@@ -107,7 +109,8 @@ object EclairInternalsSerializer {
       ("pingDisconnect" | bool(8)) ::
       ("maxRebroadcastDelay" | finiteDurationCodec) ::
       ("killIdleDelay" | finiteDurationCodec) ::
-      ("maxOnionMessagesPerSecond" | int32)).as[PeerConnection.Conf]
+      ("maxOnionMessagesPerSecond" | int32) ::
+      ("sendRemoteAddressInit" | bool(8))).as[PeerConnection.Conf]
 
   val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
 
@@ -191,7 +194,7 @@ object EclairInternalsSerializer {
     .typecase(31, lengthPrefixedNodeAnnouncementCodec.as[NodeUpdated])
     .typecase(32, publicKey.as[NodeLost])
     .typecase(33, iterable(singleChannelDiscoveredCodec).as[ChannelsDiscovered])
-    .typecase(34, shortchannelid.as[ChannelLost])
+    .typecase(34, realshortchannelid.as[ChannelLost])
     .typecase(35, iterable(lengthPrefixedChannelUpdateCodec).as[ChannelUpdatesReceived])
     .typecase(36, double.as[SyncProgress])
     .typecase(40, lengthPrefixedAnnouncementCodec.as[GossipDecision.Accepted])

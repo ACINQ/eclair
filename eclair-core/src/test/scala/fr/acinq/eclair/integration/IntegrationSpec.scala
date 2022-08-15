@@ -28,7 +28,6 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.wire.protocol.NodeAddress
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
@@ -165,16 +164,16 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](10 seconds)
   }
 
-  def connect(node1: Kit, node2: Kit, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): ChannelOpenResponse.ChannelOpened = {
+  def connect(node1: Kit, node2: Kit, fundingAmount: Satoshi, pushMsat: MilliSatoshi): ChannelOpenResponse.ChannelOpened = {
     val sender = TestProbe()
     connect(node1, node2)
     sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.nodeId,
-      fundingSatoshis = fundingSatoshis,
-      pushMsat = pushMsat,
+      fundingAmount = fundingAmount,
       channelType_opt = None,
-      fundingTxFeeratePerKw_opt = None,
-      channelFlags = None,
+      pushAmount_opt = Some(pushMsat),
+      fundingTxFeerate_opt = None,
+      channelFlags_opt = None,
       timeout_opt = None))
     sender.expectMsgType[ChannelOpenResponse.ChannelOpened](10 seconds)
   }

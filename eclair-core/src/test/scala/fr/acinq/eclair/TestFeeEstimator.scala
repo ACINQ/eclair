@@ -19,8 +19,8 @@ package fr.acinq.eclair
 import fr.acinq.eclair.TestConstants.feeratePerKw
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKB, FeeratePerKw, FeeratesPerKw}
 
-class TestFeeEstimator extends FeeEstimator {
-  private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
+class TestFeeEstimator(initialFeerate: FeeratePerKw = feeratePerKw) extends FeeEstimator {
+  private var currentFeerates = FeeratesPerKw.single(initialFeerate)
 
   // @formatter:off
   override def getFeeratePerKb(target: Int): FeeratePerKB = FeeratePerKB(currentFeerates.feePerBlock(target))

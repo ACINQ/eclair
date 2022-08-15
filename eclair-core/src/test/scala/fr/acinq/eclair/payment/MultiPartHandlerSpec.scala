@@ -89,19 +89,19 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val invoice = sender.expectMsgType[Invoice]
       val incoming = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
       assert(incoming.isDefined)
-      assert(incoming.get.status === IncomingPaymentStatus.Pending)
+      assert(incoming.get.status == IncomingPaymentStatus.Pending)
       assert(!incoming.get.invoice.isExpired())
-      assert(Crypto.sha256(incoming.get.paymentPreimage) === invoice.paymentHash)
+      assert(Crypto.sha256(incoming.get.paymentPreimage) == invoice.paymentHash)
 
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
       sender.send(handlerWithoutMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
+      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) == PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
       val received = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
       assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) === IncomingPaymentStatus.Received(amountMsat, 0 unixms))
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) == IncomingPaymentStatus.Received(amountMsat, 0 unixms))
 
       sender.expectNoMessage(50 millis)
     }
@@ -110,17 +110,17 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       sender.send(handlerWithMpp, ReceivePayment(Some(amountMsat), Left("another coffee with multi-part")))
       val invoice = sender.expectMsgType[Invoice]
       assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+      assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
 
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
       sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
+      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) == PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
       val received = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
       assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) === IncomingPaymentStatus.Received(amountMsat, 0 unixms))
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) == IncomingPaymentStatus.Received(amountMsat, 0 unixms))
 
       sender.expectNoMessage(50 millis)
     }
@@ -128,13 +128,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     {
       sender.send(handlerWithMpp, ReceivePayment(Some(amountMsat), Left("bad expiry")))
       val invoice = sender.expectMsgType[Invoice]
-      assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+      assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
 
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, CltvExpiryDelta(3).toCltvExpiry(nodeParams.currentBlockHeight), TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, CltvExpiryDelta(3).toCltvExpiry(nodeParams.currentBlockHeight), TestConstants.emptyOnionPacket, None)
       sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
       val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
       assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(amountMsat, nodeParams.currentBlockHeight)))
-      assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+      assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
 
       eventListener.expectNoMessage(100 milliseconds)
       sender.expectNoMessage(50 millis)
@@ -173,16 +173,16 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee")))
     val pr1 = sender.expectMsgType[Invoice]
-    assert(pr1.minFinalCltvExpiryDelta === nodeParams.channelConf.minFinalExpiryDelta)
-    assert(pr1.relativeExpiry === Alice.nodeParams.invoiceExpiry)
+    assert(pr1.minFinalCltvExpiryDelta == nodeParams.channelConf.minFinalExpiryDelta)
+    assert(pr1.relativeExpiry == Alice.nodeParams.invoiceExpiry)
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee with custom expiry"), expirySeconds_opt = Some(60)))
     val pr2 = sender.expectMsgType[Invoice]
-    assert(pr2.minFinalCltvExpiryDelta === nodeParams.channelConf.minFinalExpiryDelta)
-    assert(pr2.relativeExpiry === 60.seconds)
+    assert(pr2.minFinalCltvExpiryDelta == nodeParams.channelConf.minFinalExpiryDelta)
+    assert(pr2.relativeExpiry == 60.seconds)
   }
 
-  test("Invoice generation with trampoline support") { _ =>
+  test("Invoice generation with trampoline support") { () =>
     val sender = TestProbe()
 
     {
@@ -227,10 +227,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val route_x_t = extraHop_x_t :: Nil
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee with additional routing info"), extraHops = List(route_x_z, route_x_t)))
-    assert(sender.expectMsgType[Invoice].routingInfo === Seq(route_x_z, route_x_t))
+    assert(sender.expectMsgType[Bolt11Invoice].routingInfo == Seq(route_x_z, route_x_t))
 
     sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee without routing info")))
-    assert(sender.expectMsgType[Invoice].routingInfo === Nil)
+    assert(sender.expectMsgType[Bolt11Invoice].routingInfo == Nil)
   }
 
   test("PaymentHandler should reject incoming payments if the invoice is expired") { f =>
@@ -241,11 +241,11 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(!invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.isExpired())
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithoutMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
     register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     val Some(incoming) = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(incoming.invoice.isExpired() && incoming.status === IncomingPaymentStatus.Expired)
+    assert(incoming.invoice.isExpired() && incoming.status == IncomingPaymentStatus.Expired)
   }
 
   test("PaymentHandler should reject incoming multi-part payment if the invoice is expired") { f =>
@@ -256,12 +256,12 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.isExpired())
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
     val Some(incoming) = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(incoming.invoice.isExpired() && incoming.status === IncomingPaymentStatus.Expired)
+    assert(incoming.invoice.isExpired() && incoming.status == IncomingPaymentStatus.Expired)
   }
 
   test("PaymentHandler should reject incoming multi-part payment if the invoice does not allow it") { f =>
@@ -271,11 +271,11 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoice = sender.expectMsgType[Invoice]
     assert(!invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithoutMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
-    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
   }
 
   test("PaymentHandler should reject incoming multi-part payment with an invalid expiry") { f =>
@@ -286,11 +286,11 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
     val lowCltvExpiry = nodeParams.channelConf.fulfillSafetyBeforeTimeout.toCltvExpiry(nodeParams.currentBlockHeight)
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, lowCltvExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, lowCltvExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
-    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
   }
 
   test("PaymentHandler should reject incoming multi-part payment with an unknown payment hash") { f =>
@@ -300,11 +300,11 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoice = sender.expectMsgType[Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash.reverse, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash.reverse, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
-    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
   }
 
   test("PaymentHandler should reject incoming multi-part payment with a total amount too low") { f =>
@@ -314,11 +314,11 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoice = sender.expectMsgType[Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 999 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(999 msat, nodeParams.currentBlockHeight)))
-    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
   }
 
   test("PaymentHandler should reject incoming multi-part payment with a total amount too high") { f =>
@@ -328,11 +328,11 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoice = sender.expectMsgType[Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 2001 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(2001 msat, nodeParams.currentBlockHeight)))
-    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
   }
 
   test("PaymentHandler should reject incoming multi-part payment with an invalid payment secret") { f =>
@@ -343,11 +343,11 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
 
     // Invalid payment secret.
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.get.reverse, invoice.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
-    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
   }
 
   test("PaymentHandler should handle multi-part payment timeout") { f =>
@@ -357,13 +357,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // Partial payment missing additional parts.
     f.sender.send(handler, ReceivePayment(Some(1000 msat), Left("1 slow coffee")))
     val pr1 = f.sender.expectMsgType[Invoice]
-    val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr1.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr1.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add1, PaymentOnion.createMultiPartPayload(add1.amountMsat, 1000 msat, add1.cltvExpiry, pr1.paymentSecret.get, pr1.paymentMetadata)))
 
     // Partial payment exceeding the invoice amount, but incomplete because it promises to overpay.
     f.sender.send(handler, ReceivePayment(Some(1500 msat), Left("1 slow latte")))
     val pr2 = f.sender.expectMsgType[Invoice]
-    val add2 = UpdateAddHtlc(ByteVector32.One, 1, 1600 msat, pr2.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    val add2 = UpdateAddHtlc(ByteVector32.One, 1, 1600 msat, pr2.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, PaymentOnion.createMultiPartPayload(add2.amountMsat, 2000 msat, add2.cltvExpiry, pr2.paymentSecret.get, pr2.paymentMetadata)))
 
     awaitCond {
@@ -372,9 +372,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
 
     val commands = f.register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: f.register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
-    assert(commands.toSet === Set(
-      Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)),
-      Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_FAIL_HTLC(1, Right(PaymentTimeout), commit = true))
+    assert(commands.toSet == Set(
+      Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)),
+      Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(1, Right(PaymentTimeout), commit = true))
     ))
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
@@ -382,12 +382,12 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     })
 
     // Extraneous HTLCs should be failed.
-    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr1.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 42, 200 msat, pr1.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket)), Some(PaymentTimeout)))
-    f.register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_FAIL_HTLC(42, Right(PaymentTimeout), commit = true)))
+    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr1.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 42, 200 msat, pr1.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket, None)), Some(PaymentTimeout)))
+    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(42, Right(PaymentTimeout), commit = true)))
 
     // The payment should still be pending in DB.
     val Some(incomingPayment) = nodeParams.db.payments.getIncomingPayment(pr1.paymentHash)
-    assert(incomingPayment.status === IncomingPaymentStatus.Pending)
+    assert(incomingPayment.status == IncomingPaymentStatus.Pending)
   }
 
   test("PaymentHandler should handle multi-part payment success") { f =>
@@ -398,36 +398,36 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.send(handler, ReceivePayment(Some(1000 msat), Left("1 fast coffee"), paymentPreimage_opt = Some(preimage)))
     val invoice = f.sender.expectMsgType[Invoice]
 
-    val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add1, PaymentOnion.createMultiPartPayload(add1.amountMsat, 1000 msat, add1.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
     // Invalid payment secret -> should be rejected.
-    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 42, 200 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 42, 200 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, PaymentOnion.createMultiPartPayload(add2.amountMsat, 1000 msat, add2.cltvExpiry, invoice.paymentSecret.get.reverse, invoice.paymentMetadata)))
     val add3 = add2.copy(id = 43)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add3, PaymentOnion.createMultiPartPayload(add3.amountMsat, 1000 msat, add3.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
 
     f.register.expectMsgAllOf(
-      Register.Forward(ActorRef.noSender, add2.channelId, CMD_FAIL_HTLC(add2.id, Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), commit = true)),
-      Register.Forward(ActorRef.noSender, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, commit = true)),
-      Register.Forward(ActorRef.noSender, add3.channelId, CMD_FULFILL_HTLC(add3.id, preimage, commit = true))
+      Register.Forward(null, add2.channelId, CMD_FAIL_HTLC(add2.id, Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), commit = true)),
+      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, commit = true)),
+      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(add3.id, preimage, commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
-    assert(paymentReceived.parts.map(_.copy(timestamp = 0 unixms)).toSet === Set(PartialPayment(800 msat, ByteVector32.One, 0 unixms), PartialPayment(200 msat, ByteVector32.Zeroes, 0 unixms)))
+    assert(paymentReceived.parts.map(_.copy(timestamp = 0 unixms)).toSet == Set(PartialPayment(800 msat, ByteVector32.One, 0 unixms), PartialPayment(200 msat, ByteVector32.Zeroes, 0 unixms)))
     val received = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1000.msat)
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount == 1000.msat)
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
       f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
     })
 
     // Extraneous HTLCs should be fulfilled.
-    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(invoice.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 44, 200 msat, invoice.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket)), None))
-    f.register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_FULFILL_HTLC(44, preimage, commit = true)))
-    assert(f.eventListener.expectMsgType[PaymentReceived].amount === 200.msat)
+    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(invoice.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 44, 200 msat, invoice.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket, None)), None))
+    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FULFILL_HTLC(44, preimage, commit = true)))
+    assert(f.eventListener.expectMsgType[PaymentReceived].amount == 200.msat)
     val received2 = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-    assert(received2.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1200.msat)
+    assert(received2.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount == 1200.msat)
 
     f.sender.send(handler, GetPendingPayments)
     f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
@@ -443,31 +443,31 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.paymentHash == Crypto.sha256(preimage))
 
-    val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add1, PaymentOnion.createMultiPartPayload(add1.amountMsat, 1000 msat, add1.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
-    f.register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)))
+    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)))
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
       f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
     })
 
-    val add2 = UpdateAddHtlc(ByteVector32.One, 2, 300 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    val add2 = UpdateAddHtlc(ByteVector32.One, 2, 300 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, PaymentOnion.createMultiPartPayload(add2.amountMsat, 1000 msat, add2.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
-    val add3 = UpdateAddHtlc(ByteVector32.Zeroes, 5, 700 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    val add3 = UpdateAddHtlc(ByteVector32.Zeroes, 5, 700 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add3, PaymentOnion.createMultiPartPayload(add3.amountMsat, 1000 msat, add3.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
 
     // the fulfill are not necessarily in the same order as the commands
     f.register.expectMsgAllOf(
-      Register.Forward(ActorRef.noSender, add2.channelId, CMD_FULFILL_HTLC(2, preimage, commit = true)),
-      Register.Forward(ActorRef.noSender, add3.channelId, CMD_FULFILL_HTLC(5, preimage, commit = true))
+      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(2, preimage, commit = true)),
+      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(5, preimage, commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
-    assert(paymentReceived.paymentHash === invoice.paymentHash)
-    assert(paymentReceived.parts.map(_.copy(timestamp = 0 unixms)).toSet === Set(PartialPayment(300 msat, ByteVector32.One, 0 unixms), PartialPayment(700 msat, ByteVector32.Zeroes, 0 unixms)))
+    assert(paymentReceived.paymentHash == invoice.paymentHash)
+    assert(paymentReceived.parts.map(_.copy(timestamp = 0 unixms)).toSet == Set(PartialPayment(300 msat, ByteVector32.One, 0 unixms), PartialPayment(700 msat, ByteVector32.Zeroes, 0 unixms)))
     val received = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1000.msat)
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount == 1000.msat)
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
       f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
@@ -483,17 +483,17 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val paymentSecret = randomBytes32()
     val payload = FinalTlvPayload(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, 0 msat), OnionPaymentPayloadTlv.KeySend(paymentPreimage))))
 
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithKeySend, IncomingPaymentPacket.FinalPacket(add, payload))
     register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
 
     val paymentReceived = eventListener.expectMsgType[PaymentReceived]
-    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
+    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) == PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
     val received = nodeParams.db.payments.getIncomingPayment(paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) === IncomingPaymentStatus.Received(amountMsat, 0 unixms))
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) == IncomingPaymentStatus.Received(amountMsat, 0 unixms))
   }
 
   test("PaymentHandler should reject KeySend payment when feature is disabled") { f =>
@@ -505,13 +505,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val paymentSecret = randomBytes32()
     val payload = FinalTlvPayload(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, 0 msat), OnionPaymentPayloadTlv.KeySend(paymentPreimage))))
 
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, payload))
 
-    f.register.expectMsg(Register.Forward(ActorRef.noSender, add.channelId, CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(42000 msat, nodeParams.currentBlockHeight)), commit = true)))
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
+    f.register.expectMsg(Register.Forward(null, add.channelId, CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(42000 msat, nodeParams.currentBlockHeight)), commit = true)))
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
   }
 
   test("PaymentHandler should reject incoming payments if the invoice doesn't exist") { f =>
@@ -519,13 +519,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val paymentHash = randomBytes32()
     val paymentSecret = randomBytes32()
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithoutMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, paymentSecret, None)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(cmd.id === add.id)
-    assert(cmd.reason === Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
+    assert(cmd.id == add.id)
+    assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
   }
 
   test("PaymentHandler should reject incoming multi-part payment if the invoice doesn't exist") { f =>
@@ -533,13 +533,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val paymentHash = randomBytes32()
     val paymentSecret = randomBytes32()
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, PaymentOnion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, paymentSecret, Some(hex"012345"))))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(cmd.id === add.id)
-    assert(cmd.reason === Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
+    assert(cmd.id == add.id)
+    assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
   }
 
   test("PaymentHandler should fail fulfilling incoming payments if the invoice doesn't exist") { f =>
@@ -547,13 +547,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val paymentPreimage = randomBytes32()
     val paymentHash = Crypto.sha256(paymentPreimage)
-    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) == None)
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     val fulfill = DoFulfill(paymentPreimage, MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, Queue(HtlcPart(1000 msat, add))))
     sender.send(handlerWithoutMpp, fulfill)
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(cmd.id === add.id)
-    assert(cmd.reason === Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
+    assert(cmd.id == add.id)
+    assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
   }
 }

@@ -19,12 +19,12 @@ package fr.acinq.eclair.router
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
-import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate, RealScidStatus, ShortChannelIdAssigned, ShortIds}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -33,7 +33,7 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{TestKitBaseClass, randomKey, _}
+import fr.acinq.eclair._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -73,31 +73,39 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val node_g = makeNodeAnnouncement(priv_g, "node-G", Color(30, 10, -50), Nil, Features.empty)
   val node_h = makeNodeAnnouncement(priv_h, "node-H", Color(30, 10, -50), Nil, Features.empty)
 
-  val channelId_ab = ShortChannelId(BlockHeight(420000), 1, 0)
-  val channelId_bc = ShortChannelId(BlockHeight(420000), 2, 0)
-  val channelId_cd = ShortChannelId(BlockHeight(420000), 3, 0)
-  val channelId_ef = ShortChannelId(BlockHeight(420000), 4, 0)
-  val channelId_ag_private = ShortChannelId(BlockHeight(420000), 5, 0)
-  val channelId_gh = ShortChannelId(BlockHeight(420000), 6, 0)
+  val scid_ab = RealShortChannelId(BlockHeight(420000), 1, 0)
+  val scid_bc = RealShortChannelId(BlockHeight(420000), 2, 0)
+  val scid_cd = RealShortChannelId(BlockHeight(420000), 3, 0)
+  val scid_ef = RealShortChannelId(BlockHeight(420000), 4, 0)
+  val scid_ag_private = RealShortChannelId(BlockHeight(420000), 5, 0)
+  val scid_gh = RealShortChannelId(BlockHeight(420000), 6, 0)
 
-  val chan_ab = channelAnnouncement(channelId_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
-  val chan_bc = channelAnnouncement(channelId_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
-  val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
-  val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
-  val chan_gh = channelAnnouncement(channelId_gh, priv_g, priv_h, priv_funding_g, priv_funding_h)
+  val channelId_ag_private = randomBytes32()
 
-  val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
-  val update_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
-  val update_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = htlcMaximum)
-  val update_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, channelId_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = htlcMaximum)
-  val update_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = htlcMaximum)
-  val update_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = htlcMaximum)
-  val update_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = htlcMaximum)
-  val update_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = htlcMaximum)
-  val update_ag_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
-  val update_ga_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, a, channelId_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
-  val update_gh = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, h, channelId_gh, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
-  val update_hg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_h, g, channelId_gh, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  val alias_ab = ShortChannelId.generateLocalAlias()
+  val alias_ag_private = ShortChannelId.generateLocalAlias()
+
+  val scids_ab = ShortIds(RealScidStatus.Final(scid_ab), alias_ab, None)
+  val scids_ag_private = ShortIds(RealScidStatus.Final(scid_ag_private),  alias_ag_private, None)
+
+  val chan_ab = channelAnnouncement(scid_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
+  val chan_bc = channelAnnouncement(scid_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
+  val chan_cd = channelAnnouncement(scid_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
+  val chan_ef = channelAnnouncement(scid_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
+  val chan_gh = channelAnnouncement(scid_gh, priv_g, priv_h, priv_funding_g, priv_funding_h)
+
+  val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, scid_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  val update_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, scid_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  val update_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, scid_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = htlcMaximum)
+  val update_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, scid_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = htlcMaximum)
+  val update_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, scid_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = htlcMaximum)
+  val update_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, scid_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = htlcMaximum)
+  val update_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, scid_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = htlcMaximum)
+  val update_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, scid_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = htlcMaximum)
+  val update_ag_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, scids_ag_private.localAlias, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  val update_ga_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, a, scids_ag_private.localAlias, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  val update_gh = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, h, scid_gh, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  val update_hg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_h, g, scid_gh, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
 
   override def withFixture(test: OneArgTest): Outcome = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d
@@ -106,13 +114,14 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
     // and e --(4)--> f (we are a)
     within(30 seconds) {
       // first we make sure that we correctly resolve channelId+direction to nodeId
-      assert(Router.getDesc(update_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, a, b))
-      assert(Router.getDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
-      assert(Router.getDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
-      assert(Router.getDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
-      assert(Router.getDesc(update_ag_private, PrivateChannel(a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(channelId_ag_private, a, g))
-      assert(Router.getDesc(update_ag_private, PrivateChannel(g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(channelId_ag_private, a, g))
-      assert(Router.getDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
+      assert(ChannelDesc(update_ab, chan_ab) == ChannelDesc(chan_ab.shortChannelId, a, b))
+      assert(ChannelDesc(update_bc, chan_bc) == ChannelDesc(chan_bc.shortChannelId, b, c))
+      assert(ChannelDesc(update_cd, chan_cd) == ChannelDesc(chan_cd.shortChannelId, c, d))
+      assert(ChannelDesc(update_ef, chan_ef) == ChannelDesc(chan_ef.shortChannelId, e, f))
+      val privateChannel_ag = PrivateChannel(channelId_ag_private, scids_ag_private, a, g, None, None, ChannelMeta(1000 msat, 1000 msat))
+      assert(ChannelDesc(update_ag_private, privateChannel_ag) == ChannelDesc(scids_ag_private.localAlias, a, g))
+      assert(ChannelDesc(update_ga_private, privateChannel_ag) == ChannelDesc(scids_ag_private.localAlias, g, a))
+      assert(ChannelDesc(update_gh, chan_gh) == ChannelDesc(chan_gh.shortChannelId, g, h))
 
       // let's set up the router
       val sender = TestProbe()
@@ -122,7 +131,6 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       import com.softwaremill.quicklens._
       val nodeParams = Alice.nodeParams
         .modify(_.nodeKeyManager).setTo(testNodeKeyManager)
-        .modify(_.routerConf.routerBroadcastInterval).setTo(1 day) // "disable" auto rebroadcast
       val router = system.actorOf(Router.props(nodeParams, watcher.ref))
       // we announce channels
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ab))
@@ -150,13 +158,14 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_gh))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_hg))
       // then private channels
-      sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32(), channelId_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
+      sender.send(router, ShortChannelIdAssigned(sender.ref, channelId_ag_private, scids_ag_private, remoteNodeId = g))
+      sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, scids_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_bc)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_cd)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ef)
-      assert(watcher.expectMsgType[ValidateRequest].ann === chan_gh)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_ab)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_bc)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_cd)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_ef)
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_gh)
       // and answers with valid scripts
       watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       watcher.send(router, ValidateResult(chan_bc, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
@@ -171,7 +180,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId,
         watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId,
       )
-      assert(watchedShortChannelIds === Set(channelId_ab, channelId_bc, channelId_cd, channelId_ef, channelId_gh))
+      assert(watchedShortChannelIds == Set(scid_ab, scid_bc, scid_cd, scid_ef, scid_gh))
       // all messages are acked
       peerConnection.expectMsgAllOf(
         GossipDecision.Accepted(chan_ab),
@@ -204,7 +213,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
         sender.send(router, GetChannelUpdates)
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
-        nodes.size === 8 && channels.size === 5 && updates.size === 11
+        nodes.size == 8 && channels.size == 5 && updates.size == 11
       }, max = 10 seconds, interval = 1 second)
 
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, watcher)))
@@ -213,12 +222,15 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
 }
 
 object BaseRouterSpec {
-  def channelAnnouncement(channelId: ShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
-    val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, Features.empty)
+  def channelAnnouncement(shortChannelId: RealShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
+    val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, Features.empty)
     val node1_sig = Announcements.signChannelAnnouncement(witness, node1_priv)
     val funding1_sig = Announcements.signChannelAnnouncement(witness, funding1_priv)
     val node2_sig = Announcements.signChannelAnnouncement(witness, node2_priv)
     val funding2_sig = Announcements.signChannelAnnouncement(witness, funding2_priv)
-    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
+    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
   }
+
+  def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: ChannelUpdate): ChannelHop =
+    ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, ChannelRelayParams.FromAnnouncement(channelUpdate))
 }

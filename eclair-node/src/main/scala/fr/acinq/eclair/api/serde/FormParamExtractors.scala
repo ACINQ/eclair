@@ -46,9 +46,9 @@ object FormParamExtractors {
 
   implicit val bolt11Unmarshaller: Unmarshaller[String, Bolt11Invoice] = Unmarshaller.strict { rawRequest => Bolt11Invoice.fromString(rawRequest).get }
 
-  implicit val shortChannelIdUnmarshaller: Unmarshaller[String, ShortChannelId] = Unmarshaller.strict { str => ShortChannelId(str) }
+  implicit val shortChannelIdUnmarshaller: Unmarshaller[String, ShortChannelId] = Unmarshaller.strict { str => ShortChannelId.fromCoordinates(str).get }
 
-  implicit val shortChannelIdsUnmarshaller: Unmarshaller[String, List[ShortChannelId]] = listUnmarshaller(str => ShortChannelId(str))
+  implicit val shortChannelIdsUnmarshaller: Unmarshaller[String, List[ShortChannelId]] = listUnmarshaller(str => ShortChannelId.fromCoordinates(str).get)
 
   implicit val javaUUIDUnmarshaller: Unmarshaller[String, UUID] = Unmarshaller.strict { str => UUID.fromString(str) }
 

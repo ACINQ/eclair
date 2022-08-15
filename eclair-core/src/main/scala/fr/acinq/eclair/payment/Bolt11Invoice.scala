@@ -85,6 +85,8 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
 
   lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfo => t.path }
 
+  lazy val extraEdges: Seq[Invoice.ExtraEdge] = routingInfo.flatMap(path => toExtraEdges(path, nodeId))
+
   lazy val relativeExpiry: FiniteDuration = FiniteDuration(tags.collectFirst { case expiry: Bolt11Invoice.Expiry => expiry.toLong }.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
 
   lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = tags.collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta }.getOrElse(DEFAULT_MIN_CLTV_EXPIRY_DELTA)
@@ -334,7 +336,6 @@ object Bolt11Invoice {
    */
   case class ExtraHop(nodeId: PublicKey, shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta)
 
-
   /**
    * Routing Info
    *
@@ -583,6 +584,15 @@ object Bolt11Invoice {
     expiry_opt match {
       case Some(expiry) => timestamp + expiry.toLong <= TimestampSecond.now()
       case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now()
+    }
+  }
+
+  def toExtraEdges(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Seq[Invoice.ExtraEdge] = {
+    // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
+    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
+    extraRoute.zip(nextNodeIds).map {
+      case (extraHop, nextNodeId) =>
+        Invoice.BasicEdge(extraHop.nodeId, nextNodeId, extraHop.shortChannelId, extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta)
     }
   }
 }

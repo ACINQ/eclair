@@ -101,7 +101,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, connectingData: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
-    assert(connectingData.to === fakeIPAddress)
+    assert(connectingData.to == fakeIPAddress)
     val expectedNextReconnectionDelayInterval = (nodeParams.maxReconnectInterval.toSeconds / 2) to nodeParams.maxReconnectInterval.toSeconds
     assert(expectedNextReconnectionDelayInterval contains connectingData.nextReconnectionDelay.toSeconds) // we only reconnect once
   }
@@ -134,13 +134,13 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
 
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData1: WaitingData) = monitor.expectMsgType[TransitionWithData](60 seconds)
-    assert(waitingData1.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 2))
+    assert(waitingData1.nextReconnectionDelay == (waitingData0.nextReconnectionDelay * 2))
 
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
 
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData2: WaitingData) = monitor.expectMsgType[TransitionWithData](60 seconds)
-    assert(waitingData2.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 4))
+    assert(waitingData2.nextReconnectionDelay == (waitingData0.nextReconnectionDelay * 4))
 
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
@@ -153,7 +153,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // the auto reconnect kicks off again, but this time we pick up the reconnect delay where we left it
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, waitingData3: WaitingData) = monitor.expectMsgType[TransitionWithData]
-    assert(waitingData3.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 8))
+    assert(waitingData3.nextReconnectionDelay == (waitingData0.nextReconnectionDelay * 8))
   }
 
   test("all kind of connection failures should be caught by the reconnection task", Tag("auto_reconnect")) { f =>
@@ -225,7 +225,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     mockServer.close()
   }
 
-  test("select peer address for reconnection") { _ =>
+  test("select peer address for reconnection") { () =>
     val nodeParams = mock[NodeParams]
     val clearnet = NodeAddress.fromParts("1.2.3.4", 9735).get
     val tor = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get
@@ -235,9 +235,9 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     {
       // tor not supported: always return clearnet addresses
       nodeParams.socksProxy_opt returns None
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) === Some(clearnet))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) === None)
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) === Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) == Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) == None)
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) == Some(clearnet))
     }
 
     {
@@ -247,9 +247,9 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       socksParams.useForIPv4 returns false
       socksParams.useForIPv6 returns false
       nodeParams.socksProxy_opt returns Some(socksParams)
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) === Some(clearnet))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) === Some(tor))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) === Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) == Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) == Some(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) == Some(clearnet))
     }
 
     {
@@ -259,9 +259,9 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       socksParams.useForIPv4 returns true
       socksParams.useForIPv6 returns true
       nodeParams.socksProxy_opt returns Some(socksParams)
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) === Some(clearnet))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) === Some(tor))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) === Some(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) == Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) == Some(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) == Some(tor))
     }
 
   }

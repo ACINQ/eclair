@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong, Transaction, TxOut}
@@ -32,9 +32,6 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.Color
 import org.scalatest.funsuite.AnyFunSuiteLike
-import scodec.bits._
-
-import scala.concurrent.duration._
 
 class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike {
 
@@ -92,7 +89,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     pipe1.expectMsg(PeerRoutingMessage(front1, origin1a.nodeId, chan_ab))
     pipe1.send(router, PeerRoutingMessage(pipe1.ref, origin1a.nodeId, chan_ab))
 
-    assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
+    assert(watcher.expectMsgType[ValidateRequest].ann == chan_ab)
 
     peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, chan_ab))
     pipe1.expectNoMessage()
@@ -131,12 +128,14 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection1b.expectMsg(GossipDecision.Accepted(chan_ab))
     peerConnection2a.expectMsg(GossipDecision.Accepted(chan_ab))
 
-    // we have to wait 2 times the broadcast interval because there is an additional per-peer delay
-    val maxBroadcastDelay = 2 * nodeParams.routerConf.routerBroadcastInterval + 1.second
-    peerConnection1a.expectMsg(maxBroadcastDelay, Rebroadcast(channels = Map(chan_ab -> Set(origin1a, origin1b)), updates = Map.empty, nodes = Map.empty))
-    peerConnection1b.expectMsg(maxBroadcastDelay, Rebroadcast(channels = Map(chan_ab -> Set(origin1a, origin1b)), updates = Map.empty, nodes = Map.empty))
-    peerConnection2a.expectMsg(maxBroadcastDelay, Rebroadcast(channels = Map(chan_ab -> Set(origin2a)), updates = Map.empty, nodes = Map.empty))
-    peerConnection3a.expectMsg(maxBroadcastDelay, Rebroadcast(channels = Map(chan_ab -> Set.empty), updates = Map.empty, nodes = Map.empty))
+    // manual rebroadcast
+    front1 ! Router.TickBroadcast
+    peerConnection1a.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set(origin1a, origin1b)), updates = Map.empty, nodes = Map.empty))
+    peerConnection1b.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set(origin1a, origin1b)), updates = Map.empty, nodes = Map.empty))
+    front2 ! Router.TickBroadcast
+    peerConnection2a.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set(origin2a)), updates = Map.empty, nodes = Map.empty))
+    front3 ! Router.TickBroadcast
+    peerConnection3a.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set.empty), updates = Map.empty, nodes = Map.empty))
   }
 
   test("aggregate gossip") {
@@ -149,9 +148,18 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val system2 = ActorSystem("front-system-2")
     val system3 = ActorSystem("front-system-3")
 
-    val front1 = system1.actorOf(FrontRouter.props(nodeParams.routerConf, router))
-    val front2 = system2.actorOf(FrontRouter.props(nodeParams.routerConf, router))
-    val front3 = system3.actorOf(FrontRouter.props(nodeParams.routerConf, router))
+    val front1 = {
+      implicit val system: ActorSystem = system1
+      TestFSMRef[FrontRouter.State, FrontRouter.Data, FrontRouter](new FrontRouter(nodeParams.routerConf, router))
+    }
+    val front2 = {
+      implicit val system: ActorSystem = system2
+      TestFSMRef[FrontRouter.State, FrontRouter.Data, FrontRouter](new FrontRouter(nodeParams.routerConf, router))
+    }
+    val front3 = {
+      implicit val system: ActorSystem = system3
+      TestFSMRef[FrontRouter.State, FrontRouter.Data, FrontRouter](new FrontRouter(nodeParams.routerConf, router))
+    }
 
     val peerConnection1a = TestProbe("peerconn-1a")
     val peerConnection1b = TestProbe("peerconn-1b")
@@ -169,7 +177,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val origin3a = RemoteGossip(peerConnection3a.ref, randomKey().publicKey)
 
     peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, chan_ab))
-    assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
+    assert(watcher.expectMsgType[ValidateRequest].ann == chan_ab)
     peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, chan_ab))
     peerConnection2a.send(front2, PeerRoutingMessage(peerConnection2a.ref, origin2a.nodeId, chan_ab))
 
@@ -181,7 +189,6 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, channelUpdate_bc))
     peerConnection3a.expectMsg(TransportHandler.ReadAck(channelUpdate_bc))
     peerConnection3a.expectMsg(GossipDecision.NoRelatedChannel(channelUpdate_bc))
-
 
     watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
 
@@ -207,12 +214,18 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection3a.expectMsg(TransportHandler.ReadAck(ann_b))
     peerConnection3a.expectMsg(GossipDecision.Accepted(ann_b))
 
-    // we have to wait 2 times the broadcast interval because there is an additional per-peer delay
-    val maxBroadcastDelay = 2 * nodeParams.routerConf.routerBroadcastInterval + 1.second
-    peerConnection1a.expectMsg(maxBroadcastDelay, Rebroadcast(channels = Map(chan_ab -> Set(origin1a, origin1b)), updates = Map(channelUpdate_ab -> Set(origin1b), channelUpdate_ba -> Set.empty), nodes = Map(ann_a -> Set.empty, ann_b -> Set.empty)))
-    peerConnection1b.expectMsg(maxBroadcastDelay, Rebroadcast(channels = Map(chan_ab -> Set(origin1a, origin1b)), updates = Map(channelUpdate_ab -> Set(origin1b), channelUpdate_ba -> Set.empty), nodes = Map(ann_a -> Set.empty, ann_b -> Set.empty)))
-    peerConnection2a.expectMsg(maxBroadcastDelay, Rebroadcast(channels = Map(chan_ab -> Set(origin2a)), updates = Map(channelUpdate_ab -> Set.empty, channelUpdate_ba -> Set.empty), nodes = Map(ann_a -> Set.empty, ann_b -> Set.empty)))
-    peerConnection3a.expectMsg(maxBroadcastDelay, Rebroadcast(channels = Map(chan_ab -> Set.empty), updates = Map(channelUpdate_ab -> Set.empty, channelUpdate_ba -> Set(origin3a)), nodes = Map(ann_a -> Set(origin3a), ann_b -> Set(origin3a))))
+    awaitCond(front1.stateData.nodes.size == 2)
+    awaitCond(front2.stateData.nodes.size == 2)
+    awaitCond(front3.stateData.nodes.size == 2)
+
+    // manual rebroadcast
+    front1 ! Router.TickBroadcast
+    peerConnection1a.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set(origin1a, origin1b)), updates = Map(channelUpdate_ab -> Set(origin1b), channelUpdate_ba -> Set.empty), nodes = Map(ann_a -> Set.empty, ann_b -> Set.empty)))
+    peerConnection1b.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set(origin1a, origin1b)), updates = Map(channelUpdate_ab -> Set(origin1b), channelUpdate_ba -> Set.empty), nodes = Map(ann_a -> Set.empty, ann_b -> Set.empty)))
+    front2 ! Router.TickBroadcast
+    peerConnection2a.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set(origin2a)), updates = Map(channelUpdate_ab -> Set.empty, channelUpdate_ba -> Set.empty), nodes = Map(ann_a -> Set.empty, ann_b -> Set.empty)))
+    front3 ! Router.TickBroadcast
+    peerConnection3a.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set.empty), updates = Map(channelUpdate_ab -> Set.empty, channelUpdate_ba -> Set(origin3a)), nodes = Map(ann_a -> Set(origin3a), ann_b -> Set(origin3a))))
   }
 
   test("do not forward duplicate gossip") {
@@ -327,12 +340,12 @@ object FrontRouterSpec {
   val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, Features.empty)
   val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, Features.empty)
 
-  val channelId_ab = ShortChannelId(BlockHeight(420000), 1, 0)
-  val channelId_bc = ShortChannelId(BlockHeight(420000), 2, 0)
-  val channelId_cd = ShortChannelId(BlockHeight(420000), 3, 0)
-  val channelId_ef = ShortChannelId(BlockHeight(420000), 4, 0)
+  val channelId_ab = RealShortChannelId(BlockHeight(420000), 1, 0)
+  val channelId_bc = RealShortChannelId(BlockHeight(420000), 2, 0)
+  val channelId_cd = RealShortChannelId(BlockHeight(420000), 3, 0)
+  val channelId_ef = RealShortChannelId(BlockHeight(420000), 4, 0)
 
-  def channelAnnouncement(shortChannelId: ShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
+  def channelAnnouncement(shortChannelId: RealShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
     val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, Features.empty)
     val node1_sig = Announcements.signChannelAnnouncement(witness, node1_priv)
     val funding1_sig = Announcements.signChannelAnnouncement(witness, funding1_priv)

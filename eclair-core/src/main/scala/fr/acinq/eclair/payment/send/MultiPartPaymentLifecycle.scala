@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
@@ -117,8 +117,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
-        val assistedRoutes1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.assistedRoutes)
-        stay() using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
+        val extraEdges1 = PaymentFailure.updateExtraEdges(pf.failures, d.request.extraEdges)
+        stay() using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(extraEdges = extraEdges1))
       }
 
     // The recipient released the preimage without receiving the full payment amount.
@@ -139,12 +139,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
-        val assistedRoutes1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.assistedRoutes)
+        val extraEdges1 = PaymentFailure.updateExtraEdges(pf.failures, d.request.extraEdges)
         val stillPending = d.pending - pf.id
         val (toSend, maxFee) = remainingToSend(d.request, stillPending.values, d.request.routeParams.includeLocalChannelCost)
         log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
-        val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
+        val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(extraEdges = extraEdges1))
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d1, cfg)
         goto(WAIT_FOR_ROUTES) using d1
       }
@@ -264,7 +264,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
           }
           paymentSent.feesPaid + localFees
       }
-      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId))
+      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId, request.extraEdges))
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
@@ -287,7 +287,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       parentPaymentId_opt = Some(cfg.parentId),
       paymentId_opt = Some(id),
       paymentHash_opt = Some(paymentHash),
-      remoteNodeId_opt = Some(cfg.recipientNodeId))
+      remoteNodeId_opt = Some(cfg.recipientNodeId),
+      nodeAlias_opt = Some(nodeParams.alias))
   }
 
   initialize()
@@ -309,7 +310,7 @@ object MultiPartPaymentLifecycle {
    * @param targetExpiry    expiry at the target node (CLTV for the target node's received HTLCs).
    * @param maxAttempts     maximum number of retries.
    * @param paymentMetadata payment metadata (usually from the Bolt 11 invoice).
-   * @param assistedRoutes  routing hints (usually from a Bolt 11 invoice).
+   * @param extraEdges      routing hints (usually from a Bolt 11 invoice).
    * @param routeParams     parameters to fine-tune the routing algorithm.
    * @param additionalTlvs  when provided, additional tlvs that will be added to the onion sent to the target node.
    * @param userCustomTlvs  when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
@@ -321,7 +322,7 @@ object MultiPartPaymentLifecycle {
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
                                   paymentMetadata: Option[ByteVector],
-                                  assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                                  extraEdges: Seq[ExtraEdge] = Nil,
                                   routeParams: RouteParams,
                                   additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
                                   userCustomTlvs: Seq[GenericTlv] = Nil) {
@@ -395,7 +396,7 @@ object MultiPartPaymentLifecycle {
       d.request.targetNodeId,
       toSend,
       maxFee,
-      d.request.assistedRoutes,
+      d.request.extraEdges,
       d.ignore,
       routeParams,
       allowMultiPart = true,

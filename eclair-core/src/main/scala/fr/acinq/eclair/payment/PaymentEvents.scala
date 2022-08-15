@@ -19,7 +19,8 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.{BasicEdge, ExtraEdge}
+import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
@@ -154,6 +155,7 @@ object PaymentFailure {
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
     failures match {
       case previousFailures :+ LocalFailure(_, _, RouteNotFound) if previousFailures.nonEmpty => previousFailures
+      case previousFailures :+ LocalFailure(_, _, RetryExhausted) if previousFailures.nonEmpty => previousFailures
       case other => other
     }
   }
@@ -180,7 +182,7 @@ object PaymentFailure {
   /** Ignore the channel outgoing from the given nodeId in the given route. */
   private def ignoreNodeOutgoingChannel(nodeId: PublicKey, hops: Seq[Hop], ignore: Ignore): Ignore = {
     hops.collectFirst {
-      case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
+      case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId)
     } match {
       case Some(faultyChannel) => ignore + faultyChannel
       case None => ignore
@@ -219,7 +221,7 @@ object PaymentFailure {
       ignore ++ blacklist
     case LocalFailure(_, hops, _) => hops.headOption match {
       case Some(hop: ChannelHop) =>
-        val faultyChannel = ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
+        val faultyChannel = ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId)
         ignore + faultyChannel
       case _ => ignore
     }
@@ -231,7 +233,7 @@ object PaymentFailure {
   }
 
   /** Update the invoice routing hints based on more recent channel updates received. */
-  def updateRoutingHints(failures: Seq[PaymentFailure], routingHints: Seq[Seq[ExtraHop]]): Seq[Seq[ExtraHop]] = {
+  def updateExtraEdges(failures: Seq[PaymentFailure], extraEdges: Seq[ExtraEdge]): Seq[ExtraEdge] = {
     // We're only interested in the last channel update received per channel.
     val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
       case (current, failure) => failure match {
@@ -239,23 +241,24 @@ object PaymentFailure {
         case _ => current
       }
     }
-    routingHints.map(_.map(extraHop => updates.get(extraHop.shortChannelId) match {
-      case Some(u) => extraHop.copy(
-        cltvExpiryDelta = u.cltvExpiryDelta,
-        feeBase = u.feeBaseMsat,
-        feeProportionalMillionths = u.feeProportionalMillionths
-      )
-      case None => extraHop
-    }))
+    extraEdges.map {
+      case edge: BasicEdge => updates.get(edge.shortChannelId) match {
+        case Some(u) => edge.update(u)
+        case None => edge
+      }
+      case edge => edge
+    }
   }
 
 }
 
-case class PathFindingExperimentMetrics(amount: MilliSatoshi,
+case class PathFindingExperimentMetrics(paymentHash: ByteVector32,
+                                        amount: MilliSatoshi,
                                         fees: MilliSatoshi,
                                         status: String,
                                         duration: FiniteDuration,
                                         timestamp: TimestampMilli,
                                         isMultiPart: Boolean,
                                         experimentName: String,
-                                        recipientNodeId: PublicKey)
+                                        recipientNodeId: PublicKey,
+                                        extraEdges: Seq[ExtraEdge])

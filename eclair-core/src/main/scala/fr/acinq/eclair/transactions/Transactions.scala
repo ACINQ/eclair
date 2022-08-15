@@ -37,6 +37,8 @@ import scala.util.Try
  */
 object Transactions {
 
+  val MAX_STANDARD_TX_WEIGHT = 400_000
+
   sealed trait CommitmentFormat {
     // @formatter:off
     def commitWeight: Int

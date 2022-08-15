@@ -31,12 +31,12 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelHop, Route}
+import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Feature, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature, channel}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -149,6 +149,10 @@ object CltvExpirySerializer extends MinimalSerializer({
 
 object CltvExpiryDeltaSerializer extends MinimalSerializer({
   case x: CltvExpiryDelta => JInt(x.toInt)
+})
+
+object BlockHeightSerializer extends MinimalSerializer({
+  case x: BlockHeight => JInt(x.toInt)
 })
 
 object FeeratePerKwSerializer extends MinimalSerializer({
@@ -290,8 +294,9 @@ object ColorSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHop])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops))
+private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams)
+private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHopJson])
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))))
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
@@ -303,7 +308,7 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
 })
 
 private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
-object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.lastUpdate.shortChannelId)))
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.shortChannelId)))
 // @formatter:on
 
 // @formatter:off
@@ -400,8 +405,8 @@ object ChannelEventSerializer extends MinimalSerializer({
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
     JField("isInitiator", JBool(e.isInitiator)),
     JField("temporaryChannelId", JString(e.temporaryChannelId.toHex)),
-    JField("initialFeeratePerKw", JLong(e.initialFeeratePerKw.toLong)),
-    JField("fundingTxFeeratePerKw", e.fundingTxFeeratePerKw.map(f => JLong(f.toLong)).getOrElse(JNothing))
+    JField("commitTxFeeratePerKw", JLong(e.commitTxFeerate.toLong)),
+    JField("fundingTxFeeratePerKw", e.fundingTxFeerate.map(f => JLong(f.toLong)).getOrElse(JNothing))
   )
   case e: ChannelStateChanged => JObject(
     JField("type", JString("channel-state-changed")),
@@ -439,13 +444,17 @@ private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Optio
 object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address.map(_.toString), peerInfo.channels))
 
 private[json] case class MessageReceivedJson(pathId: Option[ByteVector], encodedReplyPath: Option[String], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
-object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex), m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
+object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId_opt, m.finalPayload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex), m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
 // @formatter:on
 
-case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
-  val reverse: Map[String, Class[_]] = custom.map(_.swap)
+// @formatter:off
+/** this is cosmetic, just to not have a '_opt' field in json, which will only appear if the option is defined anyway */
+private case class ShortIdsJson(real: RealScidStatus, localAlias: Alias, remoteAlias: Option[ShortChannelId])
+object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real, s.localAlias, s.remoteAlias_opt))
+// @formatter:on
 
-  override def typeHintFieldName: String = "type"
+case class CustomTypeHints(custom: Map[Class[_], String], override val typeHintFieldName: String = "type") extends TypeHints {
+  val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
   override val hints: List[Class[_]] = custom.keys.toList
 
@@ -481,6 +490,11 @@ object CustomTypeHints {
     classOf[MessageReceivedJson] -> "onion-message-received"
   ))
 
+  val channelSources: CustomTypeHints = CustomTypeHints(Map(
+    classOf[ChannelRelayParams.FromAnnouncement] -> "announcement",
+    classOf[ChannelRelayParams.FromHint] -> "hint"
+  ))
+
   val channelStates: ShortTypeHints = ShortTypeHints(
     List(
       classOf[Nothing],
@@ -489,7 +503,7 @@ object CustomTypeHints {
       classOf[DATA_WAIT_FOR_FUNDING_INTERNAL],
       classOf[DATA_WAIT_FOR_FUNDING_CREATED],
       classOf[DATA_WAIT_FOR_FUNDING_SIGNED],
-      classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
+      classOf[DATA_WAIT_FOR_CHANNEL_READY],
       classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED],
       classOf[DATA_NORMAL],
       classOf[DATA_SHUTDOWN],
@@ -497,6 +511,12 @@ object CustomTypeHints {
       classOf[DATA_CLOSING],
       classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
     ), typeHintFieldName = "type")
+
+  val realScidStatuses: CustomTypeHints = CustomTypeHints(Map(
+    classOf[RealScidStatus.Unknown.type] -> "unknown",
+    classOf[RealScidStatus.Temporary] -> "temporary",
+    classOf[RealScidStatus.Final] -> "final",
+  ), typeHintFieldName = "status")
 }
 
 object JsonSerializers {
@@ -508,7 +528,9 @@ object JsonSerializers {
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +
     CustomTypeHints.onionMessageEvent +
+    CustomTypeHints.channelSources +
     CustomTypeHints.channelStates +
+    CustomTypeHints.realScidStatuses +
     ByteVectorSerializer +
     ByteVector32Serializer +
     ByteVector64Serializer +
@@ -521,6 +543,7 @@ object JsonSerializers {
     MilliSatoshiSerializer +
     CltvExpirySerializer +
     CltvExpiryDeltaSerializer +
+    BlockHeightSerializer +
     FeeratePerKwSerializer +
     ShortChannelIdSerializer +
     ChannelIdentifierSerializer +
@@ -555,6 +578,7 @@ object JsonSerializers {
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
-    OnionMessageReceivedSerializer
+    OnionMessageReceivedSerializer +
+    ShortIdsSerializer
 
 }

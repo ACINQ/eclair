@@ -56,6 +56,18 @@ trait InitFeature extends Feature
 trait NodeFeature extends Feature
 /** Feature that should be advertised in invoices. */
 trait InvoiceFeature extends Feature
+/**
+ * Feature negotiated when opening a channel that will apply for all of the channel's lifetime.
+ * This doesn't include features that can be safely activated/deactivated without impacting the channel's operation such
+ * as option_dataloss_protect or option_shutdown_anysegwit.
+ */
+trait PermanentChannelFeature extends InitFeature // <- not in the spec
+/**
+ * Permanent channel feature negotiated in the channel type. Those features take precedence over permanent channel
+ * features negotiated in init messages. For example, if the channel type is option_static_remotekey, then even if
+ * the option_anchor_outputs feature is supported by both peers, it won't apply to the channel.
+ */
+trait ChannelTypeFeature extends PermanentChannelFeature
 // @formatter:on
 
 case class UnknownFeature(bitIndex: Int)
@@ -133,19 +145,20 @@ object Features {
     )
   }
 
-  def fromConfiguration[T <: Feature](config: Config, validFeatures: Set[T]): Features[T] = Features[T](
-    config.root().entrySet().asScala.flatMap { entry =>
-      val featureName = entry.getKey
-      val feature: T = validFeatures.find(_.rfcName == featureName).getOrElse(throw new IllegalArgumentException(s"Invalid feature name ($featureName)"))
-      config.getString(featureName) match {
-        case support if support == Mandatory.toString => Some(feature -> Mandatory)
-        case support if support == Optional.toString => Some(feature -> Optional)
-        case support if support == "disabled" => None
-        case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
-      }
-    }.toMap)
+  def fromConfiguration[T <: Feature](config: Config, validFeatures: Set[T], baseFeatures: Features[T]): Features[T] = Features[T](
+    config.root().entrySet().asScala.foldLeft(baseFeatures.activated) {
+      case (current, entry) =>
+        val featureName = entry.getKey
+        val feature: T = validFeatures.find(_.rfcName == featureName).getOrElse(throw new IllegalArgumentException(s"Invalid feature name ($featureName)"))
+        config.getString(featureName) match {
+          case support if support == Mandatory.toString => current + (feature -> Mandatory)
+          case support if support == Optional.toString => current + (feature -> Optional)
+          case support if support == "disabled" => current - feature
+          case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
+        }
+    })
 
-  def fromConfiguration(config: Config): Features[Feature] = fromConfiguration[Feature](config, knownFeatures)
+  def fromConfiguration(config: Config): Features[Feature] = fromConfiguration[Feature](config, knownFeatures, Features.empty)
 
   case object DataLossProtect extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_data_loss_protect"
@@ -158,7 +171,7 @@ object Features {
     val mandatory = 2
   }
 
-  case object UpfrontShutdownScript extends Feature with InitFeature with NodeFeature {
+  case object UpfrontShutdownScript extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_upfront_shutdown_script"
     val mandatory = 4
   }
@@ -178,7 +191,7 @@ object Features {
     val mandatory = 10
   }
 
-  case object StaticRemoteKey extends Feature with InitFeature with NodeFeature {
+  case object StaticRemoteKey extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_static_remotekey"
     val mandatory = 12
   }
@@ -193,17 +206,17 @@ object Features {
     val mandatory = 16
   }
 
-  case object Wumbo extends Feature with InitFeature with NodeFeature {
+  case object Wumbo extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_support_large_channel"
     val mandatory = 18
   }
 
-  case object AnchorOutputs extends Feature with InitFeature with NodeFeature {
+  case object AnchorOutputs extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_anchor_outputs"
     val mandatory = 20
   }
 
-  case object AnchorOutputsZeroFeeHtlcTx extends Feature with InitFeature with NodeFeature {
+  case object AnchorOutputsZeroFeeHtlcTx extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_anchors_zero_fee_htlc_tx"
     val mandatory = 22
   }
@@ -213,7 +226,7 @@ object Features {
     val mandatory = 26
   }
 
-  case object DualFunding extends Feature with InitFeature with NodeFeature {
+  case object DualFunding extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_dual_fund"
     val mandatory = 28
   }
@@ -228,9 +241,19 @@ object Features {
     val mandatory = 44
   }
 
+  case object ScidAlias extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_scid_alias"
+    val mandatory = 46
+  }
+
   case object PaymentMetadata extends Feature with InvoiceFeature {
     val rfcName = "option_payment_metadata"
     val mandatory = 48
+  }
+
+  case object ZeroConf extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_zeroconf"
+    val mandatory = 50
   }
 
   case object KeySend extends Feature with NodeFeature {
@@ -266,9 +289,11 @@ object Features {
     DualFunding,
     OnionMessages,
     ChannelType,
+    ScidAlias,
     PaymentMetadata,
-    TrampolinePaymentPrototype,
-    KeySend
+    ZeroConf,
+    KeySend,
+    TrampolinePaymentPrototype
   )
 
   // Features may depend on other features, as specified in Bolt 9.
@@ -278,7 +303,6 @@ object Features {
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
     AnchorOutputs -> (StaticRemoteKey :: Nil),
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
-    DualFunding -> (AnchorOutputsZeroFeeHtlcTx :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil)
   )

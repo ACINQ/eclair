@@ -69,7 +69,7 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
 
     val (signature, recid) = testKeyManager.signDigest(digest)
     val recoveredPubkey = Crypto.recoverPublicKey(signature, digest, recid)
-    assert(recoveredPubkey === testKeyManager.nodeId)
+    assert(recoveredPubkey == testKeyManager.nodeId)
     assert(Crypto.verifySignature(digest, signature, testKeyManager.nodeId))
   }
 }

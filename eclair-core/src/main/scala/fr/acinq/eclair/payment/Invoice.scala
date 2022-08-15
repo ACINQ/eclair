@@ -18,7 +18,9 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
+import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -39,7 +41,7 @@ trait Invoice {
 
   val description: Either[String, ByteVector32]
 
-  val routingInfo: Seq[Seq[Bolt11Invoice.ExtraHop]]
+  val extraEdges: Seq[Invoice.ExtraEdge]
 
   val relativeExpiry: FiniteDuration
 
@@ -53,6 +55,32 @@ trait Invoice {
 }
 
 object Invoice {
+  /** An extra edge that can be used to pay a given invoice and may not be part of the public graph. */
+  sealed trait ExtraEdge {
+    // @formatter:off
+    def sourceNodeId: PublicKey
+    def feeBase: MilliSatoshi
+    def feeProportionalMillionths: Long
+    def cltvExpiryDelta: CltvExpiryDelta
+    def htlcMinimum: MilliSatoshi
+    def htlcMaximum_opt: Option[MilliSatoshi]
+    def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
+    // @formatter:on
+  }
+
+  /** A normal graph edge, that should be handled exactly like public graph edges. */
+  case class BasicEdge(sourceNodeId: PublicKey,
+                       targetNodeId: PublicKey,
+                       shortChannelId: ShortChannelId,
+                       feeBase: MilliSatoshi,
+                       feeProportionalMillionths: Long,
+                       cltvExpiryDelta: CltvExpiryDelta) extends ExtraEdge {
+    override val htlcMinimum: MilliSatoshi = 0 msat
+    override val htlcMaximum_opt: Option[MilliSatoshi] = None
+
+    def update(u: ChannelUpdate): BasicEdge = copy(feeBase = u.feeBaseMsat, feeProportionalMillionths = u.feeProportionalMillionths, cltvExpiryDelta = u.cltvExpiryDelta)
+  }
+
   def fromString(input: String): Try[Invoice] = {
     if (input.toLowerCase.startsWith("lni")) {
       Bolt12Invoice.fromString(input)

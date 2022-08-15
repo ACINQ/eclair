@@ -73,9 +73,9 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     parts.foreach(p => f.parent.send(f.handler, p))
 
     val fail = f.parent.expectMsgType[MultiPartPaymentFailed]
-    assert(fail.paymentHash === paymentHash)
-    assert(fail.failure === protocol.PaymentTimeout)
-    assert(fail.parts.toSet === parts.toSet)
+    assert(fail.paymentHash == paymentHash)
+    assert(fail.failure == protocol.PaymentTimeout)
+    assert(fail.parts.toSet == parts.toSet)
 
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
@@ -85,14 +85,14 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val f = createFixture(250 millis, 1000 msat)
     f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 150 msat, 1))
     f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 100 msat, 2))
-    assert(f.parent.expectMsgType[MultiPartPaymentFailed].parts.length === 2)
+    assert(f.parent.expectMsgType[MultiPartPaymentFailed].parts.length == 2)
 
     val extraPart = createMultiPartHtlc(1000 msat, 300 msat, 3)
     f.parent.send(f.handler, extraPart)
     val fail = f.parent.expectMsgType[ExtraPaymentReceived[PaymentPart]]
-    assert(fail.paymentHash === paymentHash)
-    assert(fail.failure === Some(protocol.PaymentTimeout))
-    assert(fail.payment === extraPart)
+    assert(fail.paymentHash == paymentHash)
+    assert(fail.failure == Some(protocol.PaymentTimeout))
+    assert(fail.payment == extraPart)
 
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
@@ -103,9 +103,9 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
     f.parent.send(f.handler, createMultiPartHtlc(1100 msat, 650 msat, 2))
     val fail = f.parent.expectMsgType[MultiPartPaymentFailed]
-    assert(fail.paymentHash === paymentHash)
-    assert(fail.failure === IncorrectOrUnknownPaymentDetails(1100 msat, f.currentBlockHeight))
-    assert(fail.parts.length === 2)
+    assert(fail.paymentHash == paymentHash)
+    assert(fail.failure == IncorrectOrUnknownPaymentDetails(1100 msat, f.currentBlockHeight))
+    assert(fail.parts.length == 2)
 
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
@@ -121,8 +121,8 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     parts.foreach(p => f.parent.send(f.handler, p))
 
     val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
-    assert(paymentResult.paymentHash === paymentHash)
-    assert(paymentResult.parts.toSet === parts.toSet)
+    assert(paymentResult.paymentHash == paymentHash)
+    assert(paymentResult.parts.toSet == parts.toSet)
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
   }
@@ -137,8 +137,8 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     parts.foreach(p => f.parent.send(f.handler, p))
 
     val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
-    assert(paymentResult.paymentHash === paymentHash)
-    assert(paymentResult.parts.toSet === parts.toSet)
+    assert(paymentResult.paymentHash == paymentHash)
+    assert(paymentResult.parts.toSet == parts.toSet)
 
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
@@ -150,7 +150,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     f.parent.send(f.handler, part)
 
     val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
-    assert(paymentResult.parts === Seq(part))
+    assert(paymentResult.parts == Seq(part))
 
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
@@ -162,7 +162,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     f.parent.send(f.handler, part)
 
     val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
-    assert(paymentResult.parts === Seq(part))
+    assert(paymentResult.parts == Seq(part))
 
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
@@ -177,14 +177,14 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     )
     parts.foreach(p => f.parent.send(f.handler, p))
     val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
-    assert(paymentResult.parts.toSet === parts.toSet)
+    assert(paymentResult.parts.toSet == parts.toSet)
     f.parent.expectNoMessage(50 millis)
 
     val extra = createMultiPartHtlc(1000 msat, 300 msat, 3)
     f.parent.send(f.handler, extra)
     val extraneousPayment = f.parent.expectMsgType[ExtraPaymentReceived[PaymentPart]]
-    assert(extraneousPayment.paymentHash === paymentHash)
-    assert(extraneousPayment.payment === extra)
+    assert(extraneousPayment.paymentHash == paymentHash)
+    assert(extraneousPayment.payment == extra)
 
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
@@ -203,8 +203,8 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     f.parent.send(f.handler, parts(1))
     val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
-    assert(paymentResult.paymentHash === paymentHash)
-    assert(paymentResult.parts.toSet === parts.toSet)
+    assert(paymentResult.paymentHash == paymentHash)
+    assert(paymentResult.parts.toSet == parts.toSet)
     f.parent.expectNoMessage(50 millis)
   }
 
@@ -219,7 +219,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     f.parent.send(f.handler, parts(1))
 
     val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
-    assert(paymentResult.parts.toSet === parts.toSet)
+    assert(paymentResult.parts.toSet == parts.toSet)
     f.parent.expectNoMessage(50 millis)
   }
 
@@ -232,7 +232,7 @@ object MultiPartPaymentFSMSpec {
   def htlcIdToChannelId(htlcId: Long) = ByteVector32(ByteVector.fromLong(htlcId).padLeft(32))
 
   def createMultiPartHtlc(totalAmount: MilliSatoshi, htlcAmount: MilliSatoshi, htlcId: Long): HtlcPart = {
-    val htlc = UpdateAddHtlc(htlcIdToChannelId(htlcId), htlcId, htlcAmount, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
+    val htlc = UpdateAddHtlc(htlcIdToChannelId(htlcId), htlcId, htlcAmount, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket, None)
     HtlcPart(totalAmount, htlc)
   }
 

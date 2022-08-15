@@ -21,6 +21,8 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{NodeAddress, UnknownMessage}
 
+import scala.concurrent.duration._
+
 sealed trait PeerEvent
 
 case class ConnectionInfo(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init)
@@ -30,5 +32,7 @@ case class PeerConnected(peer: ActorRef, nodeId: PublicKey, connectionInfo: Conn
 case class PeerDisconnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
 
 case class LastChannelClosed(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
+
+case class PongReceived(nodeId: PublicKey, latency: FiniteDuration) extends PeerEvent
 
 case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage, connectionInfo: ConnectionInfo) extends PeerEvent

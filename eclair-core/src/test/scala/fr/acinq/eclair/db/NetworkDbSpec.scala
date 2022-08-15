@@ -29,8 +29,9 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.bits.HexStringSyntax
 
 import scala.collection.{SortedMap, mutable}
 import scala.util.Random
@@ -61,18 +62,18 @@ class NetworkDbSpec extends AnyFunSuite {
       val node_4 = Announcements.makeNodeAnnouncement(randomKey(), "node-eve", Color(100.toByte, 200.toByte, 300.toByte), Tor3("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad", 42000) :: Nil, Features.empty)
       val node_5 = Announcements.makeNodeAnnouncement(randomKey(), "node-frank", Color(100.toByte, 200.toByte, 300.toByte), DnsHostname("eclair.invalid", 42000) :: Nil, Features.empty)
 
-      assert(db.listNodes().toSet === Set.empty)
+      assert(db.listNodes().toSet == Set.empty)
       db.addNode(node_1)
       db.addNode(node_1) // duplicate is ignored
-      assert(db.getNode(node_1.nodeId) === Some(node_1))
-      assert(db.listNodes().size === 1)
+      assert(db.getNode(node_1.nodeId).contains(node_1))
+      assert(db.listNodes().size == 1)
       db.addNode(node_2)
       db.addNode(node_3)
       db.addNode(node_4)
       db.addNode(node_5)
-      assert(db.listNodes().toSet === Set(node_1, node_2, node_3, node_4, node_5))
+      assert(db.listNodes().toSet == Set(node_1, node_2, node_3, node_4, node_5))
       db.removeNode(node_2.nodeId)
-      assert(db.listNodes().toSet === Set(node_1, node_3, node_4, node_5))
+      assert(db.listNodes().toSet == Set(node_1, node_3, node_4, node_5))
       db.updateNode(node_1)
 
       assert(node_4.addresses == List(Tor3("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad", 42000)))
@@ -84,10 +85,10 @@ class NetworkDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.network
       val sig = ByteVector64.Zeroes
-      val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+      val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(42), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
       val txid = ByteVector32.fromValidHex("0001" * 16)
       db.addChannel(c, txid, Satoshi(42))
-      assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
+      assert(db.listChannels() == SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
     }
   }
 
@@ -107,27 +108,27 @@ class NetworkDbSpec extends AnyFunSuite {
     val b = generatePubkeyHigherThan(a)
     val c = generatePubkeyHigherThan(b)
 
-    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), a.publicKey, b.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
-    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(43), a.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
-    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(44), b.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(42), a.publicKey, b.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(43), a.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(44), b.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
 
     val txid_1 = randomBytes32()
     val txid_2 = randomBytes32()
     val txid_3 = randomBytes32()
     val capacity = 10000 sat
 
-    assert(db.listChannels().toSet === Set.empty)
+    assert(db.listChannels().toSet == Set.empty)
     db.addChannel(channel_1, txid_1, capacity)
     db.addChannel(channel_1, txid_1, capacity) // duplicate is ignored
-    assert(db.listChannels().size === 1)
+    assert(db.listChannels().size == 1)
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
       channel_2.shortChannelId -> PublicChannel(channel_2, txid_2, capacity, None, None, None),
       channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
     db.removeChannel(channel_2.shortChannelId)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
       channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
 
@@ -139,11 +140,11 @@ class NetworkDbSpec extends AnyFunSuite {
     db.updateChannel(channel_update_1) // duplicate is ignored
     db.updateChannel(channel_update_2)
     db.updateChannel(channel_update_3)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2), None),
       channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, Some(channel_update_3), None, None)))
     db.removeChannel(channel_3.shortChannelId)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2), None)))
   }
 
@@ -197,7 +198,7 @@ class NetworkDbSpec extends AnyFunSuite {
     }
   }
 
-  val shortChannelIds: Seq[ShortChannelId] = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+  val shortChannelIds: Seq[RealShortChannelId] = (42 to (5000 + 42)).map(i => RealShortChannelId(i))
 
   test("remove many channels") {
     forAllDbs { dbs =>
@@ -213,11 +214,11 @@ class NetworkDbSpec extends AnyFunSuite {
       val txid = randomBytes32()
       channels.foreach(ca => db.addChannel(ca, txid, capacity))
       updates.foreach(u => db.updateChannel(u))
-      assert(db.listChannels().keySet === channels.map(_.shortChannelId).toSet)
+      assert(db.listChannels().keySet == channels.map(_.shortChannelId).toSet)
 
       val toDelete = channels.map(_.shortChannelId).take(1 + Random.nextInt(2500))
       db.removeChannels(toDelete)
-      assert(db.listChannels().keySet === (channels.map(_.shortChannelId).toSet -- toDelete))
+      assert(db.listChannels().keySet == (channels.map(_.shortChannelId).toSet -- toDelete))
     }
   }
 
@@ -227,7 +228,7 @@ class NetworkDbSpec extends AnyFunSuite {
 
       db.addToPruned(shortChannelIds)
       shortChannelIds.foreach { id => assert(db.isPruned(id)) }
-      db.removeFromPruned(ShortChannelId(5))
+      db.removeFromPruned(RealShortChannelId(5))
       assert(!db.isPruned(ShortChannelId(5)))
     }
   }
@@ -282,9 +283,9 @@ class NetworkDbSpec extends AnyFunSuite {
       dbName = SqliteNetworkDb.DB_NAME,
       targetVersion = SqliteNetworkDb.CURRENT_VERSION,
       postCheck = _ => {
-        assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
+        assert(dbs.network.listNodes().toSet == nodeTestCases.map(_.node).toSet)
         // NB: channel updates are not migrated
-        assert(dbs.network.listChannels().values.toSet === channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, None, None, None)).toSet)
+        assert(dbs.network.listChannels().values.toSet == channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, None, None, None)).toSet)
       }
     )
   }
@@ -322,11 +323,45 @@ class NetworkDbSpec extends AnyFunSuite {
       dbName = PgNetworkDb.DB_NAME,
       targetVersion = PgNetworkDb.CURRENT_VERSION,
       postCheck = _ => {
-        assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
+        assert(dbs.network.listNodes().toSet == nodeTestCases.map(_.node).toSet)
         // NB: channel updates are not migrated
-        assert(dbs.network.listChannels().values.toSet === channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, tc.update_1_opt, tc.update_2_opt, None)).toSet)
+        assert(dbs.network.listChannels().values.toSet == channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, tc.update_1_opt, tc.update_2_opt, None)).toSet)
       }
     )
+  }
+
+  test("remove channel updates without htlc_maximum_msat") {
+    forAllDbs { dbs =>
+      val t1 = channelTestCases(0)
+      val t2 = channelTestCases(1)
+      val db1 = dbs.network
+      db1.addChannel(t1.channel, t1.txid, t2.capacity)
+      db1.addChannel(t2.channel, t2.txid, t2.capacity)
+      // The DB contains a channel update missing the `htlc_maximum_msat` field.
+      val channelUpdateWithoutHtlcMax = hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002"
+      dbs match {
+        case sqlite: TestSqliteDatabases =>
+          using(sqlite.connection.prepareStatement("UPDATE channels SET channel_update_1=? WHERE short_channel_id=?")) { statement =>
+            statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
+            statement.setLong(2, t1.shortChannelId.toLong)
+            statement.executeUpdate()
+          }
+        case pg: TestPgDatabases =>
+          using(pg.connection.prepareStatement("UPDATE network.public_channels SET channel_update_1=? WHERE short_channel_id=?")) { statement =>
+            statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
+            statement.setLong(2, t1.shortChannelId.toLong)
+            statement.executeUpdate()
+          }
+      }
+      assertThrows[IllegalArgumentException](db1.listChannels())
+      // We restart eclair and automatically clean up invalid entries.
+      val db2 = dbs match {
+        case sqlite: TestSqliteDatabases => new SqliteNetworkDb(sqlite.connection)
+        case pg: TestPgDatabases => new PgNetworkDb()(pg.datasource)
+      }
+      val channels = db2.listChannels()
+      assert(channels.keySet == Set(t2.shortChannelId))
+    }
   }
 
   test("json column reset (postgres)") {
@@ -384,7 +419,7 @@ object NetworkDbSpec {
   val channelTestCases: Seq[ChannelTestCase] = for (_ <- 0 until 10) yield {
     val a = randomKey()
     val b = generatePubkeyHigherThan(a)
-    val channel = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(Random.nextInt(1_000_000)), a.publicKey, a.publicKey, randomKey().publicKey, randomKey().publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val channel = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(Random.nextInt(1_000_000)), a.publicKey, a.publicKey, randomKey().publicKey, randomKey().publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val channel_update_1_opt = if (Random.nextBoolean()) {
       Some(Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, channel.shortChannelId, CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, Random.nextBoolean()))
     } else None

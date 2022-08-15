@@ -77,13 +77,13 @@ object CheckBalance {
    * The overall balance among all channels in all states.
    */
   case class OffChainBalance(waitForFundingConfirmed: Btc = 0.sat,
-                             waitForFundingLocked: Btc = 0.sat,
+                             waitForChannelReady: Btc = 0.sat,
                              normal: MainAndHtlcBalance = MainAndHtlcBalance(),
                              shutdown: MainAndHtlcBalance = MainAndHtlcBalance(),
                              negotiating: Btc = 0.sat,
                              closing: ClosingBalance = ClosingBalance(),
                              waitForPublishFutureCommitment: Btc = 0.sat) {
-    val total: Btc = waitForFundingConfirmed + waitForFundingLocked + normal.total + shutdown.total + negotiating + closing.total + waitForPublishFutureCommitment
+    val total: Btc = waitForFundingConfirmed + waitForChannelReady + normal.total + shutdown.total + negotiating + closing.total + waitForPublishFutureCommitment
   }
 
   def updateMainBalance(localCommit: LocalCommit): Btc => Btc = { v: Btc =>
@@ -201,7 +201,7 @@ object CheckBalance {
     channels
       .foldLeft(OffChainBalance()) {
         case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
-        case (r, d: DATA_WAIT_FOR_FUNDING_LOCKED) => r.modify(_.waitForFundingLocked).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: DATA_WAIT_FOR_CHANNEL_READY) => r.modify(_.waitForChannelReady).using(updateMainBalance(d.commitments.localCommit))
         case (r, d: DATA_NORMAL) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
         case (r, d: DATA_SHUTDOWN) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
         case (r, d: DATA_NEGOTIATING) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.localCommit))

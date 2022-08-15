@@ -56,17 +56,18 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
 
-    val setup = init(aliceNodeParams, bobNodeParams)
+    val setup = init(aliceNodeParams, bobNodeParams, tags = test.tags)
 
     import setup._
     val channelConfig = ChannelConfig.standard
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
+    val channelFlags = ChannelFlags.Private
+    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(pushMsat), aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -86,7 +87,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     bob2blockchain.expectMsgType[WatchFundingSpent]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(watchConfirmed.minDepth === Alice.nodeParams.channelConf.minDepthBlocks)
+    assert(watchConfirmed.minDepth == Alice.nodeParams.channelConf.minDepthBlocks)
   }
 
   test("recv FundingCreated (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
@@ -106,12 +107,12 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     import f._
     val fees = Transactions.weight2fee(TestConstants.feeratePerKw, Transactions.DefaultCommitmentFormat.commitWeight)
     val bobParams = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].localParams
-    val reserve = bobParams.channelReserve
+    val reserve = bobParams.requestedChannelReserve_opt.get
     val missing = 100.sat - fees - reserve
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missing=${-missing} reserve=$reserve fees=$fees"))
+    assert(error == Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missing=${-missing} reserve=$reserve fees=$fees"))
     awaitCond(bob.stateName == CLOSED)
   }
 

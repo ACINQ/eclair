@@ -20,22 +20,26 @@ import fr.acinq.bitcoin.scalacompat.ScriptWitness
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt}
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-import shapeless._
 
 /**
  * Created by PM on 15/11/2016.
  */
 object LightningMessageCodecs {
 
-  val featuresCodec: Codec[Features[Feature]] = varsizebinarydata.xmap[Features[Feature]](
+  val featuresCodec: Codec[Features[Feature]] = bytes.xmap[Features[Feature]](
     { bytes => Features(bytes) },
     { features => features.toByteVector }
   )
 
-  val initFeaturesCodec: Codec[Features[InitFeature]] = featuresCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
+  val lengthPrefixedFeaturesCodec: Codec[Features[Feature]] = varsizebinarydata.xmap[Features[Feature]](
+    { bytes => Features(bytes) },
+    { features => features.toByteVector }
+  )
+
+  val initFeaturesCodec: Codec[Features[InitFeature]] = lengthPrefixedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
 
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
   val combinedFeaturesCodec: Codec[Features[InitFeature]] = (
@@ -115,7 +119,7 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | extendedChannelFlags) ::
+      ("channelFlags" | channelflags) ::
       ("tlvStream" | OpenDualFundedChannelTlv.openTlvCodec)).as[OpenDualFundedChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
@@ -150,7 +154,6 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | extendedChannelFlags) ::
       ("tlvStream" | AcceptDualFundedChannelTlv.acceptTlvCodec)).as[AcceptDualFundedChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
@@ -165,30 +168,24 @@ object LightningMessageCodecs {
       ("signature" | bytes64) ::
       ("tlvStream" | FundingSignedTlv.fundingSignedTlvCodec)).as[FundingSigned]
 
-  val fundingLockedCodec: Codec[FundingLocked] = (
+  val channelReadyCodec: Codec[ChannelReady] = (
     ("channelId" | bytes32) ::
       ("nextPerCommitmentPoint" | publicKey) ::
-      ("tlvStream" | FundingLockedTlv.fundingLockedTlvCodec)).as[FundingLocked]
-
-  private val scriptSigOptCodec: Codec[Option[ByteVector]] = lengthDelimited(bytes).xmap[Option[ByteVector]](
-    b => if (b.isEmpty) None else Some(b),
-    b => b.getOrElse(ByteVector.empty)
-  )
+      ("tlvStream" | ChannelReadyTlv.channelReadyTlvCodec)).as[ChannelReady]
 
   val txAddInputCodec: Codec[TxAddInput] = (
     ("channelId" | bytes32) ::
       ("serialId" | uint64) ::
-      ("previousTx" | lengthDelimited(txCodec)) ::
+      ("previousTx" | variableSizeBytes(uint16, txCodec)) ::
       ("previousTxOutput" | uint32) ::
       ("sequence" | uint32) ::
-      ("scriptSig" | scriptSigOptCodec) ::
       ("tlvStream" | TxAddInputTlv.txAddInputTlvCodec)).as[TxAddInput]
 
   val txAddOutputCodec: Codec[TxAddOutput] = (
     ("channelId" | bytes32) ::
       ("serialId" | uint64) ::
       ("amount" | satoshi) ::
-      ("scriptPubKey" | lengthDelimited(bytes)) ::
+      ("scriptPubKey" | variableSizeBytes(uint16, bytes)) ::
       ("tlvStream" | TxAddOutputTlv.txAddOutputTlvCodec)).as[TxAddOutput]
 
   val txRemoveInputCodec: Codec[TxRemoveInput] = (
@@ -205,9 +202,9 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("tlvStream" | TxCompleteTlv.txCompleteTlvCodec)).as[TxComplete]
 
-  private val witnessElementCodec: Codec[ByteVector] = lengthDelimited(bytes)
-  private val witnessStackCodec: Codec[ScriptWitness] = listOfN(smallvarint, witnessElementCodec).xmap(s => ScriptWitness(s.toSeq), w => w.stack.toList)
-  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(smallvarint, witnessStackCodec).xmap(l => l.toSeq, l => l.toList)
+  private val witnessElementCodec: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
+  private val witnessStackCodec: Codec[ScriptWitness] = listOfN(uint16, witnessElementCodec).xmap(s => ScriptWitness(s.toSeq), w => w.stack.toList)
+  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(uint16, witnessStackCodec).xmap(l => l.toSeq, l => l.toList)
 
   val txSignaturesCodec: Codec[TxSignatures] = (
     ("channelId" | bytes32) ::
@@ -227,7 +224,7 @@ object LightningMessageCodecs {
 
   val txAbortCodec: Codec[TxAbort] = (
     ("channelId" | bytes32) ::
-      ("data" | lengthDelimited(bytes)) ::
+      ("data" | variableSizeBytes(uint16, bytes)) ::
       ("tlvStream" | TxAbortTlv.txAbortTlvCodec)).as[TxAbort]
 
   val shutdownCodec: Codec[Shutdown] = (
@@ -288,15 +285,15 @@ object LightningMessageCodecs {
 
   val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
     ("channelId" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
+      ("shortChannelId" | realshortchannelid) ::
       ("nodeSignature" | bytes64) ::
       ("bitcoinSignature" | bytes64) ::
       ("tlvStream" | AnnouncementSignaturesTlv.announcementSignaturesTlvCodec)).as[AnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec =
-    ("features" | featuresCodec) ::
+    ("features" | lengthPrefixedFeaturesCodec) ::
       ("chainHash" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
+      ("shortChannelId" | realshortchannelid) ::
       ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
       ("bitcoinKey1" | publicKey) ::
@@ -311,7 +308,7 @@ object LightningMessageCodecs {
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec =
-    ("features" | featuresCodec) ::
+    ("features" | lengthPrefixedFeaturesCodec) ::
       ("timestamp" | timestampSecond) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::
@@ -323,10 +320,6 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
-  private case class MessageFlags(optionChannelHtlcMax: Boolean)
-
-  private val messageFlagsCodec = ("messageFlags" | (ignore(7) :: bool)).as[MessageFlags]
-
   val reverseBool: Codec[Boolean] = bool.xmap[Boolean](b => !b, b => !b)
 
   /** BOLT 7 defines a 'disable' bit and a 'direction' bit, but it's easier to understand if we take the reverse. */
@@ -335,36 +328,26 @@ object LightningMessageCodecs {
   val channelUpdateChecksumCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
-      (messageFlagsCodec >>:~ { messageFlags =>
-        channelFlagsCodec ::
-          ("cltvExpiryDelta" | cltvExpiryDelta) ::
-          ("htlcMinimumMsat" | millisatoshi) ::
-          ("feeBaseMsat" | millisatoshi32) ::
-          ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional(messageFlags.optionChannelHtlcMax, millisatoshi))
-      }).derive[MessageFlags].from {
-        // The purpose of this is to tell scodec how to derive the message flags from the data, so we can remove that field
-        // from the codec definition and the case class, making it purely a serialization detail.
-        // see: https://github.com/scodec/scodec/blob/series/1.11.x/unitTests/src/test/scala/scodec/examples/ProductsExample.scala#L108-L127
-        case _ :: _ :: _ :: _ :: _ :: htlcMaximumMsat_opt :: HNil => MessageFlags(optionChannelHtlcMax = htlcMaximumMsat_opt.isDefined)
-      }
+      ("messageFlags" | constant(hex"01")) :~>:
+      channelFlagsCodec ::
+      ("cltvExpiryDelta" | cltvExpiryDelta) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
+      ("feeBaseMsat" | millisatoshi32) ::
+      ("feeProportionalMillionths" | uint32) ::
+      ("htlcMaximumMsat" | millisatoshi)
 
   val channelUpdateWitnessCodec =
-    (("chainHash" | bytes32) ::
+    ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | timestampSecond) ::
-      (messageFlagsCodec >>:~ { messageFlags =>
-        channelFlagsCodec ::
-          ("cltvExpiryDelta" | cltvExpiryDelta) ::
-          ("htlcMinimumMsat" | millisatoshi) ::
-          ("feeBaseMsat" | millisatoshi32) ::
-          ("feeProportionalMillionths" | uint32) ::
-          ("htlcMaximumMsat" | conditional(messageFlags.optionChannelHtlcMax, millisatoshi)) ::
-          ("tlvStream" | ChannelUpdateTlv.channelUpdateTlvCodec)
-      })).derive[MessageFlags].from {
-      // same comment above
-      case _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: htlcMaximumMsat_opt :: _ :: HNil => MessageFlags(optionChannelHtlcMax = htlcMaximumMsat_opt.isDefined)
-    }
+      ("messageFlags" | constant(hex"01")) :~>:
+      channelFlagsCodec ::
+      ("cltvExpiryDelta" | cltvExpiryDelta) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
+      ("feeBaseMsat" | millisatoshi32) ::
+      ("feeProportionalMillionths" | uint32) ::
+      ("htlcMaximumMsat" | millisatoshi) ::
+      ("tlvStream" | ChannelUpdateTlv.channelUpdateTlvCodec)
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | bytes64) ::
@@ -375,10 +358,10 @@ object LightningMessageCodecs {
       .\(0) {
         case a@EncodedShortChannelIds(_, Nil) => a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
         case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
-      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(realshortchannelid)).as[EncodedShortChannelIds])
       .\(1) {
         case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
-      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(realshortchannelid))).as[EncodedShortChannelIds])
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
     ("chainHash" | bytes32) ::
@@ -448,7 +431,7 @@ object LightningMessageCodecs {
     .typecase(33, acceptChannelCodec)
     .typecase(34, fundingCreatedCodec)
     .typecase(35, fundingSignedCodec)
-    .typecase(36, fundingLockedCodec)
+    .typecase(36, channelReadyCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
     .typecase(64, openDualFundedChannelCodec)

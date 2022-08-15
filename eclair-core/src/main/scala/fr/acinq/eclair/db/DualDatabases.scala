@@ -10,7 +10,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.io.File
@@ -113,17 +113,17 @@ case class DualNetworkDb(primary: NetworkDb, secondary: NetworkDb) extends Netwo
     primary.removeChannels(shortChannelIds)
   }
 
-  override def listChannels(): SortedMap[ShortChannelId, Router.PublicChannel] = {
+  override def listChannels(): SortedMap[RealShortChannelId, Router.PublicChannel] = {
     runAsync(secondary.listChannels())
     primary.listChannels()
   }
 
-  override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
+  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = {
     runAsync(secondary.addToPruned(shortChannelIds))
     primary.addToPruned(shortChannelIds)
   }
 
-  override def removeFromPruned(shortChannelId: ShortChannelId): Unit = {
+  override def removeFromPruned(shortChannelId: RealShortChannelId): Unit = {
     runAsync(secondary.removeFromPruned(shortChannelId))
     primary.removeFromPruned(shortChannelId)
   }
@@ -131,11 +131,6 @@ case class DualNetworkDb(primary: NetworkDb, secondary: NetworkDb) extends Netwo
   override def isPruned(shortChannelId: ShortChannelId): Boolean = {
     runAsync(secondary.isPruned(shortChannelId))
     primary.isPruned(shortChannelId)
-  }
-
-  override def close(): Unit = {
-    runAsync(secondary.close())
-    primary.close()
   }
 }
 
@@ -212,11 +207,6 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
     runAsync(secondary.stats(from, to))
     primary.stats(from, to)
   }
-
-  override def close(): Unit = {
-    runAsync(secondary.close())
-    primary.close()
-  }
 }
 
 case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends ChannelsDb {
@@ -257,11 +247,6 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     runAsync(secondary.listHtlcInfos(channelId, commitmentNumber))
     primary.listHtlcInfos(channelId, commitmentNumber)
   }
-
-  override def close(): Unit = {
-    runAsync(secondary.close())
-    primary.close()
-  }
 }
 
 case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
@@ -297,26 +282,11 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
     runAsync(secondary.getRelayFees(nodeId))
     primary.getRelayFees(nodeId)
   }
-
-  override def close(): Unit = {
-    runAsync(secondary.close())
-    primary.close()
-  }
 }
 
 case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends PaymentsDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-payments").build()))
-
-  override def listPaymentsOverview(limit: Int): Seq[PlainPayment] = {
-    runAsync(secondary.listPaymentsOverview(limit))
-    primary.listPaymentsOverview(limit)
-  }
-
-  override def close(): Unit = {
-    runAsync(secondary.close())
-    primary.close()
-  }
 
   override def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String): Unit = {
     runAsync(secondary.addIncomingPayment(pr, preimage, paymentType))
@@ -392,7 +362,6 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
     runAsync(secondary.listOutgoingPayments(from, to))
     primary.listOutgoingPayments(from, to)
   }
-
 }
 
 case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingCommandsDb) extends PendingCommandsDb {
@@ -417,10 +386,5 @@ case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingC
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = {
     runAsync(secondary.listSettlementCommands())
     primary.listSettlementCommands()
-  }
-
-  override def close(): Unit = {
-    runAsync(secondary.close())
-    primary.close()
   }
 }

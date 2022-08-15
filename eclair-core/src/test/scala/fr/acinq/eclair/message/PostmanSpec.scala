@@ -62,8 +62,8 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
-    assert(nextNodeId === recipient)
-    assert(message === messageExpectingReply)
+    assert(nextNodeId == recipient)
+    assert(message == messageExpectingReply)
     postman ! SendingStatus(Sent(messageId))
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
@@ -84,8 +84,8 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
-    assert(nextNodeId === recipient)
-    assert(message === messageExpectingReply)
+    assert(nextNodeId == recipient)
+    assert(message == messageExpectingReply)
     postman ! SendingStatus(Disconnected(messageId))
 
     messageRecipient.expectMessage(SendingStatus(Disconnected(messageId)))
@@ -105,8 +105,8 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
-    assert(nextNodeId === recipient)
-    assert(message === messageExpectingReply)
+    assert(nextNodeId == recipient)
+    assert(message == messageExpectingReply)
     postman ! SendingStatus(Sent(messageId))
 
     messageRecipient.expectMessage(NoReply)
@@ -125,8 +125,8 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendMessage(recipient, messageExpectingReply, None, messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
-    assert(nextNodeId === recipient)
-    assert(message === messageExpectingReply)
+    assert(nextNodeId == recipient)
+    assert(message == messageExpectingReply)
     postman ! SendingStatus(Sent(messageId))
 
     messageRecipient.expectMessage(SendingStatus(Sent(messageId)))

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version3
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -25,7 +25,7 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc,
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, InitFeature}
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, Alias, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -66,7 +66,7 @@ private[channel] object ChannelCodecs3 {
 
     /** We use the same encoding as init features, even if we don't need the distinction between mandatory and optional */
     val channelFeaturesCodec: Codec[ChannelFeatures] = lengthDelimited(bytes).xmap(
-      (b: ByteVector) => ChannelFeatures(Features(b).activated.keySet), // we make no difference between mandatory/optional, both are considered activated
+      (b: ByteVector) => ChannelFeatures(Features(b).activated.keySet.collect { case f: PermanentChannelFeature => f }), // we make no difference between mandatory/optional, both are considered activated
       (cf: ChannelFeatures) => Features(cf.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector // we encode features as mandatory, by convention
     )
 
@@ -75,7 +75,7 @@ private[channel] object ChannelCodecs3 {
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
-        ("channelReserve" | satoshi) ::
+        ("channelReserve" | conditional(!channelFeatures.hasFeature(Features.DualFunding), satoshi)) ::
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
@@ -84,11 +84,11 @@ private[channel] object ChannelCodecs3 {
         ("walletStaticPaymentBasepoint" | optional(provide(channelFeatures.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams]
 
-    val remoteParamsCodec: Codec[RemoteParams] = (
+    def remoteParamsCodec(channelFeatures: ChannelFeatures): Codec[RemoteParams] = (
       ("nodeId" | publicKey) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
-        ("channelReserve" | satoshi) ::
+        ("channelReserve" | conditional(!channelFeatures.hasFeature(Features.DualFunding), satoshi)) ::
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
@@ -269,7 +269,7 @@ private[channel] object ChannelCodecs3 {
         ("channelConfig" | channelConfigCodec) ::
         (("channelFeatures" | channelFeaturesCodec) >>:~ { channelFeatures =>
           ("localParams" | localParamsCodec(channelFeatures)) ::
-            ("remoteParams" | remoteParamsCodec) ::
+            ("remoteParams" | remoteParamsCodec(channelFeatures)) ::
             ("channelFlags" | channelflags) ::
             ("localCommit" | localCommitCodec) ::
             ("remoteCommit" | remoteCommitCodec) ::
@@ -315,59 +315,82 @@ private[channel] object ChannelCodecs3 {
         ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxCodec)) ::
         ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
-    val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+    val DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | optional(bool8, txCodec)) ::
         // TODO: next time we define a new channel codec version, we should use the blockHeight codec here (32 bytes)
         ("waitingSince" | int64.as[BlockHeight]) ::
-        ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec))) ::
+        ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec))) ::
         ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
-    val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
+    val DATA_WAIT_FOR_CHANNEL_READY_01_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
-        ("shortChannelId" | shortchannelid) ::
-        ("lastSent" | lengthDelimited(fundingLockedCodec))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
+        ("shortChannelId" | realshortchannelid) ::
+        ("lastSent" | lengthDelimited(channelReadyCodec))).map {
+      case commitments :: shortChannelId :: lastSent :: HNil =>
+        DATA_WAIT_FOR_CHANNEL_READY(commitments, shortIds = ShortIds(real = RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), lastSent = lastSent)
+    }.decodeOnly
 
-    val DATA_NORMAL_COMPAT_02_Codec: Codec[DATA_NORMAL] = (
+    val DATA_WAIT_FOR_CHANNEL_READY_0a_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
-        ("shortChannelId" | shortchannelid) ::
+        ("shortIds" | shortids) ::
+        ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
+
+    val DATA_NORMAL_02_Codec: Codec[DATA_NORMAL] = (
+      ("commitments" | commitmentsCodec) ::
+        ("shortChannelId" | realshortchannelid) ::
         ("buried" | bool8) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_NORMAL]
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
+      case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
+        DATA_NORMAL(commitments, shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates)
+    }.decodeOnly
 
-    val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
+    val DATA_NORMAL_07_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
-        ("shortChannelId" | shortchannelid) ::
+        ("shortChannelId" | realshortchannelid) ::
         ("buried" | bool8) ::
+        ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
+        ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).map {
+      case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
+        DATA_NORMAL(commitments, shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates)
+    }.decodeOnly
+
+    val DATA_NORMAL_09_Codec: Codec[DATA_NORMAL] = (
+      ("commitments" | commitmentsCodec) ::
+        ("shortids" | shortids) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_NORMAL]
 
-    val DATA_SHUTDOWN_COMPAT_03_Codec: Codec[DATA_SHUTDOWN] = (
+    val DATA_SHUTDOWN_03_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_SHUTDOWN]
 
-    val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
+    val DATA_SHUTDOWN_08_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_SHUTDOWN]
 
-    val DATA_NEGOTIATING_Codec: Codec[DATA_NEGOTIATING] = (
+    val DATA_NEGOTIATING_04_Codec: Codec[DATA_NEGOTIATING] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
         ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[DATA_NEGOTIATING]
 
-    val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
+    val DATA_CLOSING_05_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | optional(bool8, txCodec)) ::
         // TODO: next time we define a new channel codec version, we should use the blockHeight codec here (32 bytes)
@@ -380,21 +403,23 @@ private[channel] object ChannelCodecs3 {
         ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
-    val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
+    val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_06_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
       ("commitments" | commitmentsCodec) ::
         ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
   }
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
-    .typecase(0x08, Codecs.DATA_SHUTDOWN_Codec)
-    .typecase(0x07, Codecs.DATA_NORMAL_Codec)
-    .typecase(0x06, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
-    .typecase(0x05, Codecs.DATA_CLOSING_Codec)
-    .typecase(0x04, Codecs.DATA_NEGOTIATING_Codec)
-    .typecase(0x03, Codecs.DATA_SHUTDOWN_COMPAT_03_Codec)
-    .typecase(0x02, Codecs.DATA_NORMAL_COMPAT_02_Codec)
-    .typecase(0x01, Codecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-    .typecase(0x00, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+    .typecase(0x0a, Codecs.DATA_WAIT_FOR_CHANNEL_READY_0a_Codec)
+    .typecase(0x09, Codecs.DATA_NORMAL_09_Codec)
+    .typecase(0x08, Codecs.DATA_SHUTDOWN_08_Codec)
+    .typecase(0x07, Codecs.DATA_NORMAL_07_Codec)
+    .typecase(0x06, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_06_Codec)
+    .typecase(0x05, Codecs.DATA_CLOSING_05_Codec)
+    .typecase(0x04, Codecs.DATA_NEGOTIATING_04_Codec)
+    .typecase(0x03, Codecs.DATA_SHUTDOWN_03_Codec)
+    .typecase(0x02, Codecs.DATA_NORMAL_02_Codec)
+    .typecase(0x01, Codecs.DATA_WAIT_FOR_CHANNEL_READY_01_Codec)
+    .typecase(0x00, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec)
 
 }

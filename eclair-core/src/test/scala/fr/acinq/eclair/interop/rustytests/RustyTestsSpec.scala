@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
-import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.Init
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestFeeEstimator, TestKitBaseClass, TestUtils}
@@ -75,9 +75,9 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     val bobInit = Init(Bob.channelParams.initFeatures)
     // alice and bob will both have 1 000 000 sat
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000 sat, 1000000000 msat, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Private, channelConfig, channelType)
+    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, 2000000 sat, dualFunded = false, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Some(1000000000 msat), Alice.channelParams, pipe, bobInit, ChannelFlags.Private, channelConfig, channelType)
     alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, channelConfig, channelType)
+    bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, Bob.channelParams, pipe, aliceInit, channelConfig, channelType)
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     pipe ! (alice, bob)
     within(30 seconds) {
@@ -107,15 +107,15 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     TestKit.shutdownActorSystem(system)
   }
 
-  test("01-offer1") { f => assert(f.ref === f.res) }
-  test("02-offer2") { f => assert(f.ref === f.res) }
-  test("03-fulfill1") { f => assert(f.ref === f.res) }
-  // test("04-two-commits-onedir") { f => assert(f.ref === f.res) } DOES NOT PASS : we now automatically sign back when we receive a revocation and have acked changes
-  // test("05-two-commits-in-flight") { f => assert(f.ref === f.res)} DOES NOT PASS : cannot send two commit in a row (without having first revocation)
-  test("10-offers-crossover") { f => assert(f.ref === f.res) }
-  test("11-commits-crossover") { f => assert(f.ref === f.res) }
-  /*test("13-fee") { f => assert(f.ref === f.res)}
-  test("14-fee-twice") { f => assert(f.ref === f.res)}
-  test("15-fee-twice-back-to-back") { f => assert(f.ref === f.res)}*/
+  test("01-offer1") { f => assert(f.ref == f.res) }
+  test("02-offer2") { f => assert(f.ref == f.res) }
+  test("03-fulfill1") { f => assert(f.ref == f.res) }
+  // test("04-two-commits-onedir") { f => assert(f.ref == f.res) } DOES NOT PASS : we now automatically sign back when we receive a revocation and have acked changes
+  // test("05-two-commits-in-flight") { f => assert(f.ref == f.res)} DOES NOT PASS : cannot send two commit in a row (without having first revocation)
+  test("10-offers-crossover") { f => assert(f.ref == f.res) }
+  test("11-commits-crossover") { f => assert(f.ref == f.res) }
+  /*test("13-fee") { f => assert(f.ref == f.res)}
+  test("14-fee-twice") { f => assert(f.ref == f.res)}
+  test("15-fee-twice-back-to-back") { f => assert(f.ref == f.res)}*/
 
 }

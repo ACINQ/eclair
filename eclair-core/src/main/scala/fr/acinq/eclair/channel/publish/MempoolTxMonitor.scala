@@ -44,6 +44,7 @@ object MempoolTxMonitor {
   private case class InputStatus(spentConfirmed: Boolean, spentUnconfirmed: Boolean) extends Command
   private case class CheckInputFailed(reason: Throwable) extends Command
   private case class TxConfirmations(confirmations: Int, blockHeight: BlockHeight) extends Command
+  private case class ParentTxStatus(confirmed: Boolean, blockHeight: BlockHeight) extends Command
   private case object TxNotFound extends Command
   private case class GetTxConfirmationsFailed(reason: Throwable) extends Command
   private case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
@@ -58,7 +59,7 @@ object MempoolTxMonitor {
   sealed trait TxResult
   sealed trait IntermediateTxResult extends TxResult
   /** The transaction is still unconfirmed and available in the mempool. */
-  case class TxInMempool(txid: ByteVector32, blockHeight: BlockHeight) extends IntermediateTxResult
+  case class TxInMempool(txid: ByteVector32, blockHeight: BlockHeight, parentConfirmed: Boolean) extends IntermediateTxResult
   /** The transaction is confirmed, but hasn't reached min depth yet, we should wait for more confirmations. */
   case class TxRecentlyConfirmed(txid: ByteVector32, confirmations: Int) extends IntermediateTxResult
   sealed trait FinalTxResult extends TxResult
@@ -101,7 +102,6 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case PublishOk =>
         log.debug("txid={} was successfully published, waiting for confirmation...", cmd.tx.txid)
-        context.system.eventStream ! EventStream.Publish(TransactionPublished(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
         waitForConfirmation()
       case PublishFailed(reason) if reason.getMessage.contains("rejecting replacement") =>
         log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
@@ -134,6 +134,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
   def waitForConfirmation(): Behavior[Command] = {
     val messageAdapter = context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight))
     context.system.eventStream ! EventStream.Subscribe(messageAdapter)
+    context.system.eventStream ! EventStream.Publish(TransactionPublished(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
     Behaviors.receiveMessagePartial {
       case WrappedCurrentBlockHeight(currentBlockHeight) =>
         timers.startSingleTimer(CheckTxConfirmationsKey, CheckTxConfirmations(currentBlockHeight), (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis)
@@ -147,7 +148,10 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
         Behaviors.same
       case TxConfirmations(confirmations, currentBlockHeight) =>
         if (confirmations == 0) {
-          cmd.replyTo ! TxInMempool(cmd.tx.txid, currentBlockHeight)
+          context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.input.txid)) {
+            case Success(parentConfirmations_opt) => ParentTxStatus(parentConfirmations_opt.exists(_ >= 1), currentBlockHeight)
+            case Failure(reason) => GetTxConfirmationsFailed(reason)
+          }
           Behaviors.same
         } else if (confirmations < nodeParams.channelConf.minDepthBlocks) {
           log.info("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
@@ -158,6 +162,9 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
           context.system.eventStream ! EventStream.Publish(TransactionConfirmed(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx))
           sendFinalResult(TxDeeplyBuried(cmd.tx), Some(messageAdapter))
         }
+      case ParentTxStatus(confirmed, currentBlockHeight) =>
+        cmd.replyTo ! TxInMempool(cmd.tx.txid, currentBlockHeight, confirmed)
+        Behaviors.same
       case TxNotFound =>
         log.warn("txid={} has been evicted from the mempool", cmd.tx.txid)
         checkInputStatus(cmd.input)

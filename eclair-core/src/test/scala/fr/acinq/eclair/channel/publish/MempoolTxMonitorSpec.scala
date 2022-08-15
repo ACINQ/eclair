@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.publish
 
 import akka.actor.typed.ActorRef
-import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
+import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
@@ -70,6 +70,20 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     awaitCond(getMempool(bitcoinClient, probe).exists(_.txid == txId))
   }
 
+  test("transaction still in mempool with unconfirmed parent") {
+    val f = createFixture()
+    import f._
+
+    val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
+    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 50 sat)
+    waitTxInMempool(bitcoinClient, tx.txid, probe)
+
+    // NB: we don't really generate a block, we're testing the case where both txs are still in the mempool.
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
+    probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(), parentConfirmed = false))
+    probe.expectNoMessage(100 millis)
+  }
+
   test("transaction confirmed") {
     val f = createFixture()
     import f._
@@ -82,18 +96,18 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
     // NB: we don't really generate a block, we're testing the case where the tx is still in the mempool.
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
-    probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
+    probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(), parentConfirmed = true))
     probe.expectNoMessage(100 millis)
 
     assert(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks > 1)
     generateBlocks(1)
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
     probe.expectMsg(TxRecentlyConfirmed(tx.txid, 1))
     probe.expectNoMessage(100 millis) // we wait for more than one confirmation to protect against reorgs
 
     generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks - 1)
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
     probe.expectMsg(TxDeeplyBuried(tx))
   }
 
@@ -110,7 +124,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     waitTxInMempool(bitcoinClient, tx2.txid, probe)
 
     generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks)
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
     probe.expectMsg(TxDeeplyBuried(tx2))
   }
 
@@ -192,7 +206,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(tx2.txid)
 
     // When a new block is found, we detect that the transaction has been replaced.
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
     probe.expectMsg(TxRejected(tx1.txid, ConflictingTxUnconfirmed))
   }
 
@@ -210,7 +224,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     // When a new block is found, we detect that the transaction has been replaced.
     generateBlocks(1)
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
     probe.expectMsg(TxRejected(tx1.txid, ConflictingTxConfirmed))
   }
 
@@ -234,7 +248,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     // When a new block is found, we detect that the transaction has been evicted.
     generateBlocks(1)
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
     probe.expectMsg(TxRejected(tx.txid, InputGone))
   }
 
@@ -253,12 +267,12 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 15 sat)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
     val txPublished = eventListener.expectMsgType[TransactionPublished]
-    assert(txPublished.tx === tx)
-    assert(txPublished.miningFee === 15.sat)
-    assert(txPublished.desc === "test-tx")
+    assert(txPublished.tx == tx)
+    assert(txPublished.miningFee == 15.sat)
+    assert(txPublished.desc == "test-tx")
 
     generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks)
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight()))
     eventListener.expectMsg(TransactionConfirmed(txPublished.channelId, txPublished.remoteNodeId, tx))
   }
 

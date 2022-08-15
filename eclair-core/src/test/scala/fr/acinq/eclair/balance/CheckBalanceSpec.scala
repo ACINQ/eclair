@@ -47,7 +47,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
-    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ===
+    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ==
       MainAndHtlcBalance(
         toLocal = (TestConstants.fundingSatoshis - TestConstants.pushMsat - 30_000_000.msat).truncateToSatoshi,
         htlcs = 30_000.sat
@@ -64,7 +64,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob ! CMD_SIGN()
     bob2alice.expectMsgType[CommitSig]
 
-    assert(CheckBalance.computeOffChainBalance(Seq(bob.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ===
+    assert(CheckBalance.computeOffChainBalance(Seq(bob.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ==
       MainAndHtlcBalance(
         toLocal = TestConstants.pushMsat.truncateToSatoshi,
         htlcs = htlc.amountMsat.truncateToSatoshi
@@ -97,7 +97,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
     val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
-    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages) ===
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
@@ -105,7 +105,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       ))
     // assuming alice gets the preimage for the 2nd htlc
     val knownPreimages1 = Set((commitments.channelId, htlcb1.id), (commitments.channelId, htlcb2.id))
-    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages1) ===
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages1) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
@@ -146,7 +146,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
     val Left(waitingForRevocation) = commitments.remoteNextCommitInfo
-    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages) ===
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
@@ -154,7 +154,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       ))
     // assuming alice gets the preimage for the 2nd htlc
     val knownPreimages1 = Set((commitments.channelId, htlcb1.id), (commitments.channelId, htlcb2.id))
-    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages1) ===
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages1) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
@@ -179,14 +179,14 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
     assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
-    assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, localCommitPublished), knownPreimages) ===
+    assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, localCommitPublished), knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
         htlcs = Map.empty,
@@ -207,15 +207,15 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // 3rd-stage txs are published when htlc txs confirm
     val claimHtlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3).map { htlcTimeoutTx =>
       alice ! WatchOutputSpentTriggered(htlcTimeoutTx)
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === htlcTimeoutTx.txid)
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == htlcTimeoutTx.txid)
       alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx)
       val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimHtlcDelayedTx.txid)
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcDelayedTx.txid)
       claimHtlcDelayedTx
     }
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 3)
 
-    assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), knownPreimages) ===
+    assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcDelayedTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
@@ -245,7 +245,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     println(res.total)
   }
 
-  test("tx pruning") { _ =>
+  test("tx pruning") { () =>
     val txids = (for (_ <- 0 until 20) yield randomBytes32()).toList
     val knownTxids = Set(txids(1), txids(3), txids(4), txids(6), txids(9), txids(12), txids(13))
 

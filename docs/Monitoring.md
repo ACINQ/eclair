@@ -33,6 +33,7 @@ kamon {
 }
 ```
 
+
 When starting eclair, you should enable the Kanela agent:
 
 ```sh
@@ -42,13 +43,53 @@ eclair.sh -with-kanela
 Your eclair node will start exporting monitoring data to Kamon.
 You can then start creating dashboards, graphs and alerts directly on Kamon's website.
 
-## Enabling monitoring with a different backend
+## Enabling monitoring with Prometheus
 
 Kamon supports many other monitoring [backends](https://kamon.io/docs/latest/reporters/).
 This can be useful for nodes that don't want to export any data to third-party servers.
 
-No specific work has been done yet in eclair to support these backends. If you'd like to use them,
-don't hesitate to ask around or send a PR.
+Eclair currently supports exporting metrics to [Prometheus](https://kamon.io/docs/latest/reporters/prometheus/).
+To enable monitoring with Prometheus, add the following to your `eclair.conf`:
+
+```config
+eclair.enable-kamon=true
+
+// The Kamon APM reporter is enabled by default, but it won't work with Prometheus, so we disable it.
+kamon.modules {
+  apm-reporter {
+    enabled = false
+  }
+}
+
+kamon {
+  prometheus {
+    start-embedded-http-server = yes
+    embedded-server {
+      hostname = 0.0.0.0
+      port = <port to expose to prometheus>
+    }
+  }
+}
+```
+
+You should then configure your Prometheus process to scrape metrics from the exposed http server. 
+* Download Prometheus [here](https://prometheus.io/download/).
+* Add the following configuration to the `prometheus.yml` file (see the [Prometheus documentation](https://prometheus.io/docs/prometheus/latest/configuration/configuration/) for more details)
+
+```prometheus.yml
+global:
+  scrape_interval:     15s # By default, scrape targets every 15 seconds.
+
+scrape_configs:
+  - job_name: 'eclair'
+    static_configs:
+      - targets: ['<url of the eclair http embedded server>']
+ ```
+
+Eclair provides many [Grafana](https://grafana.com/) dashboards to help you monitor your lightning node, which you can find in the `monitoring` folder of this repository. Follow the [Grafana documentation](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard) to import these dashboards and create new ones if necessary.
+
+Note: do not forget to add `Prometheus` as a data source in grafana (see [grafana documentation](https://prometheus.io/docs/visualization/grafana/#creating-a-prometheus-data-source) for more details)
+
 
 ## Example metrics
 
@@ -60,3 +101,4 @@ metrics are just a small sample of all the metrics we provide:
 * Number of connected peers
 * Bitcoin wallet balance
 * Various metrics about the public graph (nodes, channels, updates, etc)
+

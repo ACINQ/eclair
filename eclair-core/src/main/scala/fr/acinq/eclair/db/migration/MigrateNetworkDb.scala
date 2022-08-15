@@ -19,7 +19,7 @@ object MigrateNetworkDb {
       insertStatement.setString(1, rs.getByteVector("node_id").toHex)
       insertStatement.setBytes(2, rs.getBytes("data"))
       val state = nodeAnnouncementCodec.decode(BitVector(rs.getBytes("data"))).require.value
-      val json = serialization.writePretty(state)
+      val json = serialization.write(state)
       insertStatement.setString(3, json)
     }
 
@@ -42,9 +42,9 @@ object MigrateNetworkDb {
       val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
       val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
       val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
-      val json = serialization.writePretty(ann)
-      val u1_json = channel_update_1_opt.map(serialization.writePretty(_)).orNull
-      val u2_json = channel_update_2_opt.map(serialization.writePretty(_)).orNull
+      val json = serialization.write(ann)
+      val u1_json = channel_update_1_opt.map(serialization.write(_)).orNull
+      val u2_json = channel_update_2_opt.map(serialization.write(_)).orNull
       insertStatement.setString(7, json)
       insertStatement.setString(8, u1_json)
       insertStatement.setString(9, u2_json)

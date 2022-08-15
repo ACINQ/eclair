@@ -16,12 +16,11 @@
 
 package fr.acinq
 
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
 import fr.acinq.eclair.crypto.StrongRandom
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
@@ -74,8 +73,6 @@ package object eclair {
   def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
 
   def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
-
-  def nodeFee(channelUpdate: ChannelUpdate, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, paymentAmount)
 
   /**
    * @param address   base58 of bech32 address
