@@ -366,7 +366,7 @@ case class NodeAnnouncement(signature: ByteVector64,
 
   val validAddresses: List[NodeAddress] = {
     // if port is equal to 0, SHOULD ignore ipv6_addr OR ipv4_addr OR hostname; SHOULD ignore Tor v2 onion services.
-    val validAddresses = addresses.filter(address => address.port != 0 || address.isInstanceOf[Tor3]).filterNot( address => address.isInstanceOf[Tor2])
+    val validAddresses = addresses.filter(address => address.port != 0 || address.isInstanceOf[Tor3]).filterNot(address => address.isInstanceOf[Tor2])
     // if more than one type 5 address is announced, SHOULD ignore the additional data.
     validAddresses.filter(!_.isInstanceOf[DnsHostname]) ++ validAddresses.find(_.isInstanceOf[DnsHostname])
   }
