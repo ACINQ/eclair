@@ -37,8 +37,8 @@ class NodeURISpec extends AnyFunSuite {
     val testCases = List(
       TestCase(s"$PUBKEY@$IPV4_ENDURANCE:9737", IPV4_ENDURANCE, 9737),
       TestCase(s"$PUBKEY@$IPV4_ENDURANCE", IPV4_ENDURANCE, 9735),
-      TestCase(s"$PUBKEY@$NAME_ENDURANCE:9737", "13.248.222.197", 9737),
-      TestCase(s"$PUBKEY@$NAME_ENDURANCE", "13.248.222.197", 9735),
+      TestCase(s"$PUBKEY@$NAME_ENDURANCE:9737", NAME_ENDURANCE, 9737),
+      TestCase(s"$PUBKEY@$NAME_ENDURANCE", NAME_ENDURANCE, 9735),
       TestCase(s"$PUBKEY@$IPV6:9737", "[2405:204:66a9:536c:873f:dc4a:f055:a298]", 9737),
       TestCase(s"$PUBKEY@$IPV6", "[2405:204:66a9:536c:873f:dc4a:f055:a298]", 9735),
     )

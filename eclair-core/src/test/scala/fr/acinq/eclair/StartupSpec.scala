@@ -343,4 +343,28 @@ class StartupSpec extends AnyFunSuite {
     assert(nodeParamsAttempt2.isSuccess)
   }
 
+  test("NodeParams should fail when server.public-ips addresses or server.port are invalid") {
+    case class TestCase(publicIps: Seq[String], port: String, error: Option[String] = None, errorIp: Option[String] = None)
+    val testCases = Seq[TestCase](
+      TestCase(Seq("0.0.0.0", "140.82.121.4", "2620:1ec:c11:0:0:0:0:200", "2620:1ec:c11:0:0:0:0:201", "iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", "of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion", "acinq.co"), "9735"),
+      TestCase(Seq("140.82.121.4", "2620:1ec:c11:0:0:0:0:200", "acinq.fr", "iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion"), "0", Some("port 0"), Some("140.82.121.4")),
+      TestCase(Seq("hsmithsxurybd7uh.onion", "iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion"), "9735", Some("Tor v2"), Some("hsmithsxurybd7uh.onion")),
+      TestCase(Seq("acinq.co", "acinq.fr"), "9735", Some("DNS host name")),
+    )
+    testCases.foreach(test => {
+      val serverConf = ConfigFactory.parseMap(Map(
+        s"server.public-ips" -> test.publicIps.asJava,
+        s"server.port" -> test.port,
+      ).asJava).withFallback(defaultConf)
+      val attempt = Try(makeNodeParamsWithDefaults(serverConf))
+      if (test.error.isEmpty) {
+        assert(attempt.isSuccess)
+      } else {
+        assert(attempt.isFailure)
+        assert(attempt.failed.get.getMessage.contains(test.error.get))
+        assert(test.errorIp.isEmpty || attempt.failed.get.getMessage.contains(test.errorIp.get))
+      }
+    })
+  }
+
 }

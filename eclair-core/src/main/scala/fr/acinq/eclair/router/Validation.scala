@@ -253,6 +253,12 @@ object Validation {
         log.debug("received node announcement from {}", ctx.sender())
         None
     }
+    val rebroadcastNode = if (n.shouldRebroadcast) {
+      Some(n -> origins)
+    } else {
+      log.debug("will not rebroadcast {}", n)
+      None
+    }
     if (d.stash.nodes.contains(n)) {
       log.debug("ignoring {} (already stashed)", n)
       val origins1 = d.stash.nodes(n) ++ origins
@@ -275,13 +281,13 @@ object Validation {
       remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(n)))
       ctx.system.eventStream.publish(NodeUpdated(n))
       db.updateNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes ++ rebroadcastNode))
     } else if (d.channels.values.exists(c => isRelatedTo(c.ann, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
       remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(n)))
       ctx.system.eventStream.publish(NodesDiscovered(n :: Nil))
       db.addNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes ++ rebroadcastNode))
     } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("stashing {}", n)
       d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins)))

@@ -124,6 +124,7 @@ object CommonCodecs {
       .typecase(2, (ipv6address :: uint16).as[IPv6])
       .typecase(3, (base32(10) :: uint16).as[Tor2])
       .typecase(4, (base32(35) :: uint16).as[Tor3])
+      .typecase(5, (variableSizeBytes(uint8, ascii) :: uint16).as[DnsHostname])
 
   // this one is a bit different from most other codecs: the first 'len' element is *not* the number of items
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this

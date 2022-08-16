@@ -210,6 +210,13 @@ class CommonCodecsSpec extends AnyFunSuite {
       val nodeaddr2 = nodeaddress.decode(bin).require.value
       assert(nodeaddr == nodeaddr2)
     }
+    {
+      val nodeaddr = DnsHostname("acinq.co", 4231)
+      val bin = nodeaddress.encode(nodeaddr).require
+      assert(bin === hex"05 086163696e712e636f 1087".toBitVector)
+      val nodeaddr2 = nodeaddress.decode(bin).require.value
+      assert(nodeaddr === nodeaddr2)
+    }
   }
 
   test("encode/decode bytevector32") {

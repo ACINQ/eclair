@@ -59,7 +59,8 @@ class NetworkDbSpec extends AnyFunSuite {
       val node_1 = Announcements.makeNodeAnnouncement(randomKey(), "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
       val node_2 = Announcements.makeNodeAnnouncement(randomKey(), "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
       val node_3 = Announcements.makeNodeAnnouncement(randomKey(), "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
-      val node_4 = Announcements.makeNodeAnnouncement(randomKey(), "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), Tor2("aaaqeayeaudaocaj", 42000) :: Nil, Features.empty)
+      val node_4 = Announcements.makeNodeAnnouncement(randomKey(), "node-eve", Color(100.toByte, 200.toByte, 300.toByte), Tor3("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad", 42000) :: Nil, Features.empty)
+      val node_5 = Announcements.makeNodeAnnouncement(randomKey(), "node-frank", Color(100.toByte, 200.toByte, 300.toByte), DnsHostname("eclair.invalid", 42000) :: Nil, Features.empty)
 
       assert(db.listNodes().toSet == Set.empty)
       db.addNode(node_1)
@@ -69,12 +70,14 @@ class NetworkDbSpec extends AnyFunSuite {
       db.addNode(node_2)
       db.addNode(node_3)
       db.addNode(node_4)
-      assert(db.listNodes().toSet == Set(node_1, node_2, node_3, node_4))
+      db.addNode(node_5)
+      assert(db.listNodes().toSet == Set(node_1, node_2, node_3, node_4, node_5))
       db.removeNode(node_2.nodeId)
-      assert(db.listNodes().toSet == Set(node_1, node_3, node_4))
+      assert(db.listNodes().toSet == Set(node_1, node_3, node_4, node_5))
       db.updateNode(node_1)
 
-      assert(node_4.addresses == List(Tor2("aaaqeayeaudaocaj", 42000)))
+      assert(node_4.addresses == List(Tor3("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad", 42000)))
+      assert(node_5.addresses == List(DnsHostname("eclair.invalid", 42000)))
     }
   }
 

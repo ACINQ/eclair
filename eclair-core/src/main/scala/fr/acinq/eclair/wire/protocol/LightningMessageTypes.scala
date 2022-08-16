@@ -351,16 +351,20 @@ object NodeAddress {
   /**
    * Creates a NodeAddress from a host and port.
    *
-   * Note that non-onion hosts will be resolved.
+   * Note that only IP v4 and v6 hosts will be resolved, onion and DNS hosts names will not be resolved.
    *
    * We don't attempt to resolve onion addresses (it will be done by the tor proxy), so we just recognize them based on
    * the .onion TLD and rely on their length to separate v2/v3.
+   *
+   * Host names that are not Tor, IPv4 or IPv6 are assumed to be a DNS name and are not immediately resolved.
+   *
    */
   def fromParts(host: String, port: Int): Try[NodeAddress] = Try {
     host match {
       case _ if host.endsWith(".onion") && host.length == 22 => Tor2(host.dropRight(6), port)
       case _ if host.endsWith(".onion") && host.length == 62 => Tor3(host.dropRight(6), port)
-      case _ => IPAddress(InetAddress.getByName(host), port)
+      case _ if InetAddresses.isInetAddress(host.filterNot(Set('[', ']'))) => IPAddress(InetAddress.getByName(host), port)
+      case _ => DnsHostname(host, port)
     }
   }
 
@@ -387,6 +391,7 @@ case class IPv4(ipv4: Inet4Address, port: Int) extends IPAddress { override def 
 case class IPv6(ipv6: Inet6Address, port: Int) extends IPAddress { override def host: String = InetAddresses.toUriString(ipv6) }
 case class Tor2(tor2: String, port: Int) extends OnionAddress { override def host: String = tor2 + ".onion" }
 case class Tor3(tor3: String, port: Int) extends OnionAddress { override def host: String = tor3 + ".onion" }
+case class DnsHostname(dnsHostname: String, port: Int) extends IPAddress {override def host: String = dnsHostname}
 // @formatter:on
 
 case class NodeAnnouncement(signature: ByteVector64,
@@ -396,7 +401,20 @@ case class NodeAnnouncement(signature: ByteVector64,
                             rgbColor: Color,
                             alias: String,
                             addresses: List[NodeAddress],
-                            tlvStream: TlvStream[NodeAnnouncementTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp
+                            tlvStream: TlvStream[NodeAnnouncementTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp {
+
+  val validAddresses: List[NodeAddress] = {
+    // if port is equal to 0, SHOULD ignore ipv6_addr OR ipv4_addr OR hostname; SHOULD ignore Tor v2 onion services.
+    val validAddresses = addresses.filter(address => address.port != 0 || address.isInstanceOf[Tor3]).filterNot(address => address.isInstanceOf[Tor2])
+    // if more than one type 5 address is announced, SHOULD ignore the additional data.
+    validAddresses.filter(!_.isInstanceOf[DnsHostname]) ++ validAddresses.find(_.isInstanceOf[DnsHostname])
+  }
+
+  val shouldRebroadcast: Boolean = {
+    // if more than one type 5 address is announced, MUST not forward the node_announcement.
+    addresses.count(address => address.isInstanceOf[DnsHostname]) <= 1
+  }
+}
 
 case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,

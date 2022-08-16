@@ -217,7 +217,7 @@ object Socks5Connection {
   def portToByteString(port: Int): ByteString = ByteString((port & 0x0000ff00) >> 8, port & 0x000000ff)
 }
 
-case class Socks5ProxyParams(address: InetSocketAddress, credentials_opt: Option[Credentials], randomizeCredentials: Boolean, useForIPv4: Boolean, useForIPv6: Boolean, useForTor: Boolean, useForWatchdogs: Boolean)
+case class Socks5ProxyParams(address: InetSocketAddress, credentials_opt: Option[Credentials], randomizeCredentials: Boolean, useForIPv4: Boolean, useForIPv6: Boolean, useForTor: Boolean, useForWatchdogs: Boolean, useForDnsHostnames: Boolean)
 
 object Socks5ProxyParams {
 
@@ -237,6 +237,7 @@ object Socks5ProxyParams {
       case _: IPv6 if proxyParams.useForIPv6 => Some(proxyParams.address)
       case _: Tor2 if proxyParams.useForTor => Some(proxyParams.address)
       case _: Tor3 if proxyParams.useForTor => Some(proxyParams.address)
+      case _: DnsHostname if proxyParams.useForDnsHostnames => Some(proxyParams.address)
       case _ => None
     }
 

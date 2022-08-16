@@ -31,11 +31,12 @@ import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, Re
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
+import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
+import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -179,6 +180,7 @@ object NodeParams extends Logging {
         useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
         useForTor = config.getBoolean("socks5.use-for-tor"),
         useForWatchdogs = config.getBoolean("socks5.use-for-watchdogs"),
+        useForDnsHostnames = config.getBoolean("socks5.use-for-dnshostnames"),
       ))
     } else {
       None
@@ -300,6 +302,19 @@ object NodeParams extends Logging {
       require(features.hasFeature(Features.ChannelType), s"${Features.ChannelType.rfcName} must be enabled")
     }
 
+    def validateAddresses(addresses: List[NodeAddress]): Unit = {
+      val addressesError = if (addresses.count(_.isInstanceOf[DnsHostname]) > 1) {
+        Some(AddressException(s"Invalid server.public-ip addresses: can not have more than one DNS host name."))
+      } else {
+        addresses.collectFirst {
+          case address if address.isInstanceOf[Tor2] => AddressException(s"invalid server.public-ip address `$address`: Tor v2 is deprecated.")
+          case address if address.port == 0 && !address.isInstanceOf[Tor3] => AddressException(s"invalid server.public-ip address `$address`: A non-Tor address can not use port 0.")
+        }
+      }
+
+      require(addressesError.isEmpty, addressesError.map(_.message))
+    }
+
     val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
     val features = Features.fromConfiguration(config.getConfig("features"))
     validateFeatures(features)
@@ -331,6 +346,8 @@ object NodeParams extends Logging {
       .asScala
       .toList
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ publicTorAddress_opt
+
+    validateAddresses(addresses)
 
     val feeTargets = FeeTargets(
       fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),

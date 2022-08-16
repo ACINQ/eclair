@@ -143,6 +143,10 @@ eclair.on-chain-fees.spend-anchor-without-htlcs = false
 This is disabled by default, because there is still a risk of losing funds until bitcoin adds support for package relay.
 If the mempool becomes congested and the feerate is too low, the commitment transaction may never reach miners' mempools because it's below the minimum relay feerate.
 
+#### Public IP addresses can be DNS host names
+
+You can now specify a DNS host name as one of your `server.public-ips` addresses (see PR [#911](https://github.com/lightning/bolts/pull/911)). Note: you can not specify more than one DNS host name.
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key 7A73FE77DE2C4027. Note that you can get it:

@@ -17,9 +17,9 @@
 package fr.acinq.eclair.tor
 
 import fr.acinq.eclair.wire.protocol.NodeAddress
+import org.scalatest.funsuite.AnyFunSuite
 
 import java.net.InetSocketAddress
-import org.scalatest.funsuite.AnyFunSuite
 
 /**
   * Created by PM on 27/01/2017.
@@ -32,28 +32,36 @@ class Socks5ConnectionSpec extends AnyFunSuite {
 
     assert(Socks5ProxyParams.proxyAddress(
       address = NodeAddress.fromParts("1.2.3.4", 9735).get,
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true, useForDnsHostnames = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
       address = NodeAddress.fromParts("1.2.3.4", 9735).get,
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = false, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).isEmpty)
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = false, useForIPv6 = true, useForTor = true, useForWatchdogs = true, useForDnsHostnames = true)).isEmpty)
 
     assert(Socks5ProxyParams.proxyAddress(
       address = NodeAddress.fromParts("[fc92:97a3:e057:b290:abd8:9bd6:135d:7e7]", 9735).get,
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true, useForDnsHostnames = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
       address = NodeAddress.fromParts("[fc92:97a3:e057:b290:abd8:9bd6:135d:7e7]", 9735).get,
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = false, useForTor = true, useForWatchdogs = true)).isEmpty)
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = false, useForTor = true, useForWatchdogs = true, useForDnsHostnames = true)).isEmpty)
 
     assert(Socks5ProxyParams.proxyAddress(
       address = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get,
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true, useForDnsHostnames = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
       address = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get,
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = false, useForWatchdogs = true)).isEmpty)
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = false, useForWatchdogs = true, useForDnsHostnames = true)).isEmpty)
 
+    // DnsHostname "localhost" resolves to an IPv4 address
+    assert(Socks5ProxyParams.proxyAddress(
+      address = NodeAddress.fromParts("localhost", 9735).get,
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true, useForDnsHostnames = true)).contains(proxyAddress))
+
+    assert(Socks5ProxyParams.proxyAddress(
+      address = NodeAddress.fromParts("localhost", 9735).get,
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true, useForDnsHostnames = false)).isEmpty)
   }
 
 }
