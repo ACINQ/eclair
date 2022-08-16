@@ -153,7 +153,7 @@ object IncomingPaymentPacket {
   private def isValidBlindedPayment(data: BlindedRouteData.PaymentData, amount: MilliSatoshi, cltvExpiry: CltvExpiry, features: Features[Feature]): Boolean = {
     val amountOk = amount >= data.paymentConstraints.minAmount
     val expiryOk = cltvExpiry <= data.paymentConstraints.maxCltvExpiry
-    val featuresOk = Features.areCompatible(features, data.paymentConstraints.allowedFeatures)
+    val featuresOk = Features.areCompatible(features, data.allowedFeatures)
     amountOk && expiryOk && featuresOk
   }
 

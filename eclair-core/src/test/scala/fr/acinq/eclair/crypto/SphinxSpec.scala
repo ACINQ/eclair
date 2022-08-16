@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -375,13 +375,13 @@ class SphinxSpec extends AnyFunSuite {
   test("create blinded route (reference test vector)") {
     val alice = PrivateKey(hex"4141414141414141414141414141414141414141414141414141414141414141")
     val bob = PrivateKey(hex"4242424242424242424242424242424242424242424242424242424242424242")
-    val bobPayload = hex"01200000000000000000000000000000000000000000000000000000000000000000 02080000000000000001 0a080032000000002710 0c0c000b72460000000000000032"
+    val bobPayload = hex"01200000000000000000000000000000000000000000000000000000000000000000 02080000000000000001 0a080032000000002710 0c05000b724632 0e00"
     val carol = PrivateKey(hex"4343434343434343434343434343434343434343434343434343434343434343")
-    val carolPayload = hex"02080000000000000002 0821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 0a07004b0000009664 0c0c000b72140000000000000032"
+    val carolPayload = hex"02080000000000000002 0821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 0a07004b0000009664 0c05000b721432 0e00"
     val dave = PrivateKey(hex"4444444444444444444444444444444444444444444444444444444444444444")
-    val davePayload = hex"012200000000000000000000000000000000000000000000000000000000000000000000 02080000000000000003 0a06001900000064 0c0c000b71c90000000000000032"
+    val davePayload = hex"012200000000000000000000000000000000000000000000000000000000000000000000 02080000000000000003 0a06001900000064 0c05000b71c932 0e00"
     val eve = PrivateKey(hex"4545454545454545454545454545454545454545454545454545454545454545")
-    val evePayload = hex"011c00000000000000000000000000000000000000000000000000000000 0616c9cf92f45ade68345bc20ae672e2012f4af487ed4415 0c0c000b71b00000000000000032"
+    val evePayload = hex"011c00000000000000000000000000000000000000000000000000000000 0616c9cf92f45ade68345bc20ae672e2012f4af487ed4415 0c05000b71b032 0e00"
 
     // Eve creates a blinded route to herself through Dave:
     val (blindingOverride, blindedRouteEnd) = {
@@ -408,10 +408,10 @@ class SphinxSpec extends AnyFunSuite {
       PublicKey(hex"021982a48086cb8984427d3727fe35a03d396b234f0701f5249daa12e8105c8dae"),
     ))
     assert(blindedRoute.encryptedPayloads == Seq(
-      hex"cd7b00ff9c09ed28102b210ac73aa12d63e90852cebc496c49f57c499a2888b49f2e72b19446f7e60a818aa2938d8c625415b992b8928a7a21edb8f7fcaa0dc85ff12ba8a7c266d0d9b602a88669890ec2400145",
-      hex"cc0f16524fd7f8bb0f4e8d40ad71709ef140174c76faa574cac401bb8992fef76c4d004aa485dd599ed1cf2715f570f656a5aaecaf1ee8d59d0fa1d4167b9b259b065e2f2c17df0b782d9f118ec4e1fa2990e425",
-      hex"0fa1a72cff3b64a3d6e1e4903cf8c8b0a17144aeb249dcb86561adee1f679ee8db3e561d9e49895fd4bcebf6f58d6f61a6d41a9bf5aa4b0d5343785651208226e401d38c7a2728c421b132f193939eb0d5de7165",
-      hex"da1c7e5f7881219884beae6ae68971de73bab4c3055d9865b1afb60722a63c688768042ade22f2c22f5724767d171fd221d3e579e43b3545c72e3ef174a3a95ee07b395d070821dc9b052dc1e2e66e5e0be3704f",
+      hex"cd7b00ff9c09ed28102b210ac73aa12d63e90852cebc496c49f57c499a2888b49f2e72b19446f7e60a818aa2938d8c625415b992b8928a7321edb8f7cea40de362bed082ad51acc6156dca5532fb68",
+      hex"cc0f16524fd7f8bb0f4e8d40ad71709ef140174c76faa574cac401bb8992fef76c4d004aa485dd599ed1cf2715f570f656a5aaecaf1ee8dc9d0fa1d424759be1932a8f29fac08bc2d2a1ed7159f28b",
+      hex"0fa1a72cff3b64a3d6e1e4903cf8c8b0a17144aeb249dcb86561adee1f679ee8db3e561d9e49895fd4bcebf6f58d6f61a6d41a9bf5aa4b0453437856632e8255c351873143ddf2bb2b0832b091e1b4",
+      hex"da1c7e5f7881219884beae6ae68971de73bab4c3055d9865b1afb60722a63c688768042ade22f2c22f5724767d171fd221d3e579e43b354cc72e3ef146ada91a892d95fc48662f5b158add0af457da",
     ))
 
     // Every node in the route is able to decrypt its payload and extract the blinding point for the next node:
@@ -458,7 +458,7 @@ class SphinxSpec extends AnyFunSuite {
 
       val nodeIds = Seq(alice, bob).map(_.publicKey) ++ blindedRoute.blindedNodeIds.tail
       val Success(PacketAndSecrets(onion, sharedSecrets)) = create(sessionKey, 1300, nodeIds, payloads, associatedData)
-      assert(serializePaymentOnion(onion) == hex"0002531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337dadf610256c6ab518495dce9cdedf9391e21a71dad9f6d478c501d3238245ac0a1b154184ff24d9180f6178d49dded810e0a48e4daaf6916e4ebe5d56ad2013b520af2a3c49316bc590ee83e8c31b1eb11ff766dad27ca993326b1ed582fb451a2ad87fbf6601134c6341c4a2deb6859e25a355bd483bb421e93726e454ebeb63bdb8bc6d2e93b36ba64459135b78423ee0bdada348a45f1004deb738c51d9f5a675dd5370e04062ae3d6f71823a7c004f364929aa6d3068eaad27dbd49cb178bf08f868413d7ebce95c4650277007e0ff5e8164f81b960f29b881c8f896bd63e62518cb4f1de62562c442d2a0880d6b34d4dab0f66805371f9627400aa44e1fba3e09129c3d0c1b8279a4bdccb55d2844a881f0ac89d3582bdfb60a89d3814770fbe5d686b9854d74db38f6f01f10f185dc5f1bcc3607a1d1ca2c9955621df1e74d61956130e462e8b6c1133cf7950b83a60b4a7900c699e2253e0b43148c34a7501809ef6dc33560fd9d9ab1654a83e8266e858d804510ff5f96049f07c8ab8ab07442fdd164acefb6dece8c57eb16b57be0bb79205c9c21b9d9d4928558f01823874971052b40d3560ef8e80d16722b6eb73b7d67b636f0369a23afacecc2376067e60843938dbb305ccb964e820e20a8213d4cd577bcc5a8c874e7aef71153a884ebf78164d80441a0c431610bad060d9335f7ea948d76d3a94c20da4decb01cd916b1527437fb3320d1d585414bb2f8d3758342b33df5dc69daa700eb53a19dc5707e96ccd62730881731f98c74a9bd96b857a69398f84bbfb7274975a6ece60ac5983d2b631c47c3a66410b9b64a0b264e041cc5df2a42e7f1ab8f8ed545984a37385f996ecf585f36a371067c36d74b58f509094340fc2894acd5edf094b279576aa501c6c403aa83899748817ece2f0fe0a84a8a8e8262856ac9d7dd5b5211cc17336ea7532e47a75aca9969ad4f61501d3f5acf0c5e25af82c0318cc7a10182288fa848dc0d8787ae83602f1a109443bbce347dfbcea05353a0f227a00d99e0b9e56d03bfa69bffd7e51a8ec6054d704de32106941a26d56b5ef5aa875445fa98cd84de56203d52d097e4e1ec5220462ccaa6aec6be416bd082164a2f465906acedd1263e46d04a7ee02bd6b45c26bd736c75094ad1f053ec8c239c130da9ef643b8ae139cab06bf88c516133df0b05acdbbc86b9af9702dfa16ce74eb2a26a078a7ff41fbc1b1dfa73eb81ef5d0a81e56aa176f5f04b6b093e9c15f7aa1c4f7c24b6c443476b3579020cc84dadfd3a3acfe45ac0d674bcc3c2bafe56f1d1efaaae26e9ba37c21ac21c672fb5b61877726f3b77ff08974c51b2a9f7c0b3761872ccf9453a7f8c05a810db972abc8578c3dd440bf2f399975be509561116c618b3c743012ba821986e0dd5045310c618ed65fbcc28be6949a4ee4f27c554baae00d1f7826046ee5e7ccd82fa74c6441e7c76aa52a69c49e33942c7ed16682085177fc51901a19409ffd504867ab234c491c3e4bad1c3be868ca23575ad13f1c01d275e7713eeec8eb8479124e1e83da679f1b7154d1104b7cab3e7cb7d1a215fa6f4adaa0ca9f5e179fa5f588a43c92d5c0560d22d2b7d264a7b933540973bf4708d85017375e3a9fcad2d7b91527d8c35569fe021f6031d0cf5665820d9c7d66fc1cc34ec661df9299ec13352dd9e7a5c18cc1dcc2af1e0e211fdf9786e358fcbcd71ebc3e59740517e0c702c951a7551e7e30771d18d70b02272b1cfbe530d5a38f25fc1572aa2215fcf69e65a3a10c10774ab88ec0afd512c02c73072a4907928f19a5a366b6d7a68faccee3ec6326b83ae4b8003049f4a9f119c36f418ac2c6d77cc913c0e43cd72c34a920220c3")
+      assert(serializePaymentOnion(onion) == hex"0002531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337dadf610256c6ab518495dce9cdedf9391e21a71daddfe667387c384267a4c6453777590fc38e591b4f04a1e96bd1dec4af605d6adda2690de4ebe5d56ad2013b520af2a3c49316bc590ee83e8c31b1eb11ff766dad27ca993326b1ed582fb451a2ad87fbf6601134c6341c4a2deb6850e25a355be68dbb6923dc89444fdd74a0f700433b667bda345926099f5547b07e97ad903e8a01566a78ae177366239e793dac719de805565b6d0a942f42722a79dba29ebf4f9ec40cf579191716aac3a79f78c1d43398fba3f304786435976102a924ba4ba3de6150c829ce01c25428f2f5d05ef023be7d590ecdf6603730db3948f80ca1ed3d85227e64ef77200b9b557f427b6e1073cfa0e63e4485441768b98ab11ba8104a6cee1d7af7bb9d3167503ea010fabcd207b0b37a68b84be55663802d96faee291e8241b5e6c4b38e0c6d17ef6ba7bbe93f02046975bb01b7f766fcfc5a755af11a90cc7eb3505986b56e07a7855534d03b79f0dfbfe645b0d6d4185c038771fd25b800aa26b2ed2e30b1e713659468618a2fea04fcd04732a6fa9e77db73d0efa5253e123d5c2306ddb9ebf7bc897b559cf9870715039c6183082d762b6417f99d0f71ff7c060f6b564ad6827edaffa72eefcc4ce633a8da8d41c19d8f6aebd8878869eb518ccc16dccae6a94c690957598ce0295c1c46af5d7a2f0955b5400526bfd1430f554562614b5d00feff3946427be520cce52bfe9b6a9c2b1da6701c8ca628a69d6d40e20dd69d6e879d7a052d9c16f52c26e3bf745daeb3578c211475f2953e3c42308af89f3fd3c93bb4ba7320b35721bfdf2ad3db94b711fbdccdbe8465d9ff7bc9a293861dcea15bfa4f64993e9a751f571ab24a3219446483968821aa19a8d89ec611d686ff5f8fdc340aa8185ae29b01e60fb5a4c5c4bf8054c711522fc74e1d60976c33d2dfd782bbd555b8d06af6e688b3f541f1275706d045c607eea5926c49ced5bd368914f5ef793c3d6c1ab08dae689f0d71d64ec9c136cd38ac038cfa37846e3df7ce4bf63f44fce412bf3c9b8f21eabc34186a9c660b23fb7f3fa26cc9d830b40b499c613c2569d5e5f10823854471d3ac8bf655b020c37309fbaa0d0af5f14babd9485347ccd891bbd1e3b73e800c500be25073ee8a3844aca1cb9fa06d5579532da09a480cbec171b2ca9f83985d1a8cf60092fedaa88d4ccc711243298beb3d9d46c87542072aebb33d5a5ee671d4974b93c901eb1b5b4eaefc3669a7daa5154dced8cdc1bf49c1ba829bcbdee4e1f2f703c983872a7bff0669c9322c13a7cfb3f7f98b7ddcb47042a4786368a182f9c667d495438b6dee2d2a6ad0f8795ac499c3c3e9d584f6cf8279497fecc51c9203510858d738cec815a13d35d220ea297333068d8b64f4bcb627d127ab1e7732c840da45d35647e9e319bac2e95bb49f070e32772e2a8a6b55ca35d2391de4269cd6c5030203ab14abfca973a032b6ce10e958f1be2399c98ee70da0363c2f9a4e52546d8eef0b63cbab415a9341dbb9099df5e1ba2a83c2be15a96518741eacbe0f5d45e81ed5ddb76438a45cc5bb8d87abba0dd8c9181eff8b1f7c3939f3600883a3139515c53a07429247db278384d727d9b3b327c0f47dd4319d12e24ac2713f8c828217491df60f5b002cc58476a7b857dffb148179ffa5c62060d26dc3a9df11beccf77929e5d752d7351e58dc7f5265946792e7733886240efa0994868aa28a66754dccee99abd37a78558c858ddc9ca52aee32e263dd5165cdaf8ff74dfa9b61506af68b2fc9c0b887d3e49cc534040221f72fe6ec705e3964ad1e6d686840dd821c7a386baecb841369c98f5b493820be03c3b726cba925c72b05ea3d1b")
 
       // Alice can decrypt the onion as usual.
       val Right(DecryptedPacket(onionPayloadAlice, packetForBob, sharedSecretAlice)) = peel(alice, associatedData, onion)
@@ -475,7 +475,8 @@ class SphinxSpec extends AnyFunSuite {
       assert(recipientTlvsBob.amountToForward(110_125 msat) == 100_125.msat)
       assert(recipientTlvsBob.outgoingCltv(CltvExpiry(749150)) == CltvExpiry(749100))
       assert(recipientTlvsBob.records.get[RouteBlindingEncryptedDataTlv.PaymentRelay].contains(RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(50), 0, 10_000 msat)))
-      assert(recipientTlvsBob.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750150), 50 msat, Features.empty))
+      assert(recipientTlvsBob.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750150), 50 msat))
+      assert(recipientTlvsBob.allowedFeatures.isEmpty)
 
       // Carol is a blinded hop.
       // She receives the blinding key from Bob (e.g. in a tlv field in update_add_htlc) which she can use to derive the
@@ -490,7 +491,8 @@ class SphinxSpec extends AnyFunSuite {
       assert(recipientTlvsCarol.amountToForward(100_125 msat) == 100_010.msat)
       assert(recipientTlvsCarol.outgoingCltv(CltvExpiry(749100)) == CltvExpiry(749025))
       assert(recipientTlvsCarol.records.get[RouteBlindingEncryptedDataTlv.PaymentRelay].contains(RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(75), 150, 100 msat)))
-      assert(recipientTlvsCarol.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750100), 50 msat, Features.empty))
+      assert(recipientTlvsCarol.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750100), 50 msat))
+      assert(recipientTlvsCarol.allowedFeatures.isEmpty)
       // Carol's payload contains a blinding override.
       val blindingEphemeralKeyForDaveOverride = recipientTlvsCarol.records.get[RouteBlindingEncryptedDataTlv.NextBlinding].map(_.blinding)
       assert(blindingEphemeralKeyForDaveOverride.contains(blindingOverride))
@@ -508,7 +510,8 @@ class SphinxSpec extends AnyFunSuite {
       assert(recipientTlvsDave.amountToForward(100_010 msat) == 100_000.msat)
       assert(recipientTlvsDave.outgoingCltv(CltvExpiry(749025)) == CltvExpiry(749000))
       assert(recipientTlvsDave.records.get[RouteBlindingEncryptedDataTlv.PaymentRelay].contains(RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(25), 100, 0 msat)))
-      assert(recipientTlvsDave.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750025), 50 msat, Features.empty))
+      assert(recipientTlvsDave.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750025), 50 msat))
+      assert(recipientTlvsDave.allowedFeatures.isEmpty)
 
       // Eve is the blinded recipient.
       // She receives the blinding key from Dave (e.g. in a tlv field in update_add_htlc) which she can use to derive
@@ -519,16 +522,17 @@ class SphinxSpec extends AnyFunSuite {
       assert(tlvsEve.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
       val Success((recipientTlvsEve, _)) = RouteBlindingEncryptedDataCodecs.decode(eve, blindingEphemeralKeyForEve, tlvsEve.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data, RouteBlindingEncryptedDataCodecs.paymentRecipientDataCodec)
       assert(recipientTlvsEve.pathId_opt.contains(hex"c9cf92f45ade68345bc20ae672e2012f4af487ed4415"))
-      assert(recipientTlvsEve.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750000), 50 msat, Features.empty))
+      assert(recipientTlvsEve.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750000), 50 msat))
+      assert(recipientTlvsEve.allowedFeatures.isEmpty)
 
       assert(Seq(onionPayloadAlice, onionPayloadBob, onionPayloadCarol, onionPayloadDave, onionPayloadEve) == payloads)
       assert(Seq(sharedSecretAlice, sharedSecretBob, sharedSecretCarol, sharedSecretDave, sharedSecretEve) == sharedSecrets.map(_._1))
 
       val packets = Seq(packetForBob, packetForCarol, packetForDave, packetForEve, packetForNobody)
-      assert(packets(0).hmac == ByteVector32(hex"4bcd0f0d1e3883aeb94e6a5a1a5950943cf1419f4641bec641ca8d628fea25d9"))
-      assert(packets(1).hmac == ByteVector32(hex"1827715602080882c82c4d0c0addc109dd61e26930e48d253f71ef89f663af16"))
-      assert(packets(2).hmac == ByteVector32(hex"1359f3f6a6e3c243e8ecc28e6487defd7bec9682bb2d29a9256597f7787ad081"))
-      assert(packets(3).hmac == ByteVector32(hex"ab5f1926681cf0932022161f90d709bebfe37fb16757290c161ce180f002e7ad"))
+      assert(packets(0).hmac == ByteVector32(hex"0b462fb9321df3f139d2efccdc54471840e5cb50b4f7dae44df9c8c3e5ffabde"))
+      assert(packets(1).hmac == ByteVector32(hex"5c7b8d4f3061b3e58194edfb76ac339932c61ff77b024192508c9628a0206bb7"))
+      assert(packets(2).hmac == ByteVector32(hex"6a8df602e649e459b456df92327d7cf28132b735d38d3692c7c199e27d298c85"))
+      assert(packets(3).hmac == ByteVector32(hex"6db2bc62c58cd931570f8b7eb13b96e40b8a34e13655eb4f4b3a3ec87824403d"))
       assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
     }
   }

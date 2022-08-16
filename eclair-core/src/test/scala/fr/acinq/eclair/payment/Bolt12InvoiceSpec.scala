@@ -28,7 +28,7 @@ import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRecipientData
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, invoiceTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.paymentRecipientDataCodec
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.PaymentConstraints
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{AllowedFeatures, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferTypes, RouteBlindingEncryptedDataTlv, TlvStream}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, TimestampSecond, TimestampSecondLong, UInt64, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
@@ -52,7 +52,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   }
 
   def createDirectPath(sessionKey: PrivateKey, nodeId: PublicKey, pathId: ByteVector): BlindedRoute = {
-    val selfPayload = paymentRecipientDataCodec.encode(PaymentRecipientData(TlvStream(Seq(RouteBlindingEncryptedDataTlv.PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat, Features.empty))))).require.bytes
+    val selfPayload = paymentRecipientDataCodec.encode(PaymentRecipientData(TlvStream(Seq(RouteBlindingEncryptedDataTlv.PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty))))).require.bytes
     Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload))
   }
 
@@ -332,7 +332,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     ), Seq(GenericTlv(UInt64(311), hex"010203"), GenericTlv(UInt64(313), hex"")))
     val signature = signSchnorr(Bolt12Invoice.signatureTag("signature"), rootHash(tlvs, invoiceTlvCodec), nodeKey)
     val invoice = Bolt12Invoice(tlvs.copy(records = tlvs.records ++ Seq(Signature(signature))))
-    assert(invoice.toString == "lni1qvsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqyyz9ut9uduhtztjgpxm06394g5qkw7v79g4czw6zxsl3lnrsvljj0qzqrq83yqzscd9h8vmmfvdjjqamfw35zqmtpdeujqenfv4kxgucvqgqsqy9xq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmcq5ecw92k3597h7kdndc64mg2xt709acf2gmxnnag5kq9a6wslznscqsyu5p4eckl7m69k0qpcppkpz3lq4chus9szjkgw9w7mgeknz7m7fpqpq02qmqdj08z62mz0jws0gxt45fyq8udel9jg5gd6xlgdrkdt5qywp0jna8ews7jvdul05nrwff46tvtnv2s5xtkpc9x595e78756q9scfpcqqqpy5sqqqzl5q5gqqqqqqqqqqraqqqqqqqqqq7ysqqqq2q2ctvd93k283pq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmcgqp8ynzpra2m4cmrautzcn9ukcxrwwjhzyfzqfdc7knscnwa24z5fckzkn9yur5jfmdyppx7c3gq332qp479gs9r9gaf3fujpqrtu9jj0wfmuwqu7t8yy6rpts85he7zdxdxve9xsfvqg8pqtszqpanq9q8qsqqgy3a2muqkpsqpr4n4hrgj300vqfjpj57kmjjd6k9nnvm38ajqwpqwxksx0jlggrgyftqsac05anj2p2yjsjak4p6r7wz80crv4a2xlqlqs8a50j3hezs0rv6wgfuwm0k7pmls0tuzy805tfms43nz9k3paw343dscwnxezqvkgp7gukv7uuvy7jn2vxewnex9ef8967txmgg5mcr3lgpxupszqsrl5qnjqq")
+    assert(invoice.toString == "lni1qvsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqyyz9ut9uduhtztjgpxm06394g5qkw7v79g4czw6zxsl3lnrsvljj0qzqrq83yqzscd9h8vmmfvdjjqamfw35zqmtpdeujqenfv4kxgucvqgqsqy9qq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmcq5ecw92k3597h7kdndc64mg2xt709acf2gmxnnag5kq9a6wslznscqsyu5p4eckl7m69k0qpcppkpz3lq4chus9szjkgw9w7mgeknz7m7fpqqa02qmqdj08z62mz0jws0gxt45fyq8udel9jg5gd6xlgdrkdt5qywp0jna8fws7jvdur0nayh63fjeey5w8pmqw7s3lcjunzgwqqqqf9yqqqqhaq9zqqqqqqqqqqqlgqqqqqqqqq83yqqqqzszkzmrfvdj3uggrc3nnudswp67znrydjtv7ta56c9cpc0nmjmv7rszs568gqdz3w77zqqfeycsgl2kawxcl0zckye09kpsmn54c3zgsztw845uxymh24g4zw9s45ef8qayjwmfqgfhky2qyv2sqd032ypge282v20ysgq6lpv5nmjwlrs88jeepxsc2upa970snfnfnxff5ztqzpcgzuqsq0vcpgpcyqqzpy02klq9svqqgavadc6y5tmmqzvsv484ku5nw43vumxuflvsrsgr345pnuh6zq6pz2cy8wra8vujs23y5yhd4gwslns3m7qm9023hc8cyq7e6y8ywe85k5ey9twjy026s9akr0hlw8faqkp4cguquhlrw2uwwqe3wtfn3wxv58t8g8pqf0afnw2f6247yqp4k6jgcq9eh8ua7f2kl6qfhqvqsyqlaqyusq")
     val Success(codedDecoded) = Bolt12Invoice.fromString(invoice.toString)
     assert(codedDecoded.chain == chain)
     assert(codedDecoded.offerId.contains(offerId))
