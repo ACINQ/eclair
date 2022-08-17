@@ -1096,7 +1096,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.audit(TimestampSecond.min, TimestampSecond.max)(any[Timeout]).wasCalled(once)
+        val now = TimestampSecond.now()
+        eclair.audit(argThat[TimestampSecond](t => now - 25.hours <= t && t <= now), argThat[TimestampSecond](t => t <= now))(any[Timeout]).wasCalled(once)
       }
 
     Post("/audit", FormData("from" -> TimestampSecond.min.toLong.toString, "to" -> TimestampSecond.max.toLong.toString)) ~>
@@ -1105,7 +1106,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.audit(TimestampSecond.min, TimestampSecond.max)(any[Timeout]).wasCalled(twice)
+        eclair.audit(TimestampSecond.min, TimestampSecond.max)(any[Timeout]).wasCalled(once)
       }
 
     Post("/audit", FormData("from" -> 123456.toString, "to" -> 654321.toString)) ~>
