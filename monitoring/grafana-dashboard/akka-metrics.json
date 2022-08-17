@@ -178,7 +178,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Time in Mailbox (Channel)"
+                "value": "Time in Mailbox (Channel) (95th percentile)"
               }
             ]
           }
@@ -206,7 +206,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "quantile_over_time(0.99,\n  rate(akka_group_time_in_mailbox_seconds_count{group=\"eclair-node/user/SimpleSupervisor/Switchboard/Peer/Channel\"}\n[6m])[$__range:6m]\n)",
+          "expr": "quantile_over_time(0.95,\n  rate(akka_group_time_in_mailbox_seconds_count{group=\"eclair-node/user/SimpleSupervisor/Switchboard/Peer/Channel\"}\n[6m])[$__range:6m]\n)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -318,7 +318,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Processing Time (Channel)"
+                "value": "Processing Time (Channel) (95th percentile)"
               }
             ]
           }
@@ -346,7 +346,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "quantile_over_time(0.99,\n  rate(akka_group_processing_time_seconds_count{group=\"eclair-node/user/SimpleSupervisor/Switchboard/Peer/Channel\"}\n[6m])[$__range:6m]\n)",
+          "expr": "quantile_over_time(0.95,\n  rate(akka_group_processing_time_seconds_count{group=\"eclair-node/user/SimpleSupervisor/Switchboard/Peer/Channel\"}\n[6m])[$__range:6m]\n)",
           "hide": false,
           "legendFormat": "__auto",
           "range": true,
@@ -471,7 +471,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Time in Mailbox (Register)"
+                "value": "Time in Mailbox (Register) (95th percentile)"
               }
             ]
           }
@@ -611,7 +611,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Processing Time (Register)"
+                "value": "Processing Time (Register) (95th percentile)"
               }
             ]
           }
@@ -638,8 +638,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "editorMode": "builder",
-          "expr": "akka_group_processing_time_seconds_count{group=\"eclair-node/user/SimpleSupervisor/Register\"}",
+          "editorMode": "code",
+          "expr": "quantile_over_time(0.95,\n  rate(akka_group_processing_time_seconds_count{group=\"eclair-node/user/SimpleSupervisor/Register\"}[6m])[$__range:6m])",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -749,7 +749,7 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "green",
                 "value": 80
               }
             ]
@@ -764,7 +764,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Time in Mailbox (Peer)"
+                "value": "Time in Mailbox (Peer) (95th percentile)"
               }
             ]
           }
@@ -887,7 +887,7 @@
                 "value": null
               },
               {
-                "color": "red",
+                "color": "green",
                 "value": 80
               }
             ]
@@ -902,7 +902,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Processing Time (Peer)"
+                "value": "Processing Time (Peer) (95th percentile)"
               }
             ]
           }
