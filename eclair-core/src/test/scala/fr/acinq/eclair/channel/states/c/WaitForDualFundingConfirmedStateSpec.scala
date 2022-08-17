@@ -24,6 +24,7 @@ import fr.acinq.eclair.channel.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ProcessCurrentBlockHeight
+import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol._
@@ -279,19 +280,39 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
+    val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "dual funding d34d")
-    // We don't force-close yet because we don't know which funding tx will be confirmed.
-    alice2blockchain.expectNoMessage(100 millis)
-    alice2bob.expectNoMessage(100 millis)
-    assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    awaitCond(alice.stateName == CLOSING)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
+    alice2blockchain.expectMsgType[TxPublisher.PublishTx] // claim-main-delayed
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
+  }
+
+  test("recv Error (remote commit published)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    alice ! Error(ByteVector32.Zeroes, "force-closing channel, bye-bye")
+    awaitCond(alice.stateName == CLOSING)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx.txid)
+    val claimMainLocal = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainLocal.input.txid == aliceCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainLocal.tx.txid)
+    // Bob broadcasts his commit tx as well.
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    alice ! WatchFundingSpentTriggered(bobCommitTx)
+    val claimMainRemote = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainRemote.input.txid == bobCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainRemote.tx.txid)
   }
 
   test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.DualFunding), Tag("no-funding-contribution")) { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! Error(ByteVector32.Zeroes, "please help me recover my funds")
     // We have nothing at stake, but we publish our commitment to help our peer recover their funds more quickly.
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid)
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
     bob2blockchain.expectNoMessage(100 millis)
     awaitCond(bob.stateName == CLOSED)
   }
@@ -307,9 +328,14 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
   test("recv CMD_FORCECLOSE", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val sender = TestProbe()
-    val c = CMD_FORCECLOSE(sender.ref)
-    alice ! c
-    sender.expectMsg(RES_FAILURE(c, CommandUnavailableInThisState(channelId(alice), "force-close", WAIT_FOR_DUAL_FUNDING_CONFIRMED)))
+    val commitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    alice ! CMD_FORCECLOSE(sender.ref)
+    awaitCond(alice.stateName == CLOSING)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == commitTx.txid)
+    val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMain.input.txid == commitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid)
   }
 
 }

@@ -1084,6 +1084,23 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_CLOSING) => handleFundingTimeout(d)
 
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_CLOSING) =>
+      d.alternativeCommitments.find(_.commitInput.outPoint.txid == w.tx.txid) match {
+        case Some(alternativeCommitments) =>
+          log.info("an alternative funding tx with txid={} got confirmed", w.tx.txid)
+          val commitTx = alternativeCommitments.fullySignedLocalCommitTx(keyManager).tx
+          val commitTxs = Set(commitTx.txid, alternativeCommitments.remoteCommit.txid)
+          blockchain ! WatchFundingSpent(self, alternativeCommitments.commitInput.outPoint.txid, alternativeCommitments.commitInput.outPoint.index.toInt, commitTxs)
+          context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+          val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, alternativeCommitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
+          stay() using d.copy(commitments = alternativeCommitments, localCommitPublished = Some(localCommitPublished)) storing() calling doPublish(localCommitPublished, alternativeCommitments)
+        case None =>
+          if (d.commitments.commitInput.outPoint.txid != w.tx.txid) {
+            log.warning("an unknown funding tx with txid={} got confirmed, this should not happen", w.tx.txid)
+          }
+          stay()
+      }
+
     case Event(WatchFundingSpentTriggered(tx), d: DATA_CLOSING) =>
       if (d.mutualClosePublished.exists(_.tx.txid == tx.txid)) {
         // we already know about this tx, probably because we have published it ourselves after successful negotiation
@@ -1332,7 +1349,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       val minDepth_opt = Helpers.Funding.minDepthDualFunding(nodeParams.channelConf, d.commitments.channelFeatures, d.fundingParams)
       val minDepth = minDepth_opt.getOrElse {
         val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
-        // If we are in state WAIT_FOR_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
+        // If we are in state WAIT_FOR_DUAL_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
         // have skipped this state. Maybe the computation method was changed and eclair was restarted?
         log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
         defaultMinDepth.toLong

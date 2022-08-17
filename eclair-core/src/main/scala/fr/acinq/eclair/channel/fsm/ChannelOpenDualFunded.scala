@@ -445,14 +445,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
       stay()
 
-    case Event(c: CMD_FORCECLOSE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      // We can't easily force-close until we know which funding transaction confirms.
-      // A better option would be to double-spend the funding transaction(s).
-      log.warning("cannot force-close while dual-funded transactions are unconfirmed")
-      val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-      replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "force-close", stateName))
-      stay()
-
     case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleRemoteError(e, d)
   })
 
