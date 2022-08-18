@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, Transaction}
@@ -309,6 +308,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(fundingParams, fundingTx, commitments) =>
         d.deferred.foreach(self ! _)
+        watchFundingTx(commitments)
         Funding.minDepthDualFunding(nodeParams.channelConf, commitments.channelFeatures, fundingParams) match {
           case Some(fundingMinDepth) =>
             blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, fundingMinDepth)
@@ -318,10 +318,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               case fundingTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using nextData storing() sending fundingTx.localSigs calling publishFundingTx(fundingParams, fundingTx)
             }
           case None =>
-            val commitTxs = Set(commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments.remoteCommit.txid)
-            blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitTxs)
             val (shortIds, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown)
-            val nextData = DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, Nil, channelReady)
+            val nextData = DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady)
             fundingTx match {
               case fundingTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_READY) using nextData storing() sending Seq(fundingTx.localSigs, channelReady)
               case fundingTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_READY) using nextData storing() sending Seq(fundingTx.localSigs, channelReady) calling publishFundingTx(fundingParams, fundingTx)
@@ -395,14 +393,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           Try(Transaction.correctlySpends(commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(confirmedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
             case Success(_) =>
               log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex with funding txid=${commitments.commitInput.outPoint.txid}")
-              val commitTxs = Set(commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments.remoteCommit.txid)
-              blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitTxs)
+              watchFundingTx(commitments)
               context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, confirmedTx))
               val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
               val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
               d.deferred.foreach(self ! _)
-              val otherFundingTxs = allFundingTxs.filter(_.commitments.commitInput.outPoint.txid != confirmedTx.txid)
-              goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, otherFundingTxs, channelReady) storing() sending channelReady
+              goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending channelReady
             case Failure(t) =>
               log.error(t, s"rejecting channel with invalid funding tx: ${confirmedTx.bin}")
               allFundingTxs.foreach(f => wallet.rollback(f.fundingTx.tx.buildUnsignedTx()))
@@ -427,12 +423,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         (d.fundingParams.remoteAmount == 0.sat || d.commitments.localParams.initFeatures.hasFeature(Features.ZeroConf))
       if (canUseZeroConf) {
         log.info("this chanel isn't zero-conf, but they sent an early channel_ready with an alias: no need to wait for confirmations")
-        val commitTxs = Set(d.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, d.commitments.remoteCommit.txid)
-        blockchain ! WatchFundingSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, commitTxs)
         val (shortIds, localChannelReady) = acceptFundingTx(d.commitments, RealScidStatus.Unknown)
         self ! remoteChannelReady
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored
-        goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(d.commitments, shortIds, Nil, localChannelReady) storing() sending localChannelReady
+        goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(d.commitments, shortIds, localChannelReady) storing() sending localChannelReady
       } else {
         log.info("received their channel_ready, deferring message")
         stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
@@ -444,6 +438,19 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       // note: no need to persist their message, in case of disconnection they will resend it
       context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
       stay()
+
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      // We wait for one of the funding transactions to confirm before going to the closing state, as the spent funding
+      // tx and the associated commit tx could be replaced by a new version of the funding tx.
+      if (tx.txid == d.commitments.remoteCommit.txid) {
+        log.warning("funding tx spent by txid={} while still unconfirmed", tx.txid)
+        stay()
+      } else if (d.previousFundingTxs.exists(_.commitments.remoteCommit.txid == tx.txid)) {
+        log.warning("previous funding tx spent by txid while still unconfirmed", tx.txid)
+        stay()
+      } else {
+        handleInformationLeak(tx, d)
+      }
 
     case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleRemoteError(e, d)
   })

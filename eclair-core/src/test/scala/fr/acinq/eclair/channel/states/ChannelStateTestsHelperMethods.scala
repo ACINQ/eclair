@@ -298,6 +298,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       alice2bob.expectMsgType[TxSignatures]
       alice2bob.forward(bob)
       val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingSpent]
       if (!channelType.features.contains(Features.ZeroConf)) {
         eventually(assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
         eventually(assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
@@ -305,9 +307,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
         alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
         bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+        alice2blockchain.expectMsgType[WatchFundingSpent]
+        bob2blockchain.expectMsgType[WatchFundingSpent]
       }
-      alice2blockchain.expectMsgType[WatchFundingSpent]
-      bob2blockchain.expectMsgType[WatchFundingSpent]
       alice2blockchain.expectMsgType[WatchFundingLost]
       bob2blockchain.expectMsgType[WatchFundingLost]
       alice2bob.expectMsgType[ChannelReady]

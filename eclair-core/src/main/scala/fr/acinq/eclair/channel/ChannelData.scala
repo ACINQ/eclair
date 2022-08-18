@@ -494,7 +494,6 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments,
                                                   shortIds: ShortIds,
-                                                  otherFundingTxs: Seq[DualFundingTx],
                                                   lastSent: ChannelReady) extends PersistentChannelData
 
 final case class DATA_NORMAL(commitments: Commitments,

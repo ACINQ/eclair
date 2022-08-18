@@ -315,8 +315,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
 
         case funding: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
+          (funding.commitments +: funding.previousFundingTxs.map(_.commitments)).foreach(c => watchFundingTx(c))
           // we make sure that the funding tx with the highest feerate has been published
-          // NB: with dual-funding, we only watch the funding tx once it has been confirmed
           publishFundingTx(funding.fundingParams, funding.fundingTx)
           goto(OFFLINE) using funding
 
@@ -1088,10 +1088,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       d.alternativeCommitments.find(_.commitInput.outPoint.txid == w.tx.txid) match {
         case Some(alternativeCommitments) =>
           log.info("an alternative funding tx with txid={} got confirmed", w.tx.txid)
-          val commitTx = alternativeCommitments.fullySignedLocalCommitTx(keyManager).tx
-          val commitTxs = Set(commitTx.txid, alternativeCommitments.remoteCommit.txid)
-          blockchain ! WatchFundingSpent(self, alternativeCommitments.commitInput.outPoint.txid, alternativeCommitments.commitInput.outPoint.index.toInt, commitTxs)
+          watchFundingTx(alternativeCommitments)
           context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+          val commitTx = alternativeCommitments.fullySignedLocalCommitTx(keyManager).tx
           val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, alternativeCommitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
           stay() using d.copy(commitments = alternativeCommitments, localCommitPublished = Some(localCommitPublished)) storing() calling doPublish(localCommitPublished, alternativeCommitments)
         case None =>
@@ -1127,6 +1126,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       } else if (d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentNext(tx, d)
+      } else if (d.alternativeCommitments.exists(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid))) {
+        // counterparty may attempt to spend an alternative unconfirmed funding tx at any time
+        handleRemoteSpentAlternative(tx, d.alternativeCommitments, d)
       } else {
         // counterparty may attempt to spend a revoked commit tx at any time
         handleRemoteSpentOther(tx, d)
@@ -1319,6 +1321,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
+
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if d.previousFundingTxs.map(_.commitments).exists(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) => handleRemoteSpentAlternative(tx, d.previousFundingTxs.map(_.commitments).toList, d)
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => handleRemoteSpentFuture(tx, d)
 
@@ -1515,12 +1519,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(WatchFundingDeeplyBuriedTriggered(_, _, _), _) => stay()
 
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
-      handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) => handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
+
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if d.previousFundingTxs.map(_.commitments).exists(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) => handleRemoteSpentAlternative(tx, d.previousFundingTxs.map(_.commitments).toList, d)
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) => handleRemoteSpentOther(tx, d)
 

@@ -396,7 +396,6 @@ private[channel] object ChannelCodecs3 {
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_0c_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | commitmentsCodec) ::
         ("shortIds" | shortids) ::
-        ("otherFundingTxs" | seqOfN(uint16, dualFundingTxCodec)) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
 
     val DATA_NORMAL_02_Codec: Codec[DATA_NORMAL] = (
