@@ -207,6 +207,20 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.sign(priv).toString == ref)
   }
 
+  test("Parse a signet invoice") {
+    val ref = "lntbs2500u1p30ukj3pp5flaka84tayag36uj06k58tn5zukel0paskxwmc0gppc6t6utmp3sdq809hkcmcsp5uv40j7x3dx6sqfrefmj6lu933zakwedejyl4rsakv2lzg53fqxlsmqz9gxqrrsscqp79q2sqqqqqysgqmq30dcj5l8lc02e6pxq0wmagy5qafc05hv6e0yd6ftudes2awa8psu63tuf39dch0dk3hdckfd64g2v3y58tnpma68fxfyqr4vw22wsqm4jkrn"
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
+    assert(invoice.prefix == "lntbs")
+    assert(invoice.amount_opt.contains(250000000 msat))
+    assert(invoice.paymentHash.bytes == hex"4ffb6e9eabe93a88eb927ead43ae74172d9fbc3d858cede1e80871a5eb8bd863")
+    assert(invoice.features == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional ))
+    assert(invoice.createdAt == TimestampSecond(1660836433))
+    assert(invoice.nodeId == PublicKey(hex"02e899d99662f2e64ea0eeaecb53c4628fa40a22d7185076e42e8a3d67fcb7b8e6"))
+    assert(invoice.description == Left("yolo"))
+    assert(invoice.fallbackAddress().isEmpty)
+    assert(invoice.tags.size == 7)
+  }
+
   test("On mainnet, with fallback address 1RustyRX2oai4EYYDpQGWvEL62BBGqN9T with extra routing info to go via nodes 029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255 then 039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255") {
     val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfpp3qjmp7lwpagxun9pygexvgpjdc4jdj85fr9yq20q82gphp2nflc7jtzrcazrra7wwgzxqc8u7754cdlpfrmccae92qgzqvzq2ps8pqqqqqqpqqqqq9qqqvpeuqafqxu92d8lr6fvg0r5gv0heeeqgcrqlnm6jhphu9y00rrhy4grqszsvpcgpy9qqqqqqgqqqqq7qqzq9qrsgqdfjcdk6w3ak5pca9hwfwfh63zrrz06wwfya0ydlzpgzxkn5xagsqz7x9j4jwe7yj7vaf2k9lqsdk45kts2fd0fkr28am0u4w95tt2nsq76cqw0"
     val Success(invoice) = Bolt11Invoice.fromString(ref)

@@ -136,9 +136,9 @@ object Bolt11Invoice {
 
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
+    Block.SignetGenesisBlock.hash -> "lntbs",
     Block.TestnetGenesisBlock.hash -> "lntb",
-    Block.LivenetGenesisBlock.hash -> "lnbc",
-    Block.SignetGenesisBlock.hash -> "lntbs"
+    Block.LivenetGenesisBlock.hash -> "lnbc"
   )
 
   val defaultFeatures: Features[InvoiceFeature] = Features((Features.VariableLengthOnion, FeatureSupport.Mandatory), (Features.PaymentSecret, FeatureSupport.Mandatory))
