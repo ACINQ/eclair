@@ -1383,16 +1383,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
       log.debug("re-sending channelReady")
-      val channelKeyPath = keyManager.keyPath(d.commitments.localParams, d.commitments.channelConfig)
-      val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-      val channelReady = ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
+      val channelReady = createChannelReady(d.shortIds, d.commitments)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
       log.debug("re-sending channelReady")
-      val channelKeyPath = keyManager.keyPath(d.commitments.localParams, d.commitments.channelConfig)
-      val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-      val channelReady = ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
+      val channelReady = createChannelReady(d.shortIds, d.commitments)
       goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
@@ -1533,6 +1529,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingTimeout(d)
+
+    case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
     case Event(WatchFundingConfirmedTriggered(_, _, _), _) => stay()

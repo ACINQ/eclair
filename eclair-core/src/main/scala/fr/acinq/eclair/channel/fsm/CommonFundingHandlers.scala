@@ -18,13 +18,13 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.{ShortChannelId, ToMilliSatoshiConversion}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuried, WatchFundingLost, WatchFundingSpent}
 import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
+import fr.acinq.eclair.{ShortChannelId, ToMilliSatoshiConversion}
 
 import scala.concurrent.duration.DurationInt
 
@@ -45,15 +45,19 @@ trait CommonFundingHandlers extends CommonHandlers {
 
   def acceptFundingTx(commitments: Commitments, realScidStatus: RealScidStatus): (ShortIds, ChannelReady) = {
     blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-    val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
-    val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
     // the alias will use in our peer's channel_update message, the goal is to be able to use our channel as soon
     // as it reaches NORMAL state, and before it is announced on the network
     val shortIds = ShortIds(realScidStatus, ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
     context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds, remoteNodeId))
-    // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
-    val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias)))
+    val channelReady = createChannelReady(shortIds, commitments)
     (shortIds, channelReady)
+  }
+
+  def createChannelReady(shortIds: ShortIds, commitments: Commitments): ChannelReady = {
+    val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
+    val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+    // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
+    ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias)))
   }
 
   def receiveChannelReady(shortIds: ShortIds, channelReady: ChannelReady, commitments: Commitments): DATA_NORMAL = {
