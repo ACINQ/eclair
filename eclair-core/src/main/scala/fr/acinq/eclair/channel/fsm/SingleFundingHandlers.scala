@@ -17,13 +17,13 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse, WatchFundingLost, WatchFundingSpent}
+import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong, Transaction}
+import fr.acinq.eclair.BlockHeight
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT, FUNDING_TIMEOUT_FUNDEE}
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
-import fr.acinq.eclair.wire.protocol.{ChannelReady, ChannelReadyTlv, Error, TlvStream}
-import fr.acinq.eclair.{BlockHeight, ShortChannelId}
+import fr.acinq.eclair.wire.protocol.Error
 
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
@@ -35,7 +35,7 @@ import scala.util.{Failure, Success}
 /**
  * This trait contains handlers related to single-funder channel transactions.
  */
-trait SingleFundingHandlers extends CommonHandlers {
+trait SingleFundingHandlers extends CommonFundingHandlers {
 
   this: Channel =>
 
@@ -51,26 +51,6 @@ trait SingleFundingHandlers extends CommonHandlers {
         channelOpenReplyToUser(Left(LocalError(t)))
         log.error(t, "error while committing funding tx: ") // tx may still have been published, can't fail-fast
     }
-  }
-
-  def watchFundingTx(commitments: Commitments, additionalKnownSpendingTxs: Set[ByteVector32] = Set.empty): Unit = {
-    // TODO: should we wait for an acknowledgment from the watcher?
-    // TODO: implement WatchFundingLost?
-    val knownSpendingTxs = Set(commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments.remoteCommit.txid) ++ commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit.txid).toSet ++ additionalKnownSpendingTxs
-    blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, knownSpendingTxs)
-  }
-
-  def acceptFundingTx(commitments: Commitments, realScidStatus: RealScidStatus): (ShortIds, ChannelReady) = {
-    blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-    val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
-    val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-    // the alias will use in our peer's channel_update message, the goal is to be able to use our channel as soon
-    // as it reaches NORMAL state, and before it is announced on the network
-    val shortIds = ShortIds(realScidStatus, ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
-    context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds, remoteNodeId))
-    // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
-    val channelReady = ChannelReady(commitments.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias)))
-    (shortIds, channelReady)
   }
 
   /**

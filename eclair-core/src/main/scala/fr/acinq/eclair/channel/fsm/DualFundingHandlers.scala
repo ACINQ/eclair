@@ -33,7 +33,7 @@ import scala.util.{Failure, Success}
 /**
  * This trait contains handlers related to dual-funding channel transactions.
  */
-trait DualFundingHandlers extends CommonHandlers {
+trait DualFundingHandlers extends CommonFundingHandlers {
 
   this: Channel =>
 
