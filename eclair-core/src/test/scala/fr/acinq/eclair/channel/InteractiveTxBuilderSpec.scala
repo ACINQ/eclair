@@ -979,7 +979,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val wallet = new SingleKeyOnChainWallet()
     val params = createChannelParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
     val validScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
-    val firstAttempt = PartiallySignedSharedTransaction(SharedTransaction(Seq(createInput(params.channelId, UInt64(2), 125_000 sat)), Nil, Nil, Nil, 0), null)
+    val firstAttempt = PartiallySignedSharedTransaction(SharedTransaction(List(createInput(params.channelId, UInt64(2), 125_000 sat)), Nil, Nil, Nil, 0), null)
     val secondAttempt = PartiallySignedSharedTransaction(SharedTransaction(firstAttempt.tx.localInputs :+ createInput(params.channelId, UInt64(4), 150_000 sat), Nil, Nil, Nil, 0), null)
     val bob = params.spawnTxBuilderBob(params.fundingParamsB, TestConstants.anchorOutputsFeeratePerKw, wallet)
     bob ! Start(probe.ref, Seq(firstAttempt, secondAttempt))

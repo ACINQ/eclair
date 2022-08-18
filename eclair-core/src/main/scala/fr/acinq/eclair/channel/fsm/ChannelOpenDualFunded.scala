@@ -405,7 +405,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               goto(CLOSED)
           }
         case None =>
-          log.error(s"rejecting channel with invalid funding tx that doesn't match any of our funding txs: ${confirmedTx.bin}")
+          log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${confirmedTx.bin}")
           allFundingTxs.foreach(f => wallet.rollback(f.fundingTx.tx.buildUnsignedTx()))
           goto(CLOSED)
       }
@@ -422,7 +422,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         d.previousFundingTxs.isEmpty &&
         (d.fundingParams.remoteAmount == 0.sat || d.commitments.localParams.initFeatures.hasFeature(Features.ZeroConf))
       if (canUseZeroConf) {
-        log.info("this chanel isn't zero-conf, but they sent an early channel_ready with an alias: no need to wait for confirmations")
+        log.info("this channel isn't zero-conf, but they sent an early channel_ready with an alias: no need to wait for confirmations")
         val (shortIds, localChannelReady) = acceptFundingTx(d.commitments, RealScidStatus.Unknown)
         self ! remoteChannelReady
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored

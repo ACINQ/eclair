@@ -350,10 +350,10 @@ private[channel] object ChannelCodecs3 {
         ("scriptPubKey" | lengthDelimited(bytes))).as[RemoteTxAddOutput]
 
     private val sharedTransactionCodec: Codec[SharedTransaction] = (
-      ("localInputs" | seqOfN(uint16, lengthDelimited(txAddInputCodec))) ::
-        ("remoteInputs" | seqOfN(uint16, remoteTxAddInputCodec)) ::
-        ("localOutputs" | seqOfN(uint16, lengthDelimited(txAddOutputCodec))) ::
-        ("remoteOutputs" | seqOfN(uint16, remoteTxAddOutputCodec)) ::
+      ("localInputs" | listOfN(uint16, lengthDelimited(txAddInputCodec))) ::
+        ("remoteInputs" | listOfN(uint16, remoteTxAddInputCodec)) ::
+        ("localOutputs" | listOfN(uint16, lengthDelimited(txAddOutputCodec))) ::
+        ("remoteOutputs" | listOfN(uint16, remoteTxAddOutputCodec)) ::
         ("lockTime" | uint32)).as[SharedTransaction]
 
     private val partiallySignedSharedTransactionCodec: Codec[PartiallySignedSharedTransaction] = (
@@ -387,7 +387,7 @@ private[channel] object ChannelCodecs3 {
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | signedSharedTransactionCodec) ::
         ("fundingParams" | fundingParamsCodec) ::
-        ("previousFundingTxs" | seqOfN(uint16, dualFundingTxCodec)) ::
+        ("previousFundingTxs" | listOfN(uint16, dualFundingTxCodec)) ::
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::
         ("rbfAttempt" | provide(Option.empty[typed.ActorRef[InteractiveTxBuilder.Command]])) ::

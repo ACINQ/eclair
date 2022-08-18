@@ -482,7 +482,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       fundingTx: SignedSharedTransaction,
                                                       fundingParams: InteractiveTxParams,
-                                                      previousFundingTxs: Seq[DualFundingTx],
+                                                      previousFundingTxs: List[DualFundingTx],
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfAttempt: Option[typed.ActorRef[InteractiveTxBuilder.Command]],

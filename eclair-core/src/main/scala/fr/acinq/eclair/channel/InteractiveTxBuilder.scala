@@ -141,7 +141,7 @@ object InteractiveTxBuilder {
   case class UnusableInput(outpoint: OutPoint)
 
   /** Unsigned transaction created collaboratively. */
-  case class SharedTransaction(localInputs: Seq[TxAddInput], remoteInputs: Seq[RemoteTxAddInput], localOutputs: Seq[TxAddOutput], remoteOutputs: Seq[RemoteTxAddOutput], lockTime: Long) {
+  case class SharedTransaction(localInputs: List[TxAddInput], remoteInputs: List[RemoteTxAddInput], localOutputs: List[TxAddOutput], remoteOutputs: List[RemoteTxAddOutput], lockTime: Long) {
     val localAmountIn: Satoshi = localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
     val remoteAmountIn: Satoshi = remoteInputs.map(_.txOut.amount).sum
     val totalAmountIn: Satoshi = localAmountIn + remoteAmountIn
@@ -566,7 +566,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   }
 
   def validateTx(session: InteractiveTxSession): Either[ChannelException, (SharedTransaction, Int)] = {
-    val sharedTx = SharedTransaction(session.localInputs, session.remoteInputs.map(i => RemoteTxAddInput(i)), session.localOutputs, session.remoteOutputs.map(o => RemoteTxAddOutput(o)), fundingParams.lockTime)
+    val sharedTx = SharedTransaction(session.localInputs.toList, session.remoteInputs.map(i => RemoteTxAddInput(i)).toList, session.localOutputs.toList, session.remoteOutputs.map(o => RemoteTxAddOutput(o)).toList, fundingParams.lockTime)
     val tx = sharedTx.buildUnsignedTx()
 
     if (tx.txIn.length > 252 || tx.txOut.length > 252) {
@@ -689,6 +689,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             Behaviors.stopped
         }
       case SignTransactionResult(signedTx, None) =>
+        // We return as soon as we sign the tx, because we need to be able to handle the case where remote publishes the
+        // tx right away without properly sending us their signature.
         log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
         replyTo ! Succeeded(fundingParams, signedTx, commitments)
         Behaviors.stopped

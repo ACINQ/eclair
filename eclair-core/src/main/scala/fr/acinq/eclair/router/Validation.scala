@@ -516,7 +516,7 @@ object Validation {
         }
       case None =>
         // should never happen, we log a warning and handle the update, it will be rejected since there is no related channel
-        log.warning("unrecognized local chanel update for channelId={} localAlias={}", lcu.channelId, lcu.shortIds.localAlias)
+        log.warning("unrecognized local channel update for channelId={} localAlias={}", lcu.channelId, lcu.shortIds.localAlias)
         handleChannelUpdate(d, db, nodeParams.routerConf, Left(lcu))
     }
   }
