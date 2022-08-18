@@ -23,14 +23,13 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
-import fr.acinq.eclair.RealShortChannelId
-import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{RealShortChannelId, _}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits._
@@ -198,7 +197,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[protocol.Init]
-    transport.send(peerConnection, protocol.Init(Bob.nodeParams.features.initFeatures(), TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SegnetGenesisBlock.hash :: Nil))))
+    transport.send(peerConnection, protocol.Init(Bob.nodeParams.features.initFeatures(), TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SignetGenesisBlock.hash :: Nil))))
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible networks"))

@@ -163,6 +163,7 @@ object NodeParams extends Logging {
   private val chain2Hash: Map[String, ByteVector32] = Map(
     "regtest" -> Block.RegtestGenesisBlock.hash,
     "testnet" -> Block.TestnetGenesisBlock.hash,
+    "signet" -> Block.SignetGenesisBlock.hash,
     "mainnet" -> Block.LivenetGenesisBlock.hash
   )
 
