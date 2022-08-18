@@ -307,7 +307,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(fundingParams, fundingTx, commitments) =>
         d.deferred.foreach(self ! _)
-        watchFundingTx(commitments)
         Funding.minDepthDualFunding(nodeParams.channelConf, commitments.channelFeatures, fundingParams) match {
           case Some(fundingMinDepth) =>
             blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, fundingMinDepth)
@@ -317,6 +316,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               case fundingTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending fundingTx.localSigs calling publishFundingTx(fundingParams, fundingTx)
             }
           case None =>
+            watchFundingTx(commitments)
             val (shortIds, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown)
             val d1 = DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady)
             fundingTx match {
@@ -422,6 +422,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         (d.fundingParams.remoteAmount == 0.sat || d.commitments.localParams.initFeatures.hasFeature(Features.ZeroConf))
       if (canUseZeroConf) {
         log.info("this channel isn't zero-conf, but they sent an early channel_ready with an alias: no need to wait for confirmations")
+        watchFundingTx(d.commitments)
         val (shortIds, localChannelReady) = acceptFundingTx(d.commitments, RealScidStatus.Unknown)
         self ! remoteChannelReady
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored
@@ -437,19 +438,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       // note: no need to persist their message, in case of disconnection they will resend it
       context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
       stay()
-
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      // We wait for one of the funding transactions to confirm before going to the closing state, as the spent funding
-      // tx and the associated commit tx could be replaced by a new version of the funding tx.
-      if (tx.txid == d.commitments.remoteCommit.txid) {
-        log.warning("funding tx spent by txid={} while still unconfirmed", tx.txid)
-        stay()
-      } else if (d.previousFundingTxs.exists(_.commitments.remoteCommit.txid == tx.txid)) {
-        log.warning("previous funding tx spent by txid while still unconfirmed", tx.txid)
-        stay()
-      } else {
-        handleInformationLeak(tx, d)
-      }
 
     case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleRemoteError(e, d)
   })

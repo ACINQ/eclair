@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction, SignedSharedTransaction}
 import fr.acinq.eclair.channel._
@@ -52,6 +53,25 @@ trait DualFundingHandlers extends CommonFundingHandlers {
             channelOpenReplyToUser(Left(LocalError(t)))
             log.warning("error while publishing funding tx: {}", t.getMessage) // tx may be published by our peer, we can't fail-fast
         }
+    }
+  }
+
+  def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
+    if (w.tx.txid == d.commitments.commitInput.outPoint.txid) {
+      watchFundingTx(d.commitments)
+      context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+      // We can forget previous funding attempts now that the funding tx is confirmed.
+      stay() using d.copy(previousFundingTxs = Nil) storing()
+    } else if (d.previousFundingTxs.exists(_.commitments.commitInput.outPoint.txid == w.tx.txid)) {
+      log.info("a previous funding tx with txid={} has been confirmed", w.tx.txid)
+      val confirmed = d.previousFundingTxs.find(_.commitments.commitInput.outPoint.txid == w.tx.txid).get
+      watchFundingTx(confirmed.commitments)
+      context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+      // We can forget other funding attempts now that one of the funding txs is confirmed.
+      stay() using d.copy(commitments = confirmed.commitments, fundingTx = confirmed.fundingTx, previousFundingTxs = Nil) storing()
+    } else {
+      log.error(s"internal error: a funding tx confirmed that doesn't match any of our funding txs: ${w.tx.txid}")
+      stay()
     }
   }
 

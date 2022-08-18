@@ -260,6 +260,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             case None =>
               // in all other cases we need to be ready for any type of closing
               watchFundingTx(data.commitments, closing.spendingTxs.map(_.txid).toSet)
+              if (closing.alternativeCommitments.nonEmpty) {
+                // There are unconfirmed, alternative funding transactions, so we wait for one to confirm before
+                // watching transactions spending it.
+                blockchain ! WatchFundingConfirmed(self, data.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
+                closing.alternativeCommitments.foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks))
+              }
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isInitiator))
               closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.commitments))
               closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments))
@@ -315,9 +321,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
 
         case funding: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
-          (funding.commitments +: funding.previousFundingTxs.map(_.commitments)).foreach(c => watchFundingTx(c))
           // we make sure that the funding tx with the highest feerate has been published
           publishFundingTx(funding.fundingParams, funding.fundingTx)
+          // we watch confirmation of all funding candidates, and once one of them confirms we will watch spending txs
+          blockchain ! WatchFundingConfirmed(self, funding.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
+          funding.previousFundingTxs.map(_.commitments).foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks))
           goto(OFFLINE) using funding
 
         case _ =>
@@ -1106,10 +1114,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments1, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
           val d1 = DATA_CLOSING(commitments1, None, d.waitingSince, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
           stay() using d1 storing() calling doPublish(localCommitPublished, commitments1)
+        case None if d.commitments.commitInput.outPoint.txid == w.tx.txid =>
+          // The best funding tx candidate has been confirmed, we can forget alternative commitments.
+          stay() using d.copy(alternativeCommitments = Nil)
         case None =>
-          if (d.commitments.commitInput.outPoint.txid != w.tx.txid) {
-            log.warning("an unknown funding tx with txid={} got confirmed, this should not happen", w.tx.txid)
-          }
+          log.warning("an unknown funding tx with txid={} got confirmed, this should not happen", w.tx.txid)
           stay()
       }
 
@@ -1139,12 +1148,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       } else if (d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentNext(tx, d)
-      } else if (d.alternativeCommitments.exists(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid))) {
-        // counterparty may attempt to spend an alternative unconfirmed funding tx at any time
-        val commitments1 = d.alternativeCommitments.find(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)).get
-        log.warning("they published their commit with txid={} spending an alternative unconfirmed funding tx with fundingTxid={}", tx.txid, commitments1.commitInput.outPoint.txid)
-        blockchain ! WatchFundingConfirmed(self, commitments1.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-        stay()
       } else {
         // counterparty may attempt to spend a revoked commit tx at any time
         handleRemoteSpentOther(tx, d)
@@ -1326,10 +1329,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
-    // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
-    case Event(WatchFundingConfirmedTriggered(_, _, _), _) => stay()
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingConfirmedOffline(w, d)
 
-    case Event(WatchFundingDeeplyBuriedTriggered(_, _, _), _) => stay()
+    // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
+    case Event(_: WatchFundingConfirmedTriggered, _) => stay()
+
+    case Event(_: WatchFundingDeeplyBuriedTriggered, _) => stay()
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
       handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
@@ -1337,12 +1342,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
-
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if d.previousFundingTxs.map(_.commitments).exists(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) =>
-      val commitments1 = d.previousFundingTxs.map(_.commitments).find(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)).get
-      log.warning("they published their commit with txid={} spending an alternative unconfirmed funding tx with fundingTxid={}", tx.txid, commitments1.commitInput.outPoint.txid)
-      blockchain ! WatchFundingConfirmed(self, commitments1.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-      spendLocalCurrent(d)
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => handleRemoteSpentFuture(tx, d)
 
@@ -1532,22 +1531,18 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
-    // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
-    case Event(WatchFundingConfirmedTriggered(_, _, _), _) => stay()
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingConfirmedOffline(w, d)
 
-    case Event(WatchFundingDeeplyBuriedTriggered(_, _, _), _) => stay()
+    // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
+    case Event(_: WatchFundingConfirmedTriggered, _) => stay()
+
+    case Event(_: WatchFundingDeeplyBuriedTriggered, _) => stay()
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) => handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
-
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if d.previousFundingTxs.map(_.commitments).exists(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) =>
-      val commitments1 = d.previousFundingTxs.map(_.commitments).find(c => c.remoteCommit.txid == tx.txid || c.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)).get
-      log.warning("they published their commit with txid={} spending an alternative unconfirmed funding tx with fundingTxid={}", tx.txid, commitments1.commitInput.outPoint.txid)
-      blockchain ! WatchFundingConfirmed(self, commitments1.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-      spendLocalCurrent(d)
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) => handleRemoteSpentOther(tx, d)
 
