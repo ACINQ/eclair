@@ -17,8 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
-import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction}
@@ -30,7 +29,6 @@ import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, RealShortChannelId}
 
 import scala.concurrent.duration.DurationInt
-import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 19/04/2022.
@@ -389,20 +387,13 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       val allFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
       allFundingTxs.find(_.commitments.commitInput.outPoint.txid == confirmedTx.txid) match {
         case Some(DualFundingTx(_, commitments)) =>
-          Try(Transaction.correctlySpends(commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(confirmedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
-            case Success(_) =>
-              log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex with funding txid=${commitments.commitInput.outPoint.txid}")
-              watchFundingTx(commitments)
-              context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, confirmedTx))
-              val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
-              val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
-              d.deferred.foreach(self ! _)
-              goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending channelReady
-            case Failure(t) =>
-              log.error(t, s"rejecting channel with invalid funding tx: ${confirmedTx.bin}")
-              allFundingTxs.foreach(f => wallet.rollback(f.fundingTx.tx.buildUnsignedTx()))
-              goto(CLOSED)
-          }
+          log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex with funding txid=${commitments.commitInput.outPoint.txid}")
+          watchFundingTx(commitments)
+          context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, confirmedTx))
+          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
+          val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
+          d.deferred.foreach(self ! _)
+          goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending channelReady
         case None =>
           log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${confirmedTx.bin}")
           allFundingTxs.foreach(f => wallet.rollback(f.fundingTx.tx.buildUnsignedTx()))

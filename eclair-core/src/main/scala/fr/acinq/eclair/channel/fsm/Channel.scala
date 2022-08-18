@@ -1114,12 +1114,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments1, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
           val d1 = DATA_CLOSING(commitments1, None, d.waitingSince, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
           stay() using d1 storing() calling doPublish(localCommitPublished, commitments1)
-        case None if d.commitments.commitInput.outPoint.txid == w.tx.txid =>
-          // The best funding tx candidate has been confirmed, we can forget alternative commitments.
-          stay() using d.copy(alternativeCommitments = Nil)
         case None =>
-          log.warning("an unknown funding tx with txid={} got confirmed, this should not happen", w.tx.txid)
-          stay()
+          if (d.commitments.commitInput.outPoint.txid == w.tx.txid) {
+            // The best funding tx candidate has been confirmed, we can forget alternative commitments.
+            stay() using d.copy(alternativeCommitments = Nil) storing()
+          } else {
+            log.warning("an unknown funding tx with txid={} got confirmed, this should not happen", w.tx.txid)
+            stay()
+          }
       }
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_CLOSING) =>
