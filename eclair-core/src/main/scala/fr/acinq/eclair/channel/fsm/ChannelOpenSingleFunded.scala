@@ -434,8 +434,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_CHANNEL_READY)(handleExceptions {
     case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_CHANNEL_READY) =>
-      val nextData = receiveChannelReady(d.shortIds, channelReady, d.commitments)
-      goto(NORMAL) using nextData storing()
+      val d1 = receiveChannelReady(d.shortIds, channelReady, d.commitments)
+      goto(NORMAL) using d1 storing()
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_CHANNEL_READY) if d.commitments.announceChannel =>
       delayEarlyAnnouncementSigs(remoteAnnSigs)

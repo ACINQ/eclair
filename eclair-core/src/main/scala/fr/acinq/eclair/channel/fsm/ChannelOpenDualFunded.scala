@@ -311,17 +311,17 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         Funding.minDepthDualFunding(nodeParams.channelConf, commitments.channelFeatures, fundingParams) match {
           case Some(fundingMinDepth) =>
             blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, fundingMinDepth)
-            val nextData = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, None, None)
+            val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, None, None)
             fundingTx match {
-              case fundingTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using nextData storing() sending fundingTx.localSigs
-              case fundingTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using nextData storing() sending fundingTx.localSigs calling publishFundingTx(fundingParams, fundingTx)
+              case fundingTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending fundingTx.localSigs
+              case fundingTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending fundingTx.localSigs calling publishFundingTx(fundingParams, fundingTx)
             }
           case None =>
             val (shortIds, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown)
-            val nextData = DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady)
+            val d1 = DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady)
             fundingTx match {
-              case fundingTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_READY) using nextData storing() sending Seq(fundingTx.localSigs, channelReady)
-              case fundingTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_READY) using nextData storing() sending Seq(fundingTx.localSigs, channelReady) calling publishFundingTx(fundingParams, fundingTx)
+              case fundingTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending Seq(fundingTx.localSigs, channelReady)
+              case fundingTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending Seq(fundingTx.localSigs, channelReady) calling publishFundingTx(fundingParams, fundingTx)
             }
         }
       case f: InteractiveTxBuilder.Failed =>
@@ -362,8 +362,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx)).getMessage)
           case Right(fundingTx) =>
             log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
-            val nextData = d.copy(fundingTx = fundingTx)
-            stay() using nextData storing() calling publishFundingTx(d.fundingParams, fundingTx)
+            val d1 = d.copy(fundingTx = fundingTx)
+            stay() using d1 storing() calling publishFundingTx(d.fundingParams, fundingTx)
         }
         case _: FullySignedSharedTransaction =>
           log.warning("received duplicate tx_signatures")
@@ -456,8 +456,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_DUAL_FUNDING_READY)(handleExceptions {
     case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
-      val nextData = receiveChannelReady(d.shortIds, channelReady, d.commitments)
-      goto(NORMAL) using nextData storing()
+      val d1 = receiveChannelReady(d.shortIds, channelReady, d.commitments)
+      goto(NORMAL) using d1 storing()
 
     case Event(_: TxInitRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
       // Our peer may not have received the funding transaction confirmation.
