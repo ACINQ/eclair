@@ -147,6 +147,15 @@ If the mempool becomes congested and the feerate is too low, the commitment tran
 
 You can now specify a DNS host name as one of your `server.public-ips` addresses (see PR [#911](https://github.com/lightning/bolts/pull/911)). Note: you can not specify more than one DNS host name.
 
+#### Support for testing on the signet network
+
+To test Eclair with bitcoind configured for signet, set the following values in `eclair.conf`:
+
+```conf
+eclair.chain = "signet"
+eclair.bitcoind.rpcport=38332
+```
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key 7A73FE77DE2C4027. Note that you can get it:
