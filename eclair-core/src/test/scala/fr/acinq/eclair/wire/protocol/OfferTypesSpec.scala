@@ -32,14 +32,6 @@ class OfferTypesSpec extends AnyFunSuite {
   val nodeKey = PrivateKey(hex"85d08273493e489b9330c85a3e54123874c8cd67c1bf531f4b926c9c555f8e1d")
   val nodeId = nodeKey.publicKey
 
-  test("sign and check offer") {
-    val key = randomKey()
-    val offer = Offer(Some(100_000 msat), "test offer", key.publicKey, Features(VariableLengthOnion -> Mandatory), Block.LivenetGenesisBlock.hash)
-    assert(offer.signature.isEmpty)
-    val signedOffer = offer.sign(key)
-    assert(signedOffer.checkSignature())
-  }
-
   test("invoice request is signed") {
     val sellerKey = randomKey()
     val offer = Offer(Some(100_000 msat), "test offer", sellerKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
@@ -50,62 +42,30 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("basic offer") {
     val offer = Offer(TlvStream[OfferTlv](
-      Description("basic offer"),
-      NodeId(nodeId)))
-    val encoded = "lno1pg9kyctnd93jqmmxvejhy83pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrj"
+      OfferDescription("basic offer"),
+      OfferNodeId(nodeId)))
+    val encoded = "lno1pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrj"
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.isEmpty)
-    assert(offer.signature.isEmpty)
     assert(offer.description == "basic offer")
     assert(offer.nodeId == nodeId)
   }
 
-  test("basic signed offer") {
-    val signedOffer = Offer(TlvStream[OfferTlv](
-      Description("basic signed offer"),
-      NodeId(nodeId))).sign(nodeKey)
-    val encoded = "lno1pgfxyctnd93jqumfvahx2epqdanxvetjrcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe7pqr8k27dajwvrehuprj08ggamld6pgnj9ydp3whx6kz5hjaavh8rhfjzkhyxsjwakelepqxmx26aqhlaslxn8ljn4mtm2cx76xz72kxkc"
-    assert(Offer.decode(encoded).get == signedOffer)
-    assert(signedOffer.checkSignature())
-    assert(signedOffer.amount.isEmpty)
-    assert(signedOffer.description == "basic signed offer")
-    assert(signedOffer.nodeId == nodeId)
-  }
-
   test("offer with amount and quantity") {
     val offer = Offer(TlvStream[OfferTlv](
-      Chains(Seq(Block.TestnetGenesisBlock.hash)),
-      Amount(50 msat),
-      Description("offer with quantity"),
-      Issuer("alice@bigshop.com"),
-      QuantityMin(1),
-      NodeId(nodeKey.publicKey)))
-    val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968j9q3v9kxjcm9gp3xjemndphhqtnrdak3vqgprcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe"
+      OfferChains(Seq(Block.TestnetGenesisBlock.hash)),
+      OfferAmount(50 msat),
+      OfferDescription("offer with quantity"),
+      OfferIssuer("alice@bigshop.com"),
+      OfferQuantityMax(0),
+      OfferNodeId(nodeKey.publicKey)))
+    val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968jys3v9kxjcm9gp3xjemndphhqtnrdak3gqqkyypsmuhrtwfzm85mht4a3vcp0yrlgua3u3m5uqpc6kf7nqjz6v70qwg"
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.contains(50 msat))
-    assert(offer.signature.isEmpty)
     assert(offer.description == "offer with quantity")
     assert(offer.nodeId == nodeId)
     assert(offer.issuer.contains("alice@bigshop.com"))
-    assert(offer.quantityMin.contains(1))
-  }
-
-  test("signed offer with amount and quantity") {
-    val signedOffer = Offer(TlvStream[OfferTlv](
-      Chains(Seq(Block.TestnetGenesisBlock.hash)),
-      Amount(50 msat),
-      Description("offer with quantity"),
-      Issuer("alice@bigshop.com"),
-      QuantityMin(1),
-      NodeId(nodeKey.publicKey))).sign(nodeKey)
-    val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968j9q3v9kxjcm9gp3xjemndphhqtnrdak3vqgprcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe7pqte5yn8m6mtk5racz9c0hgw6smxhp5t0ns77huttmy4632f6t2ns3jdwkxh9qy9f2eun2329gswcz38dn5f2us4us2r76zxvhkj9uecv"
-    assert(Offer.decode(encoded).get == signedOffer)
-    assert(signedOffer.checkSignature())
-    assert(signedOffer.amount.contains(50 msat))
-    assert(signedOffer.description == "offer with quantity")
-    assert(signedOffer.nodeId == nodeId)
-    assert(signedOffer.issuer.contains("alice@bigshop.com"))
-    assert(signedOffer.quantityMin.contains(1))
+    assert(offer.quantityMax.contains(Long.MaxValue))
   }
 
   test("decode invalid offer") {
@@ -131,13 +91,11 @@ class OfferTypesSpec extends AnyFunSuite {
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 2500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValidFor(offer))
-    val biggerAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.map { case Amount(_) => Amount(3000 msat) case x => x })), payerKey)
+    val biggerAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.map { case InvoiceRequestAmount(_) => InvoiceRequestAmount(3000 msat) case x => x })), payerKey)
     assert(biggerAmount.isValidFor(offer))
-    val lowerAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.map { case Amount(_) => Amount(2000 msat) case x => x })), payerKey)
+    val lowerAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.map { case InvoiceRequestAmount(_) => InvoiceRequestAmount(2000 msat) case x => x })), payerKey)
     assert(!lowerAmount.isValidFor(offer))
-    val otherOfferId = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.map { case OfferId(_) => OfferId(randomBytes32()) case x => x })), payerKey)
-    assert(!otherOfferId.isValidFor(offer))
-    val withQuantity = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(Quantity(1)))), payerKey)
+    val withQuantity = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestQuantity(1)))), payerKey)
     assert(!withQuantity.isValidFor(offer))
   }
 
@@ -157,78 +115,58 @@ class OfferTypesSpec extends AnyFunSuite {
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValidFor(offer))
-    val withoutAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filter { case Amount(_) => false case _ => true })), payerKey)
+    val withoutAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filter { case InvoiceRequestAmount(_) => false case _ => true })), payerKey)
     assert(!withoutAmount.isValidFor(offer))
   }
 
   test("check that invoice request matches offer (chain compatibility)") {
     {
-      val offer = Offer(TlvStream(Seq(Amount(100 msat), Description("offer without chains"), NodeId(randomKey().publicKey))))
+      val offer = Offer(TlvStream(Seq(OfferAmount(100 msat), OfferDescription("offer without chains"), OfferNodeId(randomKey().publicKey))))
       val payerKey = randomKey()
       val request = {
-        val tlvs: Seq[InvoiceRequestTlv] = Seq(
-          OfferId(offer.offerId),
-          Amount(100 msat),
-          PayerKey(payerKey.publicKey),
-          FeaturesTlv(Features.empty)
-        )
+        val tlvs: Seq[InvoiceRequestTlv] = (offer.records.records ++ Seq(
+          InvoiceRequestAmount(100 msat),
+          InvoiceRequestPayerId(payerKey.publicKey),
+        )).toSeq
         val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
         InvoiceRequest(TlvStream(tlvs :+ Signature(signature)))
       }
       assert(request.isValidFor(offer))
-      val withDefaultChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(Chain(Block.LivenetGenesisBlock.hash)))), payerKey)
+      val withDefaultChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestChain(Block.LivenetGenesisBlock.hash)))), payerKey)
       assert(withDefaultChain.isValidFor(offer))
-      val otherChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(Chain(Block.TestnetGenesisBlock.hash)))), payerKey)
+      val otherChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestChain(Block.TestnetGenesisBlock.hash)))), payerKey)
       assert(!otherChain.isValidFor(offer))
     }
     {
       val (chain1, chain2) = (randomBytes32(), randomBytes32())
-      val offer = Offer(TlvStream(Seq(Chains(Seq(chain1, chain2)), Amount(100 msat), Description("offer with chains"), NodeId(randomKey().publicKey))))
+      val offer = Offer(TlvStream(Seq(OfferChains(Seq(chain1, chain2)), OfferAmount(100 msat), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey))))
       val payerKey = randomKey()
       val request1 = InvoiceRequest(offer, 100 msat, 1, Features.empty, payerKey, chain1)
       assert(request1.isValidFor(offer))
       val request2 = InvoiceRequest(offer, 100 msat, 1, Features.empty, payerKey, chain2)
       assert(request2.isValidFor(offer))
-      val noChain = signInvoiceRequest(request1.copy(records = TlvStream(request1.records.records.filter { case Chain(_) => false case _ => true })), payerKey)
+      val noChain = signInvoiceRequest(request1.copy(records = TlvStream(request1.records.records.filter { case InvoiceRequestChain(_) => false case _ => true })), payerKey)
       assert(!noChain.isValidFor(offer))
-      val otherChain = signInvoiceRequest(request1.copy(records = TlvStream(request1.records.records.map { case Chain(_) => Chain(Block.LivenetGenesisBlock.hash) case x => x })), payerKey)
+      val otherChain = signInvoiceRequest(request1.copy(records = TlvStream(request1.records.records.map { case InvoiceRequestChain(_) => InvoiceRequestChain(Block.LivenetGenesisBlock.hash) case x => x })), payerKey)
       assert(!otherChain.isValidFor(offer))
     }
   }
 
   test("check that invoice request matches offer (multiple items)") {
     val offer = Offer(TlvStream(
-      Amount(500 msat),
-      Description("offer for multiple items"),
-      NodeId(randomKey().publicKey),
-      QuantityMin(3),
-      QuantityMax(10),
+      OfferAmount(500 msat),
+      OfferDescription("offer for multiple items"),
+      OfferNodeId(randomKey().publicKey),
+      OfferQuantityMax(10),
     ))
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 1600 msat, 3, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
-    assert(request.records.get[Quantity].nonEmpty)
+    assert(request.records.get[InvoiceRequestQuantity].nonEmpty)
     assert(request.isValidFor(offer))
     val invalidAmount = InvoiceRequest(offer, 2400 msat, 5, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(!invalidAmount.isValidFor(offer))
-    val tooFewItems = InvoiceRequest(offer, 1000 msat, 2, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
-    assert(!tooFewItems.isValidFor(offer))
     val tooManyItems = InvoiceRequest(offer, 5500 msat, 11, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(!tooManyItems.isValidFor(offer))
-  }
-
-  test("decode invoice request") {
-    val encoded = "lnr1qvsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqqyypz8xu3xwsqpar9dd26lgrrvc7s63ljt0pgh6ag2utv5udez7n2mjzqzz47qcqczqgqzqqgzycsv2tmjgzc5l546aldq699wj9pdusvfred97l352p4aa862vqvzw5p8pdyjqctdyppxzardv9hrypx74klwluzqd0rqgeew2uhuagttuv6aqwklvm0xmlg52lfnagzw8ygt0wrtnv2tsx69m6tgug7njaw5ypa5fn369n9yzc87v02rqccj9h04dxf3nzc"
-    val Success(request) = InvoiceRequest.decode(encoded)
-    assert(request.amount == Some(5500 msat))
-    assert(request.offerId == ByteVector32(hex"4473722674001e8cad6ab5f40c6cc7a1a8fe4b78517d750ae2d94e3722f4d5b9"))
-    assert(request.quantity == 2)
-    assert(request.features == Features(VariableLengthOnion -> Optional, BasicMultiPartPayment -> Optional))
-    assert(request.records.get[Chain].nonEmpty)
-    assert(request.chain == Block.LivenetGenesisBlock.hash)
-    assert(request.payerKey == ByteVector32(hex"c52f7240b14fd2baefda0d14ae9142de41891e5a5f7e34506bde9f4a60182750"))
-    assert(request.payerInfo == Some(hex"deadbeef"))
-    assert(request.payerNote == Some("I am Batman"))
-    assert(request.encode() == encoded)
   }
 
   test("decode invalid invoice request") {
@@ -253,43 +191,43 @@ class OfferTypesSpec extends AnyFunSuite {
 
     val testCases = Seq(
       // Official test vectors.
-      TestCase(hex"010203e8", 1, ByteVector32(hex"aa0aa0f694c85492ac459c1de9831a37682985f5e840ecc9b1e28eece7dc5236")),
-      TestCase(hex"010203e8 02080000010000020003", 2, ByteVector32(hex"013b756ed73554cbc4dd3d90f363cb7cba6d8a279465a21c464e582b173ff502")),
-      TestCase(hex"010203e8 02080000010000020003 03310266e4598d1d3c415f572a8488830b60f7e744ed9235eb0b1ba93283b315c0351800000000000000010000000000000002", 3, ByteVector32(hex"016fcda3b6f9ca30b35936877ca591fa101365a761a1453cfd9436777d593656")),
-      TestCase(hex"0603555344 080203e8 0a0f313055534420657665727920646179 141072757374792e6f7a6c6162732e6f7267 1a020101 1e204b9a1fa8e006f1e3937f65f66c408e6da8e1ca728ea43222a7381df1cc449605", 6, ByteVector32(hex"7cef68df49fd9222bed0138ca5603da06464b2f523ea773bc4edcb6bd07966e7")),
+      TestCase(hex"010203e8", 1, ByteVector32(hex"b013756c8fee86503a0b4abdab4cddeb1af5d344ca6fc2fa8b6c08938caa6f93")),
+      TestCase(hex"010203e8 02080000010000020003", 2, ByteVector32(hex"c3774abbf4815aa54ccaa026bff6581f01f3be5fe814c620a252534f434bc0d1")),
+      TestCase(hex"010203e8 02080000010000020003 03310266e4598d1d3c415f572a8488830b60f7e744ed9235eb0b1ba93283b315c0351800000000000000010000000000000002", 3, ByteVector32(hex"ab2e79b1283b0b31e0b035258de23782df6b89a38cfa7237bde69aed1a658c5d")),
+      TestCase(hex"0008000000000000000006035553440801640a1741204d617468656d61746963616c205472656174697365162102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661958210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c", 6, ByteVector32(hex"608407c18ad9a94d9ea2bcdbe170b6c20c462a7833a197621c916f78cf18e624")),
       // Additional test vectors.
-      TestCase(hex"010100", 1, ByteVector32(hex"c8112b235945b06a11995bf69956a93ff0403c28de35bd33b4714da1b6239ebb")),
-      TestCase(hex"010100 020100", 2, ByteVector32(hex"8271d606bea3ef49e59d610585317edfc6c53d8d1afd763731919d9a7d70a7d9")),
-      TestCase(hex"010100 020100 030100", 3, ByteVector32(hex"c7eff290817749d87eede061d5335559e8211769e651a2ee5c5e7d2ddd655236")),
-      TestCase(hex"010100 020100 030100 040100", 4, ByteVector32(hex"57883ef2f1e8df4a23e6f0a2e3acda2ed0b11e00ef2d39fe1caa2d71d7273c37")),
-      TestCase(hex"010100 020100 030100 040100 050100", 5, ByteVector32(hex"85b74f254eced46c525a5369c52f86f249a41f6f6ccb3c918ffe4025ea22d8b6")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100", 6, ByteVector32(hex"6cf27da8a67b7cb199dd1824017cb008bd22bf1d57273a8c4544c5408275dc2d")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100", 7, ByteVector32(hex"2a038f022b51b1b969563679a22eb167ef603d5b2cb2d0dbe86dc4d2f48d8c6e")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100", 8, ByteVector32(hex"8ddbe97f6ed2e2a4a43e828e350f9cb6679b7d5f16837273cf0e6f7da342fa19")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100", 9, ByteVector32(hex"8050bed857ff7929a24251e3a517fc14f46fb0f02e6719cb9d53087f7f047f6d")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100", 10, ByteVector32(hex"e22aa818e746ff9613e6cccc99ebce257d93c35736b168b6b478d6f3762f56ce")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100", 11, ByteVector32(hex"626e3159cec72534155ccf691a84ab68da89e6cd679a118c70a28fd1f1bb10cc")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100", 12, ByteVector32(hex"f659da1c839d99a2c6b104d179ee44ffe3a9eaa55831de3c612c8c293c27401b")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100", 13, ByteVector32(hex"c165756a94718d19e66ff7b581347699009a9e17805e16cb6ba94c034c7dc757")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100", 14, ByteVector32(hex"573b85bbceacbf1b189412858ac6573e923bbf0c9cfdc37d37757996f6086208")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100", 15, ByteVector32(hex"84a3088fe74b82ee82a9415d48fdfad8dc6a286fec8e6fcdcefcf0bc02f3256e")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100", 16, ByteVector32(hex"a686f116fce33e43fa875fec2253c71694a0324e1ce7640ed1070b0cc3a14cc1")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100", 17, ByteVector32(hex"fbee87d6726c8b67a8d2e2bff92b13d0b1d9188f9d42af2d3afefceaafa6f3e5")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100", 18, ByteVector32(hex"5004f619c426b01e57c480a84d5dcdc3a70b4bf575ec573be60c3a75ed978b72")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100", 19, ByteVector32(hex"6f0a5e59f1fa5dc6c12ed3bbe0eb91c818b22a8d011d5a2160462c59e6158a58")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100", 20, ByteVector32(hex"e43f00c262e4578c5ed4413ab340e79cb8b258241b7c52550b7307f7b9c4d645")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100", 21, ByteVector32(hex"e46776637883bae1a62cbfb621c310c13e6c522092954e08d74c08328d53f035")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100", 22, ByteVector32(hex"813ebe9f07638005abbe270f11ae2749a5b9b0c5cf89a305598303a38f5f2da5")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100", 23, ByteVector32(hex"fdd7b779192dcbadb5695303e2bcee0fc175428278bdbfa4b4445251df6c9450")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100", 24, ByteVector32(hex"33c92b7820742d094548328ee3bfdf29bf3fe1f971171dcd2a6da0f185dceddb")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100", 25, ByteVector32(hex"888da09f5ba1b8e431b3ab1db62fca94c0cbbec6b145012d9308d20f68571ff2")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100", 26, ByteVector32(hex"a87cdc040109b855d81f13af4a6f57cdb7e31252eeb83bc03518fdd6dd81ec18")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100", 27, ByteVector32(hex"9829715a0d8cbb5c080de53704f274aa4da3590e8338d57ce99ab491d7a44e76")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100", 28, ByteVector32(hex"ce8bac7c3d10b528d59d5f391bf36bb6acd65b4bb3cbd0a769488e3b451b2c26")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100 1d0100", 29, ByteVector32(hex"88d29ac3e4ae8761058af4b1baaa873ec4f76822166f8dfc2888bcbb51212130")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100 1d0100 1e0100", 30, ByteVector32(hex"b013259fe32c6eaf88d2b3b2d01350e5505bcc0fcdcdc7c360e5644fe827424d")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100 1d0100 1e0100 1f0100", 31, ByteVector32(hex"1c60489269d312c2ea94c637936e38a968d2900cab6c5544db091aa8b3bb5176")),
-      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100 1d0100 1e0100 1f0100 200100", 32, ByteVector32(hex"e0d88bd7685ffd55e0de4e45e190e7e6bf1ecc0a7d1a32fbdaa6b1b27e8bc37b")),
+      TestCase(hex"010100", 1, ByteVector32(hex"14ffa5e1e5d861059abff167dad6e632c45483006f7d4dc4355586062a3da30d")),
+      TestCase(hex"010100 020100", 2, ByteVector32(hex"ec0584e764b71cb49ebe60ce7edbab8387e42da20b6077031bd27ff345b38ff8")),
+      TestCase(hex"010100 020100 030100", 3, ByteVector32(hex"cc68aea3dc863832ef6828b3da8689cce3478c934cc50a68522477506a35feb2")),
+      TestCase(hex"010100 020100 030100 040100", 4, ByteVector32(hex"b531eaa1ca71956148a6756cf8f46bdf231879e6c392019877f23e56acb7b956")),
+      TestCase(hex"010100 020100 030100 040100 050100", 5, ByteVector32(hex"104e383bfdcb620cd8cefa95245332e8bd32ffd8d974fffdafe1488b1f4a1fbd")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100", 6, ByteVector32(hex"d96f0769702cb3440abbe683d7211fd20bd152699352f09f45d2695a89d18cdc")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100", 7, ByteVector32(hex"30b8886e306c97dbc7b730a2e99138c1ea4fdf5c2f71e2a31e434f63f5eed228")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100", 8, ByteVector32(hex"783262efe5eeef4ec96bcee8d7cf5149ea44e0c28a78f4b1cb73d6cec9a0b378")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100", 9, ByteVector32(hex"6fd20b65a0097aff2bcc70753612a296edc27933ea335bac5df2e4c724cdb43c")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100", 10, ByteVector32(hex"9a3cf7785e9c84e03d6bc7fc04226a1cb19f158a69f16684663aa710bd90a14b")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100", 11, ByteVector32(hex"ace50a04d9dc82ce123c6ac6c2449fa607054560a9a7b8229cd2d47c01b94953")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100", 12, ByteVector32(hex"1a8e85042447a10ec312b35db34d0c8722caba4aaf6a170c4506d1fdb520aa66")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100", 13, ByteVector32(hex"8c3b8d9ba90eb9a4a34c890a7a24ba6ddc873529c5fd7c95f33a5b9ba589f54b")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100", 14, ByteVector32(hex"ed9e3694bbad2fca636576cc69af4c63ad64023bfeb788fe0f40b3533b248a6a")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100", 15, ByteVector32(hex"bab201e05786ae1eae4d685b4f815134158720ba297ea0f46a9420ffe5e94b16")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100", 16, ByteVector32(hex"44438261bb64672f374d8782e92dc9616e900378ce4bd64442753722bc2a1acb")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100", 17, ByteVector32(hex"bb6fbcd5cf426ec0b7e49d9f9ccc6c15319e01f007cce8f16fa802016718b9f7")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100", 18, ByteVector32(hex"64d8639e76af096223cad2c448d68fabf751d1c6a939bc86e1015b19188202dc")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100", 19, ByteVector32(hex"bcb88f8e06886a6d422d14bc2ed4e7fc06c0ad2adeedf630a73972c5b15538ca")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100", 20, ByteVector32(hex"9deddd5f0ab909e6a161fd4b9d44ed7384ee0a7fe8d3fbb637872767eab82f1e")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100", 21, ByteVector32(hex"4a32a2325bbd1c2b5b4915c6bec6b3e3d734d956e0c123f1fa6d70f7a8609dcd")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100", 22, ByteVector32(hex"a3ec28f0f9cb64db8d96dd7b9039fbf2240438401ea992df802d7bb70b3d02af")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100", 23, ByteVector32(hex"d025f268ec4f09baf51c4b94287e76707d9353e8cab31dc586ae47742ba0b266")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100", 24, ByteVector32(hex"cd5a2086a3919d67d0617da1e6e293f115bed8d8306498ed814c6c109ad370a4")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100", 25, ByteVector32(hex"f64113810b52f4d6a55380a3d84e59e34d26c145448121c2113a023cb63de71b")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100", 26, ByteVector32(hex"b99d7332ea2db048093a7bc0aaa85f82ccfa9da2b734fc0a14b79c5dac5a3a1c")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100", 27, ByteVector32(hex"fab01a3ce6e878942dc5c9c862cb18e88202d50e6026d2266748f7eda5f9db7f")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100", 28, ByteVector32(hex"2dc8b24a0e142d1ed36a144ed35ef0d4b7d0d1b51e198b2282248e45ebaf0417")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100 1d0100", 29, ByteVector32(hex"3693a858cc97762d69d05b2191d3e5254c29ddb5abac5b9fe52b227fa216aa4c")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100 1d0100 1e0100", 30, ByteVector32(hex"db8787d4509265e764e60b7a81cf38efb9d3a7910d67c4ae68a1232436e1cd3b")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100 1d0100 1e0100 1f0100", 31, ByteVector32(hex"af49f35e5b2565cb229f342405783d330c56031f005a4a6ca01f87e5637d4614")),
+      TestCase(hex"010100 020100 030100 040100 050100 060100 070100 080100 090100 0a0100 0b0100 0c0100 0d0100 0e0100 0f0100 100100 110100 120100 130100 140100 150100 160100 170100 180100 190100 1a0100 1b0100 1c0100 1d0100 1e0100 1f0100 200100", 32, ByteVector32(hex"2e9f8a8542576197650f61c882625f0f6838f962f9fa24ce809b687784a8a7de")),
     )
     testCases.foreach {
       case TestCase(tlvStream, tlvCount, expectedRoot) =>
@@ -297,7 +235,7 @@ class OfferTypesSpec extends AnyFunSuite {
         val tlvs = genericTlvStream.decode(tlvStream.bits).require.value
         assert(tlvs.records.size == tlvCount)
         val root = OfferTypes.rootHash(tlvs, genericTlvStream)
-        assert(root == expectedRoot)
+      assert(root == expectedRoot)
     }
   }
 

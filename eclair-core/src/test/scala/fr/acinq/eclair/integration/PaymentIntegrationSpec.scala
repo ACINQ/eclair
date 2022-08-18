@@ -695,7 +695,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
       ReceivingRoute(Seq(nodes("E").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
     )
-    sender.send(nodes("D").paymentHandler, ReceiveOfferPayment(recipientKey, offer, invoiceRequest, receivingRoutes, nodes("D").router))
+    sender.send(nodes("D").paymentHandler, ReceiveOfferPayment(recipientKey, invoiceRequest, receivingRoutes, nodes("D").router))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.blindedPaths.length == 3)
     assert(invoice.blindedPathsInfo.length == 3)
@@ -725,7 +725,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000)),
       ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000)),
     )
-    sender.send(nodes("C").paymentHandler, ReceiveOfferPayment(nodes("C").nodeParams.privateKey, offer, invoiceRequest, receivingRoutes, nodes("C").router))
+    sender.send(nodes("C").paymentHandler, ReceiveOfferPayment(nodes("C").nodeParams.privateKey, invoiceRequest, receivingRoutes, nodes("C").router))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.blindedPaths.length == 2)
     assert(invoice.blindedPaths.forall(_.length == 0))
@@ -753,7 +753,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val receivingRoutes = Seq(
       ReceivingRoute(Seq(nodes("A").nodeParams.nodeId), CltvExpiryDelta(1000), Seq(DummyBlindedHop(100 msat, 100, CltvExpiryDelta(48)), DummyBlindedHop(150 msat, 50, CltvExpiryDelta(36))))
     )
-    sender.send(nodes("A").paymentHandler, ReceiveOfferPayment(recipientKey, offer, invoiceRequest, receivingRoutes, nodes("A").router))
+    sender.send(nodes("A").paymentHandler, ReceiveOfferPayment(recipientKey, invoiceRequest, receivingRoutes, nodes("A").router))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.blindedPaths.length == 1)
     assert(invoice.nodeId == recipientKey.publicKey)

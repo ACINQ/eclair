@@ -166,7 +166,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val offer = Offer(Some(amountMsat), "a blinded coffee please", privKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
       val invoiceReq = InvoiceRequest(offer, amountMsat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
       val router = TestProbe()
-      sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, offer, invoiceReq, createEmptyReceivingRoute(), router.ref))
+      sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, invoiceReq, createEmptyReceivingRoute(), router.ref))
       router.expectNoMessage(50 millis)
       val invoice = sender.expectMsgType[Bolt12Invoice]
       assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
@@ -291,7 +291,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       ReceivingRoute(Seq(c, d), CltvExpiryDelta(50), Seq(DummyBlindedHop(250 msat, 0, CltvExpiryDelta(10)), DummyBlindedHop(150 msat, 0, CltvExpiryDelta(80)))),
       ReceivingRoute(Seq(d), CltvExpiryDelta(250)),
     )
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, offer, invoiceReq, receivingRoutes, router.ref))
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, invoiceReq, receivingRoutes, router.ref))
     val finalizeRoute1 = router.expectMsgType[Router.FinalizeRoute]
     assert(finalizeRoute1.route == Router.PredefinedNodeRoute(25_000 msat, Seq(a, b, d)))
     router.send(router.lastSender, RouteResponse(Seq(Router.Route(25_000 msat, Seq(hop_ab, hop_bd), None))))
@@ -304,7 +304,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.blindedPaths.nonEmpty)
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     assert(invoice.description == Left("a blinded coffee please"))
-    assert(invoice.offerId.contains(offer.offerId))
+    assert(invoice.invoiceRequest.offer == offer)
     assert(invoice.blindedPaths.length == 3)
     assert(invoice.blindedPaths(0).blindedNodeIds.length == 4)
     assert(invoice.blindedPaths(0).introductionNodeId == a)
@@ -317,7 +317,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.blindedPathsInfo(2) == PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 25_000 msat, Features.empty))
 
     val pendingPayment = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment]
-    assert(pendingPayment.invoice == invoice)
+    assert(pendingPayment.invoice.toString == invoice.toString)
     assert(pendingPayment.status == IncomingPaymentStatus.Pending)
     assert(pendingPayment.pathIds.nonEmpty)
     pendingPayment.pathIds.values.foreach(pathId => assert(pathId.length == 32))
@@ -336,7 +336,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       ReceivingRoute(Seq(a, c), CltvExpiryDelta(100)),
       ReceivingRoute(Seq(b, c), CltvExpiryDelta(100)),
     )
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, offer, invoiceReq, receivingRoutes, router.ref))
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, invoiceReq, receivingRoutes, router.ref))
     val finalizeRoute1 = router.expectMsgType[Router.FinalizeRoute]
     assert(finalizeRoute1.route == Router.PredefinedNodeRoute(25_000 msat, Seq(a, c)))
     router.send(router.lastSender, RouteResponse(Seq(Router.Route(25_000 msat, Seq(hop_ac), None))))
@@ -501,9 +501,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming standard payment for Bolt 12 invoice") { f =>
     import f._
 
-    val offer = Offer(None, "a blinded coffee please", randomKey().publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val nodeKey = randomKey()
+    val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(randomKey(), offer, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
 
@@ -517,9 +518,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should accept incoming blinded payment with correct blinding point and path id") { f =>
     import f._
 
-    val offer = Offer(None, "a blinded coffee please", randomKey().publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val nodeKey = randomKey()
+    val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(randomKey(), offer, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
@@ -534,9 +536,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should accept incoming blinded payment with correct blinding point and path id (zero hop)") { f =>
     import f._
 
-    val offer = Offer(None, "a blinded coffee please", randomKey().publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val nodeKey = randomKey()
+    val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(randomKey(), offer, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
@@ -553,9 +556,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming blinded payment without a blinding point") { f =>
     import f._
 
-    val offer = Offer(None, "a blinded coffee please", randomKey().publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val nodeKey = randomKey()
+    val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(randomKey(), offer, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
@@ -571,9 +575,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming blinded payment with an invalid blinding point") { f =>
     import f._
 
-    val offer = Offer(None, "a blinded coffee please", randomKey().publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val nodeKey = randomKey()
+    val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(randomKey(), offer, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
@@ -589,9 +594,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming blinded payment with an invalid path id") { f =>
     import f._
 
-    val offer = Offer(None, "a blinded coffee please", randomKey().publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val nodeKey = randomKey()
+    val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(randomKey(), offer, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds

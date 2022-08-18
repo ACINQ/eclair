@@ -56,6 +56,9 @@ trait InitFeature extends Feature
 trait NodeFeature extends Feature
 /** Feature that should be advertised in invoices. */
 trait InvoiceFeature extends Feature
+/** Feature that should be advertised in Bolt 12 invoices. */
+trait Bolt12Feature extends InvoiceFeature
+
 /**
  * Feature negotiated when opening a channel that will apply for all of the channel's lifetime.
  * This doesn't include features that can be safely activated/deactivated without impacting the channel's operation such
@@ -100,6 +103,8 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Se
   def nodeAnnouncementFeatures(): Features[NodeFeature] = Features(activated.collect { case (f: NodeFeature, s) => (f, s) }, unknown)
 
   def invoiceFeatures(): Features[InvoiceFeature] = Features(activated.collect { case (f: InvoiceFeature, s) => (f, s) }, unknown)
+
+  def bolt12Features(): Features[InvoiceFeature] = Features(activated.collect { case (f: Bolt12Feature, s) => (f: InvoiceFeature, s) }, unknown)
 
   def unscoped(): Features[Feature] = Features[Feature](activated.collect { case (f, s) => (f: Feature, s) }, unknown)
 
@@ -205,7 +210,7 @@ object Features {
     val mandatory = 14
   }
 
-  case object BasicMultiPartPayment extends Feature with InitFeature with NodeFeature with InvoiceFeature {
+  case object BasicMultiPartPayment extends Feature with InitFeature with NodeFeature with InvoiceFeature with Bolt12Feature {
     val rfcName = "basic_mpp"
     val mandatory = 16
   }

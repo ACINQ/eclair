@@ -216,7 +216,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val invoiceRequest = InvoiceRequest(offer, amount_bc, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
     val blindedRoute = BlindedRouteCreation.createBlindedRouteWithoutHops(c, hex"deadbeef", 1 msat, CltvExpiry(500_000)).route
     val paymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 1 msat, amount_bc, Features.empty)
-    val invoice = Bolt12Invoice(offer, invoiceRequest, paymentPreimage, recipientKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+    val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, recipientKey, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
     val recipient = BlindedRecipient(invoice, amount_bc, expiry_bc, Nil)
     val hops = Seq(channelHopFromUpdate(a, b, channelUpdate_ab), channelHopFromUpdate(b, c, channelUpdate_bc))
     val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(amount_bc, hops, Some(recipient.blindedHops.head)), recipient)
@@ -468,7 +468,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
       val tmpBlindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(Seq(channelHopFromUpdate(b, c, channelUpdate_bc)), hex"deadbeef", 1 msat, CltvExpiry(500_000)).route
       val blindedRoute = tmpBlindedRoute.copy(blindedNodes = tmpBlindedRoute.blindedNodes.reverse)
       val paymentInfo = OfferTypes.PaymentInfo(fee_b, 0, channelUpdate_bc.cltvExpiryDelta, 0 msat, amount_bc, Features.empty)
-      val invoice = Bolt12Invoice(offer, invoiceRequest, paymentPreimage, priv_c.privateKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+      val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, priv_c.privateKey, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
       val recipient = BlindedRecipient(invoice, amount_bc, expiry_bc, Nil)
       val route = Route(amount_bc, Seq(channelHopFromUpdate(a, b, channelUpdate_ab)), Some(recipient.blindedHops.head))
       (route, recipient)

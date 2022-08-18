@@ -36,6 +36,7 @@ import fr.acinq.eclair.router.BlindedRouteCreation.{aggregatePaymentInfo, create
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32}
@@ -268,24 +269,24 @@ object MultiPartHandler {
   /**
    * Use this message to create a Bolt 12 invoice to receive a payment for a given offer.
    *
-   * @param nodeKey             the key that will be used to sign the invoice, which may be different from our public nodeId.
-   * @param offer               the offer this invoice corresponds to.
+   * @param nodeKey             the private key corresponding to the offer node id. It will be used to sign the invoice
+   *                            and may be different from our public nodeId.
    * @param invoiceRequest      the request this invoice responds to.
    * @param routes              routes that must be blinded and provided in the invoice.
    * @param router              router actor.
    * @param paymentPreimage_opt payment preimage.
    */
   case class ReceiveOfferPayment(nodeKey: PrivateKey,
-                                 offer: Offer,
                                  invoiceRequest: InvoiceRequest,
                                  routes: Seq[ReceivingRoute],
                                  router: ActorRef,
                                  paymentPreimage_opt: Option[ByteVector32] = None,
                                  paymentType: String = PaymentType.Blinded) extends ReceivePayment {
+    require(nodeKey.publicKey == invoiceRequest.offer.nodeId, "the node id of the invoice must be the same as the one from the offer")
     require(routes.forall(_.nodes.nonEmpty), "each route must have at least one node")
-    require(offer.amount.nonEmpty || invoiceRequest.amount.nonEmpty, "an amount must be specified in the offer or in the invoice request")
+    require(invoiceRequest.offer.amount.nonEmpty || invoiceRequest.amount.nonEmpty, "an amount must be specified in the offer or in the invoice request")
 
-    val amount = invoiceRequest.amount.orElse(offer.amount.map(_ * invoiceRequest.quantity)).get
+    val amount = invoiceRequest.amount.orElse(invoiceRequest.offer.amount.map(_ * invoiceRequest.quantity)).get
   }
 
   object CreateInvoiceActor {
@@ -362,8 +363,8 @@ object MultiPartHandler {
                   }
                 })).map(paths => {
                   val invoiceFeatures = featuresTrampolineOpt.remove(Features.RouteBlinding).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-                  val invoice = Bolt12Invoice(r.offer, r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.channelConf.minFinalExpiryDelta, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) })
-                  log.debug("generated invoice={} for offerId={}", invoice.toString, r.offer.offerId)
+                  val invoice = Bolt12Invoice(r.invoiceRequest, paymentPreimage, r.nodeKey, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) })
+                  log.debug("generated invoice={} for offer={}", invoice.toString, r.invoiceRequest.offer.toString)
                   nodeParams.db.payments.addIncomingBlindedPayment(invoice, paymentPreimage, paths.map { case (blindedRoute, _, pathId) => blindedRoute.lastBlinding -> pathId.bytes }.toMap, r.paymentType)
                   invoice
                 }).recover(exception => Status.Failure(exception)).pipeTo(replyTo)

@@ -275,7 +275,7 @@ object BaseRouterSpec {
       val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops)
       PaymentBlindedRoute(blindedRoute, paymentInfo)
     })
-    val invoice = Bolt12Invoice(offer, invoiceRequest, preimage, recipientKey, CltvExpiryDelta(6), features, blindedRoutes)
+    val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, features, blindedRoutes)
     val recipient = BlindedRecipient(invoice, amount, expiry, Nil)
     (invoice, recipient)
   }

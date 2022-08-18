@@ -297,7 +297,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
     val blindedRoute = BlindedRouteCreation.createBlindedRouteWithoutHops(e, hex"2a2a2a2a", 1 msat, CltvExpiry(500_000)).route
     val paymentInfo = OfferTypes.PaymentInfo(1_000 msat, 0, CltvExpiryDelta(24), 0 msat, finalAmount, Features.empty)
-    Bolt12Invoice(offer, invoiceRequest, paymentPreimage, priv_e.privateKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+    Bolt12Invoice(invoiceRequest, paymentPreimage, priv_e.privateKey, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
   }
 
   test("forward single-part blinded payment") { f =>
