@@ -102,11 +102,13 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     assert(bobData.commitments.channelFeatures.hasFeature(Features.DualFunding))
     assert(bobData.fundingTx.isInstanceOf[PartiallySignedSharedTransaction])
     val fundingTxId = bobData.fundingTx.asInstanceOf[PartiallySignedSharedTransaction].tx.buildUnsignedTx().txid
+    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTxId)
     assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
 
     // Alice receives Bob's signatures and sends her own signatures.
     bob2alice.forward(alice)
     assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTxId)
     assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
     alice2bob.expectMsgType[TxSignatures]
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
@@ -245,6 +247,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.forward(bob)
 
     val bobSigs = bob2alice.expectMsgType[TxSignatures]
+    bob2blockchain.expectMsgType[WatchFundingSpent]
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
     bob2alice.forward(alice, bobSigs.copy(txId = randomBytes32(), witnesses = Nil))
     alice2bob.expectMsgType[TxAbort]
