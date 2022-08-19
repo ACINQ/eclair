@@ -115,8 +115,8 @@ trait DualFundingHandlers extends CommonFundingHandlers {
 
   /**
    * In most cases we don't need to explicitly rollback funding transactions, as the locks are automatically removed by
-   * bitcoind when transactions are published. But if we didn't publish those transactions (e.g. because our peer never
-   * sent us their signatures), their inputs may still be locked.
+   * bitcoind when transactions are published. But if we couldn't publish those transactions (e.g. because our peer
+   * never sent us their signatures, or the transaction wasn't accepted in our mempool), their inputs may still be locked.
    */
   def rollbackDualFundingTxs(txs: Seq[SignedSharedTransaction]): Unit = {
     val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(toOutPoint(i), Nil, 0))
