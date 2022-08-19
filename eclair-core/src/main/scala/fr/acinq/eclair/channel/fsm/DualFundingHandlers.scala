@@ -63,7 +63,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       // We can forget previous funding attempts now that the funding tx is confirmed.
       stay() using d.copy(previousFundingTxs = Nil) storing()
     } else if (d.previousFundingTxs.exists(_.commitments.commitInput.outPoint.txid == w.tx.txid)) {
-      log.info("a previous funding tx with txid={} has been confirmed", w.tx.txid)
+      log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
       val confirmed = d.previousFundingTxs.find(_.commitments.commitInput.outPoint.txid == w.tx.txid).get
       watchFundingTx(confirmed.commitments)
       context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))

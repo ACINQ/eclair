@@ -1107,7 +1107,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           //
           // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
           // to negotiate a mutual close.
-          log.info("an alternative funding tx with txid={} got confirmed", w.tx.txid)
+          log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
           watchFundingTx(commitments1)
           context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
           val commitTx = commitments1.fullySignedLocalCommitTx(keyManager).tx

@@ -387,7 +387,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       val allFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
       allFundingTxs.find(_.commitments.commitInput.outPoint.txid == confirmedTx.txid) match {
         case Some(DualFundingTx(_, commitments)) =>
-          log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex with funding txid=${commitments.commitInput.outPoint.txid}")
+          log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, blockHeight, txIndex, confirmedTx.txid)
           watchFundingTx(commitments)
           context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, confirmedTx))
           val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
@@ -396,7 +396,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending channelReady
         case None =>
           log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${confirmedTx.bin}")
-          allFundingTxs.foreach(f => wallet.rollback(f.fundingTx.tx.buildUnsignedTx()))
           goto(CLOSED)
       }
 
@@ -424,10 +423,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
-      log.debug("received remote announcement signatures, delaying")
-      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
-      // note: no need to persist their message, in case of disconnection they will resend it
-      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 
     case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleRemoteError(e, d)

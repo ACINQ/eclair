@@ -404,10 +404,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       }
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
-      log.debug("received remote announcement signatures, delaying")
-      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
-      // note: no need to persist their message, in case of disconnection they will resend it
-      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
