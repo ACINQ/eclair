@@ -32,7 +32,7 @@ import scala.util.{Failure, Success, Try}
  * Lightning Bolt 11 invoice
  * see https://github.com/lightning/bolts/blob/master/11-payment-encoding.md
  *
- * @param prefix     currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
+ * @param prefix     currency prefix; lnbc for bitcoin, lntb for bitcoin testnet, lntbs for bitcoin signet
  * @param amount_opt amount to pay (empty string means no amount is specified)
  * @param createdAt  invoice timestamp (UNIX format)
  * @param nodeId     id of the node emitting the invoice
@@ -136,6 +136,7 @@ object Bolt11Invoice {
 
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
+    Block.SignetGenesisBlock.hash -> "lntbs",
     Block.TestnetGenesisBlock.hash -> "lntb",
     Block.LivenetGenesisBlock.hash -> "lnbc"
   )
@@ -292,11 +293,12 @@ object Bolt11Invoice {
       f.version match {
         case 17 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, data.toArray)
         case 18 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, data.toArray)
-        case 17 if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data.toArray)
-        case 18 if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data.toArray)
+        case 17 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data.toArray)
+        case 18 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data.toArray)
         case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, data.toArray)
         case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, data.toArray)
         case version if prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, data.toArray)
+        case version if prefix == "lntbs" => Bech32.encodeWitnessAddress("tb", version, data.toArray)
       }
     }
   }

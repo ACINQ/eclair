@@ -38,6 +38,7 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
   // and comment these:
   val nodeParamsLivenet = removeBlockcypher(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash))
   val nodeParamsTestnet = removeBlockcypher(TestConstants.Alice.nodeParams.copy(chainHash = Block.TestnetGenesisBlock.hash))
+  val nodeParamsSignet = removeBlockcypher(TestConstants.Alice.nodeParams.copy(chainHash = Block.SignetGenesisBlock.hash))
 
 
   test("fetch block headers from four sources on mainnet", TestTags.ExternalApi) {
@@ -72,6 +73,19 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     eventListener.expectNoMessage(100 millis)
     // assert(events.map(_.recentHeaders.source).toSet == Set("blockcypher.com", "blockstream.info", "mempool.space"))
     assert(events.map(_.recentHeaders.source).toSet == Set("blockstream.info", "mempool.space"))
+    testKit.stop(watchdog)
+  }
+
+  test("fetch block headers from one source on signet", TestTags.ExternalApi) {
+    val eventListener = TestProbe[DangerousBlocksSkew]()
+    system.eventStream ! EventStream.Subscribe(eventListener.ref)
+    val watchdog = testKit.spawn(BlockchainWatchdog(nodeParamsSignet, 1 second))
+    watchdog ! WrappedCurrentBlockHeight(BlockHeight(5000))
+
+    val event = eventListener.expectMessageType[DangerousBlocksSkew]
+
+    eventListener.expectNoMessage(100 millis)
+    assert(event.recentHeaders.source == "mempool.space")
     testKit.stop(watchdog)
   }
 

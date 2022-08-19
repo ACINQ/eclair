@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{derivePrivateKey, _}
+import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
@@ -32,7 +32,7 @@ import scodec.bits.ByteVector
 
 object LocalChannelKeyManager {
   def keyBasePath(chainHash: ByteVector32): List[Long] = (chainHash: @unchecked) match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash | Block.SignetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
   }
 }

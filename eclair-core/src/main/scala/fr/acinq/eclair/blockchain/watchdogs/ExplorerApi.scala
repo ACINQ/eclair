@@ -20,8 +20,8 @@ import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.pattern.after
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{BlockHeaderAt, LatestHeaders}
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
@@ -225,12 +225,14 @@ object ExplorerApi {
     override val baseUris = if (useTorEndpoints) {
       Map(
         Block.TestnetGenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/testnet/api",
-        Block.LivenetGenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/api"
+        Block.LivenetGenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/api",
+        Block.SignetGenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/signet/api"
       )
     } else {
       Map(
         Block.TestnetGenesisBlock.hash -> uri"https://mempool.space/testnet/api",
-        Block.LivenetGenesisBlock.hash -> uri"https://mempool.space/api"
+        Block.LivenetGenesisBlock.hash -> uri"https://mempool.space/api",
+        Block.SignetGenesisBlock.hash -> uri"https://mempool.space/signet/api"
       )
     }
   }
