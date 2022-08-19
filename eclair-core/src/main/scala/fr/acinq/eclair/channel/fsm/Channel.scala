@@ -1110,10 +1110,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
           watchFundingTx(commitments1)
           context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-          val otherFundingTxs = d.fundingTx match {
-            case Some(DualFundedUnconfirmedFundingTx(fundingTx)) => fundingTx +: d.alternativeCommitments.filter(_.commitments.commitInput.outPoint.txid != w.tx.txid).map(_.fundingTx)
-            case _ => d.alternativeCommitments.filter(_.commitments.commitInput.outPoint.txid != w.tx.txid).map(_.fundingTx)
-          }
+          val otherFundingTxs =
+            d.fundingTx.toSeq.collect { case DualFundedUnconfirmedFundingTx(fundingTx) => fundingTx } ++
+              d.alternativeCommitments.filterNot(_.commitments.commitInput.outPoint.txid == w.tx.txid).map(_.fundingTx)
           rollbackDualFundingTxs(otherFundingTxs)
           val commitTx = commitments1.fullySignedLocalCommitTx(keyManager).tx
           val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments1, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
