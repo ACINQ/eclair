@@ -400,6 +400,16 @@ object RealScidStatus {
  */
 case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Option[Alias])
 
+sealed trait UnconfirmedFundingTx {
+  def signedTx_opt: Option[Transaction]
+}
+case class SingleFundedUnconfirmedFundingTx(signedTx: Transaction) extends UnconfirmedFundingTx {
+  override val signedTx_opt: Option[Transaction] = Some(signedTx)
+}
+case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction) extends UnconfirmedFundingTx {
+  override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
+}
+
 /** Once a dual funding tx has been signed, we must remember the associated commitments. */
 case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: Commitments)
 
@@ -486,12 +496,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfAttempt: Option[typed.ActorRef[InteractiveTxBuilder.Command]],
-                                                      deferred: Option[ChannelReady]) extends PersistentChannelData {
-  val signedFundingTx_opt: Option[Transaction] = fundingTx match {
-    case _: PartiallySignedSharedTransaction => None
-    case tx: FullySignedSharedTransaction => Some(tx.signedTx)
-  }
-}
+                                                      deferred: Option[ChannelReady]) extends PersistentChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments,
                                                   shortIds: ShortIds,
                                                   lastSent: ChannelReady) extends PersistentChannelData
@@ -512,9 +517,9 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
   require(!commitments.localParams.isInitiator || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
-                              fundingTx: Option[Transaction], // this will be non-empty if we are the initiator and we got in closing while waiting for our own tx to be published
+                              fundingTx: Option[UnconfirmedFundingTx],
                               waitingSince: BlockHeight, // how long since we initiated the closing
-                              alternativeCommitments: List[Commitments], // commitments we signed that spend a different funding output
+                              alternativeCommitments: List[DualFundingTx], // commitments we signed that spend a different funding output
                               mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[ClosingTx] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,

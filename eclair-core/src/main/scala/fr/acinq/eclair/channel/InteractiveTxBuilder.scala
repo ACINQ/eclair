@@ -167,8 +167,11 @@ object InteractiveTxBuilder {
   sealed trait SignedSharedTransaction {
     def tx: SharedTransaction
     def localSigs: TxSignatures
+    def signedTx_opt: Option[Transaction]
   }
-  case class PartiallySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures) extends SignedSharedTransaction
+  case class PartiallySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures) extends SignedSharedTransaction {
+    override val signedTx_opt: Option[Transaction] = None
+  }
   case class FullySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures, remoteSigs: TxSignatures) extends SignedSharedTransaction {
     val signedTx: Transaction = {
       import tx._
@@ -182,6 +185,7 @@ object InteractiveTxBuilder {
       val outputs = (localTxOut ++ remoteTxOut).sortBy(_._1).map(_._2)
       Transaction(2, inputs, outputs, lockTime)
     }
+    override val signedTx_opt: Option[Transaction] = Some(signedTx)
     val feerate: FeeratePerKw = Transactions.fee2rate(tx.fees, signedTx.weight())
   }
   // @formatter:on

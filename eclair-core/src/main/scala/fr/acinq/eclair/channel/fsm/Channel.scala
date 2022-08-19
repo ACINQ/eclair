@@ -264,7 +264,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
                 // There are unconfirmed, alternative funding transactions, so we wait for one to confirm before
                 // watching transactions spending it.
                 blockchain ! WatchFundingConfirmed(self, data.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-                closing.alternativeCommitments.foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks))
+                closing.alternativeCommitments.foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks))
               }
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isInitiator))
               closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.commitments))
@@ -276,7 +276,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               // if commitment number is zero, we also need to make sure that the funding tx has been published
               if (closing.commitments.localCommit.index == 0 && closing.commitments.remoteCommit.index == 0) {
                 if (closing.commitments.channelFeatures.hasFeature(Features.DualFunding)) {
-                  closing.fundingTx.foreach(tx => wallet.publishTransaction(tx))
+                  closing.fundingTx.flatMap(_.signedTx_opt).foreach(tx => wallet.publishTransaction(tx))
                 } else {
                   blockchain ! GetTxWithMeta(self, closing.commitments.commitInput.outPoint.txid)
                 }
@@ -1086,15 +1086,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       // NB: waitingSinceBlock contains the block at which closing was initiated, not the block at which funding was initiated.
       // That means we're lenient with our peer and give its funding tx more time to confirm, to avoid having to store two distinct
       // waitingSinceBlock (e.g. closingWaitingSinceBlock and fundingWaitingSinceBlock).
-      handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
+      handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx.flatMap(_.signedTx_opt))
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_CLOSING) => handleFundingPublishFailed(d)
 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_CLOSING) => handleFundingTimeout(d)
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_CLOSING) =>
-      d.alternativeCommitments.find(_.commitInput.outPoint.txid == w.tx.txid) match {
-        case Some(commitments1) =>
+      d.alternativeCommitments.find(_.commitments.commitInput.outPoint.txid == w.tx.txid) match {
+        case Some(DualFundingTx(_, commitments1)) =>
           // This is a corner case where:
           //  - we are using dual funding
           //  - *and* the funding tx was RBF-ed
@@ -1110,6 +1110,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
           watchFundingTx(commitments1)
           context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+          val otherFundingTxs =
+            d.fundingTx.toSeq.collect { case DualFundedUnconfirmedFundingTx(fundingTx) => fundingTx } ++
+              d.alternativeCommitments.filterNot(_.commitments.commitInput.outPoint.txid == w.tx.txid).map(_.fundingTx)
+          rollbackDualFundingTxs(otherFundingTxs)
           val commitTx = commitments1.fullySignedLocalCommitTx(keyManager).tx
           val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments1, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
           val d1 = DATA_CLOSING(commitments1, None, d.waitingSince, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))

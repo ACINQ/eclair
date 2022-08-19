@@ -28,8 +28,6 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, RealShortChannelId}
 
-import scala.concurrent.duration.DurationInt
-
 /**
  * Created by t-bast on 19/04/2022.
  */
@@ -396,6 +394,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending channelReady
         case None =>
           log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${confirmedTx.bin}")
+          rollbackDualFundingTxs(allFundingTxs.map(_.fundingTx))
           goto(CLOSED)
       }
 

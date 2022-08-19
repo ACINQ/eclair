@@ -16,10 +16,11 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction, SignedSharedTransaction}
+import fr.acinq.eclair.channel.InteractiveTxBuilder._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
 import fr.acinq.eclair.wire.protocol.Error
@@ -61,6 +62,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       watchFundingTx(d.commitments)
       context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
       // We can forget previous funding attempts now that the funding tx is confirmed.
+      rollbackDualFundingTxs(d.previousFundingTxs.map(_.fundingTx))
       stay() using d.copy(previousFundingTxs = Nil) storing()
     } else if (d.previousFundingTxs.exists(_.commitments.commitInput.outPoint.txid == w.tx.txid)) {
       log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
@@ -68,6 +70,8 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       watchFundingTx(confirmed.commitments)
       context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
       // We can forget other funding attempts now that one of the funding txs is confirmed.
+      val otherFundingTxs = d.fundingTx +: d.previousFundingTxs.filter(_.commitments.commitInput.outPoint.txid != w.tx.txid).map(_.fundingTx)
+      rollbackDualFundingTxs(otherFundingTxs)
       stay() using d.copy(commitments = confirmed.commitments, fundingTx = confirmed.fundingTx, previousFundingTxs = Nil) storing()
     } else {
       log.error(s"internal error: a funding tx confirmed that doesn't match any of our funding txs: ${w.tx.txid}")
@@ -106,6 +110,18 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       // Not all funding attempts have been double-spent, the channel may still confirm.
       // For example, we may have published an RBF attempt while we were checking if funding attempts were double-spent.
       stay()
+    }
+  }
+
+  /**
+   * In most cases we don't need to explicitly rollback funding transactions, as the locks are automatically removed by
+   * bitcoind when transactions are published. But if we couldn't publish those transactions (e.g. because our peer
+   * never sent us their signatures, or the transaction wasn't accepted in our mempool), their inputs may still be locked.
+   */
+  def rollbackDualFundingTxs(txs: Seq[SignedSharedTransaction]): Unit = {
+    val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(toOutPoint(i), Nil, 0))
+    if (inputs.nonEmpty) {
+      wallet.rollback(Transaction(2, inputs, Nil, 0))
     }
   }
 
