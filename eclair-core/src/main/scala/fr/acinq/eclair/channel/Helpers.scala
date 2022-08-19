@@ -54,7 +54,9 @@ object Helpers {
       remoteParams = data.commitments.remoteParams.copy(initFeatures = remoteInit.features))
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
       case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments1)
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = commitments1)
       case d: DATA_NORMAL => d.copy(commitments = commitments1)
       case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
       case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
@@ -560,12 +562,17 @@ object Helpers {
      *
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
-    def nothingAtStake(data: PersistentChannelData): Boolean =
-      data.commitments.localCommit.index == 0 &&
-        data.commitments.localCommit.spec.toLocal == 0.msat &&
-        data.commitments.remoteCommit.index == 0 &&
-        data.commitments.remoteCommit.spec.toRemote == 0.msat &&
-        data.commitments.remoteNextCommitInfo.isRight
+    def nothingAtStake(data: PersistentChannelData): Boolean = data match {
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => (d.commitments +: d.previousFundingTxs.map(_.commitments)).forall(commitments => nothingAtStake(commitments))
+      case _ => nothingAtStake(data.commitments)
+    }
+
+    def nothingAtStake(commitments: Commitments): Boolean =
+      commitments.localCommit.index == 0 &&
+        commitments.localCommit.spec.toLocal == 0.msat &&
+        commitments.remoteCommit.index == 0 &&
+        commitments.remoteCommit.spec.toRemote == 0.msat &&
+        commitments.remoteNextCommitInfo.isRight
 
     /**
      * As soon as a tx spending the funding tx has reached min_depth, we know what the closing type will be, before

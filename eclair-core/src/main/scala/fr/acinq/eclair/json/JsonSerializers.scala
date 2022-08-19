@@ -31,12 +31,12 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams, Route}
+import fr.acinq.eclair.router.Router.{ChannelRelayParams, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature, channel}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -152,7 +152,7 @@ object CltvExpiryDeltaSerializer extends MinimalSerializer({
 })
 
 object BlockHeightSerializer extends MinimalSerializer({
-  case x: BlockHeight => JInt(x.toInt)
+  case h: BlockHeight => JLong(h.toLong)
 })
 
 object FeeratePerKwSerializer extends MinimalSerializer({
@@ -503,8 +503,13 @@ object CustomTypeHints {
       classOf[DATA_WAIT_FOR_FUNDING_INTERNAL],
       classOf[DATA_WAIT_FOR_FUNDING_CREATED],
       classOf[DATA_WAIT_FOR_FUNDING_SIGNED],
-      classOf[DATA_WAIT_FOR_CHANNEL_READY],
       classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED],
+      classOf[DATA_WAIT_FOR_CHANNEL_READY],
+      classOf[DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL],
+      classOf[DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL],
+      classOf[DATA_WAIT_FOR_DUAL_FUNDING_CREATED],
+      classOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED],
+      classOf[DATA_WAIT_FOR_DUAL_FUNDING_READY],
       classOf[DATA_NORMAL],
       classOf[DATA_SHUTDOWN],
       classOf[DATA_NEGOTIATING],

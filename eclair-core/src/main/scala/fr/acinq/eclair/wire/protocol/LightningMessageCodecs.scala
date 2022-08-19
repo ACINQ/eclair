@@ -368,7 +368,7 @@ object LightningMessageCodecs {
       ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
       ("tlvStream" | QueryShortChannelIdsTlv.codec)).as[QueryShortChannelIds]
 
-  val replyShortChanelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
+  val replyShortChannelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
     ("chainHash" | bytes32) ::
       ("complete" | byte) ::
       ("tlvStream" | ReplyShortChannelIdsEndTlv.replyShortChannelIdsEndTlvCodec)).as[ReplyShortChannelIdsEnd]
@@ -458,7 +458,7 @@ object LightningMessageCodecs {
     .typecase(258, channelUpdateCodec)
     .typecase(259, announcementSignaturesCodec)
     .typecase(261, queryShortChannelIdsCodec)
-    .typecase(262, replyShortChanelIdsEndCodec)
+    .typecase(262, replyShortChannelIdsEndCodec)
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)

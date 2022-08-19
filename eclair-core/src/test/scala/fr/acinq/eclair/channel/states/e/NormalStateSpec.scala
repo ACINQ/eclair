@@ -70,7 +70,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }
   }
 
-  test("recv CMD_ADD_HTLC (empty origin)") { f =>
+  private def testRecvCmdAddHtlcEmptyOrigin(f: FixtureParam): Unit = {
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
@@ -90,6 +90,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
         originChannels = Map(0L -> add.origin)
       )))
+  }
+
+  test("recv CMD_ADD_HTLC (empty origin)") { f =>
+    testRecvCmdAddHtlcEmptyOrigin(f)
+  }
+
+  test("recv CMD_ADD_HTLC (empty origin, dual funding)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    testRecvCmdAddHtlcEmptyOrigin(f)
   }
 
   test("recv CMD_ADD_HTLC (incrementing ids)") { f =>
@@ -3437,6 +3445,17 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)
+  }
+
+  test("recv WatchFundingDeeplyBuriedTriggered (public channel, dual funding)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
+    // public channel: we don't send the channel_update directly to the peer
+    alice2bob.expectNoMessage(1 second)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(annSigs.shortChannelId))
+    // we don't re-publish the same channel_update if there was no change
+    channelUpdateListener.expectNoMessage(1 second)
   }
 
   test("recv WatchFundingDeeplyBuriedTriggered (public channel, zero-conf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>

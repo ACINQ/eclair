@@ -26,7 +26,7 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSi
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, combinedFeaturesCodec}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Alias, TimestampSecond}
+import fr.acinq.eclair.{Alias, BlockHeight, TimestampSecond}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -433,7 +433,10 @@ private[channel] object ChannelCodecs0 {
         ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
-        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING].decodeOnly
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
+      case commitments :: fundingTx :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
+        DATA_CLOSING(commitments, fundingTx, waitingSince, Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+    }.decodeOnly
 
     val DATA_CLOSING_09_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodec) ::
@@ -445,7 +448,10 @@ private[channel] object ChannelCodecs0 {
         ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
-        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING].decodeOnly
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
+      case commitments :: fundingTx :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
+        DATA_CLOSING(commitments, fundingTx, waitingSince, Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+    }.decodeOnly
 
     val channelReestablishCodec: Codec[ChannelReestablish] = (
       ("channelId" | bytes32) ::

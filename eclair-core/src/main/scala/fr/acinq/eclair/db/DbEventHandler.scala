@@ -108,7 +108,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
     case e: ChannelStateChanged =>
       // NB: order matters!
       e match {
-        case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_CHANNEL_READY, NORMAL, Some(commitments: Commitments)) =>
+        case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, Some(commitments: Commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
           val event = ChannelEvent.EventType.Created
           auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isInitiator, !commitments.announceChannel, event))

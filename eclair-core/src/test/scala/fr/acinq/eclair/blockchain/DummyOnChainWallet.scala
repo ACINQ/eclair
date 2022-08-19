@@ -124,8 +124,9 @@ class SingleKeyOnChainWallet extends OnChainWallet {
     val inputAmount = amountOut + 100_000.sat
     val inputTx = Transaction(2, Seq(TxIn(OutPoint(randomBytes32(), 1), Nil, 0)), Seq(TxOut(inputAmount, Script.pay2wpkh(pubkey))), 0)
     inputs = inputs :+ inputTx
+    val dummyWitness = Script.witnessPay2wpkh(pubkey, ByteVector.fill(73)(0))
     val dummySignedTx = tx.copy(
-      txIn = tx.txIn :+ TxIn(OutPoint(inputTx, 0), ByteVector.empty, 0, Script.witnessPay2wpkh(pubkey, ByteVector.fill(73)(0))),
+      txIn = tx.txIn.map(_.copy(witness = dummyWitness)) :+ TxIn(OutPoint(inputTx, 0), ByteVector.empty, 0, dummyWitness),
       txOut = tx.txOut :+ TxOut(inputAmount, Script.pay2wpkh(pubkey)),
     )
     val fee = Transactions.weight2fee(feeRate, dummySignedTx.weight())

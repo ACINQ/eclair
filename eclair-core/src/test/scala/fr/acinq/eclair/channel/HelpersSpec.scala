@@ -258,6 +258,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
         mutualClosePublished = tx2 :: tx3 :: Nil,
         localCommitPublished = None,
@@ -273,6 +274,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -295,6 +297,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -317,6 +320,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -345,6 +349,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -373,6 +378,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments.copy(remoteNextCommitInfo = Left(WaitingForRevocation(commitments.remoteCommit, null, 7L))),
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -407,6 +413,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -428,6 +435,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -449,6 +457,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -496,6 +505,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         commitments = commitments,
         fundingTx = None,
         waitingSince = BlockHeight(0),
+        alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(

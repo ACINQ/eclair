@@ -136,6 +136,7 @@ object Channel {
   private[channel] sealed trait BitcoinEvent extends PossiblyHarmful
   private[channel] case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
   private[channel] case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
+  private[channel] case class BITCOIN_FUNDING_DOUBLE_SPENT(fundingTxIds: Set[ByteVector32]) extends BitcoinEvent
   // @formatter:on
 
   case object TickChannelOpenTimeout
@@ -259,6 +260,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             case None =>
               // in all other cases we need to be ready for any type of closing
               watchFundingTx(data.commitments, closing.spendingTxs.map(_.txid).toSet)
+              if (closing.alternativeCommitments.nonEmpty) {
+                // There are unconfirmed, alternative funding transactions, so we wait for one to confirm before
+                // watching transactions spending it.
+                blockchain ! WatchFundingConfirmed(self, data.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
+                closing.alternativeCommitments.foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks))
+              }
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isInitiator))
               closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.commitments))
               closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments))
@@ -268,7 +275,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
               // if commitment number is zero, we also need to make sure that the funding tx has been published
               if (closing.commitments.localCommit.index == 0 && closing.commitments.remoteCommit.index == 0) {
-                blockchain ! GetTxWithMeta(self, closing.commitments.commitInput.outPoint.txid)
+                if (closing.commitments.channelFeatures.hasFeature(Features.DualFunding)) {
+                  closing.fundingTx.foreach(tx => wallet.publishTransaction(tx))
+                } else {
+                  blockchain ! GetTxWithMeta(self, closing.commitments.commitInput.outPoint.txid)
+                }
               }
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
@@ -308,6 +319,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           } else {
             goto(OFFLINE) using funding
           }
+
+        case funding: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
+          // we make sure that the funding tx with the highest feerate has been published
+          publishFundingTx(funding.fundingParams, funding.fundingTx)
+          // we watch confirmation of all funding candidates, and once one of them confirms we will watch spending txs
+          blockchain ! WatchFundingConfirmed(self, funding.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
+          funding.previousFundingTxs.map(_.commitments).foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks))
+          goto(OFFLINE) using funding
 
         case _ =>
           watchFundingTx(data.commitments)
@@ -1073,6 +1092,38 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_CLOSING) => handleFundingTimeout(d)
 
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_CLOSING) =>
+      d.alternativeCommitments.find(_.commitInput.outPoint.txid == w.tx.txid) match {
+        case Some(commitments1) =>
+          // This is a corner case where:
+          //  - we are using dual funding
+          //  - *and* the funding tx was RBF-ed
+          //  - *and* we went to CLOSING before any funding tx got confirmed (probably due to a local or remote error)
+          //  - *and* an older version of the funding tx confirmed and reached min depth (it won't be re-orged out)
+          //
+          // This means that:
+          //  - the whole current commitment tree has been double-spent and can safely be forgotten
+          //  - from now on, we only need to keep track of the commitment associated to the funding tx that got confirmed
+          //
+          // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
+          // to negotiate a mutual close.
+          log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
+          watchFundingTx(commitments1)
+          context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+          val commitTx = commitments1.fullySignedLocalCommitTx(keyManager).tx
+          val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments1, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
+          val d1 = DATA_CLOSING(commitments1, None, d.waitingSince, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
+          stay() using d1 storing() calling doPublish(localCommitPublished, commitments1)
+        case None =>
+          if (d.commitments.commitInput.outPoint.txid == w.tx.txid) {
+            // The best funding tx candidate has been confirmed, we can forget alternative commitments.
+            stay() using d.copy(alternativeCommitments = Nil) storing()
+          } else {
+            log.warning("an unknown funding tx with txid={} got confirmed, this should not happen", w.tx.txid)
+            stay()
+          }
+      }
+
     case Event(WatchFundingSpentTriggered(tx), d: DATA_CLOSING) =>
       if (d.mutualClosePublished.exists(_.tx.txid == tx.txid)) {
         // we already know about this tx, probably because we have published it ourselves after successful negotiation
@@ -1264,9 +1315,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
       goto(SYNCING) using d1 sending channelReestablish
 
-    // note: this can only happen if state is NORMAL or SHUTDOWN
-    // -> in NEGOTIATING there are no more htlcs
-    // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
     case Event(ProcessCurrentBlockHeight(c), d: PersistentChannelData) => handleNewBlock(c, d)
 
     case Event(c: CurrentFeerates, d: PersistentChannelData) => handleCurrentFeerateDisconnected(c, d)
@@ -1281,10 +1329,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingTimeout(d)
 
-    // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
-    case Event(WatchFundingConfirmedTriggered(_, _, _), _) => stay()
+    case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
-    case Event(WatchFundingDeeplyBuriedTriggered(_, _, _), _) => stay()
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingConfirmedOffline(w, d)
+
+    // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
+    case Event(_: WatchFundingConfirmedTriggered, _) => stay()
+
+    case Event(_: WatchFundingDeeplyBuriedTriggered, _) => stay()
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
       handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
@@ -1318,12 +1370,27 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       blockchain ! WatchFundingConfirmed(self, d.commitments.commitInput.outPoint.txid, minDepth)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
+    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      val minDepth_opt = Helpers.Funding.minDepthDualFunding(nodeParams.channelConf, d.commitments.channelFeatures, d.fundingParams)
+      val minDepth = minDepth_opt.getOrElse {
+        val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
+        // If we are in state WAIT_FOR_DUAL_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
+        // have skipped this state. Maybe the computation method was changed and eclair was restarted?
+        log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
+        defaultMinDepth.toLong
+      }
+      (d.commitments +: d.previousFundingTxs.map(_.commitments)).foreach(commitments => blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, minDepth))
+      goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.fundingTx.localSigs
+
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
       log.debug("re-sending channelReady")
-      val channelKeyPath = keyManager.keyPath(d.commitments.localParams, d.commitments.channelConfig)
-      val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-      val channelReady = ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
+      val channelReady = createChannelReady(d.shortIds, d.commitments)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
+
+    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
+      log.debug("re-sending channelReady")
+      val channelReady = createChannelReady(d.shortIds, d.commitments)
+      goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
       Syncing.checkSync(keyManager, d, channelReestablish) match {
@@ -1464,13 +1531,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingTimeout(d)
 
+    case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
+
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingConfirmedOffline(w, d)
+
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
-    case Event(WatchFundingConfirmedTriggered(_, _, _), _) => stay()
+    case Event(_: WatchFundingConfirmedTriggered, _) => stay()
 
-    case Event(WatchFundingDeeplyBuriedTriggered(_, _, _), _) => stay()
+    case Event(_: WatchFundingDeeplyBuriedTriggered, _) => stay()
 
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
-      handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) => handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1607,8 +1677,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       // We only send the channel_update directly to the peer if we are connected AND the channel hasn't been announced
       val emitEvent_opt: Option[EmitLocalChannelEvent] = (state, nextState, stateData, nextStateData) match {
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("restore", d, sendToPeer = false))
-        case (WAIT_FOR_FUNDING_CONFIRMED, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("initial", d, sendToPeer = true))
-        case (WAIT_FOR_CHANNEL_READY, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("initial", d, sendToPeer = true))
+        case (WAIT_FOR_FUNDING_CONFIRMED | WAIT_FOR_DUAL_FUNDING_CONFIRMED, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("initial", d, sendToPeer = true))
+        case (WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("initial", d, sendToPeer = true))
         case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.shortIds.real.toOption != d2.shortIds.real.toOption || d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("normal->normal", d2, sendToPeer = d2.channelAnnouncement.isEmpty && d1.channelUpdate != d2.channelUpdate))
         case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("syncing->normal", d2, sendToPeer = d2.channelAnnouncement.isEmpty))
         case (NORMAL, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("normal->offline", d2, sendToPeer = false))
@@ -1636,7 +1706,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case (d1: DATA_NORMAL, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = Some(d1.channelUpdate), d2)
         // WAIT_FOR_FUNDING_CONFIRMED->NORMAL, WAIT_FOR_CHANNEL_READY->NORMAL
         case (_: DATA_WAIT_FOR_FUNDING_CONFIRMED, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
+        case (_: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
         case (_: DATA_WAIT_FOR_CHANNEL_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
+        case (_: DATA_WAIT_FOR_DUAL_FUNDING_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
         case _ => ()
       }
   }
@@ -1837,31 +1909,38 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   }
 
   private def handleNewBlock(c: CurrentBlockHeight, d: PersistentChannelData) = {
-    val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockHeight)
-    val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.channelConf.fulfillSafetyBeforeTimeout)
-    if (timedOutOutgoing.nonEmpty) {
-      // Downstream timed out.
-      handleLocalError(HtlcsTimedoutDownstream(d.channelId, timedOutOutgoing), d, Some(c))
-    } else if (almostTimedOutIncoming.nonEmpty) {
-      // Upstream is close to timing out, we need to test if we have funds at risk: htlcs for which we know the preimage
-      // that are still in our commitment (upstream will try to timeout on-chain).
-      val relayedFulfills = d.commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.id }.toSet
-      val offendingRelayedHtlcs = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id))
-      if (offendingRelayedHtlcs.nonEmpty) {
-        handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingRelayedHtlcs), d, Some(c))
-      } else {
-        // There might be pending fulfill commands that we haven't relayed yet.
-        // Since this involves a DB call, we only want to check it if all the previous checks failed (this is the slow path).
-        val pendingRelayFulfills = nodeParams.db.pendingCommands.listSettlementCommands(d.channelId).collect { case c: CMD_FULFILL_HTLC => c.id }
-        val offendingPendingRelayFulfills = almostTimedOutIncoming.filter(htlc => pendingRelayFulfills.contains(htlc.id))
-        if (offendingPendingRelayFulfills.nonEmpty) {
-          handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingPendingRelayFulfills), d, Some(c))
+    d match {
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => handleNewBlockDualFundingUnconfirmed(c, d)
+      case _ =>
+        // note: this can only happen if state is NORMAL or SHUTDOWN
+        // -> in NEGOTIATING there are no more htlcs
+        // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
+        val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockHeight)
+        val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.channelConf.fulfillSafetyBeforeTimeout)
+        if (timedOutOutgoing.nonEmpty) {
+          // Downstream timed out.
+          handleLocalError(HtlcsTimedoutDownstream(d.channelId, timedOutOutgoing), d, Some(c))
+        } else if (almostTimedOutIncoming.nonEmpty) {
+          // Upstream is close to timing out, we need to test if we have funds at risk: htlcs for which we know the preimage
+          // that are still in our commitment (upstream will try to timeout on-chain).
+          val relayedFulfills = d.commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.id }.toSet
+          val offendingRelayedHtlcs = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id))
+          if (offendingRelayedHtlcs.nonEmpty) {
+            handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingRelayedHtlcs), d, Some(c))
+          } else {
+            // There might be pending fulfill commands that we haven't relayed yet.
+            // Since this involves a DB call, we only want to check it if all the previous checks failed (this is the slow path).
+            val pendingRelayFulfills = nodeParams.db.pendingCommands.listSettlementCommands(d.channelId).collect { case c: CMD_FULFILL_HTLC => c.id }
+            val offendingPendingRelayFulfills = almostTimedOutIncoming.filter(htlc => pendingRelayFulfills.contains(htlc.id))
+            if (offendingPendingRelayFulfills.nonEmpty) {
+              handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingPendingRelayFulfills), d, Some(c))
+            } else {
+              stay()
+            }
+          }
         } else {
           stay()
         }
-      }
-    } else {
-      stay()
     }
   }
 

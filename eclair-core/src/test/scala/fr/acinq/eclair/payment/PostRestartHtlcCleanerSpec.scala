@@ -31,7 +31,6 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.{Upstream, buildCommand}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
-import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.Transactions.{ClaimRemoteDelayedOutputTx, InputInfo}
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
@@ -474,12 +473,12 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val dummyClaimMainTx = Transaction(2, Seq(TxIn(OutPoint(revokedCommitTx, 0), Nil, 0)), Seq(revokedCommitTx.txOut.head.copy(amount = 4000 sat)), 0)
       val dummyClaimMain = ClaimRemoteDelayedOutputTx(InputInfo(OutPoint(revokedCommitTx, 0), revokedCommitTx.txOut.head, Nil), dummyClaimMainTx)
       val rcp = RevokedCommitPublished(revokedCommitTx, Some(dummyClaimMain), None, Nil, Nil, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
-      DATA_CLOSING(normal.commitments, None, BlockHeight(0), Nil, revokedCommitPublished = List(rcp))
+      DATA_CLOSING(normal.commitments, None, BlockHeight(0), Nil, Nil, revokedCommitPublished = List(rcp))
     }
 
     nodeParams.db.channels.addOrUpdateChannel(upstreamChannel)
     nodeParams.db.channels.addOrUpdateChannel(downstreamChannel)
-    assert(Closing.isClosed(downstreamChannel, None) == None)
+    assert(Closing.isClosed(downstreamChannel, None).isEmpty)
 
     val (_, postRestart) = f.createRelayer(nodeParams)
     sender.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
