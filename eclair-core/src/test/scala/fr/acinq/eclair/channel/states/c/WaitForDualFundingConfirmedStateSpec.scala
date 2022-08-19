@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.c
 
 import akka.actor.Status
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -27,6 +28,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ProcessCurrentBlockHeight
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass}
@@ -185,28 +187,77 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
-  test("rbf funding attempt", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv WatchFundingConfirmedTriggered after restart", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    val fundingTx = aliceData.fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    val (alice2, bob2) = restartNodes(f, aliceData, bobData)
+    reconnectNodes(f, alice2, aliceData, bob2, bobData)
+
+    alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    alice2bob.expectMsgType[ChannelReady]
+    awaitCond(alice2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+
+    bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
+    assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
+    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    bob2alice.expectMsgType[ChannelReady]
+    awaitCond(bob2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+  }
+
+  test("recv WatchFundingConfirmedTriggered after restart (previous tx)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    val fundingTx2 = testBumpFundingFees(f).signedTx
+    assert(fundingTx1.txid != fundingTx2.txid)
+
+    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    val (alice2, bob2) = restartNodes(f, aliceData, bobData)
+    reconnectNodes(f, alice2, aliceData, bob2, bobData)
+
+    alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    alice2bob.expectMsgType[ChannelReady]
+    awaitCond(alice2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+
+    bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
+    assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
+    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    bob2alice.expectMsgType[ChannelReady]
+    awaitCond(bob2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.commitInput.outPoint.txid == fundingTx1.txid)
+    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.commitInput.outPoint.txid == fundingTx1.txid)
+  }
+
+  def testBumpFundingFees(f: FixtureParam): FullySignedSharedTransaction = {
     import f._
 
     val probe = TestProbe()
-    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.isEmpty)
-    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, 0)
+    val currentFundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
+    val previousFundingTxs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs
+    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, currentFundingTx.feerate * 1.1, 0)
     assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution_opt.contains(TestConstants.fundingSatoshis))
     alice2bob.forward(bob)
     assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution_opt.contains(TestConstants.nonInitiatorFundingSatoshis))
     bob2alice.forward(alice)
     probe.expectMsgType[RES_SUCCESS[CMD_BUMP_FUNDING_FEE]]
 
-    // Alice and Bob build a new version of the funding transaction.
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddInput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddInput]
-    bob2alice.forward(alice)
+    // Alice and Bob build a new version of the funding transaction, with one new input every time.
+    val inputCount = previousFundingTxs.length + 2
+    (1 to inputCount).foreach(_ => {
+      alice2bob.expectMsgType[TxAddInput]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddInput]
+      bob2alice.forward(alice)
+    })
     alice2bob.expectMsgType[TxAddOutput]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[TxAddOutput]
@@ -226,13 +277,27 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.expectMsgType[TxSignatures]
     alice2bob.forward(bob)
 
-    val fundingTx2 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
-    assert(fundingTx1.signedTx.txid != fundingTx2.signedTx.txid)
-    assert(fundingTx1.feerate < fundingTx2.feerate)
+    val nextFundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
+    assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == nextFundingTx.signedTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == nextFundingTx.signedTx.txid)
+    assert(bobListener.expectMsgType[TransactionPublished].tx.txid == nextFundingTx.signedTx.txid)
+    assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == nextFundingTx.signedTx.txid)
+    assert(currentFundingTx.signedTx.txid != nextFundingTx.signedTx.txid)
+    assert(currentFundingTx.feerate < nextFundingTx.feerate)
     // The new transaction double-spends previous inputs.
-    fundingTx1.signedTx.txIn.map(_.outPoint).foreach(o => assert(fundingTx2.signedTx.txIn.exists(_.outPoint == o)))
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == 1)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.head.fundingTx == fundingTx1)
+    currentFundingTx.signedTx.txIn.map(_.outPoint).foreach(o => assert(nextFundingTx.signedTx.txIn.exists(_.outPoint == o)))
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == previousFundingTxs.length + 1)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.head.fundingTx == currentFundingTx)
+    nextFundingTx
+  }
+
+  test("rbf funding attempt", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.isEmpty)
+    testBumpFundingFees(f)
+    testBumpFundingFees(f)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == 2)
   }
 
   test("rbf funding attempt failure", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -386,8 +451,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(alice.stateName == OFFLINE)
     // The funding tx confirms while we're offline.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
-    alice2blockchain.expectNoMessage(100 millis)
     // Bob broadcasts his commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx
     alice ! WatchFundingSpentTriggered(bobCommitTx.tx)
@@ -395,8 +460,97 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(claimMain.input.txid == bobCommitTx.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid)
-    alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSING)
+  }
+
+  test("recv WatchFundingSpentTriggered while offline (previous tx)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val fundingTx2 = testBumpFundingFees(f).signedTx
+    assert(fundingTx1.txid != fundingTx2.txid)
+    val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    assert(bobCommitTx1.txid != bobCommitTx2.txid)
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    // A previous funding tx confirms while we're offline.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    // Bob broadcasts his commit tx.
+    alice ! WatchFundingSpentTriggered(bobCommitTx1)
+    val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMain.input.txid == bobCommitTx1.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid)
+    awaitCond(alice.stateName == CLOSING)
+  }
+
+  test("recv WatchFundingSpentTriggered after restart (remote commit)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    val fundingTx = aliceData.fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    val (alice2, bob2) = restartNodes(f, aliceData, bobData)
+
+    alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    alice2 ! WatchFundingSpentTriggered(bobData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx)
+    val claimMainAlice = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainAlice.input.txid == bobData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainAlice.tx.txid)
+    awaitCond(alice2.stateName == CLOSING)
+
+    bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
+    assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
+    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    bob2 ! WatchFundingSpentTriggered(aliceData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx)
+    val claimMainBob = bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainBob.input.txid == aliceData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainBob.tx.txid)
+    awaitCond(bob2.stateName == CLOSING)
+  }
+
+  test("recv WatchFundingSpentTriggered after restart (previous tx)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    val aliceCommitTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val fundingTx2 = testBumpFundingFees(f).signedTx
+    assert(fundingTx1.txid != fundingTx2.txid)
+    val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    assert(bobCommitTx1.txid != bobCommitTx2.txid)
+
+    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    val (alice2, bob2) = restartNodes(f, aliceData, bobData)
+
+    alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    alice2 ! WatchFundingSpentTriggered(bobCommitTx1)
+    val claimMainAlice = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainAlice.input.txid == bobCommitTx1.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainAlice.tx.txid)
+    awaitCond(alice2.stateName == CLOSING)
+
+    bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
+    assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
+    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    bob2 ! WatchFundingSpentTriggered(aliceCommitTx1)
+    val claimMainBob = bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainBob.input.txid == aliceCommitTx1.txid)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx1.txid)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainBob.tx.txid)
+    awaitCond(bob2.stateName == CLOSING)
   }
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -428,6 +582,47 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainRemote.tx.txid)
   }
 
+  test("recv Error (previous tx confirms)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    val aliceCommitTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx
+    val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx
+    assert(aliceCommitTx1.input.outPoint.txid == fundingTx1.txid)
+    assert(bobCommitTx1.input.outPoint.txid == fundingTx1.txid)
+    val fundingTx2 = testBumpFundingFees(f).signedTx
+    assert(fundingTx1.txid != fundingTx2.txid)
+    val aliceCommitTx2 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx
+    assert(aliceCommitTx2.input.outPoint.txid == fundingTx2.txid)
+
+    // Alice receives an error and force-closes using the latest funding transaction.
+    alice ! Error(ByteVector32.Zeroes, "dual funding d34d")
+    awaitCond(alice.stateName == CLOSING)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx2.tx.txid)
+    val claimMain2 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMain2.input.txid == aliceCommitTx2.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx2.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain2.tx.txid)
+
+    // A previous funding transaction confirms, so Alice publishes the corresponding commit tx.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx1.tx.txid)
+    val claimMain1 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMain1.input.txid == aliceCommitTx1.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx1.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain1.tx.txid)
+
+    // Bob publishes his commit tx, Alice reacts by spending her remote main output.
+    alice ! WatchFundingSpentTriggered(bobCommitTx1.tx)
+    val claimMainRemote = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainRemote.input.txid == bobCommitTx1.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainRemote.tx.txid)
+    assert(alice.stateName == CLOSING)
+  }
+
   test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.DualFunding), Tag("no-funding-contribution")) { f =>
     import f._
     val commitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
@@ -457,6 +652,62 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(claimMain.input.txid == commitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid)
+  }
+
+  def restartNodes(f: FixtureParam, aliceData: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, bobData: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): (TestFSMRef[ChannelState, ChannelData, Channel], TestFSMRef[ChannelState, ChannelData, Channel]) = {
+    import f._
+
+    val (aliceNodeParams, bobNodeParams) = (alice.underlyingActor.nodeParams, bob.underlyingActor.nodeParams)
+    val (alicePeer, bobPeer) = (alice.getParent, bob.getParent)
+
+    alice.stop()
+    bob.stop()
+
+    val alice2 = TestFSMRef(new Channel(aliceNodeParams, wallet, bobNodeParams.nodeId, alice2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer)
+    alice2 ! INPUT_RESTORED(aliceData)
+    alice2blockchain.expectMsgType[SetChannelId]
+    // When restoring, we watch confirmation of all potential funding transactions to detect offline force-closes.
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == aliceData.commitments.commitInput.outPoint.txid)
+    aliceData.previousFundingTxs.foreach(f => alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.commitInput.outPoint.txid)
+    awaitCond(alice2.stateName == OFFLINE)
+
+    val bob2 = TestFSMRef(new Channel(bobNodeParams, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
+    bob2 ! INPUT_RESTORED(bobData)
+    bob2blockchain.expectMsgType[SetChannelId]
+    assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == bobData.commitments.commitInput.outPoint.txid)
+    bobData.previousFundingTxs.foreach(f => bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.commitInput.outPoint.txid)
+    awaitCond(bob2.stateName == OFFLINE)
+
+    alice2.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionPublished])
+    alice2.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionConfirmed])
+    bob2.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionPublished])
+    bob2.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionConfirmed])
+
+    (alice2, bob2)
+  }
+
+  def reconnectNodes(f: FixtureParam, alice2: TestFSMRef[ChannelState, ChannelData, Channel], aliceData: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, bob2: TestFSMRef[ChannelState, ChannelData, Channel], bobData: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Unit = {
+    import f._
+
+    val aliceInit = Init(alice2.underlyingActor.nodeParams.features.initFeatures())
+    val bobInit = Init(bob2.underlyingActor.nodeParams.features.initFeatures())
+    alice2 ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    val aliceChannelReestablish = alice2bob.expectMsgType[ChannelReestablish]
+    bob2 ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
+    val bobChannelReestablish = bob2alice.expectMsgType[ChannelReestablish]
+    alice2 ! bobChannelReestablish
+    // When reconnecting, we watch confirmation again, otherwise if a transaction was confirmed while we were offline,
+    // we won't be notified again and won't be able to transition to the next state.
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == aliceData.commitments.commitInput.outPoint.txid)
+    aliceData.previousFundingTxs.foreach(f => alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.commitInput.outPoint.txid)
+    alice2bob.expectMsgType[TxSignatures]
+    bob2 ! aliceChannelReestablish
+    assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == bobData.commitments.commitInput.outPoint.txid)
+    bobData.previousFundingTxs.foreach(f => bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.commitInput.outPoint.txid)
+    bob2alice.expectMsgType[TxSignatures]
+
+    awaitCond(alice2.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    awaitCond(bob2.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
 }
