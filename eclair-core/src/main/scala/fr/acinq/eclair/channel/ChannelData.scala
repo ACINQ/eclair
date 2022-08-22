@@ -415,6 +415,13 @@ case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction) ext
 /** Once a dual funding tx has been signed, we must remember the associated commitments. */
 case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: Commitments)
 
+sealed trait RbfStatus
+object RbfStatus {
+  case object NoRbf extends RbfStatus
+  case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE) extends RbfStatus
+  case class RbfInProgress(rbf: typed.ActorRef[InteractiveTxBuilder.Command]) extends RbfStatus
+}
+
 sealed trait ChannelData extends PossiblyHarmful {
   def channelId: ByteVector32
 }
@@ -497,7 +504,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       previousFundingTxs: List[DualFundingTx],
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
-                                                      rbfAttempt: Option[Either[CMD_BUMP_FUNDING_FEE, typed.ActorRef[InteractiveTxBuilder.Command]]],
+                                                      rbfStatus: RbfStatus,
                                                       deferred: Option[ChannelReady]) extends PersistentChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments,
                                                   shortIds: ShortIds,
