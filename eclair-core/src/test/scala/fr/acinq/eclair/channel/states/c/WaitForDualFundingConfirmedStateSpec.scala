@@ -244,9 +244,9 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val currentFundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
     val previousFundingTxs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs
     alice ! CMD_BUMP_FUNDING_FEE(probe.ref, currentFundingTx.feerate * 1.1, 0)
-    assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution_opt.contains(TestConstants.fundingSatoshis))
+    assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution == TestConstants.fundingSatoshis)
     alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution_opt.contains(TestConstants.nonInitiatorFundingSatoshis))
+    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == TestConstants.nonInitiatorFundingSatoshis)
     bob2alice.forward(alice)
     probe.expectMsgType[RES_SUCCESS[CMD_BUMP_FUNDING_FEE]]
 
@@ -307,9 +307,9 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val fundingTxAlice = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
     val fundingTxBob = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
     alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, 0)
-    assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution_opt.contains(TestConstants.fundingSatoshis))
+    assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution == TestConstants.fundingSatoshis)
     alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution_opt.contains(TestConstants.nonInitiatorFundingSatoshis))
+    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == TestConstants.nonInitiatorFundingSatoshis)
     bob2alice.forward(alice)
 
     // Alice and Bob build a new version of the funding transaction.

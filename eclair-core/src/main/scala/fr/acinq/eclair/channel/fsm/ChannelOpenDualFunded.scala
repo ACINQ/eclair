@@ -377,16 +377,16 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       val replyTo = if (cmd.replyTo == ActorRef.noSender) sender() else cmd.replyTo
       if (!d.fundingParams.isInitiator) {
-        replyTo ! Status.Failure(new RuntimeException("cannot initiate rbf: we're not the initiator of this dual-funding attempt"))
+        replyTo ! Status.Failure(InvalidRbfNonInitiator(d.channelId))
         stay()
       } else {
         d.rbfAttempt match {
           case Some(_) =>
             log.warning("cannot initiate rbf, another one is already in progress")
-            replyTo ! Status.Failure(InvalidRbfAlreadyInProgress(d.channelId))
+            replyTo ! Status.Failure(RbfAlreadyInProgress(d.channelId))
             stay()
           case None =>
-            val minNextFeerate = d.fundingParams.targetFeerate * 25 / 24
+            val minNextFeerate = d.fundingParams.minNextFeerate
             if (cmd.targetFeerate < minNextFeerate) {
               replyTo ! Status.Failure(InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
               stay()
@@ -400,12 +400,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       if (d.fundingParams.isInitiator) {
         // Only the initiator is allowed to initiate RBF.
         log.info("rejecting tx_init_rbf, we're the initiator, not them!")
-        stay() sending TxAbort(d.channelId, InvalidRbfAttempt(d.channelId).getMessage)
+        stay() sending Error(d.channelId, InvalidRbfAttempt(d.channelId).getMessage)
       } else {
-        val minNextFeerate = d.fundingParams.targetFeerate * 25 / 24
+        val minNextFeerate = d.fundingParams.minNextFeerate
         if (d.rbfAttempt.nonEmpty) {
           log.info("rejecting rbf attempt: the current rbf attempt must be completed or aborted first")
-          stay() sending TxAbort(d.channelId, InvalidRbfAlreadyInProgress(d.channelId).getMessage)
+          stay() sending TxAbort(d.channelId, RbfAlreadyInProgress(d.channelId).getMessage)
         } else if (msg.feerate < minNextFeerate) {
           log.info("rejecting rbf attempt: the new feerate must be at least {} (proposed={})", minNextFeerate, msg.feerate)
           stay() sending TxAbort(d.channelId, InvalidRbfFeerate(d.channelId, msg.feerate, minNextFeerate).getMessage)
@@ -415,7 +415,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.channelId,
             d.fundingParams.isInitiator,
             d.fundingParams.localAmount, // we don't change our funding contribution
-            msg.fundingContribution_opt.getOrElse(d.fundingParams.remoteAmount),
+            msg.fundingContribution,
             d.fundingParams.fundingPubkeyScript,
             msg.lockTime,
             d.fundingParams.dustLimit,
@@ -436,13 +436,13 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(msg: TxAckRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       d.rbfAttempt match {
         case Some(Left(cmd)) =>
-          log.info("our peer accepted our rbf attempt and will contribute {} to the funding transaction", msg.fundingContribution_opt.getOrElse(0 sat))
+          log.info("our peer accepted our rbf attempt and will contribute {} to the funding transaction", msg.fundingContribution)
           cmd.replyTo ! RES_SUCCESS(cmd, d.channelId)
           val fundingParams = InteractiveTxParams(
             d.channelId,
             d.fundingParams.isInitiator,
             d.fundingParams.localAmount, // we don't change our funding contribution
-            msg.fundingContribution_opt.getOrElse(d.fundingParams.remoteAmount),
+            msg.fundingContribution,
             d.fundingParams.fundingPubkeyScript,
             cmd.lockTime,
             d.fundingParams.dustLimit,

@@ -84,7 +84,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   def handleNewBlockDualFundingUnconfirmed(c: CurrentBlockHeight, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
     // We regularly notify the node operator that they may want to RBF this channel.
     val blocksSinceOpen = c.blockHeight - d.waitingSince
-    if (d.fundingParams.isInitiator && (blocksSinceOpen % 288 == 0)) {
+    if (d.fundingParams.isInitiator && (blocksSinceOpen % 288 == 0)) { // 288 blocks = 2 days
       context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Info, s"channelId=${d.channelId} is still unconfirmed after $blocksSinceOpen blocks, you may need to use the rbfopen RPC to make it confirm."))
     }
     if (Channel.FUNDING_TIMEOUT_FUNDEE < blocksSinceOpen && Closing.nothingAtStake(d)) {
