@@ -38,6 +38,7 @@ and COMMAND is one of the available commands:
 
   === Channel ===
     - open
+    - rbfopen
     - close
     - forceclose
     - channel

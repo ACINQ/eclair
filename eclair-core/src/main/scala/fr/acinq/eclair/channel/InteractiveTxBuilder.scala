@@ -106,6 +106,8 @@ object InteractiveTxBuilder {
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw) {
     val fundingAmount: Satoshi = localAmount + remoteAmount
+    // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
+    val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
   }
 
   case class InteractiveTxSession(toSend: Seq[Either[TxAddInput, TxAddOutput]],

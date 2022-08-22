@@ -390,7 +390,7 @@ private[channel] object ChannelCodecs3 {
         ("previousFundingTxs" | listOfN(uint16, dualFundingTxCodec)) ::
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::
-        ("rbfAttempt" | provide(Option.empty[typed.ActorRef[InteractiveTxBuilder.Command]])) ::
+        ("rbfStatus" | provide[RbfStatus](RbfStatus.NoRbf)) ::
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_0c_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (

@@ -199,6 +199,8 @@ case class Commitments(channelId: ByteVector32,
     commitTx
   }
 
+  val fundingTxId: ByteVector32 = commitInput.outPoint.txid
+
   val commitmentFormat: CommitmentFormat = channelFeatures.commitmentFormat
 
   val channelType: SupportedChannelType = channelFeatures.channelType

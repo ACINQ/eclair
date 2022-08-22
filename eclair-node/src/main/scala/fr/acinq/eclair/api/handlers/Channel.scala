@@ -55,10 +55,14 @@ trait Channel {
         if (!channelTypeOk) {
           reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be one of ${supportedChannelTypes.keys.mkString(",")}"))
         } else {
-          complete {
-            eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt)
-          }
+          complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt))
         }
+    }
+  }
+
+  val rbfOpen: Route = postRequest("rbfopen") { implicit f =>
+    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "lockTime".as[Long] ?) {
+      (channelId, targetFeerateSatByte, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), lockTime_opt))
     }
   }
 
@@ -119,6 +123,6 @@ trait Channel {
     complete(eclairApi.channelBalances())
   }
 
-  val channelRoutes: Route = open ~ close ~ forceClose ~ channel ~ channels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
+  val channelRoutes: Route = open ~ rbfOpen ~ close ~ forceClose ~ channel ~ channels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
 
 }

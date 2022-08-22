@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, ScriptWitness, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, ScriptWitness, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
@@ -117,7 +117,7 @@ case class TxInitRbf(channelId: ByteVector32,
                      lockTime: Long,
                      feerate: FeeratePerKw,
                      tlvStream: TlvStream[TxInitRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
-  val fundingContribution_opt: Option[Satoshi] = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount)
+  val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
 }
 
 object TxInitRbf {
@@ -127,7 +127,7 @@ object TxInitRbf {
 
 case class TxAckRbf(channelId: ByteVector32,
                     tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
-  val fundingContribution_opt: Option[Satoshi] = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount)
+  val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
 }
 
 object TxAckRbf {

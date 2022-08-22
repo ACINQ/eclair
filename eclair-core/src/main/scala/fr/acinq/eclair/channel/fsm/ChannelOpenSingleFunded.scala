@@ -290,11 +290,11 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
               context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
               // NB: we don't send a ChannelSignatureSent for the first commit
-              log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
+              log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitments.fundingTxId}")
               watchFundingTx(commitments)
               Funding.minDepthFundee(nodeParams.channelConf, commitments.channelFeatures, fundingAmount) match {
                 case Some(fundingMinDepth) =>
-                  blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, fundingMinDepth)
+                  blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
                   goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
                 case None =>
                   val (shortIds, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown)
@@ -335,13 +335,13 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             commitInput, ShaChain.init)
           val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
-          log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
+          log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitments.fundingTxId}")
           watchFundingTx(commitments)
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
           Funding.minDepthFunder(commitments.channelFeatures) match {
             case Some(fundingMinDepth) =>
-              blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, fundingMinDepth)
+              blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(commitments, fundingTx, fundingTxFee)
             case None =>
               val (shortIds, channelReady) = acceptFundingTx(commitments, RealScidStatus.Unknown)
@@ -407,7 +407,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 
-    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
+    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
 
