@@ -306,7 +306,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         d.deferred.foreach(self ! _)
         Funding.minDepthDualFunding(nodeParams.channelConf, commitments.channelFeatures, fundingParams) match {
           case Some(fundingMinDepth) =>
-            blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, fundingMinDepth)
+            blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
             val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
             fundingTx match {
               case fundingTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending fundingTx.localSigs
@@ -390,7 +390,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             }
           case _ =>
             log.warning("cannot initiate rbf, another one is already in progress")
-            replyTo ! Status.Failure(RbfAlreadyInProgress(d.channelId))
+            replyTo ! Status.Failure(InvalidRbfAlreadyInProgress(d.channelId))
             stay()
         }
       }
@@ -399,12 +399,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       if (d.fundingParams.isInitiator) {
         // Only the initiator is allowed to initiate RBF.
         log.info("rejecting tx_init_rbf, we're the initiator, not them!")
-        stay() sending Error(d.channelId, InvalidRbfAttempt(d.channelId).getMessage)
+        stay() sending TxAbort(d.channelId, InvalidRbfNonInitiator(d.channelId).getMessage)
       } else {
         val minNextFeerate = d.fundingParams.minNextFeerate
         if (d.rbfStatus != RbfStatus.NoRbf) {
           log.info("rejecting rbf attempt: the current rbf attempt must be completed or aborted first")
-          stay() sending TxAbort(d.channelId, RbfAlreadyInProgress(d.channelId).getMessage)
+          stay() sending TxAbort(d.channelId, InvalidRbfAlreadyInProgress(d.channelId).getMessage)
         } else if (msg.feerate < minNextFeerate) {
           log.info("rejecting rbf attempt: the new feerate must be at least {} (proposed={})", minNextFeerate, msg.feerate)
           stay() sending TxAbort(d.channelId, InvalidRbfFeerate(d.channelId, msg.feerate, minNextFeerate).getMessage)
@@ -501,7 +501,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.Succeeded(fundingParams, fundingTx, commitments) =>
         // We now have more than one version of the funding tx, so we cannot use zero-conf.
         val fundingMinDepth = Funding.minDepthDualFunding(nodeParams.channelConf, commitments.channelFeatures, fundingParams).getOrElse(nodeParams.channelConf.minDepthBlocks.toLong)
-        blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, fundingMinDepth)
+        blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
         val previousFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, previousFundingTxs, d.waitingSince, d.lastChecked, RbfStatus.NoRbf, d.deferred)
         fundingTx match {
@@ -516,7 +516,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, confirmedTx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       // We find which funding transaction got confirmed.
       val allFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
-      allFundingTxs.find(_.commitments.commitInput.outPoint.txid == confirmedTx.txid) match {
+      allFundingTxs.find(_.commitments.fundingTxId == confirmedTx.txid) match {
         case Some(DualFundingTx(_, commitments)) =>
           log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, blockHeight, txIndex, confirmedTx.txid)
           watchFundingTx(commitments)
@@ -524,7 +524,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
           val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
           d.deferred.foreach(self ! _)
-          val otherFundingTxs = allFundingTxs.filter(_.commitments.commitInput.outPoint.txid != confirmedTx.txid).map(_.fundingTx)
+          val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != confirmedTx.txid).map(_.fundingTx)
           rollbackDualFundingTxs(otherFundingTxs)
           val toSend = d.rbfStatus match {
             case RbfStatus.RbfInProgress(txBuilder) =>

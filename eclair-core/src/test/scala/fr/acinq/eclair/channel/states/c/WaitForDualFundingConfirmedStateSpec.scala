@@ -233,8 +233,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.expectMsgType[ChannelReady]
     awaitCond(bob2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
 
-    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.commitInput.outPoint.txid == fundingTx1.txid)
-    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.commitInput.outPoint.txid == fundingTx1.txid)
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.fundingTxId == fundingTx1.txid)
+    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.fundingTxId == fundingTx1.txid)
   }
 
   def testBumpFundingFees(f: FixtureParam): FullySignedSharedTransaction = {
@@ -667,15 +667,15 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2 ! INPUT_RESTORED(aliceData)
     alice2blockchain.expectMsgType[SetChannelId]
     // When restoring, we watch confirmation of all potential funding transactions to detect offline force-closes.
-    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == aliceData.commitments.commitInput.outPoint.txid)
-    aliceData.previousFundingTxs.foreach(f => alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.commitInput.outPoint.txid)
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == aliceData.commitments.fundingTxId)
+    aliceData.previousFundingTxs.foreach(f => alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.fundingTxId)
     awaitCond(alice2.stateName == OFFLINE)
 
     val bob2 = TestFSMRef(new Channel(bobNodeParams, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
     bob2 ! INPUT_RESTORED(bobData)
     bob2blockchain.expectMsgType[SetChannelId]
-    assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == bobData.commitments.commitInput.outPoint.txid)
-    bobData.previousFundingTxs.foreach(f => bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.commitInput.outPoint.txid)
+    assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == bobData.commitments.fundingTxId)
+    bobData.previousFundingTxs.foreach(f => bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.fundingTxId)
     awaitCond(bob2.stateName == OFFLINE)
 
     alice2.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionPublished])
@@ -698,12 +698,12 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2 ! bobChannelReestablish
     // When reconnecting, we watch confirmation again, otherwise if a transaction was confirmed while we were offline,
     // we won't be notified again and won't be able to transition to the next state.
-    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == aliceData.commitments.commitInput.outPoint.txid)
-    aliceData.previousFundingTxs.foreach(f => alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.commitInput.outPoint.txid)
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == aliceData.commitments.fundingTxId)
+    aliceData.previousFundingTxs.foreach(f => alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.fundingTxId)
     alice2bob.expectMsgType[TxSignatures]
     bob2 ! aliceChannelReestablish
-    assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == bobData.commitments.commitInput.outPoint.txid)
-    bobData.previousFundingTxs.foreach(f => bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.commitInput.outPoint.txid)
+    assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == bobData.commitments.fundingTxId)
+    bobData.previousFundingTxs.foreach(f => bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.fundingTxId)
     bob2alice.expectMsgType[TxSignatures]
 
     awaitCond(alice2.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)

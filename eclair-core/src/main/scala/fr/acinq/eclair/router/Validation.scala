@@ -504,7 +504,7 @@ object Validation {
             // since this is a local channel, we can trust the announcement, no need to go through the full
             // verification process and make calls to bitcoin core
             val fundingTxId = lcu.commitments match {
-              case commitments: Commitments => commitments.commitInput.outPoint.txid
+              case commitments: Commitments => commitments.fundingTxId
               case _ => ByteVector32.Zeroes
             }
             val d1 = addPublicChannel(d, nodeParams, watcher, ann, fundingTxId, lcu.commitments.capacity, Some(privateChannel))

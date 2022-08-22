@@ -60,19 +60,19 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
-    if (w.tx.txid == d.commitments.commitInput.outPoint.txid) {
+    if (w.tx.txid == d.commitments.fundingTxId) {
       watchFundingTx(d.commitments)
       context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
       // We can forget previous funding attempts now that the funding tx is confirmed.
       rollbackDualFundingTxs(d.previousFundingTxs.map(_.fundingTx))
       stay() using d.copy(previousFundingTxs = Nil) storing()
-    } else if (d.previousFundingTxs.exists(_.commitments.commitInput.outPoint.txid == w.tx.txid)) {
+    } else if (d.previousFundingTxs.exists(_.commitments.fundingTxId == w.tx.txid)) {
       log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
-      val confirmed = d.previousFundingTxs.find(_.commitments.commitInput.outPoint.txid == w.tx.txid).get
+      val confirmed = d.previousFundingTxs.find(_.commitments.fundingTxId == w.tx.txid).get
       watchFundingTx(confirmed.commitments)
       context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
       // We can forget other funding attempts now that one of the funding txs is confirmed.
-      val otherFundingTxs = d.fundingTx +: d.previousFundingTxs.filter(_.commitments.commitInput.outPoint.txid != w.tx.txid).map(_.fundingTx)
+      val otherFundingTxs = d.fundingTx +: d.previousFundingTxs.filter(_.commitments.fundingTxId != w.tx.txid).map(_.fundingTx)
       rollbackDualFundingTxs(otherFundingTxs)
       stay() using d.copy(commitments = confirmed.commitments, fundingTx = confirmed.fundingTx, previousFundingTxs = Nil) storing()
     } else {
@@ -107,7 +107,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def handleDualFundingDoubleSpent(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
-    val fundingTxIds = (d.commitments +: d.previousFundingTxs.map(_.commitments)).map(_.commitInput.outPoint.txid).toSet
+    val fundingTxIds = (d.commitments +: d.previousFundingTxs.map(_.commitments)).map(_.fundingTxId).toSet
     if (fundingTxIds.subsetOf(e.fundingTxIds)) {
       log.warning("{} funding attempts have been double-spent, forgetting channel", fundingTxIds.size)
       (d.fundingTx +: d.previousFundingTxs.map(_.fundingTx)).foreach(tx => wallet.rollback(tx.tx.buildUnsignedTx()))

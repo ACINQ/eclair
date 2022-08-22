@@ -44,7 +44,7 @@ trait CommonFundingHandlers extends CommonHandlers {
   }
 
   def acceptFundingTx(commitments: Commitments, realScidStatus: RealScidStatus): (ShortIds, ChannelReady) = {
-    blockchain ! WatchFundingLost(self, commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
+    blockchain ! WatchFundingLost(self, commitments.fundingTxId, nodeParams.channelConf.minDepthBlocks)
     // the alias will use in our peer's channel_update message, the goal is to be able to use our channel as soon
     // as it reaches NORMAL state, and before it is announced on the network
     val shortIds = ShortIds(realScidStatus, ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
@@ -75,7 +75,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
-    blockchain ! WatchFundingDeeplyBuried(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
+    blockchain ! WatchFundingDeeplyBuried(self, commitments.fundingTxId, ANNOUNCEMENTS_MINCONF)
     DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)), shortIds1, None, initialChannelUpdate, None, None, None)
   }
 

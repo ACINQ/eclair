@@ -263,8 +263,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               if (closing.alternativeCommitments.nonEmpty) {
                 // There are unconfirmed, alternative funding transactions, so we wait for one to confirm before
                 // watching transactions spending it.
-                blockchain ! WatchFundingConfirmed(self, data.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-                closing.alternativeCommitments.foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks))
+                blockchain ! WatchFundingConfirmed(self, data.commitments.fundingTxId, nodeParams.channelConf.minDepthBlocks)
+                closing.alternativeCommitments.foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitments.fundingTxId, nodeParams.channelConf.minDepthBlocks))
               }
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isInitiator))
               closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.commitments))
@@ -278,7 +278,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
                 if (closing.commitments.channelFeatures.hasFeature(Features.DualFunding)) {
                   closing.fundingTx.flatMap(_.signedTx_opt).foreach(tx => wallet.publishTransaction(tx))
                 } else {
-                  blockchain ! GetTxWithMeta(self, closing.commitments.commitInput.outPoint.txid)
+                  blockchain ! GetTxWithMeta(self, closing.commitments.fundingTxId)
                 }
               }
           }
@@ -312,7 +312,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
           watchFundingTx(funding.commitments)
           // we make sure that the funding tx has been published
-          blockchain ! GetTxWithMeta(self, funding.commitments.commitInput.outPoint.txid)
+          blockchain ! GetTxWithMeta(self, funding.commitments.fundingTxId)
           if (funding.waitingSince.toLong > 1_500_000_000) {
             // we were using timestamps instead of block heights when the channel was created: we reset it *and* we use block heights
             goto(OFFLINE) using funding.copy(waitingSince = nodeParams.currentBlockHeight) storing()
@@ -324,8 +324,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           // we make sure that the funding tx with the highest feerate has been published
           publishFundingTx(funding.fundingParams, funding.fundingTx)
           // we watch confirmation of all funding candidates, and once one of them confirms we will watch spending txs
-          blockchain ! WatchFundingConfirmed(self, funding.commitments.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks)
-          funding.previousFundingTxs.map(_.commitments).foreach(c => blockchain ! WatchFundingConfirmed(self, c.commitInput.outPoint.txid, nodeParams.channelConf.minDepthBlocks))
+          blockchain ! WatchFundingConfirmed(self, funding.commitments.fundingTxId, nodeParams.channelConf.minDepthBlocks)
+          funding.previousFundingTxs.map(_.commitments).foreach(c => blockchain ! WatchFundingConfirmed(self, c.fundingTxId, nodeParams.channelConf.minDepthBlocks))
           goto(OFFLINE) using funding
 
         case _ =>
@@ -1082,7 +1082,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case Left(cause) => handleCommandError(cause, c)
       }
 
-    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_CLOSING) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid =>
+    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_CLOSING) if getTxResponse.txid == d.commitments.fundingTxId =>
       // NB: waitingSinceBlock contains the block at which closing was initiated, not the block at which funding was initiated.
       // That means we're lenient with our peer and give its funding tx more time to confirm, to avoid having to store two distinct
       // waitingSinceBlock (e.g. closingWaitingSinceBlock and fundingWaitingSinceBlock).
@@ -1093,7 +1093,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_CLOSING) => handleFundingTimeout(d)
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_CLOSING) =>
-      d.alternativeCommitments.find(_.commitments.commitInput.outPoint.txid == w.tx.txid) match {
+      d.alternativeCommitments.find(_.commitments.fundingTxId == w.tx.txid) match {
         case Some(DualFundingTx(_, commitments1)) =>
           // This is a corner case where:
           //  - we are using dual funding
@@ -1112,14 +1112,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
           val otherFundingTxs =
             d.fundingTx.toSeq.collect { case DualFundedUnconfirmedFundingTx(fundingTx) => fundingTx } ++
-              d.alternativeCommitments.filterNot(_.commitments.commitInput.outPoint.txid == w.tx.txid).map(_.fundingTx)
+              d.alternativeCommitments.filterNot(_.commitments.fundingTxId == w.tx.txid).map(_.fundingTx)
           rollbackDualFundingTxs(otherFundingTxs)
           val commitTx = commitments1.fullySignedLocalCommitTx(keyManager).tx
           val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments1, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
           val d1 = DATA_CLOSING(commitments1, None, d.waitingSince, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
           stay() using d1 storing() calling doPublish(localCommitPublished, commitments1)
         case None =>
-          if (d.commitments.commitInput.outPoint.txid == w.tx.txid) {
+          if (d.commitments.fundingTxId == w.tx.txid) {
             // The best funding tx candidate has been confirmed, we can forget alternative commitments.
             stay() using d.copy(alternativeCommitments = Nil) storing()
           } else {
@@ -1327,7 +1327,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
 
-    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
+    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
 
@@ -1371,7 +1371,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         defaultMinDepth.toLong
       }
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-      blockchain ! WatchFundingConfirmed(self, d.commitments.commitInput.outPoint.txid, minDepth)
+      blockchain ! WatchFundingConfirmed(self, d.commitments.fundingTxId, minDepth)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
@@ -1383,7 +1383,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
         defaultMinDepth.toLong
       }
-      (d.commitments +: d.previousFundingTxs.map(_.commitments)).foreach(commitments => blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, minDepth))
+      (d.commitments +: d.previousFundingTxs.map(_.commitments)).foreach(commitments => blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, minDepth))
       goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.fundingTx.localSigs
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
@@ -1449,7 +1449,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             case _ =>
               // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
               // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
-              blockchain ! WatchFundingDeeplyBuried(self, d.commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
+              blockchain ! WatchFundingDeeplyBuried(self, d.commitments.fundingTxId, ANNOUNCEMENTS_MINCONF)
           }
 
           if (d.commitments.announceChannel) {
@@ -1529,7 +1529,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CurrentFeerates, d: PersistentChannelData) => handleCurrentFeerateDisconnected(c, d)
 
-    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
+    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
 

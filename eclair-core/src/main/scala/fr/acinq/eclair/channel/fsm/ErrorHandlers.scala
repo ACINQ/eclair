@@ -318,7 +318,7 @@ trait ErrorHandlers extends CommonHandlers {
       case None =>
         // the published tx was neither their current commitment nor a revoked one
         log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
-        context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${d.commitments.commitInput.outPoint.txid} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
+        context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${d.commitments.fundingTxId} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
         goto(ERR_INFORMATION_LEAK)
     }
   }
@@ -342,8 +342,8 @@ trait ErrorHandlers extends CommonHandlers {
 
   def handleInformationLeak(tx: Transaction, d: PersistentChannelData) = {
     // this is never supposed to happen !!
-    log.error(s"our funding tx ${d.commitments.commitInput.outPoint.txid} was spent by txid=${tx.txid}!!")
-    context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${d.commitments.commitInput.outPoint.txid} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
+    log.error(s"our funding tx ${d.commitments.fundingTxId} was spent by txid=${tx.txid}!!")
+    context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${d.commitments.fundingTxId} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
     val exc = FundingTxSpent(d.channelId, tx)
     val error = Error(d.channelId, exc.getMessage)
 
