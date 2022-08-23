@@ -82,6 +82,8 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
       alice2bob.expectMsgType[TxSignatures]
       alice2bob.forward(bob)
       if (!test.tags.contains(ChannelStateTestsTags.ZeroConf)) {
+        awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+        awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
         val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
         assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
         assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
