@@ -678,9 +678,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bobData.previousFundingTxs.foreach(f => bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == f.commitments.fundingTxId)
     awaitCond(bob2.stateName == OFFLINE)
 
-    alice2.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionPublished])
     alice2.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionConfirmed])
-    bob2.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionPublished])
     bob2.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionConfirmed])
 
     (alice2, bob2)
