@@ -612,7 +612,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
     }
 
-    // The transaction must double-spent every previous attempt, otherwise there is a risk that two funding transactions
+    // The transaction must double-spend every previous attempt, otherwise there is a risk that two funding transactions
     // confirm for the same channel.
     val currentInputs = tx.txIn.map(_.outPoint).toSet
     val doubleSpendsPreviousTransactions = previousTransactions.forall(previousTx => previousTx.tx.buildUnsignedTx().txIn.map(_.outPoint).exists(o => currentInputs.contains(o)))
