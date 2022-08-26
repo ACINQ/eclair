@@ -440,7 +440,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val g = DirectedGraph(edges)
     val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
-    assert(route.hops == channelHopFromUpdate(a, b, uab) :: channelHopFromUpdate(b, c, ubc) :: channelHopFromUpdate(c, d, ucd) :: channelHopFromUpdate(d, e, ude) :: Nil)
+    assert(route.clearHops == channelHopFromUpdate(a, b, uab) :: channelHopFromUpdate(b, c, ubc) :: channelHopFromUpdate(c, d, ucd) :: channelHopFromUpdate(d, e, ude) :: Nil)
   }
 
   test("blacklist routes") {
@@ -505,12 +505,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val Success(route1 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(route2Ids(route1) == 1 :: 2 :: 3 :: 4 :: Nil)
-    assert(route1.hops(1).params.relayFees.feeBase == 10.msat)
+    assert(route1.clearHops(1).params.relayFees.feeBase == 10.msat)
 
     val extraGraphEdges = Set(makeEdge(2L, b, c, 5 msat, 5))
     val Success(route2 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(route2Ids(route2) == 1 :: 2 :: 3 :: 4 :: Nil)
-    assert(route2.hops(1).params.relayFees.feeBase == 5.msat)
+    assert(route2.clearHops(1).params.relayFees.feeBase == 5.msat)
   }
 
   test("compute ignored channels") {
@@ -929,7 +929,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val Success(route :: Nil) = findRoute(g, thisNode, targetNode, amount, DEFAULT_MAX_FEE, 1, Set.empty, Set.empty, Set.empty, params, currentBlockHeight = BlockHeight(567634)) // simulate mainnet block for heuristic
     assert(route.length == 2)
-    assert(route.hops.last.nextNodeId == targetNode)
+    assert(route.clearHops.last.nextNodeId == targetNode)
   }
 
   test("validate path fees") {
@@ -1377,7 +1377,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       routes.foreach(route => {
         assert(route.length == 2)
         assert(route.amount <= 1_200_000.msat)
-        assert(!route.hops.flatMap(h => Seq(h.nodeId, h.nextNodeId)).contains(c))
+        assert(!route.clearHops.flatMap(h => Seq(h.nodeId, h.nextNodeId)).contains(c))
       })
     }
   }
@@ -1959,17 +1959,17 @@ object RouteCalculationSpec {
 
   def hops2Ids(hops: Seq[ChannelHop]): Seq[Long] = hops.map(hop => hop.shortChannelId.toLong)
 
-  def route2Ids(route: Route): Seq[Long] = hops2Ids(route.hops)
+  def route2Ids(route: Route): Seq[Long] = hops2Ids(route.clearHops)
 
   def routes2Ids(routes: Seq[Route]): Set[Seq[Long]] = routes.map(route2Ids).toSet
 
-  def route2Edges(route: Route): Seq[GraphEdge] = route.hops.map(hop => GraphEdge(ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId), hop.params, 0 sat, None))
+  def route2Edges(route: Route): Seq[GraphEdge] = route.clearHops.map(hop => GraphEdge(ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId), hop.params, 0 sat, None))
 
-  def route2Nodes(route: Route): Seq[(PublicKey, PublicKey)] = route.hops.map(hop => (hop.nodeId, hop.nextNodeId))
+  def route2Nodes(route: Route): Seq[(PublicKey, PublicKey)] = route.clearHops.map(hop => (hop.nodeId, hop.nextNodeId))
 
   def checkIgnoredChannels(routes: Seq[Route], shortChannelIds: Long*): Unit = {
     shortChannelIds.foreach(shortChannelId => routes.foreach(route => {
-      assert(route.hops.forall(_.shortChannelId.toLong != shortChannelId), route)
+      assert(route.clearHops.forall(_.shortChannelId.toLong != shortChannelId), route)
     }))
   }
 

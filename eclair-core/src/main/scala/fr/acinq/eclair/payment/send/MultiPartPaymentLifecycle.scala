@@ -404,7 +404,7 @@ object MultiPartPaymentLifecycle {
       Some(cfg.paymentContext))
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
-    SendPaymentToRoute(replyTo, Right(route), route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.paymentMetadata)
+    SendPaymentToRoute(replyTo, Right(route), route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.paymentMetadata, additionalTlvs = request.additionalTlvs, userCustomTlvs = request.userCustomTlvs)
   }
 
   /** When we receive an error from the final recipient or payment gets settled on chain, we should fail the whole payment, it's useless to retry. */

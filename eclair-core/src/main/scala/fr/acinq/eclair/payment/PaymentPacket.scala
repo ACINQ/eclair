@@ -179,7 +179,7 @@ object IncomingPaymentPacket {
     } else {
       // We merge contents from the outer and inner payloads.
       // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-      Right(FinalPacket(add, PaymentOnion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata)))
+      Right(FinalPacket(add, PaymentOnion.createFinalTlvPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata)))
     }
   }
 
@@ -252,7 +252,7 @@ object OutgoingPaymentPacket {
           Seq(PaymentOnion.createBlindedFinalPayload(amount, expiry, blinded.route.encryptedPayloads.last, Some(blinded.route.blindingKey), additionalTlvs, userCustomTlvs))
         }
         (amount + blinded.paymentInfo.fee(amount), expiry + blinded.paymentInfo.cltvExpiryDelta, blindedPayloads)
-      case None => (amount, expiry, Seq(PaymentOnion.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, paymentMetadata, additionalTlvs, userCustomTlvs)))
+      case None => (amount, expiry, Seq(PaymentOnion.createFinalTlvPayload(amount, totalAmount, expiry, paymentSecret, paymentMetadata, additionalTlvs, userCustomTlvs)))
     }
     clearHops.reverse.foldLeft((endAmount, endExpiry, endPayloads)) {
       case ((amount, expiry, payloads), hop) =>

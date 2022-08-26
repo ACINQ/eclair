@@ -62,7 +62,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
         case Some(paymentSecret) =>
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, paymentSecret, r.recipientAmount, r.recipientAmount, finalExpiry, r.invoice.paymentMetadata, r.maxAttempts, r.invoice.extraEdges, r.routeParams, userCustomTlvs = r.userCustomTlvs)
+          fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, r.recipientAmount, r.recipientAmount, finalExpiry, paymentSecret, r.invoice.paymentMetadata, r.maxAttempts, r.invoice.extraEdges, r.routeParams, userCustomTlvs = r.userCustomTlvs)
           context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
       }
 
@@ -72,7 +72,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics, Nil)
       val finalExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1)
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-      fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId,randomBytes32(), r.recipientAmount,r.recipientAmount,finalExpiry,None, r.maxAttempts, routeParams = r.routeParams, additionalTlvs = Seq(OnionPaymentPayloadTlv.KeySend(r.paymentPreimage)))
+      fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, r.recipientAmount, r.recipientAmount, finalExpiry, randomBytes32(), None, r.maxAttempts, routeParams = r.routeParams, additionalTlvs = Seq(OnionPaymentPayloadTlv.KeySend(r.paymentPreimage)))
       context become main(pending + (paymentId -> PendingSpontaneousPayment(sender(), r)))
 
     case r: SendTrampolinePayment =>

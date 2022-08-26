@@ -452,10 +452,10 @@ object PaymentLifecycle {
    */
   case class SendPaymentToNode(replyTo: ActorRef,
                                targetNodeId: PublicKey,
-                               paymentSecret: ByteVector32,
                                amount: MilliSatoshi,
                                totalAmount: MilliSatoshi,
                                targetExpiry: CltvExpiry,
+                               paymentSecret: ByteVector32,
                                paymentMetadata: Option[ByteVector],
                                maxAttempts: Int,
                                extraEdges: Seq[ExtraEdge] = Nil,
