@@ -31,6 +31,24 @@
         </encoder>
     </appender>
 
+    <!--
+    Logging from tests are silenced by this appender. When there is a test failure
+    the captured logging events are flushed to the appenders defined for the
+    akka.actor.testkit.typed.internal.CapturingAppenderDelegate logger.
+    This is heavily inspired by akka's CapturingAppender
+    -->
+    <appender name="MyCapturingAppender" class="fr.acinq.eclair.testutils.MyCapturingAppender"/>
+
+    <!--
+    The appenders defined for this CapturingAppenderDelegate logger are used
+    when there is a test failure and all logging events from the test are
+    flushed to these appenders.
+    This is heavily inspired by akka's CapturingAppender
+    -->
+    <logger name="MyCapturingAppenderDelegate" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
     <logger level="INFO" name="notifications">
         <!--<appender-ref ref="CONSOLE_NOTIFICATIONS"/>-->
     </logger>
@@ -45,7 +63,8 @@
     <!--<logger name="fr.acinq.eclair.channel" level="DEBUG" />-->
 
     <root level="INFO">
-        <!--<appender-ref ref="CONSOLE"/>-->
+        <appender-ref ref="MyCapturingAppender"/>
+        <!--appender-ref ref="CONSOLE"/-->
     </root>
 
 </configuration>

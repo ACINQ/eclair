@@ -32,7 +32,7 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     val bobParams = nodeParamsFor("bob", ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492"))
       .modify(_.features.activated).using(_ - ZeroConf) // we will enable those features on demand
       .modify(_.features.activated).usingIf(testData.tags.contains(ZeroConfBob))(_ + (ZeroConf -> Optional))
-    TwoNodesFixture(aliceParams, bobParams)
+    TwoNodesFixture(aliceParams, bobParams, testData.name)
   }
 
   override def cleanupFixture(fixture: FixtureParam): Unit = {

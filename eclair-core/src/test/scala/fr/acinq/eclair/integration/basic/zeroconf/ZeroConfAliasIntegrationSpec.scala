@@ -41,7 +41,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       .modify(_.features.activated).usingIf(testData.tags.contains(ZeroConfBobCarol))(_ + (ZeroConf -> Mandatory))
       .modify(_.features.activated).usingIf(testData.tags.contains(ScidAliasBobCarol))(_ + (ScidAlias -> Mandatory))
       .modify(_.channelConf.channelFlags.announceChannel).setTo(testData.tags.contains(PublicBobCarol))
-    ThreeNodesFixture(aliceParams, bobParams, carolParams)
+    ThreeNodesFixture(aliceParams, bobParams, carolParams, testData.name)
   }
 
   override def cleanupFixture(fixture: FixtureParam): Unit = {

@@ -70,8 +70,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       .modify(_.peerConnectionConf.maxRebroadcastDelay).setTo(1 second)
   }
 
-  def apply(nodeParams: NodeParams): MinimalNodeFixture = {
-    implicit val system: ActorSystem = ActorSystem(s"system-${nodeParams.alias}")
+  def apply(nodeParams: NodeParams, testName: String): MinimalNodeFixture = {
+    implicit val system: ActorSystem = ActorSystem(s"system-${nodeParams.alias}", FixtureUtils.actorSystemConfig(testName))
     val readyListener = TestProbe("ready-listener")
     system.eventStream.subscribe(readyListener.ref, classOf[SubscriptionsComplete])
     val bitcoinClient = new TestBitcoinCoreClient()
