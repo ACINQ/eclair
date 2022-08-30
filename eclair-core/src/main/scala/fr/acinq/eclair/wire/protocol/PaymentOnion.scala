@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
+import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
@@ -225,6 +225,11 @@ object PaymentOnion {
   /** Per-hop payload from an HTLC's payment onion (after decryption and decoding). */
   sealed trait PerHopPayload
 
+  sealed trait BlindedPayload {
+    val blinding_opt: Option[PublicKey]
+    val encryptedRecipientData: ByteVector
+  }
+
   /** Per-hop payload for an intermediate node. */
   sealed trait RelayPayload extends PerHopPayload
 
@@ -240,9 +245,16 @@ object PaymentOnion {
   }
 
   /** Per-hop payload for a final node. */
-  sealed trait FinalPayload extends PerHopPayload with TrampolinePacket with PaymentPacket {
+  sealed trait FinalPayload extends PerHopPayload with TrampolinePacket with PaymentPacket
+
+  sealed trait FinalData {
     val amount: MilliSatoshi
     val expiry: CltvExpiry
+    val paymentSecret: ByteVector32
+    val totalAmount: MilliSatoshi
+    val paymentPreimage: Option[ByteVector32]
+    val paymentMetadata: Option[ByteVector]
+
   }
 
   case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends ChannelRelayPayload with ChannelRelayData
@@ -258,7 +270,7 @@ object PaymentOnion {
       ChannelRelayTlvPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountToForward), OnionPaymentPayloadTlv.OutgoingCltv(outgoingCltv), OnionPaymentPayloadTlv.OutgoingChannelId(outgoingChannelId)))
   }
 
-  case class BlindedChannelRelayPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends ChannelRelayPayload {
+  case class BlindedChannelRelayPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends ChannelRelayPayload with BlindedPayload {
     val blinding_opt: Option[PublicKey] = records.get[BlindingPoint].map(_.publicKey)
     val encryptedRecipientData: ByteVector = records.get[EncryptedRecipientData].get.data
   }
@@ -284,9 +296,9 @@ object PaymentOnion {
     val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
   }
 
-  case class FinalTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload {
-    override val amount = records.get[AmountToForward].get.amount
-    override val expiry = records.get[OutgoingCltv].get.cltv
+  case class FinalTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload with FinalData {
+    val amount = records.get[AmountToForward].get.amount
+    val expiry = records.get[OutgoingCltv].get.cltv
     val paymentSecret = records.get[PaymentData].get.secret
     val totalAmount = records.get[PaymentData].map(_.totalAmount match {
       case MilliSatoshi(0) => amount
@@ -296,10 +308,18 @@ object PaymentOnion {
     val paymentMetadata = records.get[PaymentMetadata].map(_.data)
   }
 
-  case class BlindedFinalPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload {
-    override val amount: MilliSatoshi = records.get[AmountToForward].get.amount
-    override val expiry: CltvExpiry = records.get[OutgoingCltv].get.cltv
+  case class BlindedFinalPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload with BlindedPayload {
+    val amount: MilliSatoshi = records.get[AmountToForward].get.amount
+    val expiry: CltvExpiry = records.get[OutgoingCltv].get.cltv
+    val blinding_opt: Option[PublicKey] = records.get[BlindingPoint].map(_.publicKey)
     val encryptedRecipientData: ByteVector = records.get[EncryptedRecipientData].get.data
+  }
+
+  case class BlindedFinalData(recipientData: BlindedRouteData.PaymentRecipientData, amount: MilliSatoshi, expiry: CltvExpiry) extends FinalData {
+    val paymentSecret: ByteVector32 = ???
+    val totalAmount: MilliSatoshi = ???
+    val paymentPreimage: Option[ByteVector32] = ???
+    val paymentMetadata: Option[ByteVector] = ???
   }
 
   def createNodeRelayPayload(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): NodeRelayPayload = {
