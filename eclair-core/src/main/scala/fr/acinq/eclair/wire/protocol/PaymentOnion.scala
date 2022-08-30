@@ -316,10 +316,10 @@ object PaymentOnion {
   }
 
   case class BlindedFinalData(recipientData: BlindedRouteData.PaymentRecipientData, amount: MilliSatoshi, expiry: CltvExpiry) extends FinalData {
-    val paymentSecret: ByteVector32 = ???
-    val totalAmount: MilliSatoshi = ???
-    val paymentPreimage: Option[ByteVector32] = ???
-    val paymentMetadata: Option[ByteVector] = ???
+    val paymentSecret: ByteVector32 = recipientData.pathId
+    val totalAmount: MilliSatoshi = recipientData.totalAmount
+    val paymentPreimage: Option[ByteVector32] = recipientData.paymentPreimage
+    val paymentMetadata: Option[ByteVector] = recipientData.paymentMetadata
   }
 
   def createNodeRelayPayload(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): NodeRelayPayload = {

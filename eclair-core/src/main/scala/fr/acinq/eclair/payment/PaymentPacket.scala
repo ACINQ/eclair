@@ -70,7 +70,7 @@ object IncomingPaymentPacket {
       case Left(badOnion) => Left(badOnion)
     }
 
-  private def unblind[T <: BlindedRouteData.Data](add: UpdateAddHtlc, privateKey: PrivateKey, payload: PaymentOnion.BlindedPayload, dataCodec: Codec[T]): Either[FailureMessage, (T, PublicKey)] = {
+  private def unblind[T <: BlindedRouteData.PaymentData](add: UpdateAddHtlc, privateKey: PrivateKey, payload: PaymentOnion.BlindedPayload, dataCodec: Codec[T]): Either[FailureMessage, (T, PublicKey)] = {
     if (add.blinding_opt.isDefined && payload.blinding_opt.isDefined) {
       Left(InvalidOnionPayload(UInt64(12), 0))
     } else {
@@ -84,7 +84,14 @@ object IncomingPaymentPacket {
               // TODO: return an unparseable error
               Left(InvalidOnionPayload(UInt64(12), 0))
             case Success((data, nextBlinding)) =>
-              Right((data, nextBlinding))
+              // TODO: update this when payment features are added
+              val featuresUsed: Features[Feature] = Features.empty
+              if (isValidBlindedPayment(data, add.amountMsat, add.cltvExpiry, featuresUsed)) {
+                Right((data, nextBlinding))
+              } else {
+                // TODO: return an unparseable error
+                Left(InvalidOnionPayload(UInt64(12), 0))
+              }
           }
         case None =>
           // The sender is trying to use route blinding, but we didn't receive the blinding point used to derive
@@ -120,16 +127,10 @@ object IncomingPaymentPacket {
             unblind(add, privateKey, payload, RouteBlindingEncryptedDataCodecs.paymentRelayDataCodec) match {
               case Left(failure) => Left(failure)
               case Right((relayData, nextBlinding)) =>
-                if (isValidBlindedPayment(relayData, add.amountMsat, add.cltvExpiry, Features.empty)) {
-                  if (relayData.outgoingChannelId == ShortChannelId.toSelf) {
-                    decrypt(add.copy(onionRoutingPacket = next, tlvStream = add.tlvStream.copy(records = Seq(UpdateAddHtlcTlv.BlindingPoint(nextBlinding)))), privateKey)
-                  } else {
-                    Right(ChannelRelayPacket(add, PaymentOnion.BlindedChannelRelayData(relayData, add.amountMsat, add.cltvExpiry), next, Some(nextBlinding)))
-                  }
+                if (relayData.outgoingChannelId == ShortChannelId.toSelf) {
+                  decrypt(add.copy(onionRoutingPacket = next, tlvStream = add.tlvStream.copy(records = Seq(UpdateAddHtlcTlv.BlindingPoint(nextBlinding)))), privateKey)
                 } else {
-                  // The sender is buggy or malicious, probably trying to probe the blinded route.
-                  // TODO: return an unparseable error
-                  Left(InvalidOnionPayload(UInt64(12), 0))
+                  Right(ChannelRelayPacket(add, PaymentOnion.BlindedChannelRelayData(relayData, add.amountMsat, add.cltvExpiry), next, Some(nextBlinding)))
                 }
             }
           case _ if add.blinding_opt.isDefined => Left(InvalidOnionPayload(UInt64(12), 0))

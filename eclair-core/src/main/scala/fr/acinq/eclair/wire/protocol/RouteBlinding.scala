@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, cltvExpiry, cltvExpiryDelta}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.featuresCodec
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tmillisatoshi32}
@@ -34,10 +35,16 @@ import scala.util.Try
 
 sealed trait RouteBlindingEncryptedDataTlv extends Tlv
 
+/** TLVs for the final encrypted data.
+ * The final encrypted data is created by us and can only be read us, so we can put anything in there, it doesn't need
+ * to follow the spec.
+ */
+sealed trait FinalEncryptedDataTlv extends Tlv
+
 object RouteBlindingEncryptedDataTlv {
 
   /** Some padding can be added to ensure all payloads are the same size to improve privacy. */
-  case class Padding(dummy: ByteVector) extends RouteBlindingEncryptedDataTlv
+  case class Padding(dummy: ByteVector) extends RouteBlindingEncryptedDataTlv with FinalEncryptedDataTlv
 
   /** Id of the outgoing channel, used to identify the next node. */
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends RouteBlindingEncryptedDataTlv
@@ -51,7 +58,7 @@ object RouteBlindingEncryptedDataTlv {
    * It should use that field to detect when blinded routes are used outside of their intended use (malicious probing)
    * and react accordingly (ignore the message or send an error depending on the use-case).
    */
-  case class PathId(data: ByteVector) extends RouteBlindingEncryptedDataTlv
+  case class PathId(data: ByteVector) extends FinalEncryptedDataTlv
 
   /** Blinding override for the rest of the route. */
   case class NextBlinding(blinding: PublicKey) extends RouteBlindingEncryptedDataTlv
@@ -60,31 +67,36 @@ object RouteBlindingEncryptedDataTlv {
   case class PaymentRelay(cltvExpiryDelta: CltvExpiryDelta, feeProportionalMillionths: Long, feeBase: MilliSatoshi) extends RouteBlindingEncryptedDataTlv
 
   /** Constraints for the relaying node to enforce to prevent probing. */
-  case class PaymentConstraints(maxCltvExpiry: CltvExpiry, minAmount: MilliSatoshi) extends RouteBlindingEncryptedDataTlv
+  case class PaymentConstraints(maxCltvExpiry: CltvExpiry, minAmount: MilliSatoshi) extends RouteBlindingEncryptedDataTlv with FinalEncryptedDataTlv
 
   /**
    * Blinded routes constrain the features that can be used by relaying nodes to prevent probing.
    * Without this mechanism nodes supporting features that aren't widely supported could easily be identified.
    */
-  case class AllowedFeatures(features: Features[Feature]) extends RouteBlindingEncryptedDataTlv
+  case class AllowedFeatures(features: Features[Feature]) extends RouteBlindingEncryptedDataTlv with FinalEncryptedDataTlv
 
+  /* Custom TLVs */
+
+  case class TotalAmount(amount: MilliSatoshi) extends FinalEncryptedDataTlv
+
+  case class PaymentPreimage(preimage: ByteVector32) extends FinalEncryptedDataTlv
+
+  case class PaymentMetadata(data: ByteVector) extends FinalEncryptedDataTlv
 }
 
 object BlindedRouteData {
 
   import RouteBlindingEncryptedDataTlv._
 
-  sealed trait Data {
-    val records: TlvStream[RouteBlindingEncryptedDataTlv]
-  }
+  sealed trait Data
 
   /** Data contained in the encrypted data tlv stream when used for onion messages. */
   sealed trait MessageData extends Data
 
   /** Data contained in the encrypted data tlv stream when used for payments. */
   sealed trait PaymentData extends Data {
-    val paymentConstraints: PaymentConstraints = records.get[PaymentConstraints].get
-    val allowedFeatures: Features[Feature] = records.get[AllowedFeatures].map(_.features).getOrElse(Features.empty)
+    val paymentConstraints: PaymentConstraints
+    val allowedFeatures: Features[Feature]
   }
 
   case class MessageRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends MessageData {
@@ -92,11 +104,14 @@ object BlindedRouteData {
     val nextBlinding_opt: Option[PublicKey] = records.get[NextBlinding].map(_.blinding)
   }
 
-  case class MessageRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends MessageData {
+  case class MessageRecipientData(records: TlvStream[FinalEncryptedDataTlv]) extends MessageData {
     val pathId_opt: Option[ByteVector] = records.get[PathId].map(_.data)
   }
 
   case class PaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends PaymentData {
+    val paymentConstraints: PaymentConstraints = records.get[PaymentConstraints].get
+    val allowedFeatures: Features[Feature] = records.get[AllowedFeatures].map(_.features).getOrElse(Features.empty)
+
     private val paymentRelay: PaymentRelay = records.get[PaymentRelay].get
     val outgoingChannelId: ShortChannelId = records.get[OutgoingChannelId].get.shortChannelId
 
@@ -106,8 +121,13 @@ object BlindedRouteData {
     def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - paymentRelay.cltvExpiryDelta
   }
 
-  case class PaymentRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends PaymentData {
-    val pathId_opt: Option[ByteVector] = records.get[PathId].map(_.data)
+  case class PaymentRecipientData(records: TlvStream[FinalEncryptedDataTlv]) extends PaymentData {
+    val pathId: ByteVector32 = ByteVector32(records.get[PathId].get.data)
+    val paymentConstraints: PaymentConstraints = records.get[PaymentConstraints].get
+    val allowedFeatures: Features[Feature] = records.get[AllowedFeatures].map(_.features).getOrElse(Features.empty)
+    val totalAmount: MilliSatoshi = records.get[TotalAmount].get.amount
+    val paymentPreimage: Option[ByteVector32] = records.get[PaymentPreimage].map(_.preimage)
+    val paymentMetadata: Option[ByteVector] = records.get[PaymentMetadata].map(_.data)
   }
 
 }
@@ -135,11 +155,14 @@ object RouteBlindingEncryptedDataCodecs {
       ("htlc_minimum_msat" | tmillisatoshi)).as[PaymentConstraints]
   private val allowedFeatures: Codec[AllowedFeatures] = variableSizeBytesLong(varintoverflow, featuresCodec).as[AllowedFeatures]
 
+  private val totalAmount: Codec[TotalAmount] = variableSizeBytesLong(varintoverflow, tmillisatoshi).as[TotalAmount]
+  private val paymentPreimage: Codec[PaymentPreimage] = (("length" | constant(hex"20")) :: ("preimage" | bytes32)).as[PaymentPreimage]
+  private val paymentMetadata: Codec[PaymentMetadata] = variableSizeBytesLong(varintoverflow, bytes).as[PaymentMetadata]
+
   private val encryptedDataTlvCodec = discriminated[RouteBlindingEncryptedDataTlv].by(varint)
     .typecase(UInt64(1), padding)
     .typecase(UInt64(2), outgoingChannelId)
     .typecase(UInt64(4), outgoingNodeId)
-    .typecase(UInt64(6), pathId)
     .typecase(UInt64(8), nextBlinding)
     .typecase(UInt64(10), paymentRelay)
     .typecase(UInt64(12), paymentConstraints)
@@ -147,9 +170,19 @@ object RouteBlindingEncryptedDataCodecs {
 
   private val blindedRouteDataCodec = TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete
 
+  private val finalEncryptedDataTlvCodec = discriminated[FinalEncryptedDataTlv].by(varint)
+    .typecase(UInt64(1), padding)
+    .typecase(UInt64(3), totalAmount)
+    .typecase(UInt64(5), paymentPreimage)
+    .typecase(UInt64(6), pathId)
+    .typecase(UInt64(7), paymentMetadata)
+    .typecase(UInt64(12), paymentConstraints)
+    .typecase(UInt64(14), allowedFeatures)
+
+  private val blindedRouteFinalDataCodec = TlvCodecs.tlvStream[FinalEncryptedDataTlv](finalEncryptedDataTlvCodec).complete
+
   val messageRelayDataCodec: Codec[MessageRelayData] = blindedRouteDataCodec.narrow({
     case tlvs if tlvs.get[OutgoingNodeId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-    case tlvs if tlvs.get[PathId].isDefined => Attempt.failure(ForbiddenTlv(UInt64(6)))
     case tlvs if tlvs.get[PaymentRelay].isDefined => Attempt.failure(ForbiddenTlv(UInt64(10)))
     case tlvs if tlvs.get[PaymentConstraints].isDefined => Attempt.failure(ForbiddenTlv(UInt64(12)))
     case tlvs => Attempt.successful(MessageRelayData(tlvs))
@@ -157,8 +190,7 @@ object RouteBlindingEncryptedDataCodecs {
     case MessageRelayData(tlvs) => tlvs
   })
 
-  val messageRecipientDataCodec: Codec[MessageRecipientData] = blindedRouteDataCodec.narrow({
-    case tlvs if tlvs.get[PaymentRelay].isDefined => Attempt.failure(ForbiddenTlv(UInt64(10)))
+  val messageRecipientDataCodec: Codec[MessageRecipientData] = blindedRouteFinalDataCodec.narrow({
     case tlvs if tlvs.get[PaymentConstraints].isDefined => Attempt.failure(ForbiddenTlv(UInt64(12)))
     case tlvs => Attempt.successful(MessageRecipientData(tlvs))
   }, {
@@ -169,14 +201,15 @@ object RouteBlindingEncryptedDataCodecs {
     case tlvs if tlvs.get[OutgoingChannelId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(2)))
     case tlvs if tlvs.get[PaymentRelay].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(10)))
     case tlvs if tlvs.get[PaymentConstraints].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(12)))
-    case tlvs if tlvs.get[PathId].isDefined => Attempt.failure(ForbiddenTlv(UInt64(6)))
     case tlvs => Attempt.successful(PaymentRelayData(tlvs))
   }, {
     case PaymentRelayData(tlvs) => tlvs
   })
 
-  val paymentRecipientDataCodec: Codec[PaymentRecipientData] = blindedRouteDataCodec.narrow({
+  val paymentRecipientDataCodec: Codec[PaymentRecipientData] = blindedRouteFinalDataCodec.narrow({
     case tlvs if tlvs.get[PaymentConstraints].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(12)))
+    case tlvs if tlvs.get[PathId].isEmpty || tlvs.get[PathId].get.data.length != 32 => Attempt.failure(MissingRequiredTlv(UInt64(6)))
+    case tlvs if tlvs.get[TotalAmount].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(5)))
     case tlvs => Attempt.successful(PaymentRecipientData(tlvs))
   }, {
     case PaymentRecipientData(tlvs) => tlvs

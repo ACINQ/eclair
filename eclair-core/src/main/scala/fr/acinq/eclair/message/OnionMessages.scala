@@ -62,7 +62,7 @@ object OnionMessages {
       }
     destination match {
       case Recipient(nodeId, pathId, padding) =>
-        val tlvs = padding.map(Padding(_) :: Nil).getOrElse(Nil) ++ pathId.map(PathId(_) :: Nil).getOrElse(Nil)
+        val tlvs = Seq(padding.map(Padding), pathId.map(PathId)).flatten
         val lastPayload = RouteBlindingEncryptedDataCodecs.messageRecipientDataCodec.encode(MessageRecipientData(TlvStream(tlvs))).require.bytes
         Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload)
       case BlindedPath(route) =>
