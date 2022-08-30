@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong, Script, Transaction}
 import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFeatures
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -62,6 +62,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   }
 
   def getFeerate(name: String): FeeratePerKw = FeeratePerKw(tests(name)("local_feerate_per_kw").trim.toLong.sat)
+
+  def getDustLimit(name: String): Option[Satoshi] = tests.get(name).flatMap(_.get("dust_limit_satoshis")).map(_.trim.toLong.sat)
 
   def getToLocal(name: String): MilliSatoshi = tests(name)("to_local_msat").trim.toLong.msat
 
@@ -180,13 +182,14 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   def run(name: String, specHtlcs: Set[DirectedHtlc]): (CommitTx, Seq[TransactionWithInputInfo]) = {
     logger.info(s"name: $name")
     val spec = CommitmentSpec(specHtlcs, getFeerate(name), getToLocal(name), getToRemote(name))
+    val dustLimit = getDustLimit(name).getOrElse(Local.dustLimit)
     logger.info(s"to_local_msat: ${spec.toLocal}")
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.commitTxFeerate}")
 
     val outputs = Transactions.makeCommitTxOutputs(
       localIsInitiator = true,
-      localDustLimit = Local.dustLimit,
+      localDustLimit = dustLimit,
       localRevocationPubkey = Local.revocation_pubkey,
       toLocalDelay = Local.toSelfDelay,
       localDelayedPaymentPubkey = Local.delayed_payment_privkey.publicKey,
@@ -213,7 +216,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val baseFee = Transactions.commitTxFeeMsat(Local.dustLimit, spec, commitmentFormat)
+    val baseFee = Transactions.commitTxFeeMsat(dustLimit, spec, commitmentFormat)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
@@ -233,7 +236,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
     val unsignedHtlcTxs = Transactions.makeHtlcTxs(
       commitTx.tx,
-      Local.dustLimit,
+      dustLimit,
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
       spec.htlcTxFeerate(commitmentFormat),
@@ -285,6 +288,14 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
   }
 
+  test("simple commitment tx with no HTLCs and single anchor") {
+    val name = "simple commitment tx with no HTLCs and single anchor"
+    if (commitmentFormat.isInstanceOf[AnchorOutputsCommitmentFormat]) {
+      val (commitTx, _) = run(name, Set.empty[DirectedHtlc])
+      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    }
+  }
+
   test("commitment tx with all five HTLCs untrimmed (minimum feerate)") {
     val name = "commitment tx with all five HTLCs untrimmed (minimum feerate)"
     val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
@@ -307,24 +318,30 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   }
 
   test("commitment tx with six outputs untrimmed (maximum feerate)") {
-    val name = "commitment tx with six outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
-    verifyHtlcTxs(name, htlcTxs)
+    if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
+      val name = "commitment tx with six outputs untrimmed (maximum feerate)"
+      val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
+      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      verifyHtlcTxs(name, htlcTxs)
+    }
   }
 
   test("commitment tx with five outputs untrimmed (minimum feerate)") {
-    val name = "commitment tx with five outputs untrimmed (minimum feerate)"
-    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
-    verifyHtlcTxs(name, htlcTxs)
+    if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
+      val name = "commitment tx with five outputs untrimmed (minimum feerate)"
+      val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
+      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      verifyHtlcTxs(name, htlcTxs)
+    }
   }
 
   test("commitment tx with five outputs untrimmed (maximum feerate)") {
-    val name = "commitment tx with five outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
-    verifyHtlcTxs(name, htlcTxs)
+    if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
+      val name = "commitment tx with five outputs untrimmed (maximum feerate)"
+      val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
+      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      verifyHtlcTxs(name, htlcTxs)
+    }
   }
 
   test("commitment tx with four outputs untrimmed (minimum feerate)") {
@@ -335,10 +352,12 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   }
 
   test("commitment tx with four outputs untrimmed (maximum feerate)") {
-    val name = "commitment tx with four outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
-    verifyHtlcTxs(name, htlcTxs)
+    if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
+      val name = "commitment tx with four outputs untrimmed (maximum feerate)"
+      val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
+      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      verifyHtlcTxs(name, htlcTxs)
+    }
   }
 
   test("commitment tx with three outputs untrimmed (minimum feerate)") {
@@ -349,10 +368,12 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   }
 
   test("commitment tx with three outputs untrimmed (maximum feerate)") {
-    val name = "commitment tx with three outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
-    verifyHtlcTxs(name, htlcTxs)
+    if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
+      val name = "commitment tx with three outputs untrimmed (maximum feerate)"
+      val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
+      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      verifyHtlcTxs(name, htlcTxs)
+    }
   }
 
   test("commitment tx with two outputs untrimmed (minimum feerate)") {
@@ -363,10 +384,12 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   }
 
   test("commitment tx with two outputs untrimmed (maximum feerate)") {
-    val name = "commitment tx with two outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
-    verifyHtlcTxs(name, htlcTxs)
+    if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
+      val name = "commitment tx with two outputs untrimmed (maximum feerate)"
+      val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
+      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      verifyHtlcTxs(name, htlcTxs)
+    }
   }
 
   test("commitment tx with one output untrimmed (minimum feerate)") {
@@ -377,10 +400,12 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   }
 
   test("commitment tx with fee greater than funder amount") {
-    val name = "commitment tx with fee greater than funder amount"
-    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
-    verifyHtlcTxs(name, htlcTxs)
+    if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
+      val name = "commitment tx with fee greater than funder amount"
+      val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
+      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      verifyHtlcTxs(name, htlcTxs)
+    }
   }
 
   test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
@@ -415,5 +440,12 @@ class AnchorOutputsTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-format.txt"
   override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
+  // @formatter:on
+}
+
+class AnchorOutputsZeroFeeHtlcTxTestVectorSpec extends TestVectorsSpec {
+  // @formatter:off
+  override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-zero-fee-htlc-tx-format.txt"
+  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
   // @formatter:on
 }
