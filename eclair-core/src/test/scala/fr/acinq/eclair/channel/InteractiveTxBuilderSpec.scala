@@ -696,6 +696,94 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  test("rbf with previous contributions from the non-initiator") {
+    val initialFeerate = FeeratePerKw(5_000 sat)
+    val fundingA = 100_000 sat
+    val utxosA = Seq(70_000 sat, 60_000 sat)
+    val fundingB = 25_000 sat
+    val utxosB = Seq(27_500 sat)
+    withFixture(fundingA, utxosA, fundingB, utxosB, initialFeerate, 660 sat, 0) { f =>
+      import f._
+
+      alice ! Start(alice2bob.ref, Nil)
+      bob ! Start(bob2alice.ref, Nil)
+
+      // Alice --- tx_add_input --> Bob
+      val inputA1 = f.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      val inputB = f.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_input --> Bob
+      val inputA2 = f.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      f.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      f.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      f.forwardAlice2Bob[TxComplete]
+      // Alice --- commit_sig --> Bob
+      f.forwardAlice2Bob[CommitSig]
+      // Alice <-- commit_sig --- Bob
+      f.forwardBob2Alice[CommitSig]
+      // Alice <-- tx_signatures --- Bob
+      val txB1 = bob2alice.expectMsgType[Succeeded].sharedTx.asInstanceOf[PartiallySignedSharedTransaction]
+      alice ! ReceiveTxSigs(txB1.localSigs)
+      val txA1 = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
+      assert(initialFeerate * 0.9 <= txA1.feerate && txA1.feerate <= initialFeerate * 1.25)
+      val probe = TestProbe()
+      walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txA1.signedTx.txid)
+
+      // Bob didn't have enough funds to add a change output.
+      // If we want to increase the feerate, Bob cannot contribute more than what he has already contributed.
+      // However, it still makes sense for Bob to contribute whatever he's able to, the final feerate will simply be
+      // slightly less than what Alice intended, but it's better than being stuck with a low feerate.
+      aliceRbf ! Start(alice2bob.ref, Seq(txA1))
+      bobRbf ! Start(bob2alice.ref, Seq(txB1))
+
+      // Alice --- tx_add_input --> Bob
+      assert(f.forwardRbfAlice2Bob[TxAddInput] == inputA1)
+      // Alice <-- tx_add_input --- Bob
+      assert(f.forwardRbfBob2Alice[TxAddInput] == inputB)
+      // Alice --- tx_add_input --> Bob
+      assert(f.forwardRbfAlice2Bob[TxAddInput] == inputA2)
+      // Alice <-- tx_complete --- Bob
+      f.forwardRbfBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      f.forwardRbfAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardRbfBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      f.forwardRbfAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardRbfBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      f.forwardRbfAlice2Bob[TxComplete]
+      // Alice --- commit_sig --> Bob
+      f.forwardRbfAlice2Bob[CommitSig]
+      // Alice <-- commit_sig --- Bob
+      f.forwardRbfBob2Alice[CommitSig]
+      // Alice <-- tx_signatures --- Bob
+      val txB2 = bob2alice.expectMsgType[Succeeded].sharedTx.asInstanceOf[PartiallySignedSharedTransaction]
+      aliceRbf ! ReceiveTxSigs(txB2.localSigs)
+      val succeeded = alice2bob.expectMsgType[Succeeded]
+      val rbfFeerate = succeeded.fundingParams.targetFeerate
+      assert(rbfFeerate == FeeratePerKw(7500 sat))
+      val txA2 = succeeded.sharedTx.asInstanceOf[FullySignedSharedTransaction]
+      assert(rbfFeerate * 0.75 <= txA2.feerate && txA2.feerate <= rbfFeerate * 1.25)
+      assert(txA1.signedTx.txIn.map(_.outPoint).toSet == txA2.signedTx.txIn.map(_.outPoint).toSet)
+      assert(txA2.signedTx.txOut.map(_.amount).sum < txA1.signedTx.txOut.map(_.amount).sum)
+      assert(txA1.tx.fees < txA2.tx.fees)
+      walletA.publishTransaction(txA2.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txA2.signedTx.txid)
+    }
+  }
+
   test("not enough funds for rbf attempt") {
     val targetFeerate = FeeratePerKw(10_000 sat)
     val fundingA = 80_000 sat
