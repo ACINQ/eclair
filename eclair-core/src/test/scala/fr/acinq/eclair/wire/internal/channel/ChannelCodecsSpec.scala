@@ -144,7 +144,10 @@ class ChannelCodecsSpec extends AnyFunSuite {
           Serialization.writePretty(olddecoded, new FileWriter(tmpjsonfile))(JsonSerializers.formats)
           Some(tmpjsonfile)
         } else None
-        assert(oldjson == testCase.json)
+
+        def normalizeLineEndings(s: String) = s.replace("\r\n", "\n")
+
+        assert(normalizeLineEndings(oldjson) == normalizeLineEndings(testCase.json))
         tmpjsonfile_opt.foreach(_.delete())
         // we then encode with new codec
         val newencoded = channelDataCodec.encode(olddecoded).require.bytes
