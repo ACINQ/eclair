@@ -32,7 +32,6 @@ import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
 import fr.acinq.eclair.wire.protocol.{CommonCodecs, UpdateAddHtlc}
 import fr.acinq.eclair.{RealShortChannelId, _}
 import org.json4s.jackson.Serialization
-import org.scalactic.Equality
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -145,11 +144,10 @@ class ChannelCodecsSpec extends AnyFunSuite {
           Serialization.writePretty(olddecoded, new FileWriter(tmpjsonfile))(JsonSerializers.formats)
           Some(tmpjsonfile)
         } else None
-        implicit val strEq: Equality[String] = (a: String, b: Any) => b match {
-          case b: String => a.replace("\r\n", "\n") == b.replace("\r\n", "\n")
-          case _ => false
-        }
-        assert(oldjson === testCase.json)
+
+        def normalizeLineEndings(s: String) = s.replace("\r\n", "\n")
+
+        assert(normalizeLineEndings(oldjson) == normalizeLineEndings(testCase.json))
         tmpjsonfile_opt.foreach(_.delete())
         // we then encode with new codec
         val newencoded = channelDataCodec.encode(olddecoded).require.bytes
