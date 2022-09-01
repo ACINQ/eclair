@@ -35,7 +35,6 @@ case class RemoteError(e: Error) extends ChannelOpenError
 class ChannelException(val channelId: ByteVector32, message: String) extends RuntimeException(message)
 
 // @formatter:off
-case class DebugTriggeredException                 (override val channelId: ByteVector32) extends ChannelException(channelId, "debug-mode triggered failure")
 case class InvalidChainHash                        (override val channelId: ByteVector32, local: ByteVector32, remote: ByteVector32) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
 case class InvalidFundingAmount                    (override val channelId: ByteVector32, fundingAmount: Satoshi, min: Satoshi, max: Satoshi) extends ChannelException(channelId, s"invalid funding_satoshis=$fundingAmount (min=$min max=$max)")
 case class InvalidPushAmount                       (override val channelId: ByteVector32, pushAmount: MilliSatoshi, max: MilliSatoshi) extends ChannelException(channelId, s"invalid pushAmount=$pushAmount (max=$max)")
@@ -58,6 +57,7 @@ case class InputOutOfBounds                        (override val channelId: Byte
 case class NonSegwitInput                          (override val channelId: ByteVector32, serialId: UInt64, previousTxId: ByteVector32, previousTxOutput: Long) extends ChannelException(channelId, s"$previousTxId:$previousTxOutput is not a native segwit input (serial_id=${serialId.toByteVector.toHex})")
 case class OutputBelowDust                         (override val channelId: ByteVector32, serialId: UInt64, amount: Satoshi, dustLimit: Satoshi) extends ChannelException(channelId, s"invalid output amount=$amount below dust=$dustLimit (serial_id=${serialId.toByteVector.toHex})")
 case class NonSegwitOutput                         (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"output with serial_id=${serialId.toByteVector.toHex} is not a native segwit output")
+case class UnconfirmedInteractiveTxInputs          (override val channelId: ByteVector32) extends ChannelException(channelId, "the completed interactive tx contains unconfirmed inputs")
 case class InvalidCompleteInteractiveTx            (override val channelId: ByteVector32) extends ChannelException(channelId, "the completed interactive tx is invalid")
 case class TooManyInteractiveTxRounds              (override val channelId: ByteVector32) extends ChannelException(channelId, "too many messages exchanged during interactive tx construction")
 case class DualFundingAborted                      (override val channelId: ByteVector32) extends ChannelException(channelId, "dual funding aborted")

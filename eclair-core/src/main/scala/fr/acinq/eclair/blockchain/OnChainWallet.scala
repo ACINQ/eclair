@@ -62,6 +62,9 @@ trait OnChainChannelFunder {
   /** Return the transaction if it exists, either in the blockchain or in the mempool. */
   def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction]
 
+  /** Get the number of confirmations of a given transaction. */
+  def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]]
+
   /** Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos". */
   def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 

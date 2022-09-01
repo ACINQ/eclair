@@ -188,7 +188,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, accept.temporaryChannelId, channelId))
           // We start the interactive-tx funding protocol.
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
-          val fundingParams = InteractiveTxParams(channelId, localParams.isInitiator, accept.fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, open.dustLimit.max(accept.dustLimit), open.fundingFeerate)
+          val fundingParams = InteractiveTxParams(channelId, localParams.isInitiator, accept.fundingAmount, open.fundingAmount, fundingPubkeyScript, open.lockTime, open.dustLimit.max(accept.dustLimit), open.fundingFeerate, requireConfirmedRemoteInputs = false)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
             localParams, remoteParams,
@@ -240,7 +240,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           // We start the interactive-tx funding protocol.
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
-          val fundingParams = InteractiveTxParams(channelId, localParams.isInitiator, d.lastSent.fundingAmount, accept.fundingAmount, fundingPubkeyScript, d.lastSent.lockTime, d.lastSent.dustLimit.max(accept.dustLimit), d.lastSent.fundingFeerate)
+          val fundingParams = InteractiveTxParams(channelId, localParams.isInitiator, d.lastSent.fundingAmount, accept.fundingAmount, fundingPubkeyScript, d.lastSent.lockTime, d.lastSent.dustLimit.max(accept.dustLimit), d.lastSent.fundingFeerate, requireConfirmedRemoteInputs = false)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
             localParams, remoteParams,
@@ -418,7 +418,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.fundingParams.fundingPubkeyScript,
             msg.lockTime,
             d.fundingParams.dustLimit,
-            msg.feerate
+            msg.feerate,
+            d.fundingParams.requireConfirmedRemoteInputs,
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
@@ -445,7 +446,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.fundingParams.fundingPubkeyScript,
             cmd.lockTime,
             d.fundingParams.dustLimit,
-            cmd.targetFeerate
+            cmd.targetFeerate,
+            d.fundingParams.requireConfirmedRemoteInputs,
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,

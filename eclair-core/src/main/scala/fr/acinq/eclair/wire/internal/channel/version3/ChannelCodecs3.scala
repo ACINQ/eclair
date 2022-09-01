@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.wire.internal.channel.version3
 
-import akka.actor.typed
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel.InteractiveTxBuilder._
@@ -381,7 +380,8 @@ private[channel] object ChannelCodecs3 {
         ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
-        ("targetFeerate" | feeratePerKw)).as[InteractiveTxParams]
+        ("targetFeerate" | feeratePerKw) ::
+        ("requireConfirmedRemoteInputs" | bool8)).as[InteractiveTxParams]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0b_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
