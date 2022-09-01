@@ -21,6 +21,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel
+import fr.acinq.eclair.router.StaleChannels
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
@@ -33,7 +34,7 @@ import scala.collection.immutable.SortedMap
 
 object PgNetworkDb {
   val DB_NAME = "network"
-  val CURRENT_VERSION = 4
+  val CURRENT_VERSION = 5
 }
 
 class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
@@ -65,30 +66,33 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
         statement.executeUpdate("ALTER TABLE pruned_channels SET SCHEMA network")
       }
 
+      def migration45(statement: Statement): Unit = {
+        // We add channel updates to the pruned table.
+        statement.executeUpdate("ALTER TABLE network.pruned_channels ADD COLUMN channel_update_1 BYTEA NULL")
+        statement.executeUpdate("ALTER TABLE network.pruned_channels ADD COLUMN channel_update_2 BYTEA NULL")
+        // We clean up channels that contain an invalid channel update (e.g. missing htlc_maximum_msat).
+        statement.executeQuery("SELECT short_channel_id, channel_update_1, channel_update_2 FROM network.public_channels").map(rs => {
+          val shortChannelId = rs.getLong("short_channel_id")
+          val validChannelUpdate1 = rs.getBitVectorOpt("channel_update_1").forall(channelUpdateCodec.decode(_).isSuccessful)
+          val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
+          (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
+        }).collect {
+          case (scid, false) => statement.executeUpdate(s"DELETE FROM network.public_channels WHERE short_channel_id=$scid")
+        }
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA network")
           statement.executeUpdate("CREATE TABLE network.nodes (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, json JSONB NOT NULL)")
           statement.executeUpdate("CREATE TABLE network.public_channels (short_channel_id BIGINT NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BYTEA NOT NULL, capacity_sat BIGINT NOT NULL, channel_update_1 BYTEA NULL, channel_update_2 BYTEA NULL, channel_announcement_json JSONB NOT NULL, channel_update_1_json JSONB NULL, channel_update_2_json JSONB NULL)")
-          statement.executeUpdate("CREATE TABLE network.pruned_channels (short_channel_id BIGINT NOT NULL PRIMARY KEY)")
-        case Some(v@(2 | 3)) =>
+          statement.executeUpdate("CREATE TABLE network.pruned_channels (short_channel_id BIGINT NOT NULL PRIMARY KEY, channel_update_1 BYTEA NULL, channel_update_2 BYTEA NULL)")
+        case Some(v@(2 | 3 | 4)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          if (v < 3) {
-            migration23(statement)
-          }
-          if (v < 4) {
-            migration34(statement)
-          }
-        case Some(CURRENT_VERSION) =>
-          // We clean up channels that contain an invalid channel update (e.g. missing htlc_maximum_msat).
-          statement.executeQuery("SELECT short_channel_id, channel_update_1, channel_update_2 FROM network.public_channels").map(rs => {
-            val shortChannelId = rs.getLong("short_channel_id")
-            val validChannelUpdate1 = rs.getBitVectorOpt("channel_update_1").forall(channelUpdateCodec.decode(_).isSuccessful)
-            val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
-            (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
-          }).collect {
-            case (scid, false) => statement.executeUpdate(s"DELETE FROM network.public_channels WHERE short_channel_id=$scid")
-          }
+          if (v < 3) migration23(statement)
+          if (v < 4) migration34(statement)
+          if (v < 5) migration45(statement)
+        case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
       setVersion(statement, DB_NAME, CURRENT_VERSION)
@@ -246,12 +250,14 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     }
   }
 
-  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = withMetrics("network/add-to-pruned", DbBackends.Postgres) {
+  override def addToPruned(channels: Iterable[StaleChannels.LatestUpdates]): Unit = withMetrics("network/add-to-pruned", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO network.pruned_channels VALUES (?) ON CONFLICT DO NOTHING")) {
+      using(pg.prepareStatement("INSERT INTO network.pruned_channels VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) {
         statement =>
-          shortChannelIds.foreach(shortChannelId => {
-            statement.setLong(1, shortChannelId.toLong)
+          channels.foreach(latestUpdates => {
+            statement.setLong(1, latestUpdates.shortChannelId.toLong)
+            statement.setBytes(2, latestUpdates.update1_opt.map(channelUpdateCodec.encode(_).require.toByteArray).orNull)
+            statement.setBytes(3, latestUpdates.update2_opt.map(channelUpdateCodec.encode(_).require.toByteArray).orNull)
             statement.addBatch()
           })
           statement.executeBatch()
@@ -269,11 +275,27 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     }
   }
 
-  override def isPruned(shortChannelId: ShortChannelId): Boolean = withMetrics("network/is-pruned", DbBackends.Postgres) {
+  override def getPrunedChannel(shortChannelId: ShortChannelId): Option[StaleChannels.LatestUpdates] = withMetrics("network/get-pruned", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT short_channel_id from network.pruned_channels WHERE short_channel_id=?")) { statement =>
+      using(pg.prepareStatement("SELECT channel_update_1, channel_update_2 FROM network.pruned_channels WHERE short_channel_id=?")) { statement =>
         statement.setLong(1, shortChannelId.toLong)
-        statement.executeQuery().nonEmpty
+        statement.executeQuery().map(rs => {
+          val update1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
+          val update2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
+          StaleChannels.LatestUpdates(RealShortChannelId(shortChannelId.toLong), update1_opt, update2_opt)
+        }).headOption
+      }
+    }
+  }
+
+  override def updatePrunedChannel(u: ChannelUpdate): Unit = withMetrics("network/update-pruned", DbBackends.Postgres) {
+    val column = if (u.channelFlags.isNode1) "channel_update_1" else "channel_update_2"
+    inTransaction { pg =>
+      using(pg.prepareStatement(s"UPDATE network.pruned_channels SET $column=? WHERE short_channel_id=?")) {
+        statement =>
+          statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
+          statement.setLong(2, u.shortChannelId.toLong)
+          statement.executeUpdate()
       }
     }
   }

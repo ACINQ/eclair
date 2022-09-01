@@ -21,6 +21,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel
+import fr.acinq.eclair.router.StaleChannels
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
@@ -30,7 +31,7 @@ import java.sql.{Connection, Statement}
 import scala.collection.immutable.SortedMap
 
 object SqliteNetworkDb {
-  val CURRENT_VERSION = 2
+  val CURRENT_VERSION = 3
   val DB_NAME = "network"
 }
 
@@ -52,24 +53,31 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
       statement.execute("PRAGMA foreign_keys = OFF")
     }
 
+    def migration23(statement: Statement): Unit = {
+      // We add channel updates to the pruned table.
+      statement.executeUpdate("ALTER TABLE pruned ADD COLUMN channel_update_1 BLOB NULL")
+      statement.executeUpdate("ALTER TABLE pruned ADD COLUMN channel_update_2 BLOB NULL")
+      // We clean up channels that contain an invalid channel update (e.g. missing htlc_maximum_msat).
+      statement.executeQuery("SELECT short_channel_id, channel_update_1, channel_update_2 FROM channels").map(rs => {
+        val shortChannelId = rs.getLong("short_channel_id")
+        val validChannelUpdate1 = rs.getBitVectorOpt("channel_update_1").forall(channelUpdateCodec.decode(_).isSuccessful)
+        val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
+        (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
+      }).collect {
+        case (scid, false) => statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$scid")
+      }
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
-        statement.executeUpdate("CREATE TABLE pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
-      case Some(v@1) =>
+        statement.executeUpdate("CREATE TABLE pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
+      case Some(v@(1 | 2)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration12(statement)
-      case Some(CURRENT_VERSION) =>
-        // We clean up channels that contain an invalid channel update (e.g. missing htlc_maximum_msat).
-        statement.executeQuery("SELECT short_channel_id, channel_update_1, channel_update_2 FROM channels").map(rs => {
-          val shortChannelId = rs.getLong("short_channel_id")
-          val validChannelUpdate1 = rs.getBitVectorOpt("channel_update_1").forall(channelUpdateCodec.decode(_).isSuccessful)
-          val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
-          (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
-        }).collect {
-          case (scid, false) => statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$scid")
-        }
+        if (v < 2) migration12(statement)
+        if (v < 3) migration23(statement)
+      case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
     setVersion(statement, DB_NAME, CURRENT_VERSION)
@@ -163,10 +171,12 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = withMetrics("network/add-to-pruned", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), inTransaction = true) { statement =>
-      shortChannelIds.foreach(shortChannelId => {
-        statement.setLong(1, shortChannelId.toLong)
+  override def addToPruned(channels: Iterable[StaleChannels.LatestUpdates]): Unit = withMetrics("network/add-to-pruned", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?, ?, ?)"), inTransaction = true) { statement =>
+      channels.foreach(latestUpdates => {
+        statement.setLong(1, latestUpdates.shortChannelId.toLong)
+        statement.setBytes(2, latestUpdates.update1_opt.map(channelUpdateCodec.encode(_).require.toByteArray).orNull)
+        statement.setBytes(3, latestUpdates.update2_opt.map(channelUpdateCodec.encode(_).require.toByteArray).orNull)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -180,10 +190,23 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def isPruned(shortChannelId: ShortChannelId): Boolean = withMetrics("network/is-pruned", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
+  override def getPrunedChannel(shortChannelId: ShortChannelId): Option[StaleChannels.LatestUpdates] = withMetrics("network/get-pruned", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT channel_update_1, channel_update_2 FROM pruned WHERE short_channel_id=?")) { statement =>
       statement.setLong(1, shortChannelId.toLong)
-      statement.executeQuery().nonEmpty
+      statement.executeQuery().map(rs => {
+        val update1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
+        val update2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
+        StaleChannels.LatestUpdates(RealShortChannelId(shortChannelId.toLong), update1_opt, update2_opt)
+      }).headOption
+    }
+  }
+
+  override def updatePrunedChannel(u: ChannelUpdate): Unit = withMetrics("network/update-pruned", DbBackends.Sqlite) {
+    val column = if (u.channelFlags.isNode1) "channel_update_1" else "channel_update_2"
+    using(sqlite.prepareStatement(s"UPDATE pruned SET $column=? WHERE short_channel_id=?")) { statement =>
+      statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
+      statement.setLong(2, u.shortChannelId.toLong)
+      statement.executeUpdate()
     }
   }
 }

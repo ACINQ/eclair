@@ -34,6 +34,7 @@ import fr.acinq.eclair.router.Graph.RoutingHeuristics
 import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, DEFAULT_ROUTE_PARAMS}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.wire.protocol.QueryShortChannelIdsTlv.{EncodedQueryFlags, QueryFlagType}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, randomKey}
 import scodec.bits._
@@ -148,7 +149,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_v = randomKey()
       val priv_funding_v = randomKey()
       val chan_vc = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 102, 0), priv_v, priv_c, priv_funding_v, priv_funding_c)
-      nodeParams.db.network.addToPruned(chan_vc.shortChannelId :: Nil)
+      nodeParams.db.network.addToPruned(Seq(StaleChannels.LatestUpdates(chan_vc.shortChannelId, None, None)))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_vc))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_vc))
       peerConnection.expectMsg(GossipDecision.ChannelPruned(chan_vc))
@@ -595,35 +596,62 @@ class RouterSpec extends BaseRouterSpec {
     }
   }
 
-  test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
+  test("restore stale channel that comes back from the dead") { fixture =>
     import fixture._
-    val blockHeight = BlockHeight(400000) - 2020
-    val channelId = RealShortChannelId(blockHeight, 5, 0)
-    val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
-    val oldTimestamp = TimestampSecond.now() - 14.days - 1.day
-    val staleUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 5 msat, timestamp = oldTimestamp)
+
+    // A new channel is created and announced.
+    val probe = TestProbe()
+    val scid = RealShortChannelId(fixture.nodeParams.currentBlockHeight - 5000, 5, 0)
+    val announcement = channelAnnouncement(scid, priv_a, priv_c, priv_funding_a, priv_funding_c)
+    val fundingTx = Transaction(2, Nil, Seq(TxOut(1_000_000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c))))), 0)
     val peerConnection = TestProbe()
     peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, announcement))
     watcher.expectMsgType[ValidateRequest]
-    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, staleUpdate))
-    watcher.send(router, ValidateResult(announcement, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(announcement, Right((fundingTx, UtxoStatus.Unspent))))
     peerConnection.expectMsg(GossipDecision.Accepted(announcement))
-    peerConnection.expectMsg(GossipDecision.Stale(staleUpdate))
 
-    val probe = TestProbe()
+    // We never received the channel updates, so we prune the channel.
     probe.send(router, TickPruneStaleChannels)
-    val sender = TestProbe()
-    sender.send(router, GetRoutingState)
-    sender.expectMsgType[RoutingState]
+    awaitAssert(assert(nodeParams.db.network.getPrunedChannel(scid).contains(StaleChannels.LatestUpdates(scid, None, None))))
 
-    val recentUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = TimestampSecond.now())
+    // We receive a stale channel update for one side of the channel.
+    val staleTimestamp = TimestampSecond.now() - 15.days
+    val staleUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, scid, CltvExpiryDelta(72), 1 msat, 10 msat, 100, htlcMaximum, timestamp = staleTimestamp)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, staleUpdate))
+    peerConnection.expectMsg(GossipDecision.Stale(staleUpdate))
+    assert(nodeParams.db.network.getPrunedChannel(scid).contains(StaleChannels.LatestUpdates(scid, None, None)))
 
-    // we want to make sure that transport receives the query
-    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, recentUpdate))
-    peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(recentUpdate))
+    // We receive a non-stale channel update for one side of the channel.
+    val update_ac_1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, scid, CltvExpiryDelta(72), 1 msat, 10 msat, 100, htlcMaximum, timestamp = TimestampSecond.now() - 3.days)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ac_1))
+    peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(update_ac_1))
+    peerConnection.expectNoMessage(100 millis) // we don't try to sync that channel yet
+    if (update_ac_1.channelFlags.isNode1) {
+      assert(nodeParams.db.network.getPrunedChannel(scid).contains(StaleChannels.LatestUpdates(scid, Some(update_ac_1), None)))
+    } else {
+      assert(nodeParams.db.network.getPrunedChannel(scid).contains(StaleChannels.LatestUpdates(scid, None, Some(update_ac_1))))
+    }
+
+    // We receive another non-stale channel update for the same side of the channel.
+    val update_ac_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, scid, CltvExpiryDelta(48), 1 msat, 1 msat, 150, htlcMaximum, timestamp = TimestampSecond.now() - 1.days)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ac_2))
+    peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(update_ac_2))
+    peerConnection.expectNoMessage(100 millis) // we don't try to sync that channel yet
+    if (update_ac_2.channelFlags.isNode1) {
+      assert(nodeParams.db.network.getPrunedChannel(scid).contains(StaleChannels.LatestUpdates(scid, Some(update_ac_2), None)))
+    } else {
+      assert(nodeParams.db.network.getPrunedChannel(scid).contains(StaleChannels.LatestUpdates(scid, None, Some(update_ac_2))))
+    }
+
+    // We receive a non-stale channel update for the other side of the channel.
+    val update_ca = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, a, scid, CltvExpiryDelta(144), 1000 msat, 15 msat, 0, htlcMaximum, timestamp = TimestampSecond.now() - 6.hours)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ca))
+    peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(update_ca))
     val query = peerConnection.expectMsgType[QueryShortChannelIds]
-    assert(query.shortChannelIds.array == List(channelId))
+    assert(query.shortChannelIds.array == List(scid))
+    assert(query.queryFlags_opt.contains(EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(QueryFlagType.INCLUDE_CHANNEL_ANNOUNCEMENT | QueryFlagType.INCLUDE_CHANNEL_UPDATE_1 | QueryFlagType.INCLUDE_CHANNEL_UPDATE_2))))
+    assert(nodeParams.db.network.getPrunedChannel(scid).isEmpty)
   }
 
   test("update local channels balances") { fixture =>

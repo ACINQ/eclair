@@ -25,11 +25,12 @@ import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.router.Router.PublicChannel
+import fr.acinq.eclair.router.{Announcements, StaleChannels}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestDatabases, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestDatabases, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
@@ -92,7 +93,7 @@ class NetworkDbSpec extends AnyFunSuite {
     }
   }
 
-  def simpleTest(dbs: TestDatabases) = {
+  def simpleTest(dbs: TestDatabases): Unit = {
     val db = dbs.network
 
     def sig = Crypto.sign(randomBytes32(), randomKey())
@@ -222,14 +223,45 @@ class NetworkDbSpec extends AnyFunSuite {
     }
   }
 
+  test("prune channels") {
+    val alice = PrivateKey(hex"8b6b39546c8c6db45349624cea1d784c783c98193d4ec540f33b96096197c845")
+    val bob = PrivateKey(hex"5e355c19967ac2eca70a55b648aa85d7543df55fffbd145111fc3356e45362ba")
+    val carol = PrivateKey(hex"3a52341c38c04c29db00f8c46f48b94e862a05ea6b594bbfa6c8d21b52a87d0f")
+    val scid_ac = RealShortChannelId(1105)
+    val scid_bc = RealShortChannelId(1729)
+    val update_ca = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, carol, alice.publicKey, scid_ac, CltvExpiryDelta(72), 1 msat, 20 msat, 150, 40_000 msat, timestamp = TimestampSecond(500))
+    val update_ac_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, alice, carol.publicKey, scid_ac, CltvExpiryDelta(144), 1 msat, 0 msat, 100, 25_000 msat, timestamp = TimestampSecond(500))
+    val update_ac_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, alice, carol.publicKey, scid_ac, CltvExpiryDelta(48), 1 msat, 10 msat, 150, 50_000 msat, timestamp = TimestampSecond(600))
+    val update_bc = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, bob, carol.publicKey, scid_bc, CltvExpiryDelta(36), 10 msat, 0 msat, 100, 25_000 msat, timestamp = TimestampSecond(700))
+    val update_cb = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, carol, bob.publicKey, scid_bc, CltvExpiryDelta(40), 5 msat, 0 msat, 100, 25_000 msat, timestamp = TimestampSecond(710))
+
+    forAllDbs { dbs =>
+      val db = dbs.network
+      // Initially, there are no pruned channels.
+      assert(db.getPrunedChannel(scid_ac).isEmpty)
+      // We prune two channels.
+      db.addToPruned(Seq(StaleChannels.LatestUpdates(scid_ac, Some(update_ac_1), Some(update_ca)), StaleChannels.LatestUpdates(scid_bc, Some(update_bc), None)))
+      assert(db.getPrunedChannel(scid_ac).contains(StaleChannels.LatestUpdates(scid_ac, Some(update_ac_1), Some(update_ca))))
+      assert(db.getPrunedChannel(scid_bc).contains(StaleChannels.LatestUpdates(scid_bc, Some(update_bc), None)))
+      // We receive new channel updates for the pruned channels.
+      db.updatePrunedChannel(update_ac_2)
+      db.updatePrunedChannel(update_cb)
+      assert(db.getPrunedChannel(scid_ac).contains(StaleChannels.LatestUpdates(scid_ac, Some(update_ac_2), Some(update_ca))))
+      assert(db.getPrunedChannel(scid_bc).contains(StaleChannels.LatestUpdates(scid_bc, Some(update_bc), Some(update_cb))))
+      // One channel comes back from the dead.
+      db.removeFromPruned(scid_ac)
+      assert(db.getPrunedChannel(scid_ac).isEmpty)
+      assert(db.getPrunedChannel(scid_bc).contains(StaleChannels.LatestUpdates(scid_bc, Some(update_bc), Some(update_cb))))
+    }
+  }
+
   test("prune many channels") {
     forAllDbs { dbs =>
       val db = dbs.network
-
-      db.addToPruned(shortChannelIds)
-      shortChannelIds.foreach { id => assert(db.isPruned(id)) }
+      db.addToPruned(shortChannelIds.map(scid => StaleChannels.LatestUpdates(scid, None, None)))
+      shortChannelIds.foreach { id => assert(db.getPrunedChannel(id).nonEmpty) }
       db.removeFromPruned(RealShortChannelId(5))
-      assert(!db.isPruned(ShortChannelId(5)))
+      assert(db.getPrunedChannel(ShortChannelId(5)).isEmpty)
     }
   }
 
@@ -330,38 +362,98 @@ class NetworkDbSpec extends AnyFunSuite {
     )
   }
 
-  test("remove channel updates without htlc_maximum_msat") {
-    forAllDbs { dbs =>
-      val t1 = channelTestCases(0)
-      val t2 = channelTestCases(1)
-      val db1 = dbs.network
-      db1.addChannel(t1.channel, t1.txid, t2.capacity)
-      db1.addChannel(t2.channel, t2.txid, t2.capacity)
-      // The DB contains a channel update missing the `htlc_maximum_msat` field.
-      val channelUpdateWithoutHtlcMax = hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002"
-      dbs match {
-        case sqlite: TestSqliteDatabases =>
-          using(sqlite.connection.prepareStatement("UPDATE channels SET channel_update_1=? WHERE short_channel_id=?")) { statement =>
-            statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
-            statement.setLong(2, t1.shortChannelId.toLong)
+  test("migration sqlite v2 -> current") {
+    val dbs = TestSqliteDatabases()
+    val t1 = channelTestCases(0)
+    val t2 = channelTestCases(1)
+    val scid_pruned = RealShortChannelId(1105)
+    migrationCheck(
+      dbs = dbs,
+      initializeTables = connection => {
+        using(connection.createStatement()) { statement =>
+          statement.executeUpdate("CREATE TABLE nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+          statement.executeUpdate("CREATE TABLE channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
+          statement.executeUpdate("CREATE TABLE pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+          setVersion(statement, "network", 2)
+        }
+        using(connection.prepareStatement("INSERT INTO pruned VALUES (?)")) { statement =>
+          statement.setLong(1, scid_pruned.toLong)
+          statement.executeUpdate()
+        }
+        Seq(t1, t2).foreach { testCase =>
+          using(connection.prepareStatement("INSERT INTO channels (short_channel_id, txid, channel_announcement, capacity_sat) VALUES (?, ?, ?, ?)")) { statement =>
+            statement.setLong(1, testCase.shortChannelId.toLong)
+            statement.setString(2, testCase.txid.toString())
+            statement.setBytes(3, testCase.channel_data)
+            statement.setLong(4, testCase.capacity.toLong)
             statement.executeUpdate()
           }
-        case pg: TestPgDatabases =>
-          using(pg.connection.prepareStatement("UPDATE network.public_channels SET channel_update_1=? WHERE short_channel_id=?")) { statement =>
-            statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
-            statement.setLong(2, t1.shortChannelId.toLong)
+        }
+        // The DB contains a channel update missing the `htlc_maximum_msat` field.
+        val channelUpdateWithoutHtlcMax = hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002"
+        using(connection.prepareStatement("UPDATE channels SET channel_update_1=? WHERE short_channel_id=?")) { statement =>
+          statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
+          statement.setLong(2, t1.shortChannelId.toLong)
+          statement.executeUpdate()
+        }
+      },
+      dbName = SqliteNetworkDb.DB_NAME,
+      targetVersion = SqliteNetworkDb.CURRENT_VERSION,
+      postCheck = _ => {
+        val channels = dbs.network.listChannels()
+        assert(channels.keySet == Set(t2.shortChannelId))
+        val pruned = dbs.network.getPrunedChannel(scid_pruned)
+        assert(pruned.contains(StaleChannels.LatestUpdates(scid_pruned, None, None)))
+      }
+    )
+  }
+
+  test("migration postgres v4 -> current") {
+    val dbs = TestPgDatabases()
+    val t1 = channelTestCases(0)
+    val t2 = channelTestCases(1)
+    val scid_pruned = RealShortChannelId(1105)
+    migrationCheck(
+      dbs = dbs,
+      initializeTables = connection => {
+        using(connection.createStatement()) { statement =>
+          statement.executeUpdate("CREATE SCHEMA network")
+          statement.executeUpdate("CREATE TABLE network.nodes (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, json JSONB NOT NULL)")
+          statement.executeUpdate("CREATE TABLE network.public_channels (short_channel_id BIGINT NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BYTEA NOT NULL, capacity_sat BIGINT NOT NULL, channel_update_1 BYTEA NULL, channel_update_2 BYTEA NULL, channel_announcement_json JSONB NOT NULL, channel_update_1_json JSONB NULL, channel_update_2_json JSONB NULL)")
+          statement.executeUpdate("CREATE TABLE network.pruned_channels (short_channel_id BIGINT NOT NULL PRIMARY KEY)")
+          setVersion(statement, "network", 4)
+        }
+        using(connection.prepareStatement("INSERT INTO network.pruned_channels VALUES (?)")) { statement =>
+          statement.setLong(1, scid_pruned.toLong)
+          statement.executeUpdate()
+        }
+        Seq(t1, t2).foreach { testCase =>
+          using(connection.prepareStatement("INSERT INTO network.public_channels (short_channel_id, txid, channel_announcement, capacity_sat, channel_announcement_json) VALUES (?, ?, ?, ?, ?::JSONB)")) { statement =>
+            statement.setLong(1, testCase.shortChannelId.toLong)
+            statement.setString(2, testCase.txid.toString())
+            statement.setBytes(3, testCase.channel_data)
+            statement.setLong(4, testCase.capacity.toLong)
+            statement.setString(5, JsonSerializers.serialization.write(testCase.channel)(JsonSerializers.formats))
             statement.executeUpdate()
           }
+        }
+        // The DB contains a channel update missing the `htlc_maximum_msat` field.
+        val channelUpdateWithoutHtlcMax = hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002"
+        using(connection.prepareStatement("UPDATE network.public_channels SET channel_update_1=? WHERE short_channel_id=?")) { statement =>
+          statement.setBytes(1, channelUpdateWithoutHtlcMax.toArray)
+          statement.setLong(2, t1.shortChannelId.toLong)
+          statement.executeUpdate()
+        }
+      },
+      dbName = PgNetworkDb.DB_NAME,
+      targetVersion = PgNetworkDb.CURRENT_VERSION,
+      postCheck = _ => {
+        val channels = dbs.network.listChannels()
+        assert(channels.keySet == Set(t2.shortChannelId))
+        val pruned = dbs.network.getPrunedChannel(scid_pruned)
+        assert(pruned.contains(StaleChannels.LatestUpdates(scid_pruned, None, None)))
       }
-      assertThrows[IllegalArgumentException](db1.listChannels())
-      // We restart eclair and automatically clean up invalid entries.
-      val db2 = dbs match {
-        case sqlite: TestSqliteDatabases => new SqliteNetworkDb(sqlite.connection)
-        case pg: TestPgDatabases => new PgNetworkDb()(pg.datasource)
-      }
-      val channels = db2.listChannels()
-      assert(channels.keySet == Set(t2.shortChannelId))
-    }
+    )
   }
 
   test("json column reset (postgres)") {

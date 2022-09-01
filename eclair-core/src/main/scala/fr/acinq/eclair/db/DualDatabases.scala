@@ -9,7 +9,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.{Router, StaleChannels}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
@@ -120,9 +120,9 @@ case class DualNetworkDb(primary: NetworkDb, secondary: NetworkDb) extends Netwo
     primary.listChannels()
   }
 
-  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = {
-    runAsync(secondary.addToPruned(shortChannelIds))
-    primary.addToPruned(shortChannelIds)
+  override def addToPruned(channels: Iterable[StaleChannels.LatestUpdates]): Unit = {
+    runAsync(secondary.addToPruned(channels))
+    primary.addToPruned(channels)
   }
 
   override def removeFromPruned(shortChannelId: RealShortChannelId): Unit = {
@@ -130,9 +130,14 @@ case class DualNetworkDb(primary: NetworkDb, secondary: NetworkDb) extends Netwo
     primary.removeFromPruned(shortChannelId)
   }
 
-  override def isPruned(shortChannelId: ShortChannelId): Boolean = {
-    runAsync(secondary.isPruned(shortChannelId))
-    primary.isPruned(shortChannelId)
+  override def getPrunedChannel(shortChannelId: ShortChannelId): Option[StaleChannels.LatestUpdates] = {
+    runAsync(secondary.getPrunedChannel(shortChannelId))
+    primary.getPrunedChannel(shortChannelId)
+  }
+
+  override def updatePrunedChannel(u: ChannelUpdate): Unit = {
+    runAsync(secondary.updatePrunedChannel(u))
+    primary.updatePrunedChannel(u)
   }
 }
 

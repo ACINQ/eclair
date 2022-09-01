@@ -60,7 +60,7 @@ object Validation {
       // adding the sender to the list of origins so that we don't send back the same announcement to this peer later
       val origins = d.awaiting(c) :+ origin
       d.copy(awaiting = d.awaiting + (c -> origins))
-    } else if (db.isPruned(c.shortChannelId)) {
+    } else if (db.getPrunedChannel(c.shortChannelId).nonEmpty) {
       origin.peerConnection ! TransportHandler.ReadAck(c)
       // channel was pruned and we haven't received a recent channel_update, so we have no reason to revalidate it
       log.debug("ignoring {} (was pruned)", c)
@@ -414,6 +414,10 @@ object Validation {
           update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
           d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graphWithBalances = graphWithBalances1)
         }
+      case None if StaleChannels.isStale(u) =>
+        log.debug("ignoring {} (stale)", u)
+        sendDecision(origins, GossipDecision.Stale(u))
+        d
       case None if d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId) =>
         // channel is currently being validated
         if (d.stash.updates.contains(u)) {
@@ -424,41 +428,52 @@ object Validation {
           log.debug("stashing {}", u)
           d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
         }
-      case None if db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u) =>
-        // only public channels are pruned
-        val realShortChannelId = RealShortChannelId(u.shortChannelId.toLong)
-        // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
-        // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
-        // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
-        // let's remove the channel from the zombie list and ask the sender to re-send announcements (channel_announcement + updates)
-        // about that channel. We can ignore this update since we will receive it again
-        log.info(s"channel shortChannelId=$realShortChannelId is back from the dead! requesting announcements about this channel")
-        sendDecision(origins, GossipDecision.RelatedChannelPruned(u))
-        db.removeFromPruned(realShortChannelId)
-        // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
-        // when we're sending updates to ourselves
-        origins.head match {
-          case RemoteGossip(peerConnection, remoteNodeId) =>
-            val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(routerConf.encodingType, List(realShortChannelId)), TlvStream.empty)
-            d.sync.get(remoteNodeId) match {
-              case Some(sync) if sync.started =>
-                // we already have a pending request to that node, let's add this channel to the list and we'll get it later
-                d.copy(sync = d.sync + (remoteNodeId -> sync.copy(remainingQueries = sync.remainingQueries :+ query, totalQueries = sync.totalQueries + 1)))
+      case None =>
+        db.getPrunedChannel(u.shortChannelId) match {
+          case Some(latestUpdates) if latestUpdates.notStaleAnymore(u) =>
+            // Only public channels are pruned.
+            val realShortChannelId = RealShortChannelId(u.shortChannelId.toLong)
+            // The channel was pruned (one of the two channel updates was older than 2 weeks), but it is coming back
+            // from the dead. They probably sent us a channel_announcement right before this update, but we ignored it
+            // because the channel was in the 'pruned' list. Now that we know that the channel is alive again, let's
+            // remove it from the pruned list and ask the sender to re-send announcements (channel_announcement + updates)
+            // about that channel. We can ignore this update since we will receive it again after the announcement.
+            log.info("channel shortChannelId={} is back from the dead! requesting announcements about this channel", realShortChannelId)
+            sendDecision(origins, GossipDecision.RelatedChannelPruned(u))
+            db.removeFromPruned(realShortChannelId)
+            // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received
+            // from a peer, not when we're sending updates to ourselves.
+            origins.head match {
+              case RemoteGossip(peerConnection, remoteNodeId) =>
+                // We've deleted all the information we had about that channel, so we need to request everything again.
+                val queryFlags = QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(QueryShortChannelIdsTlv.QueryFlagType.INCLUDE_CHANNEL_ANNOUNCEMENT | QueryShortChannelIdsTlv.QueryFlagType.INCLUDE_CHANNEL_UPDATE_1 | QueryShortChannelIdsTlv.QueryFlagType.INCLUDE_CHANNEL_UPDATE_2))
+                val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(routerConf.encodingType, List(realShortChannelId)), TlvStream(queryFlags))
+                d.sync.get(remoteNodeId) match {
+                  case Some(sync) if sync.started =>
+                    // we already have a pending request to that node, let's add this channel to the list and we'll get it later
+                    d.copy(sync = d.sync + (remoteNodeId -> sync.copy(remainingQueries = sync.remainingQueries :+ query, totalQueries = sync.totalQueries + 1)))
+                  case _ =>
+                    // otherwise we send the query right away
+                    peerConnection ! query
+                    d.copy(sync = d.sync + (remoteNodeId -> Syncing(remainingQueries = Nil, totalQueries = 1)))
+                }
               case _ =>
-                // otherwise we send the query right away
-                peerConnection ! query
-                d.copy(sync = d.sync + (remoteNodeId -> Syncing(remainingQueries = Nil, totalQueries = 1)))
+                // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).
+                // or we don't have a peerConnection to send our query to.
+                // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
+                d
             }
-          case _ =>
-            // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).
-            // or we don't have a peerConnection to send our query to.
-            // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
+          case Some(latestUpdates) =>
+            val oldestTimestamp = Seq(latestUpdates.update1_opt, latestUpdates.update2_opt).flatten.map(_.timestamp).minOption
+            log.debug("channel shortChannelId={} is still pruned (timestamp={})", u.shortChannelId, oldestTimestamp.getOrElse("none"))
+            sendDecision(origins, GossipDecision.RelatedChannelPruned(u))
+            db.updatePrunedChannel(u)
+            d
+          case None =>
+            log.debug("ignoring announcement {} (unknown channel)", u)
+            sendDecision(origins, GossipDecision.NoRelatedChannel(u))
             d
         }
-      case None =>
-        log.debug("ignoring announcement {} (unknown channel)", u)
-        sendDecision(origins, GossipDecision.NoRelatedChannel(u))
-        d
     }
   }
 
