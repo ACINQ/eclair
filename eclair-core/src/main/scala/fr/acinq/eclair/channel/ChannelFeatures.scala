@@ -31,14 +31,16 @@ import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeatur
 case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
 
   val channelType: SupportedChannelType = {
+    val scidAlias = features.contains(Features.ScidAlias)
+    val zeroConf = features.contains(Features.ZeroConf)
     if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
-      ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = features.contains(Features.ScidAlias), zeroConf = features.contains(Features.ZeroConf))
+      ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (hasFeature(Features.AnchorOutputs)) {
-      ChannelTypes.AnchorOutputs
+      ChannelTypes.AnchorOutputs(scidAlias, zeroConf)
     } else if (hasFeature(Features.StaticRemoteKey)) {
-      ChannelTypes.StaticRemoteKey
+      ChannelTypes.StaticRemoteKey(scidAlias, zeroConf)
     } else {
-      ChannelTypes.Standard
+      ChannelTypes.Standard(scidAlias, zeroConf)
     }
   }
 
@@ -92,23 +94,35 @@ sealed trait SupportedChannelType extends ChannelType {
 object ChannelTypes {
 
   // @formatter:off
-  case object Standard extends SupportedChannelType {
-    override def features: Set[ChannelTypeFeature] = Set.empty
+  case class Standard(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+    ).flatten
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
-    override def toString: String = "standard"
+    override def toString: String = s"standard${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case object StaticRemoteKey extends SupportedChannelType {
-    override def features: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey)
+  case class StaticRemoteKey(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.StaticRemoteKey)
+    ).flatten
     override def paysDirectlyToWallet: Boolean = true
     override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
-    override def toString: String = "static_remotekey"
+    override def toString: String = s"static_remotekey${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case object AnchorOutputs extends SupportedChannelType {
-    override def features: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
+  case class AnchorOutputs(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.StaticRemoteKey),
+      Some(Features.AnchorOutputs)
+    ).flatten
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = UnsafeLegacyAnchorOutputsCommitmentFormat
-    override def toString: String = "anchor_outputs"
+    override def toString: String = s"anchor_outputs${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
   case class AnchorOutputsZeroFeeHtlcTx(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
     override def features: Set[ChannelTypeFeature] = Set(
@@ -128,9 +142,18 @@ object ChannelTypes {
   // @formatter:on
 
   private val features2ChannelType: Map[Features[_ <: InitFeature], SupportedChannelType] = Set(
-    Standard,
-    StaticRemoteKey,
-    AnchorOutputs,
+    Standard(scidAlias = false, zeroConf = false),
+    Standard(scidAlias = false, zeroConf = true),
+    Standard(scidAlias = true, zeroConf = false),
+    Standard(scidAlias = true, zeroConf = true),
+    StaticRemoteKey(scidAlias = false, zeroConf = false),
+    StaticRemoteKey(scidAlias = false, zeroConf = true),
+    StaticRemoteKey(scidAlias = true, zeroConf = false),
+    StaticRemoteKey(scidAlias = true, zeroConf = true),
+    AnchorOutputs(scidAlias = false, zeroConf = false),
+    AnchorOutputs(scidAlias = false, zeroConf = true),
+    AnchorOutputs(scidAlias = true, zeroConf = false),
+    AnchorOutputs(scidAlias = true, zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false),
@@ -145,14 +168,16 @@ object ChannelTypes {
   def defaultFromFeatures(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): SupportedChannelType = {
     def canUse(feature: InitFeature): Boolean = Features.canUseFeature(localFeatures, remoteFeatures, feature)
 
+    val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
+    val zeroConf = canUse(Features.ZeroConf)
     if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
-      AnchorOutputsZeroFeeHtlcTx(scidAlias = canUse(Features.ScidAlias) && !announceChannel, zeroConf = canUse(Features.ZeroConf)) // alias feature is incompatible with public channel
+      AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputs)) {
-      AnchorOutputs
+      AnchorOutputs(scidAlias, zeroConf)
     } else if (canUse(Features.StaticRemoteKey)) {
-      StaticRemoteKey
+      StaticRemoteKey(scidAlias, zeroConf)
     } else {
-      Standard
+      Standard(scidAlias, zeroConf)
     }
   }
 

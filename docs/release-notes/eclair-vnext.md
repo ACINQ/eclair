@@ -6,10 +6,6 @@
 
 ### Add support for channel aliases and zeroconf channels
 
-:information_source: Those features are only supported for channels of type `AnchorOutputsZeroFeeHtlcTx`, which is the
-newest channel type and the one enabled by default. If you are opening a channel with a node that doesn't run Eclair,
-make sure they support `option_anchors_zero_fee_htlc_tx`.
-
 #### Channel aliases
 
 Channel aliases offer a way to use arbitrary channel identifiers for routing. This feature improves privacy by not

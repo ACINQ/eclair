@@ -796,11 +796,11 @@ class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
   }
 
   test("connect nodes") {
-    connectNodes(ChannelTypes.StaticRemoteKey)
+    connectNodes(ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = false))
   }
 
   test("open channel C <-> F, send payments and close (anchor outputs)") {
-    testOpenPayClose(ChannelTypes.AnchorOutputs)
+    testOpenPayClose(ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false))
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs)") {
@@ -836,7 +836,7 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
   }
 
   test("connect nodes") {
-    connectNodes(ChannelTypes.StaticRemoteKey)
+    connectNodes(ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = false))
   }
 
   test("open channel C <-> F, send payments and close (anchor outputs zero fee htlc txs)") {

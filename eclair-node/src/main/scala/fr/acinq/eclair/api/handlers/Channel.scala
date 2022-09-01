@@ -33,9 +33,18 @@ trait Channel {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val supportedChannelTypes = Set(
-    ChannelTypes.Standard,
-    ChannelTypes.StaticRemoteKey,
-    ChannelTypes.AnchorOutputs,
+    ChannelTypes.Standard(scidAlias = false, zeroConf = false),
+    ChannelTypes.Standard(scidAlias = false, zeroConf = true),
+    ChannelTypes.Standard(scidAlias = true, zeroConf = false),
+    ChannelTypes.Standard(scidAlias = true, zeroConf = true),
+    ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = false),
+    ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = true),
+    ChannelTypes.StaticRemoteKey(scidAlias = true, zeroConf = false),
+    ChannelTypes.StaticRemoteKey(scidAlias = true, zeroConf = true),
+    ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false),
+    ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = true),
+    ChannelTypes.AnchorOutputs(scidAlias = true, zeroConf = false),
+    ChannelTypes.AnchorOutputs(scidAlias = true, zeroConf = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false),

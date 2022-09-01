@@ -132,8 +132,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val setup = init(aliceNodeParams, TestConstants.Bob.nodeParams.copy(blockHeight = blockHeight), wallet_opt = Some(walletClient))
     val testTags = channelType match {
       case _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)
-      case ChannelTypes.AnchorOutputs => Set(ChannelStateTestsTags.AnchorOutputs)
-      case ChannelTypes.StaticRemoteKey => Set(ChannelStateTestsTags.StaticRemoteKey)
+      case _: ChannelTypes.AnchorOutputs => Set(ChannelStateTestsTags.AnchorOutputs)
+      case _: ChannelTypes.StaticRemoteKey => Set(ChannelStateTestsTags.StaticRemoteKey)
       case _ => Set.empty[String]
     }
     reachNormal(setup, testTags)
@@ -835,7 +835,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("htlc tx feerate high enough, not adding wallet inputs") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputs) { f =>
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)) { f =>
       import f._
 
       val currentFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.commitTxFeerate
@@ -851,7 +851,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("htlc tx feerate too low, adding wallet inputs") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputs) { f =>
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
@@ -1298,7 +1298,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("claim htlc tx feerate too low, lowering output amount") {
-    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs) { f =>
+    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
@@ -1317,7 +1317,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("claim htlc tx feerate too low, lowering output amount (standard commitment format)") {
-    withFixture(Seq(11 millibtc), ChannelTypes.Standard) { f =>
+    withFixture(Seq(11 millibtc), ChannelTypes.Standard(scidAlias = false, zeroConf = false)) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
@@ -1357,7 +1357,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("claim htlc tx feerate way too low, skipping output") {
-    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs) { f =>
+    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)) { f =>
       import f._
 
       val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300)
@@ -1386,7 +1386,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("claim htlc tx not confirming, lowering output amount again (standard commitment format)") {
-    withFixture(Seq(11 millibtc), ChannelTypes.Standard) { f =>
+    withFixture(Seq(11 millibtc), ChannelTypes.Standard(scidAlias = false, zeroConf = false)) { f =>
       import f._
 
       val initialFeerate = FeeratePerKw(15_000 sat)
@@ -1445,7 +1445,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("claim htlc tx not confirming, but cannot lower output amount again") {
-    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs) { f =>
+    withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)) { f =>
       import f._
 
       val (remoteCommitTx, claimHtlcSuccess, _) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300)
