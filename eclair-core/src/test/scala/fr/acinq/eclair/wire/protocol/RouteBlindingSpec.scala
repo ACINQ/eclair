@@ -2,6 +2,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRouteDetails
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.{RouteBlindingDecryptedData, blindedRouteDataCodec}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
@@ -77,7 +78,7 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
       (TlvStream(Seq(OutgoingChannelId(ShortChannelId(42)), PaymentRelay(CltvExpiryDelta(123), 200, 900 msat), PaymentConstraints(CltvExpiry(734576), 756001234 msat), AllowedFeatures(Features.empty)), Seq(GenericTlv(UInt64(65535), hex"06c1"))), hex"0208000000000000002a 0a08007b000000c80384 0c08000b35702d0fa9d2 0e00 fdffff0206c1"),
     )
 
-    val blindedRoute = Sphinx.RouteBlinding.create(sessionKey, nodePrivKeys.map(_.publicKey), payloads.map(_._2))
+    val BlindedRouteDetails(blindedRoute, lastBlinding) = Sphinx.RouteBlinding.create(sessionKey, nodePrivKeys.map(_.publicKey), payloads.map(_._2))
     val blinding0 = sessionKey.publicKey
     val Right(RouteBlindingDecryptedData(decryptedPayload0, blinding1)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(0), blinding0, blindedRoute.encryptedPayloads(0))
     val Right(RouteBlindingDecryptedData(decryptedPayload1, blinding2)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(1), blinding1, blindedRoute.encryptedPayloads(1))
@@ -85,6 +86,7 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
     val Right(RouteBlindingDecryptedData(decryptedPayload3, blinding4)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(3), blinding3, blindedRoute.encryptedPayloads(3))
     val Right(RouteBlindingDecryptedData(decryptedPayload4, _)) = RouteBlindingEncryptedDataCodecs.decode(nodePrivKeys(4), blinding4, blindedRoute.encryptedPayloads(4))
     assert(Seq(decryptedPayload0, decryptedPayload1, decryptedPayload2, decryptedPayload3, decryptedPayload4) == payloads.map(_._1))
+    assert(lastBlinding == blinding4)
   }
 
   test("decode invalid encrypted route blinding tlv stream") {

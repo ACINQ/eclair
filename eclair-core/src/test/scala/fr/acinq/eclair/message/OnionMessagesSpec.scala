@@ -79,10 +79,10 @@ class OnionMessagesSpec extends AnyFunSuite {
     assert(encodedForDave == hex"060401234567")
 
     // Building blinded path Carol -> Dave
-    val routeFromCarol = Sphinx.RouteBlinding.create(blindingOverride, carol.publicKey :: dave.publicKey :: Nil, encodedForCarol :: encodedForDave :: Nil)
+    val routeFromCarol = Sphinx.RouteBlinding.create(blindingOverride, carol.publicKey :: dave.publicKey :: Nil, encodedForCarol :: encodedForDave :: Nil).route
 
     // Building blinded path Alice -> Bob
-    val routeToCarol = Sphinx.RouteBlinding.create(blindingSecret, alice.publicKey :: bob.publicKey :: Nil, encodedForAlice :: encodedForBob :: Nil)
+    val routeToCarol = Sphinx.RouteBlinding.create(blindingSecret, alice.publicKey :: bob.publicKey :: Nil, encodedForAlice :: encodedForBob :: Nil).route
 
     val publicKeys = routeToCarol.blindedNodes.map(_.blindedPublicKey) concat routeFromCarol.blindedNodes.map(_.blindedPublicKey)
     val encryptedPayloads = routeToCarol.encryptedPayloads ++ routeFromCarol.encryptedPayloads
@@ -145,11 +145,11 @@ class OnionMessagesSpec extends AnyFunSuite {
     val blindedPayload = TlvStream[RouteBlindingEncryptedDataTlv](OutgoingNodeId(bob.publicKey))
     val encodedBlindedPayload = blindedRouteDataCodec.encode(blindedPayload).require.bytes
     assert(encodedBlindedPayload == hex"04210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")
-    val Sphinx.RouteBlinding.BlindedRoute(_, _, blindedNodes) = Sphinx.RouteBlinding.create(blindingSecret, alice.publicKey :: Nil, encodedBlindedPayload :: Nil)
-    assert(blindedNodes.head.blindedPublicKey == blindedAlice)
+    val blindedRoute = Sphinx.RouteBlinding.create(blindingSecret, alice.publicKey :: Nil, encodedBlindedPayload :: Nil).route
+    assert(blindedRoute.blindedNodes.head.blindedPublicKey == blindedAlice)
     assert(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes) == ByteVector32(hex"bae3d9ea2b06efd1b7b9b49b6cdcaad0e789474a6939ffa54ff5ec9224d5b76c"))
-    assert(blindedNodes.head.encryptedPayload == hex"6970e870b473ddbc27e3098bfa45bb1aa54f1f637f803d957e6271d8ffeba89da2665d62123763d9b634e30714144a1c165ac9")
-    val Right(decryptedPayload) = RouteBlindingEncryptedDataCodecs.decode(alice, blindingKey, blindedNodes.head.encryptedPayload)
+    assert(blindedRoute.blindedNodes.head.encryptedPayload == hex"6970e870b473ddbc27e3098bfa45bb1aa54f1f637f803d957e6271d8ffeba89da2665d62123763d9b634e30714144a1c165ac9")
+    val Right(decryptedPayload) = RouteBlindingEncryptedDataCodecs.decode(alice, blindingKey, blindedRoute.blindedNodes.head.encryptedPayload)
     assert(decryptedPayload.tlvs == blindedPayload)
   }
 
@@ -168,11 +168,11 @@ class OnionMessagesSpec extends AnyFunSuite {
     val blindedPayload = TlvStream[RouteBlindingEncryptedDataTlv](OutgoingNodeId(carol.publicKey), NextBlinding(blindingOverride))
     val encodedBlindedPayload = blindedRouteDataCodec.encode(blindedPayload).require.bytes
     assert(encodedBlindedPayload == hex"0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007082102989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
-    val Sphinx.RouteBlinding.BlindedRoute(_, _, blindedHops) = Sphinx.RouteBlinding.create(blindingSecret, bob.publicKey :: Nil, encodedBlindedPayload :: Nil)
-    assert(blindedHops.head.blindedPublicKey == blindedBob)
+    val blindedRoute = Sphinx.RouteBlinding.create(blindingSecret, bob.publicKey :: Nil, encodedBlindedPayload :: Nil).route
+    assert(blindedRoute.blindedNodes.head.blindedPublicKey == blindedBob)
     assert(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes) == ByteVector32(hex"9afb8b2ebc174dcf9e270be24771da7796542398d29d4ff6a4e7b6b4b9205cfe"))
-    assert(blindedHops.head.encryptedPayload == hex"1630da85e8759b8f3b94d74a539c6f0d870a87cf03d4986175865a2985553c997b560c32613bd9184c1a6d41a37027aabdab5433009d8409a1b638eb90373778a05716af2c2140b3196dca23997cdad4cfa7a7adc8d4")
-    val Right(decryptedPayload) = RouteBlindingEncryptedDataCodecs.decode(bob, blindingKey, blindedHops.head.encryptedPayload)
+    assert(blindedRoute.blindedNodes.head.encryptedPayload == hex"1630da85e8759b8f3b94d74a539c6f0d870a87cf03d4986175865a2985553c997b560c32613bd9184c1a6d41a37027aabdab5433009d8409a1b638eb90373778a05716af2c2140b3196dca23997cdad4cfa7a7adc8d4")
+    val Right(decryptedPayload) = RouteBlindingEncryptedDataCodecs.decode(bob, blindingKey, blindedRoute.blindedNodes.head.encryptedPayload)
     assert(decryptedPayload.tlvs == blindedPayload)
     assert(decryptedPayload.nextBlinding == blindingOverride)
   }
@@ -191,11 +191,11 @@ class OnionMessagesSpec extends AnyFunSuite {
     val blindedPayload = TlvStream[RouteBlindingEncryptedDataTlv](Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), OutgoingNodeId(dave.publicKey))
     val encodedBlindedPayload = blindedRouteDataCodec.encode(blindedPayload).require.bytes
     assert(encodedBlindedPayload == hex"012300000000000000000000000000000000000000000000000000000000000000000000000421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")
-    val Sphinx.RouteBlinding.BlindedRoute(_, _, blindedHops) = Sphinx.RouteBlinding.create(blindingSecret, carol.publicKey :: Nil, encodedBlindedPayload :: Nil)
-    assert(blindedHops.head.blindedPublicKey == blindedCarol)
+    val blindedRoute = Sphinx.RouteBlinding.create(blindingSecret, carol.publicKey :: Nil, encodedBlindedPayload :: Nil).route
+    assert(blindedRoute.blindedNodes.head.blindedPublicKey == blindedCarol)
     assert(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes) == ByteVector32(hex"cc3b918cda6b1b049bdbe469c4dd952935e7c1518dd9c7ed0cd2cd5bc2742b82"))
-    assert(blindedHops.head.encryptedPayload == hex"8285acbceb37dfb38b877a888900539be656233cd74a55c55344fb068f9d8da365340d21db96fb41b76123207daeafdfb1f571e3fea07a22e10da35f03109a0380b3c69fcbed9c698086671809658761cf65ecbc3c07a2e5")
-    val Right(decryptedPayload) = RouteBlindingEncryptedDataCodecs.decode(carol, blindingKey, blindedHops.head.encryptedPayload)
+    assert(blindedRoute.blindedNodes.head.encryptedPayload == hex"8285acbceb37dfb38b877a888900539be656233cd74a55c55344fb068f9d8da365340d21db96fb41b76123207daeafdfb1f571e3fea07a22e10da35f03109a0380b3c69fcbed9c698086671809658761cf65ecbc3c07a2e5")
+    val Right(decryptedPayload) = RouteBlindingEncryptedDataCodecs.decode(carol, blindingKey, blindedRoute.blindedNodes.head.encryptedPayload)
     assert(decryptedPayload.tlvs == blindedPayload)
   }
 

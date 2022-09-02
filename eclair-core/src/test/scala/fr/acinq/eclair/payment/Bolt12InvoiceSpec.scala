@@ -52,7 +52,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
 
   def createDirectPath(sessionKey: PrivateKey, nodeId: PublicKey, pathId: ByteVector): BlindedRoute = {
     val selfPayload = blindedRouteDataCodec.encode(TlvStream(Seq(RouteBlindingEncryptedDataTlv.PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty)))).require.bytes
-    Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload))
+    Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route
   }
 
   test("check invoice signature") {
