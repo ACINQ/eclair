@@ -129,9 +129,7 @@ object IncomingPaymentPacket {
         payload.get[OnionPaymentPayloadTlv.EncryptedRecipientData] match {
           case Some(OnionPaymentPayloadTlv.EncryptedRecipientData(encryptedRecipientData)) =>
             decryptEncryptedRecipientData(add, privateKey, payload, encryptedRecipientData).flatMap {
-              case DecodedEncryptedRecipientData(blindedPayload, _) =>
-                // TODO: receiving through blinded routes is not supported yet.
-                FinalPayload.Blinded.validate(payload, blindedPayload).left.map(_.failureMessage).flatMap(_ => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket))))
+              case DecodedEncryptedRecipientData(blindedPayload, _) => validateBlindedFinalPayload(add, payload, blindedPayload)
             }
           case None =>
             // We check if the payment is using trampoline: if it is, we may not be the final recipient.
@@ -141,7 +139,7 @@ object IncomingPaymentPacket {
                 // blinding point and use it to derive the decryption key for the blinded trampoline onion.
                 decryptOnion(add.paymentHash, privateKey, trampolinePacket).flatMap {
                   case DecodedOnionPacket(innerPayload, Some(next)) => validateNodeRelay(add, payload, innerPayload, next)
-                  case DecodedOnionPacket(innerPayload, None) => validateFinalPayload(add, payload, innerPayload)
+                  case DecodedOnionPacket(innerPayload, None) => validateTrampolineFinalPayload(add, payload, innerPayload)
                 }
               case None => validateFinalPayload(add, payload)
             }
@@ -166,7 +164,17 @@ object IncomingPaymentPacket {
     }
   }
 
-  private def validateFinalPayload(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, FinalPacket] = {
+  private def validateBlindedFinalPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv]): Either[FailureMessage, FinalPacket] = {
+    FinalPayload.Blinded.validate(payload, blindedPayload).left.map(_.failureMessage).flatMap {
+      case payload if add.amountMsat < payload.paymentConstraints.minAmount => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case payload if add.cltvExpiry > payload.paymentConstraints.maxCltvExpiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case payload if !Features.areCompatible(Features.empty, payload.allowedFeatures) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      // TODO: receiving through blinded routes is not supported yet.
+      case _ => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+    }
+  }
+
+  private def validateTrampolineFinalPayload(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, FinalPacket] = {
     // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
     FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
       FinalPayload.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {

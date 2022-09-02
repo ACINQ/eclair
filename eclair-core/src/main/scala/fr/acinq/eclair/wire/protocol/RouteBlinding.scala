@@ -78,6 +78,7 @@ object BlindedRouteData {
     if (records.get[PathId].isDefined) return Left(ForbiddenTlv(UInt64(6)))
     if (records.get[PaymentRelay].isDefined) return Left(ForbiddenTlv(UInt64(10)))
     if (records.get[PaymentConstraints].isDefined) return Left(ForbiddenTlv(UInt64(12)))
+    if (records.get[AllowedFeatures].exists(!_.features.isEmpty)) return Left(ForbiddenTlv(UInt64(14))) // we don't support custom blinded relay features yet
     Right(records)
   }
 
@@ -92,6 +93,7 @@ object BlindedRouteData {
     if (records.get[PaymentRelay].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
     if (records.get[PaymentConstraints].isEmpty) return Left(MissingRequiredTlv(UInt64(12)))
     if (records.get[PathId].nonEmpty) return Left(ForbiddenTlv(UInt64(6)))
+    if (records.get[AllowedFeatures].exists(!_.features.isEmpty)) return Left(ForbiddenTlv(UInt64(14))) // we don't support custom blinded relay features yet
     Right(records)
   }
 
