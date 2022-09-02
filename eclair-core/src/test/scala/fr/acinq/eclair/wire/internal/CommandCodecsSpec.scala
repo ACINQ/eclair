@@ -49,30 +49,30 @@ class CommandCodecsSpec extends AnyFunSuite {
   }
 
   test("backward compatibility") {
-
     val data32 = randomBytes32()
     val data123 = randomBytes(123)
 
     val legacyCmdFulfillCodec =
-      (("id" | int64) ::
+      ("id" | int64) ::
         ("r" | bytes32) ::
-        ("commit" | provide(false)))
+        ("commit" | provide(false))
     assert(CommandCodecs.cmdFulfillCodec.decode(legacyCmdFulfillCodec.encode(42 :: data32 :: true :: HNil).require).require ==
       DecodeResult(CMD_FULFILL_HTLC(42, data32, commit = false, None), BitVector.empty))
 
     val legacyCmdFailCodec =
-      (("id" | int64) ::
+      ("id" | int64) ::
         ("reason" | either(bool, varsizebinarydata, failureMessageCodec)) ::
-        ("commit" | provide(false)))
+        ("commit" | provide(false))
     assert(CommandCodecs.cmdFailCodec.decode(legacyCmdFailCodec.encode(42 :: Left(data123) :: true :: HNil).require).require ==
       DecodeResult(CMD_FAIL_HTLC(42, Left(data123), commit = false, None), BitVector.empty))
 
     val legacyCmdFailMalformedCodec =
-      (("id" | int64) ::
+      ("id" | int64) ::
         ("onionHash" | bytes32) ::
         ("failureCode" | uint16) ::
-        ("commit" | provide(false)))
+        ("commit" | provide(false))
     assert(CommandCodecs.cmdFailMalformedCodec.decode(legacyCmdFailMalformedCodec.encode(42 :: data32 :: 456 :: true :: HNil).require).require ==
-      DecodeResult(CMD_FAIL_MALFORMED_HTLC(42, data32, 456, commit = false, None), BitVector.empty))
+      DecodeResult(CMD_FAIL_MALFORMED_HTLC(42, data32, 456, None, commit = false, None), BitVector.empty))
   }
+
 }

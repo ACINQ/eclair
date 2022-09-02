@@ -33,7 +33,8 @@ import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{DurationLong, FiniteDuration}
+import scala.util.Random
 
 /**
  * Created by PM on 01/02/2017.
@@ -77,7 +78,13 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           }
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
-          val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
+          val delay_opt = badOnion match {
+            // We are the introduction point of a blinded path: we add a non-negligible delay to make it look like it
+            // could come from a downstream node.
+            case InvalidOnionBlinding(_) if add.blinding_opt.isEmpty => Some(500.millis + Random.nextLong(1500).millis)
+            case _ => None
+          }
+          val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, delay_opt, commit = true)
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
         case Left(failure) =>

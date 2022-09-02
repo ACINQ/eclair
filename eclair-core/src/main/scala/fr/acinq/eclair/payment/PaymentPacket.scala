@@ -77,8 +77,7 @@ object IncomingPaymentPacket {
 
   private[payment] def decryptEncryptedRecipientData(add: UpdateAddHtlc, privateKey: PrivateKey, payload: TlvStream[OnionPaymentPayloadTlv], encryptedRecipientData: ByteVector): Either[FailureMessage, DecodedEncryptedRecipientData] = {
     if (add.blinding_opt.isDefined && payload.get[OnionPaymentPayloadTlv.BlindingPoint].isDefined) {
-      // TODO: return an unparseable error
-      Left(InvalidOnionPayload(UInt64(12), 0))
+      Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
     } else {
       add.blinding_opt.orElse(payload.get[OnionPaymentPayloadTlv.BlindingPoint].map(_.publicKey)) match {
         case Some(blinding) => RouteBlindingEncryptedDataCodecs.decode(privateKey, blinding, encryptedRecipientData) match {
@@ -86,15 +85,13 @@ object IncomingPaymentPacket {
             // There are two possibilities in this case:
             //  - the blinding point is invalid: the sender or the previous node is buggy or malicious
             //  - the encrypted data is invalid: the sender, the previous node or the recipient must be buggy or malicious
-            // TODO: return an unparseable error
-            Left(InvalidOnionPayload(UInt64(12), 0))
+            Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
           case Right(decoded) => Right(DecodedEncryptedRecipientData(decoded.tlvs, decoded.nextBlinding))
         }
         case None =>
           // The sender is trying to use route blinding, but we didn't receive the blinding point used to derive
           // the decryption key. The sender or the previous peer is buggy or malicious.
-          // TODO: return an unparseable error
-          Left(InvalidOnionPayload(UInt64(12), 0))
+          Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       }
     }
   }
@@ -124,7 +121,6 @@ object IncomingPaymentPacket {
               case DecodedEncryptedRecipientData(blindedPayload, nextBlinding) =>
                 validateBlindedChannelRelayPayload(add, payload, blindedPayload, nextBlinding, nextPacket)
             }
-          case None if add.blinding_opt.isDefined => Left(InvalidOnionPayload(UInt64(12), 0))
           case None => IntermediatePayload.ChannelRelay.Standard.validate(payload).left.map(_.failureMessage).map {
             payload => ChannelRelayPacket(add, payload, nextPacket)
           }
@@ -135,9 +131,8 @@ object IncomingPaymentPacket {
             decryptEncryptedRecipientData(add, privateKey, payload, encryptedRecipientData).flatMap {
               case DecodedEncryptedRecipientData(blindedPayload, _) =>
                 // TODO: receiving through blinded routes is not supported yet.
-                FinalPayload.Blinded.validate(payload, blindedPayload).left.map(_.failureMessage).flatMap(_ => Left(InvalidOnionPayload(UInt64(12), 0)))
+                FinalPayload.Blinded.validate(payload, blindedPayload).left.map(_.failureMessage).flatMap(_ => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket))))
             }
-          case None if add.blinding_opt.isDefined => Left(InvalidOnionPayload(UInt64(12), 0))
           case None =>
             // We check if the payment is using trampoline: if it is, we may not be the final recipient.
             payload.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
@@ -156,10 +151,9 @@ object IncomingPaymentPacket {
 
   private def validateBlindedChannelRelayPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey, nextPacket: OnionRoutingPacket): Either[FailureMessage, ChannelRelayPacket] = {
     IntermediatePayload.ChannelRelay.Blinded.validate(payload, blindedPayload, nextBlinding).left.map(_.failureMessage).flatMap {
-      // TODO: return an unparseable error
-      case payload if add.amountMsat < payload.paymentConstraints.minAmount => Left(InvalidOnionPayload(UInt64(12), 0))
-      case payload if add.cltvExpiry > payload.paymentConstraints.maxCltvExpiry => Left(InvalidOnionPayload(UInt64(12), 0))
-      case payload if !Features.areCompatible(Features.empty, payload.allowedFeatures) => Left(InvalidOnionPayload(UInt64(12), 0))
+      case payload if add.amountMsat < payload.paymentConstraints.minAmount => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case payload if add.cltvExpiry > payload.paymentConstraints.maxCltvExpiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case payload if !Features.areCompatible(Features.empty, payload.allowedFeatures) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload => Right(ChannelRelayPacket(add, payload, nextPacket))
     }
   }

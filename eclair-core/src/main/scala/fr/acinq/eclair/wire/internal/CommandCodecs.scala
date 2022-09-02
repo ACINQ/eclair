@@ -23,6 +23,8 @@ import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
 import scodec.Codec
 import scodec.codecs._
 
+import scala.concurrent.duration.FiniteDuration
+
 object CommandCodecs {
 
   val cmdFulfillCodec: Codec[CMD_FULFILL_HTLC] =
@@ -41,6 +43,8 @@ object CommandCodecs {
     (("id" | int64) ::
       ("onionHash" | bytes32) ::
       ("failureCode" | uint16) ::
+      // No need to delay commands after a restart, we've been offline which already created a random delay.
+      ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_MALFORMED_HTLC]
 

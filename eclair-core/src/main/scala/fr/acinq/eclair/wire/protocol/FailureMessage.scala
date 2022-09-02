@@ -49,6 +49,7 @@ case object RequiredNodeFeatureMissing extends Perm with Node { def message = "p
 case class InvalidOnionVersion(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion version was not understood by the processing node" }
 case class InvalidOnionHmac(onionHash: ByteVector32) extends BadOnion with Perm { def message = "onion HMAC was incorrect when it reached the processing node" }
 case class InvalidOnionKey(onionHash: ByteVector32) extends BadOnion with Perm { def message = "ephemeral key was unparsable by the processing node" }
+case class InvalidOnionBlinding(onionHash: ByteVector32) extends BadOnion with Perm { def message = "the blinded onion didn't match the processing node's requirements" }
 case class TemporaryChannelFailure(update: ChannelUpdate) extends Update { def message = s"channel ${update.shortChannelId} is currently unavailable" }
 case object PermanentChannelFailure extends Perm { def message = "channel is permanently unavailable" }
 case object RequiredChannelFeatureMissing extends Perm { def message = "channel requires features not present in the onion" }
@@ -120,6 +121,7 @@ object FailureMessageCodecs {
       .typecase(21, provide(ExpiryTooFar))
       .typecase(PERM | 22, (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload])
       .typecase(23, provide(PaymentTimeout))
+      .typecase(BADONION | PERM | 24, sha256.as[InvalidOnionBlinding])
       // TODO: @t-bast: once fully spec-ed, these should probably include a NodeUpdate and use a different ID.
       // We should update Phoenix and our nodes at the same time, or first update Phoenix to understand both new and old errors.
       .typecase(NODE | 51, provide(TrampolineFeeInsufficient))

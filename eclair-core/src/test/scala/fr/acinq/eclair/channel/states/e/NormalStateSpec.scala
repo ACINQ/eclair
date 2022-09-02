@@ -1771,6 +1771,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
   }
 
+  test("recv CMD_FAIL_MALFORMED_HTLC (with delay)") { f =>
+    import f._
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // actual test begins
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 24, delay_opt = Some(50 millis))
+    val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
+    awaitCond(bob.stateData == initialState.copy(
+      commitments = initialState.commitments.copy(
+        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+  }
+
   test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { f =>
     import f._
     val sender = TestProbe()

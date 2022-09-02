@@ -399,14 +399,20 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_NORMAL) =>
-      Commitments.sendFailMalformed(d.commitments, c) match {
-        case Right((commitments1, fail)) =>
-          if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
-          handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
-        case Left(cause) =>
-          // we acknowledge the command right away in case of failure
-          handleCommandError(cause, c).acking(d.channelId, c)
+      c.delay_opt match {
+        case Some(delay) =>
+          log.debug("delaying CMD_FAIL_MALFORMED_HTLC with id={} for {}", c.id, delay)
+          context.system.scheduler.scheduleOnce(delay, self, c.copy(delay_opt = None))
+          stay()
+        case None => Commitments.sendFailMalformed(d.commitments, c) match {
+          case Right((commitments1, fail)) =>
+            if (c.commit) self ! CMD_SIGN()
+            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
+            handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
+          case Left(cause) =>
+            // we acknowledge the command right away in case of failure
+            handleCommandError(cause, c).acking(d.channelId, c)
+        }
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
