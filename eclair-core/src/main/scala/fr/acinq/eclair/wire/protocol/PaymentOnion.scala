@@ -187,25 +187,25 @@ object PaymentOnion {
   /*
    * We use the following architecture for payment onion payloads:
    *
-   *                                                                                  PerHopPayload
-   *                                                                                        |
-   *                                                                                        |
-   *                                                             +--------------------------+------------------------------+
-   *                                                             |                                                         |
-   *                                                             |                                                         |
-   *                                                        RelayPayload                                              FinalPayload
-   *                                                             |                                                         |
-   *                                                             |                                                         |
-   *                                   +-------------------------+---------------------------+                    +--------+---------+
-   *                                   |                                                     |                    |                  |
-   *                                   |                                                     |                    |                  |
-   *                          ChannelRelayPayload                                            |                    |                  |
-   *                                   |                                                     |                    |                  |
-   *                                   |                                                     |                    |                  |
-   *        +--------------------------+--------------------------+                          |                    |                  |
-   *        |                          |                          |                          |                    |                  |
-   *        |                          |                          |                          |                    |                  |
-   * RelayLegacyPayload     ChannelRelayTlvPayload     BlindedChannelRelayPayload     NodeRelayPayload     FinalTlvPayload     BlindedFinalPayload
+   *                                                                   PerHopPayload
+   *                                                                         |
+   *                                                                         |
+   *                                              +--------------------------+---------------------+
+   *                                              |                                                |
+   *                                              |                                                |
+   *                                         RelayPayload                                     FinalPayload
+   *                                              |                                                |
+   *                                              |                                                |
+   *                         +---------------------------------------+                    +--------+---------+
+   *                         |                                       |                    |                  |
+   *                         |                                       |                    |                  |
+   *                ChannelRelayPayload                              |                    |                  |
+   *                         |                                       |                    |                  |
+   *                         |                                       |                    |                  |
+   *        +---------------------------------+                      |                    |                  |
+   *        |                                 |                      |                    |                  |
+   *        |                                 |                      |                    |                  |
+   * ChannelRelayTlvPayload     BlindedChannelRelayPayload     NodeRelayPayload     FinalTlvPayload     BlindedFinalPayload
    *
    * We also introduce additional traits to separate payloads based on the type of onion packet they can be used with (PacketType).
    */
