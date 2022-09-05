@@ -102,7 +102,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     payFsm.expectMsgType[SendPaymentConfig]
-    val FinalTlvPayload(tlvs) = payFsm.expectMsgType[PaymentLifecycle.SendPayment].finalPayload
+    val tlvs = payFsm.expectMsgType[PaymentLifecycle.SendPayment].finalPayload.records
     assert(tlvs.get[AmountToForward].get.amount == finalAmount)
     assert(tlvs.get[OutgoingCltv].get.cltv == req.invoice.minFinalCltvExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1))
     assert(tlvs.unknown == customRecords)
@@ -114,7 +114,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     payFsm.expectMsgType[SendPaymentConfig]
-    val FinalTlvPayload(tlvs) = payFsm.expectMsgType[PaymentLifecycle.SendPayment].finalPayload
+    val tlvs = payFsm.expectMsgType[PaymentLifecycle.SendPayment].finalPayload.records
     assert(tlvs.get[AmountToForward].get.amount == finalAmount)
     assert(tlvs.get[OutgoingCltv].get.cltv == Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1))
     assert(tlvs.get[KeySend].get.paymentPreimage == paymentPreimage)
@@ -275,9 +275,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(trampolinePayload.totalAmount == finalAmount)
     assert(trampolinePayload.outgoingCltv.toLong == currentBlockCount + 9 + 1)
     assert(trampolinePayload.outgoingNodeId == c)
-    assert(trampolinePayload.paymentSecret == None) // we're not leaking the invoice secret to the trampoline node
-    assert(trampolinePayload.invoiceRoutingInfo == None)
-    assert(trampolinePayload.invoiceFeatures == None)
+    assert(trampolinePayload.paymentSecret.isEmpty) // we're not leaking the invoice secret to the trampoline node
+    assert(trampolinePayload.invoiceRoutingInfo.isEmpty)
+    assert(trampolinePayload.invoiceFeatures.isEmpty)
 
     // Verify that the recipient can correctly peel the trampoline onion.
     val Right(decrypted1) = Sphinx.peel(priv_c.privateKey, Some(invoice.paymentHash), decrypted.nextPacket)
@@ -318,7 +318,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(trampolinePayload.outgoingCltv.toLong == currentBlockCount + 9 + 1)
     assert(trampolinePayload.outgoingNodeId == c)
     assert(trampolinePayload.paymentSecret == invoice.paymentSecret)
-    assert(trampolinePayload.invoiceFeatures == Some(hex"4100")) // var_onion_optin, payment_secret
+    assert(trampolinePayload.invoiceFeatures.contains(hex"4100")) // var_onion_optin, payment_secret
   }
 
   test("reject trampoline to legacy payment for 0-value invoice") { f =>
