@@ -12,9 +12,10 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.{CLOSING, CMD_SIGN, DATA_CLOSING, DATA_NORMAL}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.wire.protocol.{CommitSig, Error, RevokeAndAck}
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32}
+import fr.acinq.eclair.wire.protocol.{CommitSig, Error, RevokeAndAck, TlvStream, UpdateAddHtlc, UpdateAddHtlcTlv}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.sqlite.SQLiteConfig
@@ -165,12 +166,14 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("take published local commit tx into account") { f =>
     import f._
 
-    // We add 3 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice
+    // We add 4 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice
     val (_, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(100000000 msat, alice, bob, alice2bob, bob2alice)
     val (_, htlca3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice)
+    // for this one we set a non-local upstream to simulate a relayed payment
+    val (_, htlca4) = addHtlc(30000000 msat, CltvExpiryDelta(144), alice, bob, alice2bob, bob2alice, upstream = Upstream.Trampoline(UpdateAddHtlc(randomBytes32(), 42, 30003000 msat, randomBytes32(), CltvExpiry(144), TestConstants.emptyOnionPacket, TlvStream.empty[UpdateAddHtlcTlv]) :: Nil), replyTo = TestProbe().ref)
     val (rb1, htlcb1) = addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob)
-    addHtlc(55000000 msat, bob, alice, bob2alice, alice2bob)
+    val (_, _) = addHtlc(55000000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
     // And fulfill one htlc in each direction without signing a new commit tx
     fulfillHtlc(htlca2.id, ra2, bob, alice, bob2alice, alice2bob)
@@ -180,7 +183,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
-    assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
+    assert(aliceCommitTx.txOut.size == 7) // two main outputs and 4 pending htlcs (one is dust)
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
@@ -190,22 +193,24 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
         htlcs = Map.empty,
-        htlcsUnpublished = htlca1.amountMsat.truncateToSatoshi + htlca3.amountMsat.truncateToSatoshi + htlcb1.amountMsat.truncateToSatoshi
+        htlcsUnpublished = htlca4.amountMsat.truncateToSatoshi + htlcb1.amountMsat.truncateToSatoshi
       ))
 
     alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
     val htlcTx1 = alice2blockchain.expectMsgType[PublishFinalTx].tx
     val htlcTx2 = alice2blockchain.expectMsgType[PublishFinalTx].tx
     val htlcTx3 = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    val htlcTx4 = alice2blockchain.expectMsgType[PublishFinalTx].tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // main-delayed
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 1
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 2
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 3
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 4
+    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 5
 
-    // 3rd-stage txs are published when htlc txs confirm
-    val claimHtlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3).map { htlcTimeoutTx =>
+    // 3rd-stage txs are published when htlc-timeout txs confirm
+    val claimHtlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3, htlcTx4).map { htlcTimeoutTx =>
       alice ! WatchOutputSpentTriggered(htlcTimeoutTx)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == htlcTimeoutTx.txid)
       alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx)
@@ -213,13 +218,13 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcDelayedTx.txid)
       claimHtlcDelayedTx
     }
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 3)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 4)
 
     assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcDelayedTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
-        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi
+        htlcsUnpublished = 0.sat
       ))
   }
 
