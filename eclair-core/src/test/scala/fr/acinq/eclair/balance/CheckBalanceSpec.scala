@@ -183,7 +183,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
-    assert(aliceCommitTx.txOut.size == 7) // two main outputs and 4 pending htlcs (one is dust)
+    assert(aliceCommitTx.txOut.size == 7) // two main outputs and 5 pending htlcs (one is dust)
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
