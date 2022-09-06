@@ -126,9 +126,11 @@ object CheckBalance {
       .filterNot(htlc => htlcsInOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
       .filter(add => knownPreimages.contains((add.channelId, add.id)) || localHasPreimage(c, add.id))
       .sumAmount
-    // all outgoing htlcs for which remote didn't prove it had the preimage are expected to time out
+    // outgoing htlcs for which remote didn't prove it had the preimage are expected to time out if they were relayed,
+    // and succeed if they were sent from this node
     val htlcOut = localCommit.spec.htlcs.collect(outgoing)
       .filterNot(htlc => htlcsOutOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
+      .filterNot(htlc => c.originChannels.get(htlc.id).exists(_.isInstanceOf[Origin.Local]))
       .filterNot(htlc => remoteHasPreimage(c, htlc.id))
       .sumAmount
     // all claim txs have possibly been published

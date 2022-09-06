@@ -365,9 +365,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     addHtlc(amount, CltvExpiryDelta(144), s, r, s2r, r2s, replyTo)
   }
 
-  def addHtlc(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef = TestProbe().ref): (ByteVector32, UpdateAddHtlc) = {
+  def addHtlc(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef = TestProbe().ref, upstream: Upstream = Upstream.Local(UUID.randomUUID())): (ByteVector32, UpdateAddHtlc) = {
     val currentBlockHeight = s.underlyingActor.nodeParams.currentBlockHeight
-    val (payment_preimage, cmd) = makeCmdAdd(amount, cltvExpiryDelta, r.underlyingActor.nodeParams.nodeId, randomBytes32(), currentBlockHeight, Upstream.Local(UUID.randomUUID()), replyTo)
+    val (payment_preimage, cmd) = makeCmdAdd(amount, cltvExpiryDelta, r.underlyingActor.nodeParams.nodeId, randomBytes32(), currentBlockHeight, upstream, replyTo)
     val htlc = addHtlc(cmd, s, r, s2r, r2s)
     (payment_preimage, htlc)
   }
