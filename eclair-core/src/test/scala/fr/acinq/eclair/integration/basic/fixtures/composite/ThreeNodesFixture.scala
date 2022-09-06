@@ -3,7 +3,7 @@ package fr.acinq.eclair.integration.basic.fixtures.composite
 import akka.actor.ActorSystem
 import akka.testkit.TestKit
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
+import fr.acinq.eclair.integration.basic.fixtures.{FixtureUtils, MinimalNodeFixture}
 
 
 case class ThreeNodesFixture private(system: ActorSystem,
@@ -21,12 +21,12 @@ case class ThreeNodesFixture private(system: ActorSystem,
 }
 
 object ThreeNodesFixture {
-  def apply(aliceParams: NodeParams, bobParams: NodeParams, carolParams: NodeParams): ThreeNodesFixture = {
+  def apply(aliceParams: NodeParams, bobParams: NodeParams, carolParams: NodeParams, testName: String): ThreeNodesFixture = {
     ThreeNodesFixture(
-      system = ActorSystem("system-test"),
-      alice = MinimalNodeFixture(aliceParams),
-      bob = MinimalNodeFixture(bobParams),
-      carol = MinimalNodeFixture(carolParams),
+      system = ActorSystem("system-test", FixtureUtils.actorSystemConfig(testName)),
+      alice = MinimalNodeFixture(aliceParams, testName),
+      bob = MinimalNodeFixture(bobParams, testName),
+      carol = MinimalNodeFixture(carolParams, testName),
     )
   }
 }
