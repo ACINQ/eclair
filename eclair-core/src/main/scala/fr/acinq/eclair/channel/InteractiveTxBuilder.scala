@@ -85,6 +85,7 @@ object InteractiveTxBuilder {
   case object Abort extends Command
   private case class FundTransactionResult(tx: Transaction) extends Command
   private case class InputDetails(usableInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]) extends Command
+  private case object ValidateSharedTx extends Command
   private case class SignTransactionResult(signedTx: PartiallySignedSharedTransaction, remoteSigs_opt: Option[TxSignatures]) extends Command
   private case class WalletFailure(t: Throwable) extends Command
   private case object UtxosUnlocked extends Command
@@ -104,7 +105,8 @@ object InteractiveTxBuilder {
                                  fundingPubkeyScript: ByteVector,
                                  lockTime: Long,
                                  dustLimit: Satoshi,
-                                 targetFeerate: FeeratePerKw) {
+                                 targetFeerate: FeeratePerKw,
+                                 requireConfirmedRemoteInputs: Boolean) {
     val fundingAmount: Satoshi = localAmount + remoteAmount
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
@@ -572,12 +574,51 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   def validateAndSign(session: InteractiveTxSession): Behavior[Command] = {
     require(session.isComplete, "interactive session was not completed")
-    validateTx(session) match {
-      case Left(cause) =>
-        replyTo ! RemoteFailure(cause)
+    if (fundingParams.requireConfirmedRemoteInputs) {
+      context.pipeToSelf(checkInputsConfirmed(session.remoteInputs)) {
+        case Failure(t) => WalletFailure(t)
+        case Success(false) => WalletFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
+        case Success(true) => ValidateSharedTx
+      }
+    } else {
+      context.self ! ValidateSharedTx
+    }
+    Behaviors.receiveMessagePartial {
+      case ValidateSharedTx => validateTx(session) match {
+        case Left(cause) =>
+          replyTo ! RemoteFailure(cause)
+          unlockAndStop(session)
+        case Right((completeTx, fundingOutputIndex)) =>
+          stash.unstashAll(signCommitTx(completeTx, fundingOutputIndex))
+      }
+      case _: WalletFailure =>
+        replyTo ! RemoteFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
         unlockAndStop(session)
-      case Right((completeTx, fundingOutputIndex)) =>
-        signCommitTx(completeTx, fundingOutputIndex)
+      case msg: ReceiveCommitSig =>
+        stash.stash(msg)
+        Behaviors.same
+      case ReceiveTxSigs(_) =>
+        replyTo ! RemoteFailure(UnexpectedFundingSignatures(fundingParams.channelId))
+        unlockAndStop(session)
+      case ReceiveTxMessage(msg) =>
+        replyTo ! RemoteFailure(UnexpectedInteractiveTxMessage(fundingParams.channelId, msg))
+        unlockAndStop(session)
+      case Abort =>
+        unlockAndStop(session)
+    }
+  }
+
+  private def checkInputsConfirmed(inputs: Seq[TxAddInput]): Future[Boolean] = {
+    // We check inputs sequentially and stop at the first unconfirmed one.
+    inputs.map(_.previousTx.txid).toSet.foldLeft(Future.successful(true)) {
+      case (current, txId) => current.transformWith {
+        case Success(true) => wallet.getTxConfirmations(txId).map {
+          case None => false
+          case Some(confirmations) => confirmations > 0
+        }
+        case Success(false) => Future.successful(false)
+        case Failure(t) => Future.failed(t)
+      }
     }
   }
 
