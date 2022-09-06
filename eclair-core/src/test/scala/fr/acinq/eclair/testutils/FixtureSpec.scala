@@ -91,9 +91,9 @@ abstract class FixtureSpec extends FixtureAnyFunSuite
     val root = loggerFactory.getLogger("ROOT")
     val capturingAppender = root.getAppender("MyCapturingAppender").asInstanceOf[MyCapturingAppender]
     if (doLog) {
-      println(s"START OF LOGS FOR TEST '${testName}'")
+      println(s"START OF LOGS FOR TEST '$testName'")
       capturingAppender.flush()
-      println(s"END OF LOGS FOR TEST '${testName}'")
+      println(s"END OF LOGS FOR TEST '$testName'")
     } else {
       capturingAppender.clear()
     }
