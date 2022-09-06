@@ -225,7 +225,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       }
       .collect {
         // we only keep channels that have enough balance to handle this payment
-        case (channel, _: RelaySuccess) if channel.commitments.availableBalanceForSend > r.payload.amountToForward => channel
+        case (channel, _: RelaySuccess) if channel.commitments.availableBalanceForSend > r.amountToForward => channel
       }
       .toList // needed for ordering
       // we want to use the channel with:
@@ -260,24 +260,27 @@ class ChannelRelay private(nodeParams: NodeParams,
    * htlc.
    */
   def relayOrFail(outgoingChannel_opt: Option[OutgoingChannelParams]): RelayResult = {
-    import r._
     outgoingChannel_opt match {
       case None =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
       case Some(c) if !c.channelUpdate.channelFlags.isEnabled =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(c.channelUpdate.messageFlags, c.channelUpdate.channelFlags, c.channelUpdate)), commit = true))
-      case Some(c) if payload.amountToForward < c.channelUpdate.htlcMinimumMsat =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, c.channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(c.channelUpdate.messageFlags, c.channelUpdate.channelFlags, c.channelUpdate)), commit = true))
+      case Some(c) if r.amountToForward < c.channelUpdate.htlcMinimumMsat =>
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(AmountBelowMinimum(r.amountToForward, c.channelUpdate)), commit = true))
       case Some(c) if r.expiryDelta < c.channelUpdate.cltvExpiryDelta =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, c.channelUpdate)), commit = true))
-      case Some(c) if r.relayFeeMsat < nodeFee(c.channelUpdate.relayFees, payload.amountToForward) &&
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(r.outgoingCltv, c.channelUpdate)), commit = true))
+      case Some(c) if r.relayFeeMsat < nodeFee(c.channelUpdate.relayFees, r.amountToForward) &&
         // fees also do not satisfy the previous channel update for `enforcementDelay` seconds after current update
         (TimestampSecond.now() - c.channelUpdate.timestamp > nodeParams.relayParams.enforcementDelay ||
-          outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c.relayFees, payload.amountToForward))) =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, c.channelUpdate)), commit = true))
+          outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c.relayFees, r.amountToForward))) =>
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, c.channelUpdate)), commit = true))
       case Some(c: OutgoingChannel) =>
-        val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, add, payload.amountToForward)
-        RelaySuccess(c.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, nextBlindingKey_opt, origin, commit = true))
+        val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, r.add, r.amountToForward)
+        val nextBlindingKey_opt = r.payload match {
+          case payload: PaymentOnion.BlindedChannelRelayPayload => Some(payload.nextBlinding)
+          case _: PaymentOnion.ChannelRelayPayload => None
+        }
+        RelaySuccess(c.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextBlindingKey_opt, origin, commit = true))
     }
   }
 

@@ -26,6 +26,7 @@ import fr.acinq.eclair.message.OnionMessages.ReceiveMessage
 import fr.acinq.eclair.message.Postman._
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.{EncryptedData, ReplyPath}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.PathId
 import fr.acinq.eclair.wire.protocol.{GenericTlv, TlvStream}
 import fr.acinq.eclair.{UInt64, randomBytes32, randomKey}
 import org.scalatest.Outcome
@@ -57,7 +58,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val recipient = randomKey().publicKey
     val replyPath = OnionMessages.buildRoute(randomKey(), Nil, OnionMessages.Recipient(ourNodeId, Some(pathId)))
     val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, OnionMessages.Recipient(recipient, None), ReplyPath(replyPath) :: Nil)
-    val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
+    val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil), TlvStream(PathId(pathId)))
 
     postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 100 millis)
 
@@ -65,8 +66,8 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(nextNodeId == recipient)
     assert(message == messageExpectingReply)
     postman ! SendingStatus(Sent(messageId))
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
+    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload))
+    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload))
 
     messageRecipient.expectMessage(Response(payload))
     messageRecipient.expectNoMessage()
@@ -100,7 +101,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val recipient = randomKey().publicKey
     val replyPath = OnionMessages.buildRoute(randomKey(), Nil, OnionMessages.Recipient(ourNodeId, Some(pathId)))
     val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, OnionMessages.Recipient(recipient, None), ReplyPath(replyPath) :: Nil)
-    val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
+    val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil), TlvStream(PathId(pathId)))
 
     postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 millis)
 
@@ -111,7 +112,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     messageRecipient.expectMessage(NoReply)
 
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
+    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload))
 
     messageRecipient.expectNoMessage()
   }

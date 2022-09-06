@@ -20,13 +20,12 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.featuresCodec
-import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
+import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tmillisatoshi32}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
-import scodec.Attempt
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
-import scala.util.Try
+import scala.util.{Failure, Success}
 
 /**
  * Created by t-bast on 19/10/2021.
@@ -74,52 +73,43 @@ object BlindedRouteData {
 
   import RouteBlindingEncryptedDataTlv._
 
-  sealed trait Data {
-    val records: TlvStream[RouteBlindingEncryptedDataTlv]
+  def validateMessageRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, TlvStream[RouteBlindingEncryptedDataTlv]] = {
+    if (records.get[OutgoingNodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+    if (records.get[PathId].isDefined) return Left(ForbiddenTlv(UInt64(6)))
+    if (records.get[PaymentRelay].isDefined) return Left(ForbiddenTlv(UInt64(10)))
+    if (records.get[PaymentConstraints].isDefined) return Left(ForbiddenTlv(UInt64(12)))
+    Right(records)
   }
 
-  /** Data contained in the encrypted data tlv stream when used for onion messages. */
-  sealed trait MessageData extends Data
-
-  /** Data contained in the encrypted data tlv stream when used for payments. */
-  sealed trait PaymentData extends Data {
-    val paymentConstraints: PaymentConstraints = records.get[PaymentConstraints].get
-    val allowedFeatures: Features[Feature] = records.get[AllowedFeatures].map(_.features).getOrElse(Features.empty)
+  def validateMessageRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, TlvStream[RouteBlindingEncryptedDataTlv]] = {
+    if (records.get[PaymentRelay].isDefined) return Left(ForbiddenTlv(UInt64(10)))
+    if (records.get[PaymentConstraints].isDefined) return Left(ForbiddenTlv(UInt64(12)))
+    Right(records)
   }
 
-  case class MessageRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends MessageData {
-    val nextNodeId: PublicKey = records.get[OutgoingNodeId].get.nodeId
-    val nextBlinding_opt: Option[PublicKey] = records.get[NextBlinding].map(_.blinding)
+  def validatePaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, TlvStream[RouteBlindingEncryptedDataTlv]] = {
+    if (records.get[OutgoingChannelId].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
+    if (records.get[PaymentRelay].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+    if (records.get[PaymentConstraints].isEmpty) return Left(MissingRequiredTlv(UInt64(12)))
+    if (records.get[PathId].nonEmpty) return Left(ForbiddenTlv(UInt64(6)))
+    Right(records)
   }
 
-  case class MessageRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends MessageData {
-    val pathId_opt: Option[ByteVector] = records.get[PathId].map(_.data)
-  }
-
-  case class PaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends PaymentData {
-    private val paymentRelay: PaymentRelay = records.get[PaymentRelay].get
-    val outgoingChannelId: ShortChannelId = records.get[OutgoingChannelId].get.shortChannelId
-
-    def amountToForward(amountReceived: MilliSatoshi): MilliSatoshi =
-      ((amountReceived - paymentRelay.feeBase).toLong * 1_000_000 + 1_000_000 + paymentRelay.feeProportionalMillionths - 1).msat / (1_000_000 + paymentRelay.feeProportionalMillionths)
-
-    def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - paymentRelay.cltvExpiryDelta
-  }
-
-  case class PaymentRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]) extends PaymentData {
-    val pathId_opt: Option[ByteVector] = records.get[PathId].map(_.data)
+  def validPaymentRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, TlvStream[RouteBlindingEncryptedDataTlv]] = {
+    if (records.get[PathId].isEmpty) return Left(MissingRequiredTlv(UInt64(6)))
+    if (records.get[PaymentConstraints].isEmpty) return Left(MissingRequiredTlv(UInt64(12)))
+    Right(records)
   }
 
 }
 
 object RouteBlindingEncryptedDataCodecs {
 
-  import BlindedRouteData._
   import RouteBlindingEncryptedDataTlv._
   import fr.acinq.eclair.wire.protocol.CommonCodecs.{publicKey, shortchannelid, varint, varintoverflow}
-  import scodec.Codec
   import scodec.bits.HexStringSyntax
   import scodec.codecs._
+  import scodec.{Attempt, Codec, DecodeResult}
 
   private val padding: Codec[Padding] = variableSizeBytesLong(varintoverflow, "padding" | bytes).as[Padding]
   private val outgoingChannelId: Codec[OutgoingChannelId] = variableSizeBytesLong(varintoverflow, "short_channel_id" | shortchannelid).as[OutgoingChannelId]
@@ -145,56 +135,29 @@ object RouteBlindingEncryptedDataCodecs {
     .typecase(UInt64(12), paymentConstraints)
     .typecase(UInt64(14), allowedFeatures)
 
-  private val blindedRouteDataCodec = TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete
+  val blindedRouteDataCodec = TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete
 
-  val messageRelayDataCodec: Codec[MessageRelayData] = blindedRouteDataCodec.narrow({
-    case tlvs if tlvs.get[OutgoingNodeId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-    case tlvs if tlvs.get[PathId].isDefined => Attempt.failure(ForbiddenTlv(UInt64(6)))
-    case tlvs if tlvs.get[PaymentRelay].isDefined => Attempt.failure(ForbiddenTlv(UInt64(10)))
-    case tlvs if tlvs.get[PaymentConstraints].isDefined => Attempt.failure(ForbiddenTlv(UInt64(12)))
-    case tlvs => Attempt.successful(MessageRelayData(tlvs))
-  }, {
-    case MessageRelayData(tlvs) => tlvs
-  })
-
-  val messageRecipientDataCodec: Codec[MessageRecipientData] = blindedRouteDataCodec.narrow({
-    case tlvs if tlvs.get[PaymentRelay].isDefined => Attempt.failure(ForbiddenTlv(UInt64(10)))
-    case tlvs if tlvs.get[PaymentConstraints].isDefined => Attempt.failure(ForbiddenTlv(UInt64(12)))
-    case tlvs => Attempt.successful(MessageRecipientData(tlvs))
-  }, {
-    case MessageRecipientData(tlvs) => tlvs
-  })
-
-  val paymentRelayDataCodec: Codec[PaymentRelayData] = blindedRouteDataCodec.narrow({
-    case tlvs if tlvs.get[OutgoingChannelId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(2)))
-    case tlvs if tlvs.get[PaymentRelay].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(10)))
-    case tlvs if tlvs.get[PaymentConstraints].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(12)))
-    case tlvs if tlvs.get[PathId].isDefined => Attempt.failure(ForbiddenTlv(UInt64(6)))
-    case tlvs => Attempt.successful(PaymentRelayData(tlvs))
-  }, {
-    case PaymentRelayData(tlvs) => tlvs
-  })
-
-  val paymentRecipientDataCodec: Codec[PaymentRecipientData] = blindedRouteDataCodec.narrow({
-    case tlvs if tlvs.get[PaymentConstraints].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(12)))
-    case tlvs => Attempt.successful(PaymentRecipientData(tlvs))
-  }, {
-    case PaymentRecipientData(tlvs) => tlvs
-  })
+  // @formatter:off
+  case class RouteBlindingDecryptedData(tlvs: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey)
+  sealed trait InvalidEncryptedData
+  case class CannotDecryptData(message: String) extends InvalidEncryptedData
+  case class CannotDecodeData(message: String) extends InvalidEncryptedData
+  // @formatter:on
 
   /**
    * Decrypt and decode the contents of an encrypted_recipient_data TLV field.
    *
-   * @param nodePrivKey        this node's private key.
-   * @param blindingKey        blinding point (usually provided in the lightning message).
-   * @param encryptedData      encrypted route blinding data (usually provided inside an onion).
-   * @param encryptedDataCodec codec to parse the decrypted data.
-   * @return decrypted contents of the encrypted recipient data, which usually contain information about the next node,
-   *         and the blinding point that should be sent to the next node.
+   * @param nodePrivKey   this node's private key.
+   * @param blindingKey   blinding point (usually provided in the lightning message).
+   * @param encryptedData encrypted route blinding data (usually provided inside an onion).
    */
-  def decode[T <: BlindedRouteData.Data](nodePrivKey: PrivateKey, blindingKey: PublicKey, encryptedData: ByteVector, encryptedDataCodec: Codec[T]): Try[(T, PublicKey)] = {
-    Sphinx.RouteBlinding.decryptPayload(nodePrivKey, blindingKey, encryptedData).flatMap {
-      case (payload, nextBlindingKey) => encryptedDataCodec.decode(payload.bits).map(r => (r.value, nextBlindingKey)).toTry
+  def decode(nodePrivKey: PrivateKey, blindingKey: PublicKey, encryptedData: ByteVector): Either[InvalidEncryptedData, RouteBlindingDecryptedData] = {
+    Sphinx.RouteBlinding.decryptPayload(nodePrivKey, blindingKey, encryptedData) match {
+      case Failure(f) => Left(CannotDecryptData(f.getMessage))
+      case Success((decryptedData, nextBlinding)) => blindedRouteDataCodec.decode(decryptedData.bits) match {
+        case Attempt.Failure(f) => Left(CannotDecodeData(f.message))
+        case Attempt.Successful(DecodeResult(tlvs, _)) => Right(RouteBlindingDecryptedData(tlvs, nextBlinding))
+      }
     }
   }
 

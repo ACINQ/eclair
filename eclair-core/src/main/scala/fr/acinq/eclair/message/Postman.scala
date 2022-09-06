@@ -26,7 +26,6 @@ import fr.acinq.eclair.message.OnionMessages.ReceiveMessage
 import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.OnionMessage
-import scodec.bits.ByteVector
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
@@ -40,7 +39,7 @@ object Postman {
                          replyTo: ActorRef[OnionMessageResponse],
                          timeout: FiniteDuration) extends Command
   private case class Unsubscribe(pathId: ByteVector32) extends Command
-  private case class WrappedMessage(finalPayload: FinalPayload, pathId_opt: Option[ByteVector]) extends Command
+  private case class WrappedMessage(finalPayload: FinalPayload) extends Command
   sealed trait OnionMessageResponse
   case object NoReply extends OnionMessageResponse
   case class Response(payload: FinalPayload) extends OnionMessageResponse
@@ -49,7 +48,7 @@ object Postman {
 
   def apply(switchboard: ActorRef[Switchboard.RelayMessage]): Behavior[Command] = {
     Behaviors.setup(context => {
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ReceiveMessage](r => WrappedMessage(r.finalPayload, r.pathId_opt)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ReceiveMessage](r => WrappedMessage(r.finalPayload)))
 
       val relayMessageStatusAdapter = context.messageAdapter[MessageRelay.Status](SendingStatus)
 
@@ -60,15 +59,16 @@ object Postman {
       val sendStatusTo = new mutable.HashMap[ByteVector32, ActorRef[OnionMessageResponse]]()
 
       Behaviors.receiveMessagePartial {
-        case WrappedMessage(finalPayload, Some(pathId)) if pathId.length == 32 =>
-          val id = ByteVector32(pathId)
-          subscribed.get(id).foreach(ref => {
-            subscribed -= id
-            ref ! Response(finalPayload)
-          })
-          Behaviors.same
-        case WrappedMessage(_, _) =>
-          // ignoring message with invalid or missing pathId
+        case WrappedMessage(finalPayload) =>
+          finalPayload.pathId_opt match {
+            case Some(pathId) if pathId.length == 32 =>
+              val id = ByteVector32(pathId)
+              subscribed.get(id).foreach(ref => {
+                subscribed -= id
+                ref ! Response(finalPayload)
+              })
+            case _ => // ignoring message with invalid or missing pathId
+          }
           Behaviors.same
         case SendMessage(nextNodeId, message, None, ref, _) => // not expecting reply
           val messageId = randomBytes32()
