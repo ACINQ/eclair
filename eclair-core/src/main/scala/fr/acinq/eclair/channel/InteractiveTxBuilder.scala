@@ -324,10 +324,20 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           filterInputs(fundedTx, currentInputs, unusableInputs)
         }
       case WalletFailure(t) =>
-        log.error("could not fund interactive tx: ", t)
-        // We use a generic exception and don't send the internal error to the peer.
-        replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
-        unlockAndStop(currentInputs.map(toOutPoint).toSet ++ unusableInputs.map(_.outpoint))
+        if (previousTransactions.nonEmpty && !fundingParams.isInitiator) {
+          // We don't have enough funds to reach the desired feerate, but this is an RBF attempt that we did not initiate.
+          // It still makes sense for us to contribute whatever we're able to (by using our previous set of inputs and
+          // outputs): the final feerate will be less than what the initiator intended, but it's still better than being
+          // stuck with a low feerate transaction that won't confirm.
+          log.warn("could not fund interactive tx at {}, re-using previous inputs and outputs", fundingParams.targetFeerate)
+          val previousTx = previousTransactions.head.tx
+          stash.unstashAll(buildTx(FundingContributions(previousTx.localInputs, previousTx.localOutputs)))
+        } else {
+          log.error("could not fund interactive tx: ", t)
+          // We use a generic exception and don't send the internal error to the peer.
+          replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
+          unlockAndStop(currentInputs.map(toOutPoint).toSet ++ unusableInputs.map(_.outpoint))
+        }
       case msg: ReceiveMessage =>
         stash.stash(msg)
         Behaviors.same
@@ -606,10 +616,30 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
     }
 
-    val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, minimumWeight)
-    if (sharedTx.fees < minimumFee) {
-      log.warn("invalid interactive tx: below the target feerate (target={}, actual={})", fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, minimumWeight))
-      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+    previousTransactions.headOption match {
+      case Some(previousTx) =>
+        // This is an RBF attempt: even if our peer does not contribute to the feerate increase, we'd like to broadcast
+        // the new transaction if it has a better feerate than the previous one. This is better than being stuck with
+        // a transaction that doesn't confirm.
+        val remoteInputsUnchanged = previousTx.tx.remoteInputs.map(_.outPoint).toSet == sharedTx.remoteInputs.map(_.outPoint).toSet
+        val remoteOutputsUnchanged = previousTx.tx.remoteOutputs.map(o => TxOut(o.amount, o.pubkeyScript)).toSet == sharedTx.remoteOutputs.map(o => TxOut(o.amount, o.pubkeyScript)).toSet
+        if (remoteInputsUnchanged && remoteOutputsUnchanged) {
+          log.info("peer did not contribute to the feerate increase to {}: they used the same inputs and outputs", fundingParams.targetFeerate)
+        }
+        val previousUnsignedTx = previousTx.tx.buildUnsignedTx()
+        val previousMinimumWeight = previousUnsignedTx.weight() + previousUnsignedTx.txIn.length * minimumWitnessWeight
+        val previousFeerate = Transactions.fee2rate(previousTx.tx.fees, previousMinimumWeight)
+        val nextFeerate = Transactions.fee2rate(sharedTx.fees, minimumWeight)
+        if (nextFeerate <= previousFeerate) {
+          log.warn("invalid interactive tx: next feerate isn't greater than previous feerate (previous={}, next={})", previousFeerate, nextFeerate)
+          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+        }
+      case None =>
+        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, minimumWeight)
+        if (sharedTx.fees < minimumFee) {
+          log.warn("invalid interactive tx: below the target feerate (target={}, actual={})", fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, minimumWeight))
+          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+        }
     }
 
     // The transaction must double-spend every previous attempt, otherwise there is a risk that two funding transactions
