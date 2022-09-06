@@ -621,8 +621,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         // This is an RBF attempt: even if our peer does not contribute to the feerate increase, we'd like to broadcast
         // the new transaction if it has a better feerate than the previous one. This is better than being stuck with
         // a transaction that doesn't confirm.
-        if (previousTx.tx.remoteAmountIn == sharedTx.remoteAmountIn && previousTx.tx.remoteOutputs.map(_.amount).sum == sharedTx.remoteOutputs.map(_.amount).sum) {
-          log.info("peer did not contribute to the feerate increase to {}", fundingParams.targetFeerate)
+        val remoteInputsUnchanged = previousTx.tx.remoteInputs.map(_.outPoint).toSet == sharedTx.remoteInputs.map(_.outPoint).toSet
+        val remoteOutputsUnchanged = previousTx.tx.remoteOutputs.map(o => TxOut(o.amount, o.pubkeyScript)).toSet == sharedTx.remoteOutputs.map(o => TxOut(o.amount, o.pubkeyScript)).toSet
+        if (remoteInputsUnchanged && remoteOutputsUnchanged) {
+          log.info("peer did not contribute to the feerate increase to {}: they used the same inputs and outputs", fundingParams.targetFeerate)
         }
         val previousUnsignedTx = previousTx.tx.buildUnsignedTx()
         val previousMinimumWeight = previousUnsignedTx.weight() + previousUnsignedTx.txIn.length * minimumWitnessWeight
