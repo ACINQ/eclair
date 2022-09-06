@@ -30,8 +30,8 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshiLong, UInt64, randomBytes, randomKey}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import fr.acinq.eclair.{Logs, MilliSatoshiLong, UInt64, randomKey}
+import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
@@ -369,7 +369,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
           unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
         } else {
-          val changeOutput_opt = otherOutputs.headOption.map(txOut => TxAddOutput(fundingParams.channelId, generateSerialId(), txOut.amount, txOut.publicKeyScript))
+          val changeOutput_opt = otherOutputs.headOption.map(txOut => TxAddOutput(fundingParams.channelId, UInt64(0), txOut.amount, txOut.publicKeyScript))
           val outputs = if (fundingParams.isInitiator) {
             val initiatorChangeOutput = changeOutput_opt match {
               case Some(changeOutput) if fundingParams.localAmount == 0.sat =>
@@ -380,7 +380,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
               case None => Nil
             }
             // The initiator is responsible for adding the shared output.
-            val fundingOutput = TxAddOutput(fundingParams.channelId, generateSerialId(), fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)
+            val fundingOutput = TxAddOutput(fundingParams.channelId, UInt64(0), fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)
             fundingOutput +: initiatorChangeOutput
           } else {
             // The protocol only requires the non-initiator to pay the fees for its inputs and outputs, discounting the
@@ -399,7 +399,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           log.info("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
           // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this session.
           unlock(unusableInputs.map(_.outpoint))
-          stash.unstashAll(buildTx(FundingContributions(inputDetails.usableInputs, outputs)))
+          // The initiator's serial IDs must use even values and the non-initiator odd values.
+          val serialIdParity = if (fundingParams.isInitiator) 0 else 1
+          val txAddInputs = inputDetails.usableInputs.zipWithIndex.map { case (input, i) => input.copy(serialId = UInt64(2 * i + serialIdParity)) }
+          val txAddOutputs = outputs.zipWithIndex.map { case (output, i) => output.copy(serialId = UInt64(2 * (i + txAddInputs.length) + serialIdParity)) }
+          stash.unstashAll(buildTx(FundingContributions(txAddInputs, txAddOutputs)))
         }
       case inputDetails: InputDetails if inputDetails.unusableInputs.nonEmpty =>
         // Some wallet inputs are unusable, so we must fund again to obtain usable inputs instead.
@@ -440,7 +444,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           // Wallet input must be a native segwit input.
           Left(UnusableInput(txIn.outPoint))
         } else {
-          Right(TxAddInput(fundingParams.channelId, generateSerialId(), previousTx, txIn.outPoint.index, txIn.sequence))
+          Right(TxAddInput(fundingParams.channelId, UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
         }
       })
     }
@@ -834,15 +838,6 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     } else {
       val dummyTx = Transaction(2, inputs.toSeq.map(o => TxIn(o, Nil, 0)), Nil, 0)
       wallet.rollback(dummyTx)
-    }
-  }
-
-  private def generateSerialId(): UInt64 = {
-    // The initiator must use even values and the non-initiator odd values.
-    if (fundingParams.isInitiator) {
-      UInt64(randomBytes(8) & hex"fffffffffffffffe")
-    } else {
-      UInt64(randomBytes(8) | hex"0000000000000001")
     }
   }
 
