@@ -97,7 +97,8 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         remoteInit: Init,
                                         channelFlags: ChannelFlags,
                                         channelConfig: ChannelConfig,
-                                        channelType: SupportedChannelType) {
+                                        channelType: SupportedChannelType,
+                                        channelOrigin: ChannelOrigin = ChannelOrigin.Default) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
 }
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
@@ -584,5 +585,11 @@ case class ChannelFlags(announceChannel: Boolean) {
 object ChannelFlags {
   val Private: ChannelFlags = ChannelFlags(announceChannel = false)
   val Public: ChannelFlags = ChannelFlags(announceChannel = true)
+}
+
+/** Information about what triggered the opening of the channel */
+sealed trait ChannelOrigin
+object ChannelOrigin {
+  case object Default extends ChannelOrigin
 }
 // @formatter:on
