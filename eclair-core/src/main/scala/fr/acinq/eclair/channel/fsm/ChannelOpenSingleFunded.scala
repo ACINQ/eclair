@@ -34,7 +34,6 @@ import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, Cha
 import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, randomKey, toLongId}
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -166,8 +165,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, fundingSatoshis, _, commitTxFeerate, fundingTxFeerate, pushMsat_opt, localParams, _, remoteInit, _, channelConfig, channelType), open)) =>
-      Helpers.validateParamsSingleFundedFunder(nodeParams, channelType, localParams.initFeatures, remoteInit.features, open, accept) match {
+    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(init, open)) =>
+      Helpers.validateParamsSingleFundedFunder(nodeParams, init.channelType, init.localParams.initFeatures, init.remoteInit.features, open, accept) match {
         case Left(t) =>
           channelOpenReplyToUser(Left(LocalError(t)))
           handleLocalError(t, d, Some(accept))
@@ -185,14 +184,14 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             paymentBasepoint = accept.paymentBasepoint,
             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
             htlcBasepoint = accept.htlcBasepoint,
-            initFeatures = remoteInit.features,
+            initFeatures = init.remoteInit.features,
             shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           log.info("remote will use fundingMinDepth={}", accept.minimumDepth)
-          val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
+          val localFundingPubkey = keyManager.fundingPublicKey(init.localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
-          wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeerate).pipeTo(self)
-          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat_opt.getOrElse(0 msat), commitTxFeerate, accept.firstPerCommitmentPoint, channelConfig, channelFeatures, open)
+          wallet.makeFundingTx(fundingPubkeyScript, init.fundingAmount, init.fundingTxFeerate).pipeTo(self)
+          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(init.temporaryChannelId, init.localParams, remoteParams, init.fundingAmount, init.pushAmount_opt.getOrElse(0 msat), init.commitTxFeerate, accept.firstPerCommitmentPoint, init.channelConfig, channelFeatures, open)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
