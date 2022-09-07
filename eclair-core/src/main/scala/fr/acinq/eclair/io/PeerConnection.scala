@@ -247,7 +247,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
             // we use the pong size to correlate between pings and pongs
             val latency = TimestampMilli.now() - timestamp
-			context.system.eventStream.publish(PongReceived(d.remoteNodeId, latency))
+            context.system.eventStream.publish(PongReceived(d.remoteNodeId, latency))
             log.debug(s"received pong with latency=$latency")
             cancelTimer(PingTimeout.toString())
           // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
