@@ -102,7 +102,7 @@ object SwapInReceiver {
 }
 
 private class SwapInReceiver(request: SwapInRequest, shortChannelId: ShortChannelId, nodeParams: NodeParams, paymentInitiator: actor.ActorRef, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, implicit val context: ActorContext[SwapCommands.SwapCommand]) {
-  val protocolVersion = 1
+  val protocolVersion = 2
   val noAsset = ""
   implicit val timeout: Timeout = 30 seconds
 
@@ -130,11 +130,10 @@ private class SwapInReceiver(request: SwapInRequest, shortChannelId: ShortChanne
     receiveSwapMessage[SendAgreementMessages](context, "sendAgreement") {
       case SwapMessageReceived(openingTxBroadcasted: OpeningTxBroadcasted) if agreement.protocolVersion == request.protocolVersion && agreement.swapId == swapId =>
         awaitOpeningTxConfirmed(agreement, openingTxBroadcasted)
-      case CancelReceived(c) if c.swapId == swapId => swapCanceled(PeerCanceled(swapId))
-      case CancelReceived(_) => Behaviors.same
+      case SwapMessageReceived(cancel: CancelSwap) if cancel.swapId == swapId => swapCanceled(PeerCanceled(swapId))
+      case SwapMessageReceived(m) => sendCoopClose(s"Invalid message received during sendAgreement: $m")
       case StateTimeout => swapCanceled(InternalError(swapId, "timeout during sendAgreement"))
       case ForwardShortIdFailureAdapter(_) => swapCanceled(InternalError(swapId, s"could not forward swap agreement to peer."))
-      case SwapMessageReceived(m) => sendCoopClose(s"Invalid message received during sendAgreement: $m")
       case CancelRequested(replyTo) => replyTo ! UserCanceled(swapId)
         sendCoopClose(s"Cancel requested by user after sending agreement.")
       case GetStatus(replyTo) => replyTo ! SwapInStatus(swapId, context.self.toString, "sendAgreement", ByteVector32.Zeroes, request, Some(agreement))
@@ -148,9 +147,8 @@ private class SwapInReceiver(request: SwapInRequest, shortChannelId: ShortChanne
 
     receiveSwapMessage[AwaitOpeningTxConfirmedMessages](context, "awaitOpeningTxConfirmed") {
       case OpeningTxConfirmed(opening) => validateOpeningTx(agreement, openingTxBroadcasted, opening.tx)
+      case SwapMessageReceived(cancel: CancelSwap) if cancel.swapId == swapId => swapCanceled(PeerCanceled(swapId))
       case SwapMessageReceived(m) => sendCoopClose(s"Invalid message received during awaitOpeningTxConfirmed: $m")
-      case CancelReceived(c) if c.swapId == swapId => swapCanceled(PeerCanceled(swapId))
-      case CancelReceived(_) => Behaviors.same
       case InvoiceExpired => sendCoopClose("Timeout waiting for opening tx to confirm.")
       case CancelRequested(replyTo) => replyTo ! UserCanceled(swapId)
         sendCoopClose(s"Cancel requested by user while waiting for opening tx to confirm.")

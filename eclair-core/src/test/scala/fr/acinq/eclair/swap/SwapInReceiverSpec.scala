@@ -51,7 +51,7 @@ import scala.concurrent.duration._
 // with BitcoindService
 case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike with BeforeAndAfterAll with Logging {
   override implicit val timeout: Timeout = Timeout(30 seconds)
-  val protocolVersion = 1
+  val protocolVersion = 2
   val noAsset = ""
   val network: String = NodeParams.chainFromHash(TestConstants.Bob.nodeParams.chainHash)
   val amount: Satoshi = 1000 sat

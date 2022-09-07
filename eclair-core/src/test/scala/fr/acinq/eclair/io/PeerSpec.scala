@@ -593,7 +593,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
     connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
 
-    val protocolVersion = 1
+    val protocolVersion = 2
     val swapId = hex"dd650741ee45fbad5df209bfb5aea9537e2e6d946cc7ece3b4492bbae0732634"
     val premium = 10
     val responderPubkey = randomKey().publicKey

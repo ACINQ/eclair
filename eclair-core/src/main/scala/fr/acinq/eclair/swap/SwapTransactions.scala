@@ -44,7 +44,7 @@ object SwapTransactions {
   def makeSwapOpeningInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, amount: Satoshi, makerPubkey: PublicKey, takerPubkey: PublicKey, paymentHash: ByteVector32): InputInfo = {
     val redeemScript = swapOpening(makerPubkey, takerPubkey, paymentHash)
     val openingTxOut = makeSwapOpeningTxOut(amount, makerPubkey, takerPubkey, paymentHash)
-    InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), openingTxOut, write(redeemScript))
+    InputInfo(OutPoint(fundingTxId.reverse, fundingTxOutputIndex), openingTxOut, write(redeemScript))
   }
 
   def makeSwapOpeningTxOut(amount: Satoshi, makerPubkey: PublicKey, takerPubkey: PublicKey, paymentHash: ByteVector32): TxOut = {
@@ -73,7 +73,7 @@ object SwapTransactions {
 
     val tx = Transaction(
       version = 2,
-      txIn = TxIn(OutPoint(openingTxId, openingOutIndex), ByteVector.empty, 0) :: Nil,
+      txIn = TxIn(OutPoint(openingTxId.reverse, openingOutIndex), ByteVector.empty, 0) :: Nil,
       txOut = TxOut(0 sat, pay2wpkh(takerPrivkey.publicKey)) :: Nil,
       lockTime = 0)
 
@@ -104,7 +104,7 @@ object SwapTransactions {
 
     val tx = Transaction(
       version = 2,
-      txIn = TxIn(OutPoint(openingTxId, openingOutIndex), ByteVector.empty, 0) :: Nil,
+      txIn = TxIn(OutPoint(openingTxId.reverse, openingOutIndex), ByteVector.empty, 0) :: Nil,
       txOut = TxOut(0 sat, pay2wpkh(makerPrivkey.publicKey)) :: Nil,
       lockTime = 0)
 
@@ -140,7 +140,7 @@ object SwapTransactions {
 
     val tx = Transaction(
       version = 2,
-      txIn = TxIn(OutPoint(openingTxId, openingOutIndex), ByteVector.empty, claimByCsvDelta.toInt) :: Nil,
+      txIn = TxIn(OutPoint(openingTxId.reverse, openingOutIndex), ByteVector.empty, claimByCsvDelta.toInt) :: Nil,
       txOut = TxOut(0 sat, pay2wpkh(makerPrivkey.publicKey)) :: Nil,
       lockTime = 0)
 

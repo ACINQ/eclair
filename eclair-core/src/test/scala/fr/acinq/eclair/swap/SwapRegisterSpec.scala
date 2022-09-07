@@ -23,10 +23,9 @@ import akka.actor.typed.scaladsl.adapter._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchTxConfirmed, WatchTxConfirmedTriggered}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
 import fr.acinq.eclair.channel.Register.Forward
@@ -38,7 +37,7 @@ import fr.acinq.eclair.swap.SwapRegister.{MessageReceived, SwapInRequested, Swap
 import fr.acinq.eclair.swap.SwapResponses.{Response, SwapOpened}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, NodeParams, ShortChannelId, TestConstants, TimestampMilli, ToMilliSatoshiConversion, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, NodeParams, ShortChannelId, TestConstants, TimestampMilli, ToMilliSatoshiConversion, randomBytes32}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.matchers.should.Matchers
@@ -50,7 +49,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with BeforeAndAfterAll with Matchers with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
   override implicit val timeout: Timeout = Timeout(30 seconds)
-  val protocolVersion = 1
+  val protocolVersion = 2
   val noAsset = ""
   val network: String = NodeParams.chainFromHash(TestConstants.Alice.nodeParams.chainHash)
   val amount: Satoshi = 1000 sat
@@ -98,9 +97,6 @@ class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val savedData: Set[SwapInSenderData] = Set(SwapInSenderData(channelId, swapInRequest, swapInAgreement, invoice, openingTxBroadcasted))
     val swapRegister = testKit.spawn(Behaviors.monitor(monitor.ref, SwapRegister(TestConstants.Alice.nodeParams, paymentHandler.ref.toClassic, watcher.ref, register.ref.toClassic, wallet, savedData)), "SwapRegister")
 
-    // SwapInSender confirms opening tx on-chain
-    watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(1), 0, Transaction(2, Seq(), Seq(), 0))
-
     // wait for SwapInSender to subscribe to PaymentEventReceived messages
     swapEvents.expectNoMessage()
 
@@ -143,9 +139,8 @@ class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     swapRegister ! MessageReceived(SwapInAgreement(swapInRequest.message.protocolVersion, swapInRequest.message.swapId, bobPayoutPubkey.toString(), premium))
     monitor.expectMessageType[MessageReceived]
 
-    // SwapInSender confirms opening tx on-chain
-    val transactionPublishedEvent = swapEvents.expectMessageType[TransactionPublished]
-    watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(1), 0, transactionPublishedEvent.tx)
+    // SwapInSender confirms opening tx published
+    swapEvents.expectMessageType[TransactionPublished]
 
     // Alice:OpeningTxBroadcasted -> Bob
     val openingTxBroadcasted = register.expectMessageType[Forward[OpeningTxBroadcasted]]

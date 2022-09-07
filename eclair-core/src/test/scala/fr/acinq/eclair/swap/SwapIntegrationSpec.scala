@@ -12,7 +12,7 @@ import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
 import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentSent}
 import fr.acinq.eclair.swap.SwapEvents._
-import fr.acinq.eclair.swap.SwapRegister.{ListPendingSwaps, SwapInRequested}
+import fr.acinq.eclair.swap.SwapRegister.{CancelSwapRequested, ListPendingSwaps, SwapInRequested}
 import fr.acinq.eclair.swap.SwapResponses.{Status, SwapOpened}
 import fr.acinq.eclair.swap.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.swap.SwapTransactions.claimByInvoiceTxWeight
@@ -93,10 +93,8 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     bob.swapRegister ! SwapInRequested(bobSwap.cli.ref, amount, channelId)
     val swapId = bobSwap.cli.expectMsgType[SwapOpened].swapId
 
-    // swap in sender (bob) confirms opening tx on-chain
+    // swap in sender (bob) confirms opening tx published
     val openingTx = bobSwap.swapEvents.expectMsgType[TransactionPublished].tx
-    bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(openingBlock, 0, openingTx)
-    assert(openingTx.txOut.head.amount == amount + premium)
 
     // bob has status of 1 pending swap
     bob.swapRegister ! ListPendingSwaps(bobSwap.cli.ref)
@@ -106,12 +104,13 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
     // swap in receiver (alice) confirms opening tx on-chain
     alice.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(openingBlock, 0, openingTx)
+    assert(openingTx.txOut.head.amount == amount + premium)
 
     // swap in receiver (alice) sends a payment of `amount` to swap in sender (bob)
     assert(aliceSwap.paymentEvents.expectMsgType[PaymentSent].recipientAmount === toMilliSatoshi(amount))
     assert(bobSwap.paymentEvents.expectMsgType[PaymentReceived].amount === toMilliSatoshi(amount))
 
-    // swap in receiver (alice) confirms claim-by-invoice tx on-chain
+    // swap in receiver (alice) confirms claim-by-invoice tx published
     val claimTx = aliceSwap.swapEvents.expectMsgType[TransactionPublished].tx
     assert(claimTx.txOut.head.amount == amount) // added on-chain premium consumed as tx fee
     alice.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(claimByInvoiceBlock, 0, claimTx)
@@ -139,9 +138,8 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     bob.swapRegister ! SwapInRequested(bobSwap.cli.ref, amount, channelId)
     val swapId = bobSwap.cli.expectMsgType[SwapOpened].swapId
 
-    // swap in sender (bob) confirms opening tx on-chain
+    // swap in sender (bob) confirms opening tx published
     val openingTx = bobSwap.swapEvents.expectMsgType[TransactionPublished].tx
-    bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(openingBlock, 0, openingTx)
     assert(openingTx.txOut.head.amount == amount + premium)
 
     // bob has status of 1 pending swap
@@ -159,7 +157,10 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     // swap in receiver (alice) confirms opening tx on-chain
     alice.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(openingBlock, 0, openingTx)
 
-    // swap in sender (bob) confirms claim-by-coop tx on-chain
+    // swap in sender (bob) confirms opening tx on-chain before publishing claim-by-coop tx
+    bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(openingBlock, 0, openingTx)
+
+    // swap in sender (bob) confirms claim-by-coop tx published and confirmed on-chain
     val claimTx = bobSwap.swapEvents.expectMsgType[TransactionPublished].tx
     bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(claimByCoopBlock, 0, claimTx)
 
@@ -192,15 +193,12 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     bob.swapRegister ! SwapInRequested(bobSwap.cli.ref, amount, channelId)
     val swapId = bobSwap.cli.expectMsgType[SwapOpened].swapId
 
-    // swap in sender (bob) confirms opening tx on-chain
+    // swap in sender (bob) confirms opening tx published
     val openingTx = bobSwap.swapEvents.expectMsgType[TransactionPublished].tx
+    assert(openingTx.txOut.head.amount == amount + premium)
 
     //  swap in receiver (alice) stops unexpectedly
     alice.swapRegister ! Kill
-
-    // opening tx confirmed
-    bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(openingBlock, 0, openingTx)
-    assert(openingTx.txOut.head.amount == amount + premium)
 
     // bob has status of 1 pending swap
     bob.swapRegister ! ListPendingSwaps(bobSwap.cli.ref)
@@ -209,14 +207,51 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     assert(bobStatus.head.swapId === swapId)
 
     // opening tx buried by csv delay
-    bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(claimByCsvBlock, 0, openingTx)
+    bob.watcher.expectMsgType[WatchFundingDeeplyBuried].replyTo ! WatchFundingDeeplyBuriedTriggered(claimByCsvBlock, 0, openingTx)
 
-    // swap in sender (bob) confirms claim-by-csv tx on-chain if Alice does not send payment
+    // swap in sender (bob) confirms claim-by-csv tx published and confirmed if Alice does not send payment
     val claimTx = bobSwap.swapEvents.expectMsgType[TransactionPublished].tx
     bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(claimByCsvBlock, 0, claimTx)
 
     // swap in sender (bob) confirms claim-by-csv
     assert(bobSwap.swapEvents.expectMsgType[ClaimByCsvConfirmed].swapId == swapId)
+  }
+
+  test("swap in - claim by coop, receiver cancels while waiting for opening tx to confirm") { f =>
+    import f._
+
+    val (aliceSwap, bobSwap) = swapProbes(alice, bob)
+    val channelId = connectNodes(alice, bob)
+
+    // bob must have enough on-chain balance to send
+    val amount = Satoshi(1000)
+    val feeRatePerKw = alice.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = alice.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
+    val premium = (feeRatePerKw * claimByInvoiceTxWeight / 1000).toLong.sat
+    val openingBlock = BlockHeight(1)
+    val claimByCoopBlock = claimByCsvDelta.toCltvExpiry(openingBlock).blockHeight
+    bob.wallet.confirmedBalance = amount + premium
+
+    // swap in sender (bob) requests a swap in with swap in receiver (alice)
+    bob.swapRegister ! SwapInRequested(bobSwap.cli.ref, amount, channelId)
+    val swapId = bobSwap.cli.expectMsgType[SwapOpened].swapId
+
+    // swap in sender (bob) confirms opening tx is published, but NOT yet confirmed on-chain
+    val openingTx = bobSwap.swapEvents.expectMsgType[TransactionPublished].tx
+
+    //  swap in receiver (alice) sends CoopClose before the opening tx has been confirmed on-chain
+    alice.swapRegister ! CancelSwapRequested(aliceSwap.cli.ref, swapId)
+    val claimByCoopEvent = aliceSwap.swapEvents.expectMsgType[ClaimByCoopOffered]
+    assert(claimByCoopEvent.swapId == swapId)
+
+    // swap in sender (bob) watches for opening tx to be confirmed in a block before publishing the claim by coop tx
+    bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(openingBlock, 0, openingTx)
+
+    // swap in sender (bob) confirms claim by coop tx published and confirmed on-chain
+    val claimByCoopTx = bobSwap.swapEvents.expectMsgType[TransactionPublished].tx
+    bob.watcher.expectMsgType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(claimByCoopBlock, 0, claimByCoopTx)
+
+    // swap in sender (bob) confirms claim-by-coop
+    assert(bobSwap.swapEvents.expectMsgType[ClaimByCoopConfirmed].swapId == swapId)
   }
 
 }

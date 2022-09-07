@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchOutputSpentTriggered, WatchTxConfirmed, WatchTxConfirmedTriggered}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{CMD_GET_CHANNEL_DATA, ChannelData, RES_GET_CHANNEL_DATA, Register}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
@@ -55,12 +55,11 @@ object SwapHelpers {
     context.messageAdapter[Register.ForwardFailure[CMD_GET_CHANNEL_DATA]](ChannelDataFailure)
 
   def receiveSwapMessage[B <: SwapCommand : ClassTag](context: ActorContext[SwapCommand], stateName: String)(f: B => Behavior[SwapCommand]): Behavior[SwapCommand] = {
-
+    context.log.debug(s"$stateName: waiting for messages, context: ${context.self.toString}")
     Behaviors.receiveMessage {
-      case m: B => context.log.debug(s"processing message ${m.getClass.getSimpleName} in ${context.self.toString} at state $stateName")
+      case m: B => context.log.debug(s"$stateName: processing message $m")
         f(m)
-      case m =>
-        context.log.error(s"received unhandled message in ${context.self.toString} at state $stateName of ${m.getClass.getSimpleName}")
+      case m => context.log.error(s"$stateName: received unhandled message $m")
         Behaviors.same
     }
   }
@@ -69,6 +68,9 @@ object SwapHelpers {
 
   def watchForTxConfirmation(watcher: ActorRef[ZmqWatcher.Command])(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: ByteVector32, minDepth: Long): Unit =
     watcher ! WatchTxConfirmed(replyTo, txId, minDepth)
+
+  def watchForTxCsvConfirmation(watcher: ActorRef[ZmqWatcher.Command])(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: ByteVector32, minDepth: Long): Unit =
+    watcher ! WatchFundingDeeplyBuried(replyTo, txId, minDepth)
 
   def watchForOutputSpent(watcher: ActorRef[ZmqWatcher.Command])(replyTo: ActorRef[WatchOutputSpentTriggered], txId: ByteVector32, outputIndex: Int): Unit =
     watcher ! WatchOutputSpent(replyTo, txId, outputIndex, Set())
@@ -107,7 +109,8 @@ object SwapHelpers {
   def commitOpening(wallet: OnChainWallet)(swapId: String, invoice: Bolt11Invoice, fundingResponse: MakeFundingTxResponse, desc: String)(implicit context: ActorContext[SwapCommand]): Unit = {
     context.system.eventStream ! EventStream.Publish(TransactionPublished(swapId, fundingResponse.fundingTx, desc))
     context.pipeToSelf(wallet.commit(fundingResponse.fundingTx)) {
-      case Success(true) => OpeningTxCommitted(invoice, OpeningTxBroadcasted(swapId, invoice.toString, fundingResponse.fundingTx.txid.toHex, fundingResponse.fundingTxOutputIndex, ""))
+      case Success(true) => context.log.debug(s"opening tx ${fundingResponse.fundingTx.txid} published for swap $swapId")
+        OpeningTxCommitted(invoice, OpeningTxBroadcasted(swapId, invoice.toString, fundingResponse.fundingTx.txid.toHex, fundingResponse.fundingTxOutputIndex, ""))
       case Success(false) => OpeningTxFailed("could not publish swap open tx", Some(fundingResponse))
       case Failure(t) => OpeningTxFailed(s"failed to commit swap open tx, exception: $t", Some(fundingResponse))
     }
@@ -116,14 +119,17 @@ object SwapHelpers {
   def commitClaim(wallet: OnChainWallet)(swapId: String, txInfo: TransactionWithInputInfo, desc: String)(implicit context: ActorContext[SwapCommand]): Unit =
     checkSpendable(txInfo) match {
       case Success(_) =>
-        // publish claim by coop tx
+        // publish claim tx
         context.system.eventStream ! EventStream.Publish(TransactionPublished(swapId, txInfo.tx, desc))
         context.pipeToSelf(wallet.commit(txInfo.tx)) {
           case Success(true) => ClaimTxCommitted
-          case Success(false) => ClaimTxFailed("could not publish")
-          case Failure(t) => ClaimTxFailed(s"failed to commit, exception: $t")
+          case Success(false) => context.log.error(s"swap $swapId claim tx commit did not succeed, $txInfo")
+            ClaimTxFailed(s"publish did not succeed $txInfo")
+          case Failure(t) => context.log.error(s"swap $swapId claim tx commit failed, $txInfo")
+            ClaimTxFailed(s"failed to commit $txInfo, exception: $t")
         }
-      case Failure(e) => context.self ! ClaimTxInvalid(e)
+      case Failure(e) => context.log.error(s"swap $swapId claim tx is invalid: $e")
+        context.self ! ClaimTxInvalid(e)
     }
 
   def rollback(wallet: OnChainWallet)(error: String, tx: Transaction)(implicit context: ActorContext[SwapCommand]): Unit =

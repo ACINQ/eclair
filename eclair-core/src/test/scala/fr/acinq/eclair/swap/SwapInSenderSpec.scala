@@ -49,7 +49,7 @@ import scala.concurrent.{ExecutionContext, Future}
 // with BitcoindService
 case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike with BeforeAndAfterAll with Logging {
   override implicit val timeout: Timeout = Timeout(30 seconds)
-  val protocolVersion = 1
+  val protocolVersion = 2
   val noAsset = ""
   val network: String = Block.RegtestGenesisBlock.hash.toString()
   val amount: Satoshi = 1000 sat
@@ -104,9 +104,6 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     val swapData = SwapInSenderData(channelId, request, agreement, invoice, openingTxBroadcasted)
     swapInSender ! RestoreSwapInSender(swapData)
 
-    // SwapInSender confirms opening tx on-chain
-    watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(1), 0, Transaction(2, Seq(), Seq(), 0))
-
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[Forward[OpeningTxBroadcasted]]
 
@@ -147,13 +144,8 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     // SwapInReceiver: SwapInAgreement -> SwapInSender
     swapInSender ! SwapMessageReceived(SwapInAgreement(swapInRequest.message.protocolVersion, swapInRequest.message.swapId, takerPubkey.toString(), premium))
 
-    // SwapInSender confirms opening tx on-chain
+    // SwapInSender publishes opening tx on-chain
     val openingTx = swapEvents.expectMessageType[TransactionPublished].tx
-    watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(1), 0, openingTx)
-
-    // SwapInSender reports status of awaiting payment
-    swapInSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "awaitClaimPayment")
 
     // SwapInSender:OpeningTxBroadcasted -> SwapInReceiver
     val openingTxBroadcasted = register.expectMessageType[Forward[OpeningTxBroadcasted]]
@@ -161,6 +153,10 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
 
     // wait for SwapInSender to subscribe to PaymentEventReceived messages
     swapEvents.expectNoMessage()
+
+    // SwapInSender reports status of awaiting payment
+    swapInSender ! GetStatus(userCli.ref)
+    assert(userCli.expectMessageType[SwapInStatus].behavior == "awaitClaimPayment")
 
     // SwapInSender receives a payment with the corresponding payment hash
     // TODO: convert from ShortChannelId to ByteVector32
@@ -183,9 +179,6 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     val swapData = SwapInSenderData(channelId, request, agreement, invoice, openingTxBroadcasted)
     swapInSender ! RestoreSwapInSender(swapData)
 
-    // SwapInSender confirms opening tx on-chain
-    watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(1), 0, Transaction(2, Seq(), Seq(), 0))
-
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[Forward[OpeningTxBroadcasted]]
 
@@ -194,7 +187,9 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
 
     // SwapInReceiver: CoopClose -> SwapInSender
     swapInSender ! SwapMessageReceived(CoopClose(swapId, "oops", takerPrivkey.toHex))
-    watcher.expectMessageType[WatchTxConfirmed]
+
+    // SwapInSender confirms that opening tx on-chain
+    watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(1), 0, Transaction(2, Seq(), Seq(), 0))
 
     // SwapInSender reports status of awaiting claim by cooperative close tx to confirm
     swapInSender ! GetStatus(userCli.ref)
@@ -221,9 +216,6 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     val swapData = SwapInSenderData(channelId, request, agreement, invoice, openingTxBroadcasted)
     swapInSender ! RestoreSwapInSender(swapData)
 
-    // watch for and trigger that the opening tx has been confirmed on-chain
-    watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(0), 0, Transaction(2, Seq(), Seq(), 0))
-
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[Forward[OpeningTxBroadcasted]]
 
@@ -231,7 +223,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     swapEvents.expectNoMessage()
 
     // watch for and trigger that the opening tx has been buried by csv delay blocks
-    watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(0), scriptOut.toInt, Transaction(2, Seq(), Seq(), 0))
+    watcher.expectMessageType[WatchFundingDeeplyBuried].replyTo ! WatchFundingDeeplyBuriedTriggered(BlockHeight(0), scriptOut.toInt, Transaction(2, Seq(), Seq(), 0))
 
     // SwapInSender reports status of awaiting claim by csv tx to confirm
     swapInSender ! GetStatus(userCli.ref)

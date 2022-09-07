@@ -50,6 +50,7 @@ class SwapTransactionsSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
   val paymentPreimage: ByteVector32 = randomBytes32()
   val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
   val amount: Satoshi = 30000 sat
+  val premium: Satoshi = 150 sat
   val openingTxId: ByteVector32 = randomBytes32()
   val openingTxOut: Int = 0
   val claimInput: Transactions.InputInfo = makeSwapOpeningInputInfo(openingTxId, openingTxOut, amount, makerRefundPriv.publicKey, takerPaymentPriv.publicKey, paymentHash)
@@ -83,22 +84,22 @@ class SwapTransactionsSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val f = createFixture()
     import f._
 
-    val swapTxOut = makeSwapOpeningTxOut(amount, makerRefundPriv.publicKey, takerPaymentPriv.publicKey, paymentHash)
-    wallet.makeFundingTx(swapTxOut.publicKeyScript, amount, feeratePerKw).pipeTo(probe.ref)
+    val swapTxOut = makeSwapOpeningTxOut(amount + premium, makerRefundPriv.publicKey, takerPaymentPriv.publicKey, paymentHash)
+    wallet.makeFundingTx(swapTxOut.publicKeyScript, amount + premium, feeratePerKw).pipeTo(probe.ref)
     val response = probe.expectMsgType[MakeFundingTxResponse]
     val openingTx = response.fundingTx
     val openingTxOut = response.fundingTxOutputIndex
-    val inputInfo = makeSwapOpeningInputInfo(openingTx.hash, openingTxOut, amount, makerRefundPriv.publicKey, takerPaymentPriv.publicKey, paymentHash)
+    val inputInfo = makeSwapOpeningInputInfo(openingTx.txid, openingTxOut, amount + premium, makerRefundPriv.publicKey, takerPaymentPriv.publicKey, paymentHash)
 
-    val swapClaimByInvoiceTx = makeSwapClaimByInvoiceTx(amount, makerRefundPriv.publicKey, takerPaymentPriv, paymentPreimage, feeratePerKw, openingTx.hash, openingTxOut)
+    val swapClaimByInvoiceTx = makeSwapClaimByInvoiceTx(amount + premium, makerRefundPriv.publicKey, takerPaymentPriv, paymentPreimage, feeratePerKw, openingTx.txid, openingTxOut)
     assert(swapClaimByInvoiceTx.txIn.head.sequence == 0)
     assert(checkSpendable(SwapClaimByInvoiceTx(inputInfo, swapClaimByInvoiceTx)).isSuccess)
 
-    val swapClaimByCoopTx = makeSwapClaimByCoopTx(amount, makerRefundPriv, takerPaymentPriv, paymentHash, feeratePerKw, openingTx.hash, openingTxOut)
+    val swapClaimByCoopTx = makeSwapClaimByCoopTx(amount + premium, makerRefundPriv, takerPaymentPriv, paymentHash, feeratePerKw, openingTx.txid, openingTxOut)
     assert(swapClaimByCoopTx.txIn.head.sequence == 0)
     assert(checkSpendable(SwapClaimByCoopTx(inputInfo, swapClaimByCoopTx)).isSuccess)
 
-    val swapClaimByCsvTx = makeSwapClaimByCsvTx(amount, makerRefundPriv, takerPaymentPriv.publicKey, paymentHash, feeratePerKw, openingTx.hash, openingTxOut)
+    val swapClaimByCsvTx = makeSwapClaimByCsvTx(amount + premium, makerRefundPriv, takerPaymentPriv.publicKey, paymentHash, feeratePerKw, openingTx.txid, openingTxOut)
     assert(swapClaimByCsvTx.txIn.head.sequence == 1008)
     assert(checkSpendable(SwapClaimByCsvTx(inputInfo, swapClaimByCsvTx)).isSuccess)
   }
