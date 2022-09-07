@@ -34,10 +34,7 @@ object LightningMessageCodecs {
     { features => features.toByteVector }
   )
 
-  val lengthPrefixedFeaturesCodec: Codec[Features[Feature]] = varsizebinarydata.xmap[Features[Feature]](
-    { bytes => Features(bytes) },
-    { features => features.toByteVector }
-  )
+  val lengthPrefixedFeaturesCodec: Codec[Features[Feature]] = variableSizeBytes(uint16, featuresCodec)
 
   val initFeaturesCodec: Codec[Features[InitFeature]] = lengthPrefixedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
 
