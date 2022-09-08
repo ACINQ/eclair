@@ -25,7 +25,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, UInt64, randomBytes32, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
@@ -107,7 +107,7 @@ object IncomingPaymentPacket {
    * @param privateKey this node's private key
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
-  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPaymentPacket] = {
+  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey, features: Features[Feature])(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPaymentPacket] = {
     // We first derive the decryption key used to peel the onion.
     val outerOnionDecryptionKey = add.blinding_opt match {
       case Some(blinding) => Sphinx.RouteBlinding.derivePrivateKey(privateKey, blinding)
@@ -116,8 +116,9 @@ object IncomingPaymentPacket {
     decryptOnion(add.paymentHash, outerOnionDecryptionKey, add.onionRoutingPacket).flatMap {
       case DecodedOnionPacket(payload, Some(nextPacket)) =>
         payload.get[OnionPaymentPayloadTlv.EncryptedRecipientData] match {
-          case Some(OnionPaymentPayloadTlv.EncryptedRecipientData(encryptedRecipientData)) =>
-            decryptEncryptedRecipientData(add, privateKey, payload, encryptedRecipientData).flatMap {
+          case Some(_) if !features.hasFeature(Features.RouteBlinding) => Left(InvalidOnionPayload(UInt64(10), 0))
+          case Some(encrypted) =>
+            decryptEncryptedRecipientData(add, privateKey, payload, encrypted.data).flatMap {
               case DecodedEncryptedRecipientData(blindedPayload, nextBlinding) =>
                 validateBlindedChannelRelayPayload(add, payload, blindedPayload, nextBlinding, nextPacket)
             }
@@ -127,8 +128,9 @@ object IncomingPaymentPacket {
         }
       case DecodedOnionPacket(payload, None) =>
         payload.get[OnionPaymentPayloadTlv.EncryptedRecipientData] match {
-          case Some(OnionPaymentPayloadTlv.EncryptedRecipientData(encryptedRecipientData)) =>
-            decryptEncryptedRecipientData(add, privateKey, payload, encryptedRecipientData).flatMap {
+          case Some(_) if !features.hasFeature(Features.RouteBlinding) => Left(InvalidOnionPayload(UInt64(10), 0))
+          case Some(encrypted) =>
+            decryptEncryptedRecipientData(add, privateKey, payload, encrypted.data).flatMap {
               case DecodedEncryptedRecipientData(blindedPayload, _) => validateBlindedFinalPayload(add, payload, blindedPayload)
             }
           case None =>
