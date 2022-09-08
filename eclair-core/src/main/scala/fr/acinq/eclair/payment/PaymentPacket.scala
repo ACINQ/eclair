@@ -135,9 +135,7 @@ object IncomingPaymentPacket {
             decryptEncryptedRecipientData(add, privateKey, payload, encryptedRecipientData).flatMap {
               case DecodedEncryptedRecipientData(blindedPayload, _) =>
                 // TODO: receiving through blinded routes is not supported yet.
-                PaymentOnion.BlindedFinalPayload.validate(payload, blindedPayload).left.map(_.failureMessage).flatMap(_ =>
-                  Left(InvalidOnionPayload(UInt64(12), 0))
-                )
+                PaymentOnion.BlindedFinalPayload.validate(payload, blindedPayload).left.map(_.failureMessage).flatMap(_ => Left(InvalidOnionPayload(UInt64(12), 0)))
             }
           case None if add.blinding_opt.isDefined => Left(InvalidOnionPayload(UInt64(12), 0))
           case None =>

@@ -167,11 +167,9 @@ object OnionMessages {
   }
 
   private def validateRelayPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey, nextPacket: OnionRoutingPacket): Action = {
-    MessageOnion.RelayPayload.validate(payload, blindedPayload) match {
+    MessageOnion.RelayPayload.validate(payload, blindedPayload, nextBlinding) match {
       case Left(f) => DropMessage(CannotDecodeBlindedPayload(f.failureMessage.message))
-      case Right(relayPayload) =>
-        val toRelay = OnionMessage(relayPayload.nextBlinding_opt.getOrElse(nextBlinding), nextPacket)
-        SendMessage(relayPayload.nextNodeId, toRelay)
+      case Right(relayPayload) => SendMessage(relayPayload.nextNodeId, OnionMessage(nextBlinding, nextPacket))
     }
   }
 

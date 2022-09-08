@@ -154,9 +154,11 @@ object RouteBlindingEncryptedDataCodecs {
   def decode(nodePrivKey: PrivateKey, blindingKey: PublicKey, encryptedData: ByteVector): Either[InvalidEncryptedData, RouteBlindingDecryptedData] = {
     Sphinx.RouteBlinding.decryptPayload(nodePrivKey, blindingKey, encryptedData) match {
       case Failure(f) => Left(CannotDecryptData(f.getMessage))
-      case Success((decryptedData, nextBlinding)) => blindedRouteDataCodec.decode(decryptedData.bits) match {
+      case Success((decryptedData, defaultNextBlinding)) => blindedRouteDataCodec.decode(decryptedData.bits) match {
         case Attempt.Failure(f) => Left(CannotDecodeData(f.message))
-        case Attempt.Successful(DecodeResult(tlvs, _)) => Right(RouteBlindingDecryptedData(tlvs, nextBlinding))
+        case Attempt.Successful(DecodeResult(tlvs, _)) =>
+          val nextBlinding = tlvs.get[NextBlinding].map(_.blinding).getOrElse(defaultNextBlinding)
+          Right(RouteBlindingDecryptedData(tlvs, nextBlinding))
       }
     }
   }

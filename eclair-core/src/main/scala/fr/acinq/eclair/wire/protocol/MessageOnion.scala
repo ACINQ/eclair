@@ -71,20 +71,19 @@ object MessageOnion {
   }
 
   /** Per-hop payload for an intermediate node. */
-  case class RelayPayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends PerHopPayload {
+  case class RelayPayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey) extends PerHopPayload {
     val nextNodeId: PublicKey = blindedRecords.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId
-    val nextBlinding_opt: Option[PublicKey] = blindedRecords.get[RouteBlindingEncryptedDataTlv.NextBlinding].map(_.blinding)
   }
 
   object RelayPayload {
-    def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, RelayPayload] = {
+    def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, RelayPayload] = {
       if (records.get[ReplyPath].nonEmpty) return Left(ForbiddenTlv(UInt64(2)))
       if (records.get[EncryptedData].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
       if (records.get[InvoiceRequest].nonEmpty) return Left(ForbiddenTlv(UInt64(64)))
       if (records.get[Invoice].nonEmpty) return Left(ForbiddenTlv(UInt64(66)))
       if (records.get[InvoiceError].nonEmpty) return Left(ForbiddenTlv(UInt64(68)))
       BlindedRouteData.validateMessageRelayData(blindedRecords).map(blindedRecords =>
-        RelayPayload(records, blindedRecords)
+        RelayPayload(records, blindedRecords, nextBlinding)
       )
     }
   }

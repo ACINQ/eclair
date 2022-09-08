@@ -483,7 +483,7 @@ class SphinxSpec extends AnyFunSuite {
       // Carol's payload contains a blinding override.
       val blindingEphemeralKeyForDaveOverride = payloadCarol.blindedRecords.get[RouteBlindingEncryptedDataTlv.NextBlinding].map(_.blinding)
       assert(blindingEphemeralKeyForDaveOverride.contains(blindingOverride))
-      assert(blindingEphemeralKeyForDave != blindingOverride)
+      assert(blindingEphemeralKeyForDave == blindingOverride)
 
       // Dave is a blinded hop.
       // He receives the blinding key from Carol (e.g. in a tlv field in update_add_htlc) which he can use to derive the

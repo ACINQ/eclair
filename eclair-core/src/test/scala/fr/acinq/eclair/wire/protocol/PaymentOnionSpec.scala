@@ -21,11 +21,12 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
+import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion._
 import fr.acinq.eclair.wire.protocol.PaymentOnionCodecs._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.HexStringSyntax
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -91,17 +92,28 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
-  test("encode/decode channel relay per-hop blinded payload") {
-    val expected = TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
-    val bin = hex"2d 0a080123456789abcdef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"
+  test("encode/decode channel relay blinded per-hop payload") {
+    val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
+      RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)),
+      RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
+    )
+    val testCases = Map(
+      TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef")) -> hex"0a 0a080123456789abcdef ",
+      TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"))) -> hex"2d 0a080123456789abcdef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+    )
 
-    val decoded = perHopPayloadCodec.decode(bin.bits).require.value
-    assert(decoded == expected)
-    assert(decoded.get[EncryptedRecipientData].map(_.data).contains(hex"0123456789abcdef"))
-    assert(decoded.get[BlindingPoint].map(_.publicKey).contains(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")))
-
-    val encoded = perHopPayloadCodec.encode(expected).require.bytes
-    assert(encoded == bin)
+    for ((expected, bin) <- testCases) {
+      val decoded = perHopPayloadCodec.decode(bin.bits).require.value
+      assert(decoded == expected)
+      val Right(payload) = BlindedChannelRelayPayload.validate(decoded, blindedTlvs, randomKey().publicKey)
+      assert(payload.outgoingChannelId == ShortChannelId(42))
+      assert(payload.amountToForward(10_000 msat) == 9990.msat)
+      assert(payload.outgoingCltv(CltvExpiry(1000)) == CltvExpiry(856))
+      assert(payload.allowedFeatures.isEmpty)
+      val encoded = perHopPayloadCodec.encode(expected).require.bytes
+      assert(encoded == bin)
+    }
   }
 
   test("encode/decode node relay per-hop payload") {
@@ -197,42 +209,73 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(multiPartNoTotalAmount.paymentSecret == ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
   }
 
-  test("decode channel relay per-hop payload missing information") {
+  test("decode invalid channel relay per-hop payload") {
     val testCases = Seq(
-      (InvalidOnionPayload(UInt64(2), 0), hex"0d 04012a 06080000000000000451"), // missing amount
-      (InvalidOnionPayload(UInt64(4), 0), hex"0e 02020231 06080000000000000451"), // missing cltv
-      (InvalidOnionPayload(UInt64(6), 0), hex"07 02020231 04012a") // missing channel id
+      (MissingRequiredTlv(UInt64(2)), hex"0d 04012a 06080000000000000451"), // missing amount
+      (MissingRequiredTlv(UInt64(4)), hex"0e 02020231 06080000000000000451"), // missing cltv
+      (MissingRequiredTlv(UInt64(6)), hex"07 02020231 04012a") // missing channel id
     )
 
     for ((expectedErr, bin) <- testCases) {
-      val Left(f) = ChannelRelayPayload.validate(perHopPayloadCodec.decode(bin.bits).require.value)
-      assert(f.failureMessage == expectedErr)
+      assert(ChannelRelayPayload.validate(perHopPayloadCodec.decode(bin.bits).require.value) == Left(expectedErr))
     }
   }
 
-  test("decode node relay per-hop payload missing information") {
-    val testCases = Seq(
-      (InvalidOnionPayload(UInt64(2), 0), hex"2a 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing amount
-      (InvalidOnionPayload(UInt64(4), 0), hex"2b 02020231 fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing cltv
-      (InvalidOnionPayload(UInt64(66098), 0), hex"07 02020231 04012a") // missing node id
+  test("decode invalid channel relay blinded per-hop payload") {
+    val validBlindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
+      RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)),
+      RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
     )
 
-    for ((expectedErr, bin) <- testCases) {
-      val Left(f) = NodeRelayPayload.validate(perHopPayloadCodec.decode(bin.bits).require.value)
-      assert(f.failureMessage == expectedErr)
+    case class TestCase(err: InvalidTlvPayload, bin: ByteVector, blindedTlvs: TlvStream[RouteBlindingEncryptedDataTlv])
+
+    val testCases = Seq(
+      // Forbidden non-encrypted amount.
+      TestCase(ForbiddenTlv(UInt64(2)), hex"0e 02020231 0a080123456789abcdef", validBlindedTlvs),
+      // Forbidden non-encrypted expiry.
+      TestCase(ForbiddenTlv(UInt64(4)), hex"0d 04012a 0a080123456789abcdef", validBlindedTlvs),
+      // Missing encrypted data.
+      TestCase(MissingRequiredTlv(UInt64(10)), hex"23 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2", validBlindedTlvs),
+      // Missing encrypted outgoing channel.
+      TestCase(MissingRequiredTlv(UInt64(2)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat), RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat))),
+      // Missing encrypted payment relay data.
+      TestCase(MissingRequiredTlv(UInt64(10)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)), RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat))),
+      // Missing encrypted payment constraint.
+      TestCase(MissingRequiredTlv(UInt64(12)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)), RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat))), // Forbidden encrypted path id.
+      // Forbidden encrypted path id.
+      TestCase(ForbiddenTlv(UInt64(6)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)), RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat), RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat), RouteBlindingEncryptedDataTlv.PathId(hex"deadbeef"))),
+    )
+
+    for (testCase <- testCases) {
+      val decoded = perHopPayloadCodec.decode(testCase.bin.bits).require.value
+      assert(BlindedChannelRelayPayload.validate(decoded, testCase.blindedTlvs, randomKey().publicKey) == Left(testCase.err))
     }
   }
 
-  test("decode final per-hop payload missing information") {
+  test("decode invalid node relay per-hop payload") {
     val testCases = Seq(
-      (InvalidOnionPayload(UInt64(2), 0), hex"25 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing amount
-      (InvalidOnionPayload(UInt64(4), 0), hex"26 02020231 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing cltv
-      (InvalidOnionPayload(UInt64(8), 0), hex"07 02020231 04012a"), // missing payment secret
+      (MissingRequiredTlv(UInt64(2)), hex"2a 04012a fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing amount
+      (MissingRequiredTlv(UInt64(4)), hex"2b 02020231 fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing cltv
+      (MissingRequiredTlv(UInt64(66098)), hex"07 02020231 04012a"), // missing node id
+      (ForbiddenTlv(UInt64(10)), hex"34 02020231 04012a 0a04ffffffff fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // forbidden encrypted data
+      (ForbiddenTlv(UInt64(12)), hex"51 02020231 04012a 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // forbidden blinding point
     )
 
     for ((expectedErr, bin) <- testCases) {
-      val Left(f) = FinalPayload.validate(perHopPayloadCodec.decode(bin.bits).require.value)
-      assert(f.failureMessage == expectedErr)
+      assert(NodeRelayPayload.validate(perHopPayloadCodec.decode(bin.bits).require.value) == Left(expectedErr))
+    }
+  }
+
+  test("decode invalid final per-hop payload") {
+    val testCases = Seq(
+      (MissingRequiredTlv(UInt64(2)), hex"25 04012a 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing amount
+      (MissingRequiredTlv(UInt64(4)), hex"26 02020231 0820eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing cltv
+      (MissingRequiredTlv(UInt64(8)), hex"07 02020231 04012a"), // missing payment secret
+    )
+
+    for ((expectedErr, bin) <- testCases) {
+      assert(FinalPayload.validate(perHopPayloadCodec.decode(bin.bits).require.value) == Left(expectedErr))
     }
   }
 

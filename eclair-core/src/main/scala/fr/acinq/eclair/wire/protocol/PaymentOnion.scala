@@ -280,6 +280,7 @@ object PaymentOnion {
     def validate(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, BlindedChannelRelayPayload] = {
       if (records.get[AmountToForward].nonEmpty) return Left(ForbiddenTlv(UInt64(2)))
       if (records.get[OutgoingCltv].nonEmpty) return Left(ForbiddenTlv(UInt64(4)))
+      if (records.get[EncryptedRecipientData].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
       BlindedRouteData.validatePaymentRelayData(blindedRecords).map(blindedRecords =>
         BlindedChannelRelayPayload(records, blindedRecords, nextBlinding)
       )
