@@ -70,7 +70,7 @@ object ShortChannelId {
    *
    * (*) https://en.wikipedia.org/wiki/Birthday_attack
    */
-  private val aliasUpperBound = 2^58
+  private val aliasUpperBound = Math.pow(2, 58).toLong
 
   def generateLocalAlias(): Alias = {
     // modulo won't skew the distribution because 2^64 is a multiple of 2^58
