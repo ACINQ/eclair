@@ -126,7 +126,6 @@ object IncomingPaymentPacket {
             }
           case None if add.blinding_opt.isDefined => Left(InvalidOnionPayload(UInt64(12), 0))
           case None => IntermediatePayload.ChannelRelay.Standard.validate(payload).left.map(_.failureMessage).map {
-            // NB: we will validate fees and cltv later, once we've found a suitable channel to relay this payment.
             payload => ChannelRelayPacket(add, payload, nextPacket)
           }
         }
