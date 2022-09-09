@@ -126,7 +126,7 @@ object IncomingPaymentPacket {
             }
           case None if add.blinding_opt.isDefined => Left(InvalidOnionPayload(UInt64(12), 0))
           case None => IntermediatePayload.ChannelRelay.Standard.validate(payload).left.map(_.failureMessage).map {
-            // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
+            // NB: we will validate fees and cltv later, once we've found a suitable channel to relay this payment.
             payload => ChannelRelayPacket(add, payload, nextPacket)
           }
         }
@@ -155,7 +155,7 @@ object IncomingPaymentPacket {
     }
   }
 
-  private def validateBlindedChannelRelayPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey, nextPacket: OnionRoutingPacket): Either[FailureMessage, IncomingPaymentPacket] = {
+  private def validateBlindedChannelRelayPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey, nextPacket: OnionRoutingPacket): Either[FailureMessage, ChannelRelayPacket] = {
     IntermediatePayload.ChannelRelay.Blinded.validate(payload, blindedPayload, nextBlinding).left.map(_.failureMessage).flatMap {
       // TODO: return an unparseable error
       case payload if add.amountMsat < payload.paymentConstraints.minAmount => Left(InvalidOnionPayload(UInt64(12), 0))
@@ -165,7 +165,7 @@ object IncomingPaymentPacket {
     }
   }
 
-  private def validateFinalPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, IncomingPaymentPacket] = {
+  private def validateFinalPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, FinalPacket] = {
     FinalPayload.Standard.validate(payload).left.map(_.failureMessage).flatMap {
       case payload if add.amountMsat != payload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
       case payload if add.cltvExpiry != payload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
@@ -173,7 +173,7 @@ object IncomingPaymentPacket {
     }
   }
 
-  private def validateFinalPayload(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, IncomingPaymentPacket] = {
+  private def validateFinalPayload(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, FinalPacket] = {
     // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
     FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
       FinalPayload.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
@@ -189,7 +189,7 @@ object IncomingPaymentPacket {
     }
   }
 
-  private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv], next: OnionRoutingPacket): Either[FailureMessage, IncomingPaymentPacket] = {
+  private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv], next: OnionRoutingPacket): Either[FailureMessage, NodeRelayPacket] = {
     // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
     FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
       IntermediatePayload.NodeRelay.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
