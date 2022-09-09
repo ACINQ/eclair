@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.router.Router.ChannelHop
@@ -127,7 +127,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
 
     def initiatePaymentOrStop(remaining: Int): Unit =
       if (remaining > 0) {
-        paymentHandler ! ReceivePayment(Some(requiredAmount), Left("One coffee"))
+        paymentHandler ! ReceiveStandardPayment(Some(requiredAmount), Left("One coffee"))
         context become {
           case req: Invoice =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId, req.paymentSecret.get)

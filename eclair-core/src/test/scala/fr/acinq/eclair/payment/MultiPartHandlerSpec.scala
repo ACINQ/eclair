@@ -18,23 +18,27 @@ package fr.acinq.eclair.payment
 
 import akka.actor.Status.Failure
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
-import fr.acinq.eclair.db.IncomingPaymentStatus
+import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
-import fr.acinq.eclair.payment.receive.MultiPartHandler.{DoFulfill, GetPendingPayments, PendingPayments, ReceivePayment}
+import fr.acinq.eclair.payment.receive.MultiPartHandler._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, EncryptedRecipientData, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{PathId, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import scodec.bits.HexStringSyntax
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.collection.immutable.Queue
 import scala.concurrent.duration._
@@ -62,10 +66,18 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     KeySend -> Optional
   )
 
+  val featuresWithRouteBlinding = Features[Feature](
+    VariableLengthOnion -> Mandatory,
+    PaymentSecret -> Mandatory,
+    BasicMultiPartPayment -> Optional,
+    RouteBlinding -> Optional,
+  )
+
   case class FixtureParam(nodeParams: NodeParams, defaultExpiry: CltvExpiry, register: TestProbe, eventListener: TestProbe, sender: TestProbe) {
     lazy val handlerWithoutMpp = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithoutMpp), register.ref))
     lazy val handlerWithMpp = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithMpp), register.ref))
     lazy val handlerWithKeySend = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithKeySend), register.ref))
+    lazy val handlerWithRouteBlinding = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithRouteBlinding), register.ref))
   }
 
   override def withFixture(test: OneArgTest): Outcome = {
@@ -78,23 +90,29 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
   }
 
+  def createBlindedPacket(amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, pathId: ByteVector, blinding_opt: Option[PublicKey]): IncomingPaymentPacket.FinalPacket = {
+    val add = UpdateAddHtlc(ByteVector32.One, 0, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, blinding_opt)
+    val payload = FinalPayload.Blinded(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
+    IncomingPaymentPacket.FinalPacket(add, payload)
+  }
+
   test("PaymentHandler should reply with a fulfill/fail, emit a PaymentReceived and add payment in DB") { f =>
     import f._
 
     val amountMsat = 42000 msat
 
     {
-      sender.send(handlerWithoutMpp, ReceivePayment(Some(amountMsat), Left("1 coffee")))
-      val invoice = sender.expectMsgType[Invoice]
+      sender.send(handlerWithoutMpp, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
+      val invoice = sender.expectMsgType[Bolt11Invoice]
       val incoming = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
       assert(incoming.isDefined)
       assert(incoming.get.status == IncomingPaymentStatus.Pending)
       assert(!incoming.get.invoice.isExpired())
       assert(Crypto.sha256(incoming.get.paymentPreimage) == invoice.paymentHash)
 
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
+      val add = UpdateAddHtlc(ByteVector32.One, 1, amountMsat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
       sender.send(handlerWithoutMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createSinglePartPayload(add.amountMsat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
-      register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == add.id)
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
       assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) == PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
@@ -104,16 +122,15 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
       sender.expectNoMessage(50 millis)
     }
-
     {
-      sender.send(handlerWithMpp, ReceivePayment(Some(amountMsat), Left("another coffee with multi-part")))
-      val invoice = sender.expectMsgType[Invoice]
-      assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+      sender.send(handlerWithMpp, ReceiveStandardPayment(Some(amountMsat), Left("another coffee with multi-part")))
+      val invoice = sender.expectMsgType[Bolt11Invoice]
+      assert(invoice.features.hasFeature(BasicMultiPartPayment))
       assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
 
-      val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
+      val add = UpdateAddHtlc(ByteVector32.One, 2, amountMsat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
       sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createSinglePartPayload(add.amountMsat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
-      register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == add.id)
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
       assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) == PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
@@ -123,10 +140,31 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
       sender.expectNoMessage(50 millis)
     }
-
     {
-      sender.send(handlerWithMpp, ReceivePayment(Some(amountMsat), Left("bad expiry")))
-      val invoice = sender.expectMsgType[Invoice]
+      val privKey = randomKey()
+      val offer = Offer(Some(amountMsat), "a blinded coffee please", privKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+      val invoiceReq = InvoiceRequest(offer, amountMsat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
+      sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, offer, invoiceReq))
+      val invoice = sender.expectMsgType[Bolt12Invoice]
+      assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
+      val pendingPayment = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment]
+      assert(pendingPayment.status == IncomingPaymentStatus.Pending)
+
+      val finalPacket = createBlindedPacket(amountMsat, invoice.paymentHash, defaultExpiry, pendingPayment.paymentPreimage, pendingPayment.pathIds.keys.headOption)
+      sender.send(handlerWithRouteBlinding, finalPacket)
+      assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == finalPacket.add.id)
+
+      val paymentReceived = eventListener.expectMsgType[PaymentReceived]
+      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) == PaymentReceived(finalPacket.add.paymentHash, PartialPayment(amountMsat, finalPacket.add.channelId, timestamp = 0 unixms) :: Nil))
+      val received = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+      assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) == IncomingPaymentStatus.Received(amountMsat, 0 unixms))
+
+      sender.expectNoMessage(50 millis)
+    }
+    {
+      sender.send(handlerWithMpp, ReceiveStandardPayment(Some(amountMsat), Left("bad expiry")))
+      val invoice = sender.expectMsgType[Bolt11Invoice]
       assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
 
       val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, invoice.paymentHash, CltvExpiryDelta(3).toCltvExpiry(nodeParams.currentBlockHeight), TestConstants.emptyOnionPacket, None)
@@ -144,39 +182,39 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     // negative amount should fail
-    sender.send(handlerWithMpp, ReceivePayment(Some(-50 msat), Left("1 coffee")))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(-50 msat), Left("1 coffee")))
     val negativeError = sender.expectMsgType[Failure]
     assert(negativeError.cause.getMessage.contains("amount is not valid"))
 
     // amount = 0 should fail
-    sender.send(handlerWithMpp, ReceivePayment(Some(0 msat), Left("1 coffee")))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(0 msat), Left("1 coffee")))
     val zeroError = sender.expectMsgType[Failure]
     assert(zeroError.cause.getMessage.contains("amount is not valid"))
 
     // success with 1 mBTC
-    sender.send(handlerWithMpp, ReceivePayment(Some(100000000 msat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Invoice]
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(100000000 msat), Left("1 coffee")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.amount_opt.contains(100000000 msat) && invoice.nodeId.toString == nodeParams.nodeId.toString)
   }
 
   test("Invoice generation should succeed when the amount is not set") { f =>
     import f._
 
-    sender.send(handlerWithMpp, ReceivePayment(None, Left("This is a donation PR")))
-    val invoice = sender.expectMsgType[Invoice]
+    sender.send(handlerWithMpp, ReceiveStandardPayment(None, Left("This is a donation PR")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.amount_opt.isEmpty && invoice.nodeId.toString == Alice.nodeParams.nodeId.toString)
   }
 
   test("Invoice generation should handle custom expiries or use the default otherwise") { f =>
     import f._
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee")))
-    val pr1 = sender.expectMsgType[Invoice]
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(42000 msat), Left("1 coffee")))
+    val pr1 = sender.expectMsgType[Bolt11Invoice]
     assert(pr1.minFinalCltvExpiryDelta == nodeParams.channelConf.minFinalExpiryDelta)
     assert(pr1.relativeExpiry == Alice.nodeParams.invoiceExpiry)
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee with custom expiry"), expirySeconds_opt = Some(60)))
-    val pr2 = sender.expectMsgType[Invoice]
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(42000 msat), Left("1 coffee with custom expiry"), expirySeconds_opt = Some(60)))
+    val pr2 = sender.expectMsgType[Bolt11Invoice]
     assert(pr2.minFinalCltvExpiryDelta == nodeParams.channelConf.minFinalExpiryDelta)
     assert(pr2.relativeExpiry == 60.seconds)
   }
@@ -186,32 +224,54 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     {
       val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false, features = featuresWithoutMpp), TestProbe().ref))
-      sender.send(handler, ReceivePayment(Some(42 msat), Left("1 coffee")))
-      val invoice = sender.expectMsgType[Invoice]
-      assert(!invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+      sender.send(handler, ReceiveStandardPayment(Some(42 msat), Left("1 coffee")))
+      val invoice = sender.expectMsgType[Bolt11Invoice]
+      assert(!invoice.features.hasFeature(BasicMultiPartPayment))
+      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
     }
     {
       val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false, features = featuresWithMpp), TestProbe().ref))
-      sender.send(handler, ReceivePayment(Some(42 msat), Left("1 coffee")))
-      val invoice = sender.expectMsgType[Invoice]
-      assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+      sender.send(handler, ReceiveStandardPayment(Some(42 msat), Left("1 coffee")))
+      val invoice = sender.expectMsgType[Bolt11Invoice]
+      assert(invoice.features.hasFeature(BasicMultiPartPayment))
+      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
     }
     {
       val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = featuresWithoutMpp), TestProbe().ref))
-      sender.send(handler, ReceivePayment(Some(42 msat), Left("1 coffee")))
-      val invoice = sender.expectMsgType[Invoice]
-      assert(!invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+      sender.send(handler, ReceiveStandardPayment(Some(42 msat), Left("1 coffee")))
+      val invoice = sender.expectMsgType[Bolt11Invoice]
+      assert(!invoice.features.hasFeature(BasicMultiPartPayment))
+      assert(invoice.features.hasFeature(TrampolinePaymentPrototype))
     }
     {
       val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = featuresWithMpp), TestProbe().ref))
-      sender.send(handler, ReceivePayment(Some(42 msat), Left("1 coffee")))
-      val invoice = sender.expectMsgType[Invoice]
-      assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+      sender.send(handler, ReceiveStandardPayment(Some(42 msat), Left("1 coffee")))
+      val invoice = sender.expectMsgType[Bolt11Invoice]
+      assert(invoice.features.hasFeature(BasicMultiPartPayment))
+      assert(invoice.features.hasFeature(TrampolinePaymentPrototype))
     }
+  }
+
+  test("Invoice generation with route blinding support") { f =>
+    import f._
+
+    val privKey = randomKey()
+    val offer = Offer(Some(25_000 msat), "a blinded coffee please", privKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val invoiceReq = InvoiceRequest(offer, 25_000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, offer, invoiceReq))
+    val invoice = sender.expectMsgType[Bolt12Invoice]
+    assert(invoice.amount == 25_000.msat)
+    assert(invoice.nodeId == privKey.publicKey)
+    assert(invoice.blindedPaths.nonEmpty)
+    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
+    assert(invoice.description == Left("a blinded coffee please"))
+    assert(invoice.offerId.contains(offer.offerId))
+
+    val pendingPayment = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment]
+    assert(pendingPayment.invoice == invoice)
+    assert(pendingPayment.status == IncomingPaymentStatus.Pending)
+    assert(pendingPayment.pathIds.nonEmpty)
+    assert(pendingPayment.pathIds.values.toSet == Set(pendingPayment.paymentPreimage.bytes))
   }
 
   test("Generated invoice contains the provided extra hops") { f =>
@@ -225,19 +285,19 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val route_x_z = extraHop_x_y :: extraHop_y_z :: Nil
     val route_x_t = extraHop_x_t :: Nil
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee with additional routing info"), extraHops = List(route_x_z, route_x_t)))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(42000 msat), Left("1 coffee with additional routing info"), extraHops = List(route_x_z, route_x_t)))
     assert(sender.expectMsgType[Bolt11Invoice].routingInfo == Seq(route_x_z, route_x_t))
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(42000 msat), Left("1 coffee without routing info")))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(42000 msat), Left("1 coffee without routing info")))
     assert(sender.expectMsgType[Bolt11Invoice].routingInfo == Nil)
   }
 
   test("PaymentHandler should reject incoming payments if the invoice is expired") { f =>
     import f._
 
-    sender.send(handlerWithoutMpp, ReceivePayment(Some(1000 msat), Left("some desc"), expirySeconds_opt = Some(0)))
-    val invoice = sender.expectMsgType[Invoice]
-    assert(!invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    sender.send(handlerWithoutMpp, ReceiveStandardPayment(Some(1000 msat), Left("some desc"), expirySeconds_opt = Some(0)))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(!invoice.features.hasFeature(BasicMultiPartPayment))
     assert(invoice.isExpired())
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
@@ -250,9 +310,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming multi-part payment if the invoice is expired") { f =>
     import f._
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(1000 msat), Left("multi-part expired"), expirySeconds_opt = Some(0)))
-    val invoice = sender.expectMsgType[Invoice]
-    assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(1000 msat), Left("multi-part expired"), expirySeconds_opt = Some(0)))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(BasicMultiPartPayment))
     assert(invoice.isExpired())
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
@@ -266,9 +326,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming multi-part payment if the invoice does not allow it") { f =>
     import f._
 
-    sender.send(handlerWithoutMpp, ReceivePayment(Some(1000 msat), Left("no multi-part support")))
-    val invoice = sender.expectMsgType[Invoice]
-    assert(!invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    sender.send(handlerWithoutMpp, ReceiveStandardPayment(Some(1000 msat), Left("no multi-part support")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(!invoice.features.hasFeature(BasicMultiPartPayment))
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithoutMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
@@ -280,9 +340,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming multi-part payment with an invalid expiry") { f =>
     import f._
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(1000 msat), Left("multi-part invalid expiry")))
-    val invoice = sender.expectMsgType[Invoice]
-    assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(1000 msat), Left("multi-part invalid expiry")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(BasicMultiPartPayment))
 
     val lowCltvExpiry = nodeParams.channelConf.fulfillSafetyBeforeTimeout.toCltvExpiry(nodeParams.currentBlockHeight)
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, lowCltvExpiry, TestConstants.emptyOnionPacket, None)
@@ -295,9 +355,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming multi-part payment with an unknown payment hash") { f =>
     import f._
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(1000 msat), Left("multi-part unknown payment hash")))
-    val invoice = sender.expectMsgType[Invoice]
-    assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(1000 msat), Left("multi-part unknown payment hash")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(BasicMultiPartPayment))
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash.reverse, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
@@ -309,9 +369,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming multi-part payment with a total amount too low") { f =>
     import f._
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(1000 msat), Left("multi-part total amount too low")))
-    val invoice = sender.expectMsgType[Invoice]
-    assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(1000 msat), Left("multi-part total amount too low")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(BasicMultiPartPayment))
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createMultiPartPayload(add.amountMsat, 999 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
@@ -323,9 +383,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming multi-part payment with a total amount too high") { f =>
     import f._
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(1000 msat), Left("multi-part total amount too low")))
-    val invoice = sender.expectMsgType[Invoice]
-    assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(1000 msat), Left("multi-part total amount too low")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(BasicMultiPartPayment))
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createMultiPartPayload(add.amountMsat, 2001 msat, add.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
@@ -337,9 +397,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("PaymentHandler should reject incoming multi-part payment with an invalid payment secret") { f =>
     import f._
 
-    sender.send(handlerWithMpp, ReceivePayment(Some(1000 msat), Left("multi-part invalid payment secret")))
-    val invoice = sender.expectMsgType[Invoice]
-    assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    sender.send(handlerWithMpp, ReceiveStandardPayment(Some(1000 msat), Left("multi-part invalid payment secret")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(BasicMultiPartPayment))
 
     // Invalid payment secret.
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
@@ -354,14 +414,14 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
 
     // Partial payment missing additional parts.
-    f.sender.send(handler, ReceivePayment(Some(1000 msat), Left("1 slow coffee")))
-    val pr1 = f.sender.expectMsgType[Invoice]
+    f.sender.send(handler, ReceiveStandardPayment(Some(1000 msat), Left("1 slow coffee")))
+    val pr1 = f.sender.expectMsgType[Bolt11Invoice]
     val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr1.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add1, FinalPayload.Standard.createMultiPartPayload(add1.amountMsat, 1000 msat, add1.cltvExpiry, pr1.paymentSecret.get, pr1.paymentMetadata)))
 
     // Partial payment exceeding the invoice amount, but incomplete because it promises to overpay.
-    f.sender.send(handler, ReceivePayment(Some(1500 msat), Left("1 slow latte")))
-    val pr2 = f.sender.expectMsgType[Invoice]
+    f.sender.send(handler, ReceiveStandardPayment(Some(1500 msat), Left("1 slow latte")))
+    val pr2 = f.sender.expectMsgType[Bolt11Invoice]
     val add2 = UpdateAddHtlc(ByteVector32.One, 1, 1600 msat, pr2.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, FinalPayload.Standard.createMultiPartPayload(add2.amountMsat, 2000 msat, add2.cltvExpiry, pr2.paymentSecret.get, pr2.paymentMetadata)))
 
@@ -394,8 +454,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
 
     val preimage = randomBytes32()
-    f.sender.send(handler, ReceivePayment(Some(1000 msat), Left("1 fast coffee"), paymentPreimage_opt = Some(preimage)))
-    val invoice = f.sender.expectMsgType[Invoice]
+    f.sender.send(handler, ReceiveStandardPayment(Some(1000 msat), Left("1 fast coffee"), paymentPreimage_opt = Some(preimage)))
+    val invoice = f.sender.expectMsgType[Bolt11Invoice]
 
     val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add1, FinalPayload.Standard.createMultiPartPayload(add1.amountMsat, 1000 msat, add1.cltvExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)))
@@ -437,9 +497,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
 
     val preimage = randomBytes32()
-    f.sender.send(handler, ReceivePayment(Some(1000 msat), Left("1 coffee, no sugar"), paymentPreimage_opt = Some(preimage)))
-    val invoice = f.sender.expectMsgType[Invoice]
-    assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    f.sender.send(handler, ReceiveStandardPayment(Some(1000 msat), Left("1 coffee, no sugar"), paymentPreimage_opt = Some(preimage)))
+    val invoice = f.sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(BasicMultiPartPayment))
     assert(invoice.paymentHash == Crypto.sha256(preimage))
 
     val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None)

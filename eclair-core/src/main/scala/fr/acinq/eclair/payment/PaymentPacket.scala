@@ -54,7 +54,7 @@ object IncomingPaymentPacket {
     val expiryDelta: CltvExpiryDelta = add.cltvExpiry - outgoingCltv
   }
   /** We must relay the payment to a remote node. */
-  case class NodeRelayPacket(add: UpdateAddHtlc, outerPayload: FinalPayload, innerPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket) extends RelayPacket
+  case class NodeRelayPacket(add: UpdateAddHtlc, outerPayload: FinalPayload.Standard, innerPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket) extends RelayPacket
   // @formatter:on
 
   case class DecodedOnionPacket(payload: TlvStream[OnionPaymentPayloadTlv], next_opt: Option[OnionRoutingPacket])

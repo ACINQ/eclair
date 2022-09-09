@@ -20,13 +20,13 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
-import fr.acinq.eclair.db.PaymentsDb.{decodeFailures, decodeRoute, encodeFailures, encodeRoute}
+import fr.acinq.eclair.db.PaymentsDb._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
-import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
@@ -36,7 +36,7 @@ import scala.util.{Failure, Success, Try}
 
 object PgPaymentsDb {
   val DB_NAME = "payments"
-  val CURRENT_VERSION = 6
+  val CURRENT_VERSION = 7
 }
 
 class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb with Logging {
@@ -66,24 +66,32 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.executeUpdate("ALTER TABLE payments.sent ALTER COLUMN completed_at SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + completed_at * interval '1 millisecond'")
       }
 
+      def migration67(statement: Statement): Unit = {
+        // We add a path_ids column for blinded payments.
+        statement.executeUpdate("ALTER TABLE payments.received ADD COLUMN path_ids BYTEA")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA payments")
 
-          statement.executeUpdate("CREATE TABLE payments.received (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, expire_at TIMESTAMP WITH TIME ZONE NOT NULL, received_at TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE TABLE payments.received (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT NOT NULL, path_ids BYTEA, payment_request TEXT NOT NULL, received_msat BIGINT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, expire_at TIMESTAMP WITH TIME ZONE NOT NULL, received_at TIMESTAMP WITH TIME ZONE)")
           statement.executeUpdate("CREATE TABLE payments.sent (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, payment_preimage TEXT, payment_type TEXT NOT NULL, amount_msat BIGINT NOT NULL, fees_msat BIGINT, recipient_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, payment_request TEXT, payment_route BYTEA, failures BYTEA, created_at TIMESTAMP WITH TIME ZONE NOT NULL, completed_at TIMESTAMP WITH TIME ZONE)")
 
           statement.executeUpdate("CREATE INDEX sent_parent_id_idx ON payments.sent(parent_id)")
           statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON payments.sent(payment_hash)")
           statement.executeUpdate("CREATE INDEX sent_created_idx ON payments.sent(created_at)")
           statement.executeUpdate("CREATE INDEX received_created_idx ON payments.received(created_at)")
-        case Some(v@(4 | 5)) =>
+        case Some(v@(4 | 5 | 6)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
           }
           if (v < 6) {
             migration56(statement)
+          }
+          if (v < 7) {
+            migration67(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -233,6 +241,21 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
+  override def addIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, pathIds: Map[PublicKey, ByteVector], paymentType: String): Unit = withMetrics("payments/add-incoming-blinded", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, path_ids, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, invoice.paymentHash.toHex)
+        statement.setString(2, preimage.toHex)
+        statement.setBytes(3, encodePathIds(pathIds))
+        statement.setString(4, paymentType)
+        statement.setString(5, invoice.toString)
+        statement.setTimestamp(6, invoice.createdAt.toSqlTimestamp)
+        statement.setTimestamp(7, (invoice.createdAt + invoice.relativeExpiry.toSeconds).toSqlTimestamp)
+        statement.executeUpdate()
+      }
+    }
+  }
+
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.received SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
@@ -245,20 +268,29 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
+  private def parseIncomingPayment(rs: ResultSet): Option[IncomingPayment] = {
     val invoice = rs.getString("payment_request")
-    IncomingPayment(
-      Bolt11Invoice.fromString(invoice).get,
-      rs.getByteVector32FromHex("payment_preimage"),
-      rs.getString("payment_type"),
-      TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),
-      buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(invoice), rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp)))
+    val preimage = rs.getByteVector32FromHex("payment_preimage")
+    val paymentType = rs.getString("payment_type")
+    val createdAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at"))
+    Invoice.fromString(invoice) match {
+      case Success(invoice: Bolt11Invoice) =>
+        val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp))
+        Some(IncomingStandardPayment(invoice, preimage, paymentType, createdAt, status))
+      case Success(invoice: Bolt12Invoice) =>
+        val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp))
+        val pathIds = decodePathIds(BitVector(rs.getBytes("path_ids")))
+        Some(IncomingBlindedPayment(invoice, preimage, paymentType, pathIds, createdAt, status))
+      case _ =>
+        logger.error(s"could not parse DB invoice=$invoice, this should not happen")
+        None
+    }
   }
 
-  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedInvoice_opt: Option[String], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
+  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], invoice: Invoice, receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
     amount_opt match {
       case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0 unixms))
-      case None if serializedInvoice_opt.exists(Bolt11Invoice.fastHasExpired) => IncomingPaymentStatus.Expired
+      case None if invoice.isExpired() => IncomingPaymentStatus.Expired
       case None => IncomingPaymentStatus.Pending
     }
   }
@@ -266,7 +298,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   private def getIncomingPaymentInternal(pg: Connection, paymentHash: ByteVector32): Option[IncomingPayment] = {
     using(pg.prepareStatement("SELECT * FROM payments.received WHERE payment_hash = ?")) { statement =>
       statement.setString(1, paymentHash.toHex)
-      statement.executeQuery().map(parseIncomingPayment).headOption
+      statement.executeQuery().flatMap(parseIncomingPayment).headOption
     }
   }
 
@@ -299,7 +331,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       using(pg.prepareStatement("SELECT * FROM payments.received WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
-        statement.executeQuery().map(parseIncomingPayment).toSeq
+        statement.executeQuery().flatMap(parseIncomingPayment).toSeq
       }
     }
   }
@@ -309,7 +341,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       using(pg.prepareStatement("SELECT * FROM payments.received WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
-        statement.executeQuery().map(parseIncomingPayment).toSeq
+        statement.executeQuery().flatMap(parseIncomingPayment).toSeq
       }
     }
   }
@@ -320,7 +352,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         statement.setTimestamp(3, Timestamp.from(Instant.now()))
-        statement.executeQuery().map(parseIncomingPayment).toSeq
+        statement.executeQuery().flatMap(parseIncomingPayment).toSeq
       }
     }
   }
@@ -331,7 +363,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         statement.setTimestamp(3, Timestamp.from(Instant.now()))
-        statement.executeQuery().map(parseIncomingPayment).toSeq
+        statement.executeQuery().flatMap(parseIncomingPayment).toSeq
       }
     }
   }

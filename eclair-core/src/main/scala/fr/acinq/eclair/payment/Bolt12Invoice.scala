@@ -114,7 +114,7 @@ object Bolt12Invoice {
    * @param preimage the preimage to use for the payment
    * @param nodeKey  the key that was used to generate the offer, may be different from our public nodeId if we're hiding behind a blinded route
    * @param features invoice features
-   * @param path     the blinded path to use to request an invoice
+   * @param paths    the blinded paths to use to pay the invoice
    */
   def apply(offer: Offer,
             request: InvoiceRequest,
@@ -122,7 +122,7 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             features: Features[InvoiceFeature],
-            path: Sphinx.RouteBlinding.BlindedRoute): Bolt12Invoice = {
+            paths: Seq[Sphinx.RouteBlinding.BlindedRoute]): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
     val amount = request.amount.orElse(offer.amount.map(_ * request.quantity)).get
     val tlvs: Seq[InvoiceTlv] = Seq(
@@ -131,7 +131,7 @@ object Bolt12Invoice {
       Some(Amount(amount)),
       Some(Description(offer.description)),
       if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
-      Some(Paths(Seq(path))),
+      Some(Paths(paths)),
       Some(PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty)))),
       offer.issuer.map(Issuer),
       Some(NodeId(nodeKey.publicKey)),

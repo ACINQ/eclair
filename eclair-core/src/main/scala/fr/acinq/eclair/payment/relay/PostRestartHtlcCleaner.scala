@@ -321,7 +321,7 @@ object PostRestartHtlcCleaner {
    */
   private def shouldFulfill(finalPacket: IncomingPaymentPacket.FinalPacket, paymentsDb: IncomingPaymentsDb): Option[ByteVector32] =
     paymentsDb.getIncomingPayment(finalPacket.add.paymentHash) match {
-      case Some(IncomingPayment(_, preimage, _, _, IncomingPaymentStatus.Received(_, _))) => Some(preimage)
+      case Some(p) if p.status.isInstanceOf[IncomingPaymentStatus.Received] => Some(p.paymentPreimage)
       case _ => None
     }
 

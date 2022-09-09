@@ -341,9 +341,6 @@ object PaymentOnion {
     def amount: MilliSatoshi
     def totalAmount: MilliSatoshi
     def expiry: CltvExpiry
-    def paymentMetadata: Option[ByteVector]
-    def paymentSecret: ByteVector32
-    def paymentPreimage: Option[ByteVector32]
     // @formatter:on
   }
 
@@ -401,13 +398,9 @@ object PaymentOnion {
       override val amount = records.get[AmountToForward].get.amount
       override val totalAmount = records.get[TotalAmount].map(_.totalAmount).getOrElse(amount)
       override val expiry = records.get[OutgoingCltv].get.cltv
-      val pathId_opt = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
+      val pathId = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].get.data
       val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
       val allowedFeatures = blindedRecords.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
-      // TODO: remove
-      val paymentSecret = ByteVector32.Zeroes
-      val paymentPreimage = None
-      val paymentMetadata = None
     }
 
     object Blinded {
