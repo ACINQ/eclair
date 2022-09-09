@@ -20,7 +20,6 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.PaymentOnion.{BlindedChannelRelayPayload, BlindedFinalPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
@@ -455,7 +454,7 @@ class SphinxSpec extends AnyFunSuite {
 
       val Right(decryptedPayloadBob) = RouteBlindingEncryptedDataCodecs.decode(bob, blinding, tlvsBob.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val blindingEphemeralKeyForCarol = decryptedPayloadBob.nextBlinding
-      val Right(payloadBob) = BlindedChannelRelayPayload.validate(tlvsBob, decryptedPayloadBob.tlvs, blindingEphemeralKeyForCarol)
+      val Right(payloadBob) = PaymentOnion.IntermediatePayload.ChannelRelay.Blinded.validate(tlvsBob, decryptedPayloadBob.tlvs, blindingEphemeralKeyForCarol)
       assert(payloadBob.outgoingChannelId == ShortChannelId(1))
       assert(payloadBob.amountToForward(110_125 msat) == 100_125.msat)
       assert(payloadBob.outgoingCltv(CltvExpiry(749150)) == CltvExpiry(749100))
@@ -473,7 +472,7 @@ class SphinxSpec extends AnyFunSuite {
       assert(tlvsCarol.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
       val Right(decryptedPayloadCarol) = RouteBlindingEncryptedDataCodecs.decode(carol, blindingEphemeralKeyForCarol, tlvsCarol.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val blindingEphemeralKeyForDave = decryptedPayloadCarol.nextBlinding
-      val Right(payloadCarol) = BlindedChannelRelayPayload.validate(tlvsCarol, decryptedPayloadCarol.tlvs, blindingEphemeralKeyForDave)
+      val Right(payloadCarol) = PaymentOnion.IntermediatePayload.ChannelRelay.Blinded.validate(tlvsCarol, decryptedPayloadCarol.tlvs, blindingEphemeralKeyForDave)
       assert(payloadCarol.outgoingChannelId == ShortChannelId(2))
       assert(payloadCarol.amountToForward(100_125 msat) == 100_010.msat)
       assert(payloadCarol.outgoingCltv(CltvExpiry(749100)) == CltvExpiry(749025))
@@ -494,7 +493,7 @@ class SphinxSpec extends AnyFunSuite {
       assert(tlvsDave.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
       val Right(decryptedPayloadDave) = RouteBlindingEncryptedDataCodecs.decode(dave, blindingOverride, tlvsDave.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val blindingEphemeralKeyForEve = decryptedPayloadDave.nextBlinding
-      val Right(payloadDave) = BlindedChannelRelayPayload.validate(tlvsDave, decryptedPayloadDave.tlvs, blindingEphemeralKeyForEve)
+      val Right(payloadDave) = PaymentOnion.IntermediatePayload.ChannelRelay.Blinded.validate(tlvsDave, decryptedPayloadDave.tlvs, blindingEphemeralKeyForEve)
       assert(payloadDave.outgoingChannelId == ShortChannelId(3))
       assert(payloadDave.amountToForward(100_010 msat) == 100_000.msat)
       assert(payloadDave.outgoingCltv(CltvExpiry(749025)) == CltvExpiry(749000))
@@ -510,7 +509,7 @@ class SphinxSpec extends AnyFunSuite {
       val tlvsEve = PaymentOnionCodecs.perHopPayloadCodec.decode(onionPayloadEve.bits).require.value
       assert(tlvsEve.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
       val Right(decryptedPayloadEve) = RouteBlindingEncryptedDataCodecs.decode(eve, blindingEphemeralKeyForEve, tlvsEve.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-      val Right(payloadEve) = BlindedFinalPayload.validate(tlvsEve, decryptedPayloadEve.tlvs)
+      val Right(payloadEve) = PaymentOnion.FinalPayload.Blinded.validate(tlvsEve, decryptedPayloadEve.tlvs)
       assert(payloadEve.pathId_opt.contains(hex"c9cf92f45ade68345bc20ae672e2012f4af487ed4415"))
       assert(payloadEve.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750000), 50 msat))
       assert(payloadEve.allowedFeatures.isEmpty)

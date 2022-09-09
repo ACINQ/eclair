@@ -27,6 +27,7 @@ import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, TimestampSecond, channel, nodeFee}
 
@@ -277,8 +278,8 @@ class ChannelRelay private(nodeParams: NodeParams,
       case Some(c: OutgoingChannel) =>
         val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, r.add, r.amountToForward)
         val nextBlindingKey_opt = r.payload match {
-          case payload: PaymentOnion.BlindedChannelRelayPayload => Some(payload.nextBlinding)
-          case _: PaymentOnion.ChannelRelayPayload => None
+          case payload: IntermediatePayload.ChannelRelay.Blinded => Some(payload.nextBlinding)
+          case _: IntermediatePayload.ChannelRelay.Standard => None
         }
         RelaySuccess(c.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextBlindingKey_opt, origin, commit = true))
     }

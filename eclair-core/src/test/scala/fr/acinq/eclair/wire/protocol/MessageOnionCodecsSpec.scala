@@ -3,7 +3,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
-import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, RelayPayload}
+import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs._
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
@@ -23,7 +23,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
       val decoded = perHopPayloadCodec.decode(bin.bits).require.value
       assert(decoded == expected)
       val nextNodeId = randomKey().publicKey
-      val Right(payload) = RelayPayload.validate(decoded, TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId)), randomKey().publicKey)
+      val Right(payload) = IntermediatePayload.validate(decoded, TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId)), randomKey().publicKey)
       assert(payload.nextNodeId == nextNodeId)
       val encoded = perHopPayloadCodec.encode(expected).require.bytes
       assert(encoded == bin)
@@ -65,7 +65,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
 
     for ((err, bin, blindedTlvs) <- testCases) {
       val decoded = perHopPayloadCodec.decode(bin.bits).require.value
-      assert(RelayPayload.validate(decoded, blindedTlvs, randomKey().publicKey) == Left(err))
+      assert(IntermediatePayload.validate(decoded, blindedTlvs, randomKey().publicKey) == Left(err))
     }
   }
 

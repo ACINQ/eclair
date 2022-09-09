@@ -71,20 +71,18 @@ object MessageOnion {
   }
 
   /** Per-hop payload for an intermediate node. */
-  case class RelayPayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey) extends PerHopPayload {
+  case class IntermediatePayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey) extends PerHopPayload {
     val nextNodeId: PublicKey = blindedRecords.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId
   }
 
-  object RelayPayload {
-    def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, RelayPayload] = {
+  object IntermediatePayload {
+    def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, IntermediatePayload] = {
       if (records.get[ReplyPath].nonEmpty) return Left(ForbiddenTlv(UInt64(2)))
       if (records.get[EncryptedData].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
       if (records.get[InvoiceRequest].nonEmpty) return Left(ForbiddenTlv(UInt64(64)))
       if (records.get[Invoice].nonEmpty) return Left(ForbiddenTlv(UInt64(66)))
       if (records.get[InvoiceError].nonEmpty) return Left(ForbiddenTlv(UInt64(68)))
-      BlindedRouteData.validateMessageRelayData(blindedRecords).map(blindedRecords =>
-        RelayPayload(records, blindedRecords, nextBlinding)
-      )
+      BlindedRouteData.validateMessageRelayData(blindedRecords).map(blindedRecords => IntermediatePayload(records, blindedRecords, nextBlinding))
     }
   }
 
@@ -112,9 +110,7 @@ object MessageOnion {
         case Some(Left(failure)) => return Left(failure)
         case _ => // valid or missing
       }
-      BlindedRouteData.validateMessageRecipientData(blindedRecords).map(blindedRecords =>
-        FinalPayload(records, blindedRecords)
-      )
+      BlindedRouteData.validateMessageRecipientData(blindedRecords).map(blindedRecords => FinalPayload(records, blindedRecords))
     }
   }
 

@@ -19,7 +19,7 @@ package fr.acinq.eclair.message
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
-import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
+import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
 import fr.acinq.eclair.wire.protocol._
@@ -167,14 +167,14 @@ object OnionMessages {
   }
 
   private def validateRelayPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey, nextPacket: OnionRoutingPacket): Action = {
-    MessageOnion.RelayPayload.validate(payload, blindedPayload, nextBlinding) match {
+    IntermediatePayload.validate(payload, blindedPayload, nextBlinding) match {
       case Left(f) => DropMessage(CannotDecodeBlindedPayload(f.failureMessage.message))
       case Right(relayPayload) => SendMessage(relayPayload.nextNodeId, OnionMessage(nextBlinding, nextPacket))
     }
   }
 
   private def validateFinalPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv]): Action = {
-    MessageOnion.FinalPayload.validate(payload, blindedPayload) match {
+    FinalPayload.validate(payload, blindedPayload) match {
       case Left(f) => DropMessage(CannotDecodeBlindedPayload(f.failureMessage.message))
       case Right(finalPayload) => ReceiveMessage(finalPayload)
     }
