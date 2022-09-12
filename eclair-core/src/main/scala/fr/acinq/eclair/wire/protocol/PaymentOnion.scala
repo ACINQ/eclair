@@ -146,6 +146,19 @@ object OnionPaymentPayloadTlv {
   case class OutgoingNodeId(nodeId: PublicKey) extends OnionPaymentPayloadTlv
 
   /**
+   * Route blinding lets the recipient provide some encrypted data for each intermediate node in the blinded part of the
+   * route. This data cannot be decrypted or modified by the sender and usually contains information to locate the next
+   * node without revealing it to the sender.
+   */
+  case class EncryptedRecipientData(data: ByteVector) extends OnionPaymentPayloadTlv
+
+  /** Blinding ephemeral public key for the introduction node of a blinded route. */
+  case class BlindingPoint(publicKey: PublicKey) extends OnionPaymentPayloadTlv
+
+  /** Total amount in blinded multi-part payments. */
+  case class TotalAmount(totalAmount: MilliSatoshi) extends OnionPaymentPayloadTlv
+
+  /**
    * When payment metadata is included in a Bolt 11 invoice, we should send it as-is to the recipient.
    * This lets recipients generate invoices without having to store anything on their side until the invoice is paid.
    */
@@ -168,16 +181,6 @@ object OnionPaymentPayloadTlv {
 
   /** Pre-image included by the sender of a payment in case of a donation */
   case class KeySend(paymentPreimage: ByteVector32) extends OnionPaymentPayloadTlv
-
-  /**
-   * Route blinding lets the recipient provide some encrypted data for each intermediate node in the blinded part of the
-   * route. This data cannot be decrypted or modified by the sender and usually contains information to locate the next
-   * node without revealing it to the sender.
-   */
-  case class EncryptedRecipientData(data: ByteVector) extends OnionPaymentPayloadTlv
-
-  /** Blinding ephemeral public key for the introduction node of a blinded route. */
-  case class BlindingPoint(publicKey: PublicKey) extends OnionPaymentPayloadTlv
 }
 
 object PaymentOnion {
@@ -264,9 +267,17 @@ object PaymentOnion {
 
       object Blinded {
         def validate(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, Blinded] = {
-          if (records.get[AmountToForward].nonEmpty) return Left(ForbiddenTlv(UInt64(2)))
-          if (records.get[OutgoingCltv].nonEmpty) return Left(ForbiddenTlv(UInt64(4)))
           if (records.get[EncryptedRecipientData].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+          // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data` and `current_blinding_point`.
+          if (records.unknown.nonEmpty) return Left(ForbiddenTlv(records.unknown.head.tag))
+          records.records.find {
+            case _: EncryptedRecipientData => false
+            case _: BlindingPoint => false
+            case _ => true
+          } match {
+            case Some(_) => return Left(ForbiddenTlv(UInt64(0)))
+            case None => // no forbidden tlv found
+          }
           BlindedRouteData.validatePaymentRelayData(blindedRecords).map(blindedRecords => Blinded(records, blindedRecords, nextBlinding))
         }
       }
@@ -388,7 +399,7 @@ object PaymentOnion {
      */
     case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends FinalPayload {
       override val amount = records.get[AmountToForward].get.amount
-      override val totalAmount = amount // TODO: get from total_amount_msat tlv
+      override val totalAmount = records.get[TotalAmount].map(_.totalAmount).getOrElse(amount)
       override val expiry = records.get[OutgoingCltv].get.cltv
       val pathId_opt = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
       val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
@@ -403,6 +414,20 @@ object PaymentOnion {
       def validate(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, Blinded] = {
         if (records.get[AmountToForward].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
         if (records.get[OutgoingCltv].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+        if (records.get[EncryptedRecipientData].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+        // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data`, `current_blinding_point`, `amt_to_forward`, `outgoing_cltv_value` and `total_amount_msat`.
+        if (records.unknown.nonEmpty) return Left(ForbiddenTlv(records.unknown.head.tag))
+        records.records.find {
+          case _: AmountToForward => false
+          case _: OutgoingCltv => false
+          case _: EncryptedRecipientData => false
+          case _: BlindingPoint => false
+          case _: TotalAmount => false
+          case _ => true
+        } match {
+          case Some(_) => return Left(ForbiddenTlv(UInt64(0)))
+          case None => // no forbidden tlv found
+        }
         BlindedRouteData.validPaymentRecipientData(blindedRecords).map(blindedRecords => Blinded(records, blindedRecords))
       }
     }
@@ -447,6 +472,8 @@ object PaymentOnionCodecs {
 
   private val paymentMetadata: Codec[PaymentMetadata] = variableSizeBytesLong(varintoverflow, "payment_metadata" | bytes).as[PaymentMetadata]
 
+  private val totalAmount: Codec[TotalAmount] = ("total_amount_msat" | ltmillisatoshi).as[TotalAmount]
+
   private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
 
   private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = variableSizeBytesLong(varintoverflow, list(listOfN(uint8, Bolt11Invoice.Codecs.extraHopCodec))).as[InvoiceRoutingInfo]
@@ -463,6 +490,7 @@ object PaymentOnionCodecs {
     .typecase(UInt64(10), encryptedRecipientData)
     .typecase(UInt64(12), blindingPoint)
     .typecase(UInt64(16), paymentMetadata)
+    .typecase(UInt64(18), totalAmount)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
     .typecase(UInt64(66097), invoiceFeatures)
     .typecase(UInt64(66098), outgoingNodeId)

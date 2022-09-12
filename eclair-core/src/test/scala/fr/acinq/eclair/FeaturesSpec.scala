@@ -99,8 +99,8 @@ class FeaturesSpec extends AnyFunSuite {
 
     for ((testCase, valid) <- testCases) {
       if (valid) {
-        assert(validateFeatureGraph(Features(testCase)) == None)
-        assert(validateFeatureGraph(Features(testCase.bytes)) == None)
+        assert(validateFeatureGraph(Features(testCase)).isEmpty)
+        assert(validateFeatureGraph(Features(testCase.bytes)).isEmpty)
       } else {
         assert(validateFeatureGraph(Features(testCase)).nonEmpty)
         assert(validateFeatureGraph(Features(testCase.bytes)).nonEmpty)
@@ -235,7 +235,7 @@ class FeaturesSpec extends AnyFunSuite {
       hex"" -> Features.empty,
       hex"0100" -> Features(VariableLengthOnion -> Mandatory),
       hex"028a8a" -> Features(DataLossProtect -> Optional, InitialRoutingSync -> Optional, ChannelRangeQueries -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueriesExtended -> Optional, PaymentSecret -> Optional, BasicMultiPartPayment -> Optional),
-      hex"09004200" -> Features(Map(VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, ShutdownAnySegwit -> Optional), Set(UnknownFeature(24))),
+      hex"09004200" -> Features(Map(VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, RouteBlinding -> Mandatory, ShutdownAnySegwit -> Optional)),
       hex"80010080000000000000000000000000000000000000" -> Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(151), UnknownFeature(160), UnknownFeature(175)))
     )
 
@@ -264,7 +264,7 @@ class FeaturesSpec extends AnyFunSuite {
       val features = fromConfiguration(conf)
       assert(features.toByteVector == hex"028a8a")
       assert(Features(hex"028a8a") == features)
-      assert(validateFeatureGraph(features) == None)
+      assert(validateFeatureGraph(features).isEmpty)
       assert(features.hasFeature(DataLossProtect, Some(Optional)))
       assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
       assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
@@ -287,7 +287,7 @@ class FeaturesSpec extends AnyFunSuite {
       val features = fromConfiguration(conf)
       assert(features.toByteVector == hex"068a")
       assert(Features(hex"068a") == features)
-      assert(validateFeatureGraph(features) == None)
+      assert(validateFeatureGraph(features).isEmpty)
       assert(features.hasFeature(DataLossProtect, Some(Optional)))
       assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
       assert(!features.hasFeature(InitialRoutingSync, Some(Mandatory)))

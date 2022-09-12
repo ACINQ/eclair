@@ -195,6 +195,29 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(perHopPayloadCodec.decode(bin.bits).require.value == tlvs)
   }
 
+  test("encode/decode final blinded per-hop payload") {
+    val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
+      RouteBlindingEncryptedDataTlv.PathId(hex"2a2a2a2a"),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
+    )
+    val testCases = Map(
+      TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), EncryptedRecipientData(hex"deadbeef")) -> hex"0d 02020231 04012a 0a04deadbeef",
+      TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), EncryptedRecipientData(hex"deadbeef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"))) -> hex"30 02020231 04012a 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), EncryptedRecipientData(hex"deadbeef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")), TotalAmount(1105 msat)) -> hex"34 02020231 04012a 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 12020451",
+    )
+
+    for ((expected, bin) <- testCases) {
+      val decoded = perHopPayloadCodec.decode(bin.bits).require.value
+      assert(decoded == expected)
+      val Right(payload) = FinalPayload.Blinded.validate(decoded, blindedTlvs)
+      assert(payload.amount == 561.msat)
+      assert(payload.expiry == CltvExpiry(42))
+      assert(payload.pathId_opt.contains(hex"2a2a2a2a"))
+      val encoded = perHopPayloadCodec.encode(expected).require.bytes
+      assert(encoded == bin)
+    }
+  }
+
   test("decode multi-part final per-hop payload") {
     val Right(multiPart) = FinalPayload.Standard.validate(perHopPayloadCodec.decode(hex"2b 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451".bits).require.value)
     assert(multiPart.amount == 561.msat)
@@ -232,9 +255,13 @@ class PaymentOnionSpec extends AnyFunSuite {
 
     val testCases = Seq(
       // Forbidden non-encrypted amount.
-      TestCase(ForbiddenTlv(UInt64(2)), hex"0e 02020231 0a080123456789abcdef", validBlindedTlvs),
+      TestCase(ForbiddenTlv(UInt64(0)), hex"0e 02020231 0a080123456789abcdef", validBlindedTlvs),
       // Forbidden non-encrypted expiry.
-      TestCase(ForbiddenTlv(UInt64(4)), hex"0d 04012a 0a080123456789abcdef", validBlindedTlvs),
+      TestCase(ForbiddenTlv(UInt64(0)), hex"0d 04012a 0a080123456789abcdef", validBlindedTlvs),
+      // Forbidden outgoing channel id.
+      TestCase(ForbiddenTlv(UInt64(0)), hex"14 06080000000000000451 0a080123456789abcdef", validBlindedTlvs),
+      // Forbidden unknown tlv.
+      TestCase(ForbiddenTlv(UInt64(51)), hex"0e 0a080123456789abcdef 33020102", validBlindedTlvs),
       // Missing encrypted data.
       TestCase(MissingRequiredTlv(UInt64(10)), hex"23 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2", validBlindedTlvs),
       // Missing encrypted outgoing channel.
@@ -276,6 +303,26 @@ class PaymentOnionSpec extends AnyFunSuite {
 
     for ((expectedErr, bin) <- testCases) {
       assert(FinalPayload.Standard.validate(perHopPayloadCodec.decode(bin.bits).require.value) == Left(expectedErr))
+    }
+  }
+
+  test("decode invalid final blinded per-hop payload") {
+    val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
+      RouteBlindingEncryptedDataTlv.PathId(hex"2a2a2a2a"),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
+    )
+    val testCases = Seq(
+      (MissingRequiredTlv(UInt64(2)), hex"0d 04012a 0a080123456789abcdef"), // missing amount
+      (MissingRequiredTlv(UInt64(4)), hex"0e 02020231 0a080123456789abcdef"), // missing expiry
+      (MissingRequiredTlv(UInt64(10)), hex"07 02020231 04012a"), // missing encrypted data
+      (ForbiddenTlv(UInt64(0)), hex"1b 02020231 04012a 06080000000000000451 0a080123456789abcdef"), // forbidden outgoing_channel_id
+      (ForbiddenTlv(UInt64(0)), hex"35 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 0a080123456789abcdef"), // forbidden payment_data
+      (ForbiddenTlv(UInt64(0)), hex"17 02020231 04012a 0a080123456789abcdef 1004deadbeef"), // forbidden payment_metadata
+      (ForbiddenTlv(UInt64(65535)), hex"17 02020231 04012a 0a080123456789abcdef fdffff0206c1"), // forbidden unknown tlv
+    )
+
+    for ((expectedErr, bin) <- testCases) {
+      assert(FinalPayload.Blinded.validate(perHopPayloadCodec.decode(bin.bits).require.value, blindedTlvs) == Left(expectedErr))
     }
   }
 

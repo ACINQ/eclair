@@ -221,6 +221,11 @@ object Features {
     val mandatory = 22
   }
 
+  case object RouteBlinding extends Feature with InitFeature with NodeFeature with InvoiceFeature {
+    val rfcName = "option_route_blinding"
+    val mandatory = 24
+  }
+
   case object ShutdownAnySegwit extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_shutdown_anysegwit"
     val mandatory = 26
@@ -285,6 +290,7 @@ object Features {
     StaticRemoteKey,
     AnchorOutputs,
     AnchorOutputsZeroFeeHtlcTx,
+    RouteBlinding,
     ShutdownAnySegwit,
     DualFunding,
     OnionMessages,
@@ -303,6 +309,7 @@ object Features {
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
     AnchorOutputs -> (StaticRemoteKey :: Nil),
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
+    RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil)
   )

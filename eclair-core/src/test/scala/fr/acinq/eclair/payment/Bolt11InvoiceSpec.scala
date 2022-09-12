@@ -213,7 +213,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.prefix == "lntbs")
     assert(invoice.amount_opt.contains(250000000 msat))
     assert(invoice.paymentHash.bytes == hex"4ffb6e9eabe93a88eb927ead43ae74172d9fbc3d858cede1e80871a5eb8bd863")
-    assert(invoice.features == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional ))
+    assert(invoice.features == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional))
     assert(invoice.createdAt == TimestampSecond(1660836433))
     assert(invoice.nodeId == PublicKey(hex"02e899d99662f2e64ea0eeaecb53c4628fa40a22d7185076e42e8a3d67fcb7b8e6"))
     assert(invoice.description == Left("yolo"))
@@ -492,8 +492,8 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       Features(bin"          0000110000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       Features(bin"          0000100000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       Features(bin"          0010000000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"     000001000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      Features(bin"     000001000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
       Features(bin"     000100000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       Features(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       Features(bin"00001000000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false)

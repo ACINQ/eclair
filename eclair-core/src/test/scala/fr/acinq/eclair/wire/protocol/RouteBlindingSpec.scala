@@ -53,6 +53,19 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
     }
   }
 
+  test("reject non-empty allowed features for intermediate nodes") {
+    {
+      val encoded = hex"02080000000000000231 0a060090000000fa 0c06000b699105dc 0e0101"
+      val decoded = blindedRouteDataCodec.decode(encoded.bits).require.value
+      assert(BlindedRouteData.validatePaymentRelayData(decoded) == Left(ForbiddenTlv(UInt64(14))))
+    }
+    {
+      val encoded = hex"01020000 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145 0e020100"
+      val decoded = blindedRouteDataCodec.decode(encoded.bits).require.value
+      assert(BlindedRouteData.validateMessageRelayData(decoded) == Left(ForbiddenTlv(UInt64(14))))
+    }
+  }
+
   test("decode encrypted route blinding data") {
     val sessionKey = randomKey()
     val nodePrivKeys = Seq(randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
