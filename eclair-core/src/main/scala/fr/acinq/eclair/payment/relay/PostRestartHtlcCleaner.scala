@@ -327,10 +327,10 @@ object PostRestartHtlcCleaner {
 
   def decryptedIncomingHtlcs(paymentsDb: IncomingPaymentsDb): PartialFunction[Either[FailureMessage, IncomingPaymentPacket], IncomingHtlc] = {
     // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
-    case Right(IncomingPaymentPacket.ChannelRelayPacket(add, _, _, _)) => IncomingHtlc(add, None)
-    case Right(IncomingPaymentPacket.NodeRelayPacket(add, _, _, _)) => IncomingHtlc(add, None)
+    case Right(p: IncomingPaymentPacket.ChannelRelayPacket) => IncomingHtlc(p.add, None)
+    case Right(p: IncomingPaymentPacket.NodeRelayPacket) => IncomingHtlc(p.add, None)
     // When we're the final recipient, we want to know if we want to fulfill or fail.
-    case Right(p@IncomingPaymentPacket.FinalPacket(add, _)) => IncomingHtlc(add, shouldFulfill(p, paymentsDb))
+    case Right(p: IncomingPaymentPacket.FinalPacket) => IncomingHtlc(p.add, shouldFulfill(p, paymentsDb))
   }
 
   /** @return incoming HTLCs that have been *cross-signed* (that potentially have been relayed). */

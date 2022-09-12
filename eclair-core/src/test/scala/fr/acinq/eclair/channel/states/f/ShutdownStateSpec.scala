@@ -60,7 +60,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       val h1 = Crypto.sha256(r1)
       val amount1 = 300000000 msat
       val expiry1 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-      val cmd1 = OutgoingPaymentPacket.buildCommand(sender.ref, Upstream.Local(UUID.randomUUID), h1, ChannelHop(null, null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, PaymentOnion.createSinglePartPayload(amount1, expiry1, randomBytes32(), None)).get._1.copy(commit = false)
+      val cmd1 = OutgoingPaymentPacket.buildCommand(sender.ref, Upstream.Local(UUID.randomUUID), h1, ChannelHop(null, null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount1, expiry1, randomBytes32(), None)).get._1.copy(commit = false)
       alice ! cmd1
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -70,7 +70,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       val h2 = Crypto.sha256(r2)
       val amount2 = 200000000 msat
       val expiry2 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-      val cmd2 = OutgoingPaymentPacket.buildCommand(sender.ref, Upstream.Local(UUID.randomUUID), h2, ChannelHop(null, null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, PaymentOnion.createSinglePartPayload(amount2, expiry2, randomBytes32(), None)).get._1.copy(commit = false)
+      val cmd2 = OutgoingPaymentPacket.buildCommand(sender.ref, Upstream.Local(UUID.randomUUID), h2, ChannelHop(null, null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount2, expiry2, randomBytes32(), None)).get._1.copy(commit = false)
       alice ! cmd2
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -354,7 +354,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[CommitSig]
     awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
     val waitForRevocation = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.left.toOption.get
-    assert(waitForRevocation.reSignAsap == false)
+    assert(!waitForRevocation.reSignAsap)
 
     // actual test starts here
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
@@ -853,7 +853,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val closingFeerates1 = ClosingFeerates(FeeratePerKw(500 sat), FeeratePerKw(250 sat), FeeratePerKw(2500 sat))
     alice ! CMD_CLOSE(sender.ref, None, Some(closingFeerates1))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
-    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates == Some(closingFeerates1))
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates.contains(closingFeerates1))
 
     val closingScript = alice.stateData.asInstanceOf[DATA_SHUTDOWN].localShutdown.scriptPubKey
     val closingFeerates2 = ClosingFeerates(FeeratePerKw(600 sat), FeeratePerKw(300 sat), FeeratePerKw(2500 sat))
@@ -861,7 +861,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
     alice ! CMD_CLOSE(sender.ref, Some(closingScript), Some(closingFeerates2))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
-    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates == Some(closingFeerates2))
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates.contains(closingFeerates2))
   }
 
   test("recv CMD_FORCECLOSE") { f =>

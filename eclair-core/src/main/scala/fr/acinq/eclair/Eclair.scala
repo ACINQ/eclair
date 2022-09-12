@@ -563,8 +563,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           userCustomTlvs)
         appKit.postman.ask(ref => Postman.SendMessage(nextNodeId, message, replyPath.map(_ => replyPathId), ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
           case Postman.Response(payload) =>
-            val encodedReplyPath = payload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex)
-            SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath.map(_.blindedRoute), payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
+            val encodedReplyPath = payload.replyPath_opt.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex)
+            SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath_opt.map(_.blindedRoute), payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
           case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
           case Postman.SendingStatus(MessageRelay.Sent(_)) => SendOnionMessageResponse(sent = true, None, None)
           case Postman.SendingStatus(failure: MessageRelay.Failure) => SendOnionMessageResponse(sent = false, Some(failure.toString), None)

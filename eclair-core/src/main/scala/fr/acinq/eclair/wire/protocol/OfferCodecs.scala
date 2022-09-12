@@ -18,15 +18,13 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
-import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.lengthPrefixedFeaturesCodec
 import fr.acinq.eclair.wire.protocol.OfferTypes._
-import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64}
+import scodec.Codec
 import scodec.codecs._
-import scodec.{Attempt, Codec}
 
 object OfferCodecs {
   private val chains: Codec[Chains] = variableSizeBytesLong(varintoverflow, list(bytes32)).xmap[Seq[ByteVector32]](_.toSeq, _.toList).as[Chains]
@@ -77,18 +75,6 @@ object OfferCodecs {
     .typecase(UInt64(54), sendInvoice)
     .typecase(UInt64(240), signature)).complete
 
-  val offerCodec: Codec[Offer] = offerTlvCodec.narrow({ tlvs =>
-    if (tlvs.get[Description].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(10)))
-    }
-    if (tlvs.get[NodeId].isEmpty && tlvs.get[Paths].forall(_.paths.isEmpty)) {
-      Attempt.failure(MissingRequiredTlv(UInt64(30)))
-    }
-    Attempt.successful(Offer(tlvs))
-  }, {
-    case Offer(tlvs) => tlvs
-  })
-
   private val chain: Codec[Chain] = variableSizeBytesLong(varintoverflow, bytes32).as[Chain]
 
   private val offerId: Codec[OfferId] = variableSizeBytesLong(varintoverflow, bytes32).as[OfferId]
@@ -114,20 +100,6 @@ object OfferCodecs {
     .typecase(UInt64(50), payerInfo)
     .typecase(UInt64(56), replaceInvoice)
     .typecase(UInt64(240), signature)).complete
-
-  val invoiceRequestCodec: Codec[InvoiceRequest] = invoiceRequestTlvCodec.narrow({ tlvs =>
-    if (tlvs.get[OfferId].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(4)))
-    } else if (tlvs.get[PayerKey].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(38)))
-    } else if (tlvs.get[Signature].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(240)))
-    } else {
-      Attempt.successful(InvoiceRequest(tlvs))
-    }
-  }, {
-    case InvoiceRequest(tlvs) => tlvs
-  })
 
   private val paymentInfo: Codec[PaymentInfo] = (("fee_base_msat" | millisatoshi32) ::
     ("fee_proportional_millionths" | uint32) ::
@@ -183,41 +155,10 @@ object OfferCodecs {
     .typecase(UInt64(240), signature)
   ).complete
 
-  val invoiceCodec: Codec[Bolt12Invoice] = invoiceTlvCodec.narrow({ tlvs =>
-    if (tlvs.get[Amount].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(8)))
-    } else if (tlvs.get[Description].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(10)))
-    } else if (tlvs.get[Paths].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(16)))
-    } else if (tlvs.get[NodeId].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(30)))
-    } else if (tlvs.get[CreatedAt].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(40)))
-    } else if (tlvs.get[PaymentHash].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(42)))
-    } else if (tlvs.get[Signature].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(240)))
-    } else {
-      Attempt.successful(Bolt12Invoice(tlvs))
-    }
-  }, {
-    case Bolt12Invoice(tlvs) => tlvs
-  })
-
   val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)
     .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, tu64overflow).as[ErroneousField])
     .typecase(UInt64(3), variableSizeBytesLong(varintoverflow, bytes).as[SuggestedValue])
     .typecase(UInt64(5), variableSizeBytesLong(varintoverflow, utf8).as[Error])
   ).complete
 
-  val invoiceErrorCodec: Codec[InvoiceError] = invoiceErrorTlvCodec.narrow({ tlvs =>
-    if (tlvs.get[Error].isEmpty) {
-      Attempt.failure(MissingRequiredTlv(UInt64(5)))
-    } else {
-      Attempt.successful(InvoiceError(tlvs))
-    }
-  }, {
-    case InvoiceError(tlvs) => tlvs
-  })
 }

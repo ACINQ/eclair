@@ -38,6 +38,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.Outcome
@@ -213,8 +214,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // and then one extra
     val extra = IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None),
-      PaymentOnion.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
-      PaymentOnion.createNodeRelayPayload(outgoingAmount, outgoingExpiry, outgoingNodeId),
+      FinalPayload.Standard.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
+      IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
     nodeRelayer ! NodeRelay.Relay(extra)
 
@@ -242,8 +243,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive new extraneous multi-part HTLC.
     val i1 = IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None),
-      PaymentOnion.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
-      PaymentOnion.createNodeRelayPayload(outgoingAmount, outgoingExpiry, outgoingNodeId),
+      FinalPayload.Standard.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
+      IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
     nodeRelayer ! NodeRelay.Relay(i1)
 
@@ -255,8 +256,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive new HTLC with different details, but for the same payment hash.
     val i2 = IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1500 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None),
-      PaymentOnion.createSinglePartPayload(1500 msat, CltvExpiry(499990), incomingSecret, None),
-      PaymentOnion.createNodeRelayPayload(1250 msat, outgoingExpiry, outgoingNodeId),
+      PaymentOnion.FinalPayload.Standard.createSinglePartPayload(1500 msat, CltvExpiry(499990), incomingSecret, None),
+      IntermediatePayload.NodeRelay.Standard(1250 msat, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
     nodeRelayer ! NodeRelay.Relay(i2)
 
@@ -570,7 +571,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val hints = List(ExtraHop(randomKey().publicKey, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12)))
     val features = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional)
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, outgoingNodeKey, Left("Some invoice"), CltvExpiryDelta(18), extraHops = List(hints), paymentMetadata = Some(hex"123456"), features = features)
-    val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(
+    val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, outgoingAmount * 3, outgoingExpiry, outgoingNodeId, invoice
     )))
     val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
@@ -617,7 +618,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val hints = List(ExtraHop(randomKey().publicKey, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12)))
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, outgoingNodeKey, Left("Some invoice"), CltvExpiryDelta(18), extraHops = List(hints), paymentMetadata = Some(hex"123456"))
     assert(!invoice.features.hasFeature(BasicMultiPartPayment))
-    val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(
+    val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, invoice
     )))
     val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
@@ -662,7 +663,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive an upstream multi-part payment.
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey(), Left("Some invoice"), CltvExpiryDelta(18))
     val incomingPayments = incomingMultiPart.map(incoming => {
-      val innerPayload = PaymentOnion.createNodeRelayToNonTrampolinePayload(incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, invoice)
+      val innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, invoice)
       val invalidPayload = innerPayload.copy(records = TlvStream(innerPayload.records.records.collect { case r if !r.isInstanceOf[OnionPaymentPayloadTlv.PaymentData] => r })) // we remove the payment secret
       incoming.copy(innerPayload = invalidPayload)
     })
@@ -680,7 +681,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(!outgoingCfg.publishEvent)
     assert(!outgoingCfg.storeInDb)
     assert(outgoingCfg.paymentHash == paymentHash)
-    assert(outgoingCfg.invoice == None)
+    assert(outgoingCfg.invoice.isEmpty)
     assert(outgoingCfg.recipientAmount == outgoingAmount)
     assert(outgoingCfg.recipientNodeId == outgoingNodeId)
     assert(outgoingCfg.upstream == upstream)
@@ -726,22 +727,21 @@ object NodeRelayerSpec {
     createValidIncomingPacket(2000000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry),
     createValidIncomingPacket(1000000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry)
   )
-  val incomingSinglePart =
-    createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry)
+  val incomingSinglePart = createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry)
 
   def createSuccessEvent(): PaymentSent =
     PaymentSent(relayId, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32(), None)))
 
   def createValidIncomingPacket(amountIn: MilliSatoshi, totalAmountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): IncomingPaymentPacket.NodeRelayPacket = {
     val outerPayload = if (amountIn == totalAmountIn) {
-      PaymentOnion.createSinglePartPayload(amountIn, expiryIn, incomingSecret, None)
+      PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amountIn, expiryIn, incomingSecret, None)
     } else {
-      PaymentOnion.createMultiPartPayload(amountIn, totalAmountIn, expiryIn, incomingSecret, None)
+      FinalPayload.Standard.createMultiPartPayload(amountIn, totalAmountIn, expiryIn, incomingSecret, None)
     }
     IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, None),
       outerPayload,
-      PaymentOnion.createNodeRelayPayload(amountOut, expiryOut, outgoingNodeId),
+      IntermediatePayload.NodeRelay.Standard(amountOut, expiryOut, outgoingNodeId),
       nextTrampolinePacket)
   }
 
@@ -750,8 +750,8 @@ object NodeRelayerSpec {
     val amountIn = incomingAmount / 2
     IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, None),
-      PaymentOnion.createMultiPartPayload(amountIn, incomingAmount, expiryIn, paymentSecret, None),
-      PaymentOnion.createNodeRelayPayload(outgoingAmount, expiryOut, outgoingNodeId),
+      FinalPayload.Standard.createMultiPartPayload(amountIn, incomingAmount, expiryIn, paymentSecret, None),
+      IntermediatePayload.NodeRelay.Standard(outgoingAmount, expiryOut, outgoingNodeId),
       nextTrampolinePacket)
   }
 

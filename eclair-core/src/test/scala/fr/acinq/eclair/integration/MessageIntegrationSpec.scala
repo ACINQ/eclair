@@ -81,8 +81,8 @@ class MessageIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(Nil, Left(nodes("B").nodeParams.nodeId), Some(Nil), hex"3f00").pipeTo(probe.ref)
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(recv.finalPayload.replyPath.nonEmpty)
-    bob.sendOnionMessage(Nil, Right(recv.finalPayload.replyPath.get.blindedRoute), None, hex"1d01ab")
+    assert(recv.finalPayload.replyPath_opt.nonEmpty)
+    bob.sendOnionMessage(Nil, Right(recv.finalPayload.replyPath_opt.get.blindedRoute), None, hex"1d01ab")
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
     assert(res.failureMessage.isEmpty)
@@ -98,7 +98,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     bob.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), Some(Nil), hex"3f00").pipeTo(probe.ref)
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(recv.finalPayload.replyPath.nonEmpty)
+    assert(recv.finalPayload.replyPath_opt.nonEmpty)
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
     assert(res.failureMessage contains "No response")
@@ -309,7 +309,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(r.pathId_opt.isEmpty)
+    assert(r.finalPayload.pathId_opt.isEmpty)
     assert(r.finalPayload.records.unknown.toSet == Set(GenericTlv(UInt64(115), hex"")))
   }
 

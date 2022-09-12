@@ -37,6 +37,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
 
@@ -102,7 +103,7 @@ object NodeRelay {
       }
     }
 
-  def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: PaymentOnion.NodeRelayPayload): Option[FailureMessage] = {
+  def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: IntermediatePayload.NodeRelay.Standard): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.relayParams.minTrampolineFees, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
       Some(TrampolineFeeInsufficient)
@@ -132,7 +133,7 @@ object NodeRelay {
    * This helper method translates relaying errors (returned by the downstream nodes) to a BOLT 4 standard error that we
    * should return upstream.
    */
-  def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: PaymentOnion.NodeRelayPayload): Option[FailureMessage] = {
+  def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard): Option[FailureMessage] = {
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, _, RouteNotFound) => f }.nonEmpty
     val routingFeeHigh = upstream.amountIn - nextPayload.amountToForward >= nodeFee(nodeParams.relayParams.minTrampolineFees, nextPayload.amountToForward) * 5
     failures match {
@@ -178,7 +179,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPacket  trampoline onion to relay to the next trampoline node.
    * @param handler     actor handling the aggregation of the incoming HTLC set.
    */
-  private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: PaymentOnion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
+  private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case Relay(IncomingPaymentPacket.NodeRelayPacket(add, outer, _, _)) =>
         require(outer.paymentSecret == paymentSecret, "payment secret mismatch")
@@ -203,7 +204,7 @@ class NodeRelay private(nodeParams: NodeParams,
         }
     }
 
-  private def doSend(upstream: Upstream.Trampoline, nextPayload: PaymentOnion.NodeRelayPayload, nextPacket: OnionRoutingPacket): Behavior[Command] = {
+  private def doSend(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket): Behavior[Command] = {
     context.log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
     relay(upstream, nextPayload, nextPacket)
     sending(upstream, nextPayload, fulfilledUpstream = false)
@@ -216,7 +217,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPayload       relay instructions.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  private def sending(upstream: Upstream.Trampoline, nextPayload: PaymentOnion.NodeRelayPayload, fulfilledUpstream: Boolean): Behavior[Command] =
+  private def sending(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, fulfilledUpstream: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -261,7 +262,7 @@ class NodeRelay private(nodeParams: NodeParams,
     context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
   }.toClassic
 
-  private def relay(upstream: Upstream.Trampoline, payloadOut: PaymentOnion.NodeRelayPayload, packetOut: OnionRoutingPacket): ActorRef = {
+  private def relay(upstream: Upstream.Trampoline, payloadOut: IntermediatePayload.NodeRelay.Standard, packetOut: OnionRoutingPacket): ActorRef = {
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
@@ -277,7 +278,7 @@ class NodeRelay private(nodeParams: NodeParams,
           payFSM
         } else {
           context.log.debug("sending the payment to non-trampoline recipient without MPP")
-          val finalPayload = PaymentOnion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, payloadOut.paymentMetadata)
+          val finalPayload = FinalPayload.Standard.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, payloadOut.paymentMetadata)
           val payment = SendPaymentToNode(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, extraEdges, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
           payFSM ! payment

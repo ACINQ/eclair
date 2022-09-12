@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
-import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceErrorCodec, invoiceRequestCodec}
-import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
+import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import scodec.bits.ByteVector
 
 /** Tlv types used inside the onion of an [[OnionMessage]]. */
@@ -45,50 +45,83 @@ object OnionMessagePayloadTlv {
    * In order to pay a Bolt 12 offer, we must send an onion message to request an invoice corresponding to that offer.
    * The creator of the offer will send us an invoice back through our blinded reply path.
    */
-  case class InvoiceRequest(request: OfferTypes.InvoiceRequest) extends OnionMessagePayloadTlv
+  case class InvoiceRequest(tlvs: TlvStream[OfferTypes.InvoiceRequestTlv]) extends OnionMessagePayloadTlv
 
   /**
    * When receiving an invoice request, we must send an onion message back containing an invoice corresponding to the
    * requested offer (if it was an offer we published).
    */
-  case class Invoice(invoice: Bolt12Invoice) extends OnionMessagePayloadTlv
+  case class Invoice(tlvs: TlvStream[OfferTypes.InvoiceTlv]) extends OnionMessagePayloadTlv
 
   /**
    * This message may be used when we receive an invalid invoice or invoice request.
    * It contains information helping senders figure out why their message was invalid.
    */
-  case class InvoiceError(error: OfferTypes.InvoiceError) extends OnionMessagePayloadTlv
+  case class InvoiceError(tlvs: TlvStream[OfferTypes.InvoiceErrorTlv]) extends OnionMessagePayloadTlv
 
 }
 
 object MessageOnion {
 
+  import OnionMessagePayloadTlv._
+
   /** Per-hop payload from an onion message (after onion decryption and decoding). */
-  sealed trait PerHopPayload
+  sealed trait PerHopPayload {
+    def records: TlvStream[OnionMessagePayloadTlv]
+  }
 
   /** Per-hop payload for an intermediate node. */
-  case class RelayPayload(records: TlvStream[OnionMessagePayloadTlv]) extends PerHopPayload {
-    val encryptedData: ByteVector = records.get[OnionMessagePayloadTlv.EncryptedData].get.data
+  case class IntermediatePayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey) extends PerHopPayload {
+    val nextNodeId: PublicKey = blindedRecords.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId
+  }
+
+  object IntermediatePayload {
+    def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, IntermediatePayload] = {
+      if (records.get[ReplyPath].nonEmpty) return Left(ForbiddenTlv(UInt64(2)))
+      if (records.get[EncryptedData].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+      if (records.get[InvoiceRequest].nonEmpty) return Left(ForbiddenTlv(UInt64(64)))
+      if (records.get[Invoice].nonEmpty) return Left(ForbiddenTlv(UInt64(66)))
+      if (records.get[InvoiceError].nonEmpty) return Left(ForbiddenTlv(UInt64(68)))
+      BlindedRouteData.validateMessageRelayData(blindedRecords).map(blindedRecords => IntermediatePayload(records, blindedRecords, nextBlinding))
+    }
   }
 
   /** Per-hop payload for a final node. */
-  case class FinalPayload(records: TlvStream[OnionMessagePayloadTlv]) extends PerHopPayload {
-    val replyPath: Option[OnionMessagePayloadTlv.ReplyPath] = records.get[OnionMessagePayloadTlv.ReplyPath]
-    val encryptedData: ByteVector = records.get[OnionMessagePayloadTlv.EncryptedData].get.data
-    val invoiceRequest: Option[OnionMessagePayloadTlv.InvoiceRequest] = records.get[OnionMessagePayloadTlv.InvoiceRequest]
-    val invoice: Option[OnionMessagePayloadTlv.Invoice] = records.get[OnionMessagePayloadTlv.Invoice]
-    val invoiceError: Option[OnionMessagePayloadTlv.InvoiceError] = records.get[OnionMessagePayloadTlv.InvoiceError]
+  case class FinalPayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends PerHopPayload {
+    val pathId_opt: Option[ByteVector] = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
+    val replyPath_opt: Option[ReplyPath] = records.get[ReplyPath]
+    val invoiceRequest_opt: Option[OfferTypes.InvoiceRequest] = records.get[InvoiceRequest].map(_.tlvs).map(OfferTypes.InvoiceRequest(_))
+    val invoice_opt: Option[Bolt12Invoice] = records.get[Invoice].map(_.tlvs).map(Bolt12Invoice(_))
+    val invoiceError_opt: Option[OfferTypes.InvoiceError] = records.get[InvoiceError].map(_.tlvs).map(OfferTypes.InvoiceError(_))
+  }
+
+  object FinalPayload {
+    def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, FinalPayload] = {
+      if (records.get[EncryptedData].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+      records.get[InvoiceRequest].map(i => OfferTypes.InvoiceRequest.validate(i.tlvs)) match {
+        case Some(Left(failure)) => return Left(failure)
+        case _ => // valid or missing
+      }
+      records.get[Invoice].map(i => Bolt12Invoice.validate(i.tlvs)) match {
+        case Some(Left(failure)) => return Left(failure)
+        case _ => // valid or missing
+      }
+      records.get[InvoiceError].map(i => OfferTypes.InvoiceError.validate(i.tlvs)) match {
+        case Some(Left(failure)) => return Left(failure)
+        case _ => // valid or missing
+      }
+      BlindedRouteData.validateMessageRecipientData(blindedRecords).map(blindedRecords => FinalPayload(records, blindedRecords))
+    }
   }
 
 }
 
 object MessageOnionCodecs {
 
-  import MessageOnion._
   import OnionMessagePayloadTlv._
   import fr.acinq.eclair.wire.protocol.CommonCodecs._
+  import scodec.Codec
   import scodec.codecs._
-  import scodec.{Attempt, Codec}
 
   private val replyHopCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
 
@@ -101,29 +134,11 @@ object MessageOnionCodecs {
   private val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
     .typecase(UInt64(2), replyPathCodec)
     .typecase(UInt64(4), encryptedDataCodec)
-    .typecase(UInt64(64), variableSizeBytesLong(varintoverflow, invoiceRequestCodec.as[InvoiceRequest]))
-    .typecase(UInt64(66), variableSizeBytesLong(varintoverflow, invoiceCodec.as[Invoice]))
-    .typecase(UInt64(68), variableSizeBytesLong(varintoverflow, invoiceErrorCodec.as[InvoiceError]))
+    .typecase(UInt64(64), variableSizeBytesLong(varintoverflow, OfferCodecs.invoiceRequestTlvCodec.as[InvoiceRequest]))
+    .typecase(UInt64(66), variableSizeBytesLong(varintoverflow, OfferCodecs.invoiceTlvCodec.as[Invoice]))
+    .typecase(UInt64(68), variableSizeBytesLong(varintoverflow, OfferCodecs.invoiceErrorTlvCodec.as[InvoiceError]))
 
-
-  val lengthPrefixedPerHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
-
-  val relayPerHopPayloadCodec: Codec[RelayPayload] = lengthPrefixedPerHopPayloadCodec.narrow({
-    case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-    case tlvs if tlvs.get[ReplyPath].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(2)))
-    case tlvs => Attempt.successful(RelayPayload(tlvs))
-  }, {
-    case RelayPayload(tlvs) => tlvs
-  })
-
-  val finalPerHopPayloadCodec: Codec[FinalPayload] = lengthPrefixedPerHopPayloadCodec.narrow({
-    case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-    case tlvs => Attempt.successful(FinalPayload(tlvs))
-  }, {
-    case FinalPayload(tlvs) => tlvs
-  })
-
-  def messageOnionPerHopPayloadCodec(isLastPacket: Boolean): Codec[PerHopPayload] = if (isLastPacket) finalPerHopPayloadCodec.upcast[PerHopPayload] else relayPerHopPayloadCodec.upcast[PerHopPayload]
+  val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 
   val messageOnionPacketCodec: Codec[OnionRoutingPacket] = variableSizeBytes(uint16, bytes).exmap[OnionRoutingPacket](
     // The Sphinx packet header contains a version (1 byte), a public key (33 bytes) and a mac (32 bytes) -> total 66 bytes

@@ -19,9 +19,9 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol.CommonCodecs.bytes32
+import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
-import scodec.{Codec, Err}
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -31,23 +31,14 @@ case class OnionRoutingPacket(version: Int, publicKey: ByteVector, payload: Byte
 
 object OnionRoutingCodecs {
 
-  case class MissingRequiredTlv(tag: UInt64) extends Err {
-    // @formatter:off
-    val failureMessage: FailureMessage = InvalidOnionPayload(tag, 0)
-    override def message = failureMessage.message
-    override def context: List[String] = Nil
-    override def pushContext(ctx: String): Err = this
-    // @formatter:on
+  // @formatter:off
+  sealed trait InvalidTlvPayload {
+    def tag: UInt64
+    def failureMessage: FailureMessage = InvalidOnionPayload(tag, 0)
   }
-
-  case class ForbiddenTlv(tag: UInt64) extends Err {
-    // @formatter:off
-    val failureMessage: FailureMessage = InvalidOnionPayload(tag, 0)
-    override def message = failureMessage.message
-    override def context: List[String] = Nil
-    override def pushContext(ctx: String): Err = this
-    // @formatter:on
-  }
+  case class MissingRequiredTlv(tag: UInt64) extends InvalidTlvPayload
+  case class ForbiddenTlv(tag: UInt64) extends InvalidTlvPayload
+  // @formatter:on
 
   def onionRoutingPacketCodec(payloadLength: Int): Codec[OnionRoutingPacket] = (
     ("version" | uint8) ::

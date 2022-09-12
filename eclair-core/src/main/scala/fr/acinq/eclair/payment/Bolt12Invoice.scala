@@ -21,15 +21,15 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
-import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
-import fr.acinq.eclair.wire.protocol.{OfferTypes, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond}
+import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
+import fr.acinq.eclair.wire.protocol.{OfferCodecs, OfferTypes, TlvStream}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.FiniteDuration
-import scala.util.Try
+import scala.util.{Failure, Try}
 
 /**
  * Lightning Bolt 12 invoice
@@ -39,68 +39,30 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
   import Bolt12Invoice._
 
-  require(records.get[Amount].nonEmpty, "bolt 12 invoices must provide an amount")
-  require(records.get[NodeId].nonEmpty, "bolt 12 invoices must provide a node id")
-  require(records.get[Paths].exists(_.paths.nonEmpty), "bolt 12 invoices must provide a blinded path")
-  require(records.get[PaymentPathsInfo].exists(_.paymentInfo.length == records.get[Paths].get.paths.length), "bolt 12 invoices must provide a blinded_payinfo for each path")
-  require(records.get[PaymentHash].nonEmpty, "bolt 12 invoices must provide a payment hash")
-  require(records.get[Description].nonEmpty, "bolt 12 invoices must provide a description")
-  require(records.get[CreatedAt].nonEmpty, "bolt 12 invoices must provide a creation timestamp")
-  require(records.get[Signature].nonEmpty, "bolt 12 invoices must provide a signature")
-
   val amount: MilliSatoshi = records.get[Amount].map(_.amount).get
-
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
-
   override val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
-
   override val paymentHash: ByteVector32 = records.get[PaymentHash].get.hash
-
   override val paymentSecret: Option[ByteVector32] = None
-
   override val paymentMetadata: Option[ByteVector] = None
-
   override val description: Either[String, ByteVector32] = Left(records.get[Description].get.description)
-
   override val extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty // TODO: the blinded paths need to be converted to graph edges
-
   override val createdAt: TimestampSecond = records.get[CreatedAt].get.timestamp
-
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[RelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-
   override val minFinalCltvExpiryDelta: CltvExpiryDelta = records.get[Cltv].map(_.minFinalCltvExpiry).getOrElse(DEFAULT_MIN_FINAL_EXPIRY_DELTA)
-
   override val features: Features[InvoiceFeature] = records.get[FeaturesTlv].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
-
-  override def toString: String = {
-    val data = invoiceCodec.encode(this).require.bytes
-    Bech32.encodeBytes(hrp, data.toArray, Bech32.Encoding.Beck32WithoutChecksum)
-  }
-
   val chain: ByteVector32 = records.get[Chain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
-
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
-
   val blindedPaths: Seq[RouteBlinding.BlindedRoute] = records.get[Paths].get.paths
-
   val issuer: Option[String] = records.get[Issuer].map(_.issuer)
-
   val quantity: Option[Long] = records.get[Quantity].map(_.quantity)
-
   val refundFor: Option[ByteVector32] = records.get[RefundFor].map(_.refundedPaymentHash)
-
   val payerKey: Option[ByteVector32] = records.get[PayerKey].map(_.publicKey)
-
   val payerNote: Option[String] = records.get[PayerNote].map(_.note)
-
   val payerInfo: Option[ByteVector] = records.get[PayerInfo].map(_.info)
-
   val fallbacks: Option[Seq[FallbackAddress]] = records.get[Fallbacks].map(_.addresses)
-
   val refundSignature: Option[ByteVector64] = records.get[RefundSignature].map(_.signature)
-
   val replaceInvoice: Option[ByteVector32] = records.get[ReplaceInvoice].map(_.paymentHash)
-
   val signature: ByteVector64 = records.get[Signature].get.signature
 
   // It is assumed that the request is valid for this offer.
@@ -129,8 +91,14 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   }
 
   def checkSignature(): Boolean = {
-    verifySchnorr(signatureTag("signature"), rootHash(OfferTypes.removeSignature(records), invoiceTlvCodec), signature, OfferTypes.xOnlyPublicKey(nodeId))
+    verifySchnorr(signatureTag("signature"), rootHash(OfferTypes.removeSignature(records), OfferCodecs.invoiceTlvCodec), signature, OfferTypes.xOnlyPublicKey(nodeId))
   }
+
+  override def toString: String = {
+    val data = OfferCodecs.invoiceTlvCodec.encode(records).require.bytes
+    Bech32.encodeBytes(hrp, data.toArray, Bech32.Encoding.Beck32WithoutChecksum)
+  }
+
 }
 
 object Bolt12Invoice {
@@ -176,8 +144,20 @@ object Bolt12Invoice {
       request.payerInfo.map(PayerInfo),
       request.replaceInvoice.map(ReplaceInvoice),
     ).flatten
-    val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
+    val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), OfferCodecs.invoiceTlvCodec), nodeKey)
     Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)))
+  }
+
+  def validate(records: TlvStream[InvoiceTlv]): Either[InvalidTlvPayload, Bolt12Invoice] = {
+    if (records.get[Amount].isEmpty) return Left(MissingRequiredTlv(UInt64(8)))
+    if (records.get[Description].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+    if (records.get[Paths].isEmpty) return Left(MissingRequiredTlv(UInt64(16)))
+    if (records.get[PaymentPathsInfo].map(_.paymentInfo.length) != records.get[Paths].map(_.paths.length)) return Left(MissingRequiredTlv(UInt64(18)))
+    if (records.get[NodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(30)))
+    if (records.get[CreatedAt].isEmpty) return Left(MissingRequiredTlv(UInt64(40)))
+    if (records.get[PaymentHash].isEmpty) return Left(MissingRequiredTlv(UInt64(42)))
+    if (records.get[Signature].isEmpty) return Left(MissingRequiredTlv(UInt64(240)))
+    Right(Bolt12Invoice(records))
   }
 
   def signatureTag(fieldName: String): String = "lightning" + "invoice" + fieldName
@@ -189,6 +169,10 @@ object Bolt12Invoice {
     val encoding = triple.getThird
     require(prefix == hrp)
     require(encoding == Bech32.Encoding.Beck32WithoutChecksum)
-    invoiceCodec.decode(ByteVector(encoded).bits).require.value
+    val tlvs = OfferCodecs.invoiceTlvCodec.decode(ByteVector(encoded).bits).require.value
+    validate(tlvs) match {
+      case Left(f) => return Failure(new IllegalArgumentException(f.toString))
+      case Right(invoice) => invoice
+    }
   }
 }

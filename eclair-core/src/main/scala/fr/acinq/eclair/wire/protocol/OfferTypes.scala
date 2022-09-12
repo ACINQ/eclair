@@ -20,15 +20,15 @@ import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
-import fr.acinq.eclair.wire.protocol.OfferCodecs._
+import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64}
 import fr.acinq.secp256k1.Secp256k1JvmKt
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.vector
 
-import scala.util.Try
+import scala.util.{Failure, Try}
 
 /**
  * Lightning Bolt 12 offers
@@ -66,6 +66,7 @@ object OfferTypes {
                          minHtlc: MilliSatoshi,
                          maxHtlc: MilliSatoshi,
                          allowedFeatures: Features[Feature])
+
   case class PaymentPathsInfo(paymentInfo: Seq[PaymentInfo]) extends InvoiceTlv
 
   case class PaymentPathsCapacities(capacities: Seq[MilliSatoshi]) extends InvoiceTlv
@@ -123,58 +124,39 @@ object OfferTypes {
   case class Error(message: String) extends InvoiceErrorTlv
 
   case class Offer(records: TlvStream[OfferTlv]) {
-
-    require(records.get[NodeId].nonEmpty || records.get[Paths].exists(_.paths.nonEmpty), "bolt 12 offers must provide a node id or a blinded path")
-    require(records.get[Description].nonEmpty, "bolt 12 offers must provide a description")
-
-    val offerId: ByteVector32 = rootHash(removeSignature(records), offerTlvCodec)
-
+    val offerId: ByteVector32 = rootHash(removeSignature(records), OfferCodecs.offerTlvCodec)
     val chains: Seq[ByteVector32] = records.get[Chains].map(_.chains).getOrElse(Seq(Block.LivenetGenesisBlock.hash))
-
     val currency: Option[String] = records.get[Currency].map(_.iso4217)
-
     val amount: Option[MilliSatoshi] = currency match {
       case Some(_) => None // TODO: add exchange rates
       case None => records.get[Amount].map(_.amount)
     }
-
     val description: String = records.get[Description].get.description
-
     val features: Features[InvoiceFeature] = records.get[FeaturesTlv].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
-
     val expiry: Option[TimestampSecond] = records.get[AbsoluteExpiry].map(_.absoluteExpiry)
-
     val issuer: Option[String] = records.get[Issuer].map(_.issuer)
-
     val quantityMin: Option[Long] = records.get[QuantityMin].map(_.min)
     val quantityMax: Option[Long] = records.get[QuantityMax].map(_.max)
-
-    val nodeId: PublicKey =
-      records.get[NodeId].map(_.publicKey).getOrElse(records.get[Paths].get.paths.head.blindedNodes.last.blindedPublicKey)
-
+    val nodeId: PublicKey = records.get[NodeId].map(_.publicKey).getOrElse(records.get[Paths].get.paths.head.blindedNodes.last.blindedPublicKey)
     val sendInvoice: Boolean = records.get[SendInvoice].nonEmpty
-
     val refundFor: Option[ByteVector32] = records.get[RefundFor].map(_.refundedPaymentHash)
-
     val signature: Option[ByteVector64] = records.get[Signature].map(_.signature)
-
-    val contact: Either[Seq[BlindedRoute], PublicKey] =
-      records.get[Paths].map(_.paths).map(Left(_)).getOrElse(Right(records.get[NodeId].get.publicKey))
+    val contact: Either[Seq[BlindedRoute], PublicKey] = records.get[Paths].map(_.paths).map(Left(_)).getOrElse(Right(records.get[NodeId].get.publicKey))
 
     def sign(key: PrivateKey): Offer = {
-      val sig = signSchnorr(Offer.signatureTag, rootHash(records, offerTlvCodec), key)
+      val sig = signSchnorr(Offer.signatureTag, rootHash(records, OfferCodecs.offerTlvCodec), key)
       Offer(TlvStream[OfferTlv](records.records ++ Seq(Signature(sig)), records.unknown))
     }
 
     def checkSignature(): Boolean = {
       signature match {
-        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), offerTlvCodec), sig, xOnlyPublicKey(nodeId))
+        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), OfferCodecs.offerTlvCodec), sig, xOnlyPublicKey(nodeId))
         case None => false
       }
     }
 
     def encode(): String = {
-      val data = offerCodec.encode(this).require.bytes
+      val data = OfferCodecs.offerTlvCodec.encode(records).require.bytes
       Bech32.encodeBytes(Offer.hrp, data.toArray, Bech32.Encoding.Beck32WithoutChecksum)
     }
 
@@ -203,6 +185,12 @@ object OfferTypes {
       Offer(TlvStream(tlvs))
     }
 
+    def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
+      if (records.get[Description].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+      if (records.get[NodeId].isEmpty && records.get[Paths].forall(_.paths.isEmpty)) return Left(MissingRequiredTlv(UInt64(30)))
+      Right(Offer(records))
+    }
+
     def decode(s: String): Try[Offer] = Try {
       val triple = Bech32.decodeBytes(s.toLowerCase, true)
       val prefix = triple.getFirst
@@ -210,36 +198,25 @@ object OfferTypes {
       val encoding = triple.getThird
       require(prefix == hrp)
       require(encoding == Bech32.Encoding.Beck32WithoutChecksum)
-      offerCodec.decode(ByteVector(encoded).bits).require.value
+      val tlvs = OfferCodecs.offerTlvCodec.decode(ByteVector(encoded).bits).require.value
+      validate(tlvs) match {
+        case Left(f) => return Failure(new IllegalArgumentException(f.toString))
+        case Right(offer) => offer
+      }
     }
   }
 
   case class InvoiceRequest(records: TlvStream[InvoiceRequestTlv]) {
-
-    require(records.get[OfferId].nonEmpty, "bolt 12 invoice requests must provide an offer id")
-    require(records.get[PayerKey].nonEmpty, "bolt 12 invoice requests must provide a payer key")
-    require(records.get[Signature].nonEmpty, "bolt 12 invoice requests must provide a payer signature")
-
     val chain: ByteVector32 = records.get[Chain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
-
     val offerId: ByteVector32 = records.get[OfferId].map(_.offerId).get
-
     val amount: Option[MilliSatoshi] = records.get[Amount].map(_.amount)
-
     val features: Features[InvoiceFeature] = records.get[FeaturesTlv].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
-
     val quantity_opt: Option[Long] = records.get[Quantity].map(_.quantity)
-
     val quantity: Long = quantity_opt.getOrElse(1)
-
     val payerKey: ByteVector32 = records.get[PayerKey].get.publicKey
-
     val payerNote: Option[String] = records.get[PayerNote].map(_.note)
-
     val payerInfo: Option[ByteVector] = records.get[PayerInfo].map(_.info)
-
     val replaceInvoice: Option[ByteVector32] = records.get[ReplaceInvoice].map(_.paymentHash)
-
     val payerSignature: ByteVector64 = records.get[Signature].get.signature
 
     def isValidFor(offer: Offer): Boolean = {
@@ -260,11 +237,11 @@ object OfferTypes {
     }
 
     def checkSignature(): Boolean = {
-      verifySchnorr(InvoiceRequest.signatureTag, rootHash(removeSignature(records), invoiceRequestTlvCodec), payerSignature, payerKey)
+      verifySchnorr(InvoiceRequest.signatureTag, rootHash(removeSignature(records), OfferCodecs.invoiceRequestTlvCodec), payerSignature, payerKey)
     }
 
     def encode(): String = {
-      val data = invoiceRequestCodec.encode(this).require.bytes
+      val data = OfferCodecs.invoiceRequestTlvCodec.encode(records).require.bytes
       Bech32.encodeBytes(InvoiceRequest.hrp, data.toArray, Bech32.Encoding.Beck32WithoutChecksum)
     }
 
@@ -278,15 +255,15 @@ object OfferTypes {
     /**
      * Create a request to fetch an invoice for a given offer.
      *
-     * @param offer     Bolt 12 offer.
-     * @param amount    amount that we want to pay.
-     * @param quantity  quantity of items we're buying.
-     * @param features  invoice features.
-     * @param payerKey  private key identifying the payer: this lets us prove we're the ones who paid the invoice.
-     * @param chain     chain we want to use to pay this offer.
+     * @param offer    Bolt 12 offer.
+     * @param amount   amount that we want to pay.
+     * @param quantity quantity of items we're buying.
+     * @param features invoice features.
+     * @param payerKey private key identifying the payer: this lets us prove we're the ones who paid the invoice.
+     * @param chain    chain we want to use to pay this offer.
      */
     def apply(offer: Offer, amount: MilliSatoshi, quantity: Long, features: Features[InvoiceFeature], payerKey: PrivateKey, chain: ByteVector32): InvoiceRequest = {
-      require(offer.chains contains chain)
+      require(offer.chains.contains(chain))
       require(quantity == 1 || offer.quantityMin.nonEmpty || offer.quantityMax.nonEmpty)
       val tlvs: Seq[InvoiceRequestTlv] = Seq(
         Some(Chain(chain)),
@@ -296,8 +273,15 @@ object OfferTypes {
         Some(PayerKey(payerKey.publicKey)),
         if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
       ).flatten
-      val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
+      val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), OfferCodecs.invoiceRequestTlvCodec), payerKey)
       InvoiceRequest(TlvStream(tlvs :+ Signature(signature)))
+    }
+
+    def validate(records: TlvStream[InvoiceRequestTlv]): Either[InvalidTlvPayload, InvoiceRequest] = {
+      if (records.get[OfferId].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+      if (records.get[PayerKey].isEmpty) return Left(MissingRequiredTlv(UInt64(38)))
+      if (records.get[Signature].isEmpty) return Left(MissingRequiredTlv(UInt64(240)))
+      Right(InvoiceRequest(records))
     }
 
     def decode(s: String): Try[InvoiceRequest] = Try {
@@ -307,12 +291,23 @@ object OfferTypes {
       val encoding = triple.getThird
       require(prefix == hrp)
       require(encoding == Bech32.Encoding.Beck32WithoutChecksum)
-      invoiceRequestCodec.decode(ByteVector(encoded).bits).require.value
+      val tlvs = OfferCodecs.invoiceRequestTlvCodec.decode(ByteVector(encoded).bits).require.value
+      validate(tlvs) match {
+        case Left(f) => return Failure(new IllegalArgumentException(f.toString))
+        case Right(invoiceRequest) => invoiceRequest
+      }
     }
   }
 
   case class InvoiceError(records: TlvStream[InvoiceErrorTlv]) {
-    require(records.get[Error].nonEmpty, "bolt 12 invoice errors must provide an explanatory string")
+    val error = records.get[Error].get.message
+  }
+
+  object InvoiceError {
+    def validate(records: TlvStream[InvoiceErrorTlv]): Either[InvalidTlvPayload, InvoiceError] = {
+      if (records.get[Error].isEmpty) return Left(MissingRequiredTlv(UInt64(5)))
+      Right(InvoiceError(records))
+    }
   }
 
   def rootHash[T <: Tlv](tlvs: TlvStream[T], codec: Codec[TlvStream[T]]): ByteVector32 = {
