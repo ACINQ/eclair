@@ -255,9 +255,9 @@ class PaymentOnionSpec extends AnyFunSuite {
 
     val testCases = Seq(
       // Forbidden non-encrypted amount.
-      TestCase(ForbiddenTlv(UInt64(2)), hex"0e 02020231 0a080123456789abcdef", validBlindedTlvs),
+      TestCase(ForbiddenTlv(UInt64(0)), hex"0e 02020231 0a080123456789abcdef", validBlindedTlvs),
       // Forbidden non-encrypted expiry.
-      TestCase(ForbiddenTlv(UInt64(4)), hex"0d 04012a 0a080123456789abcdef", validBlindedTlvs),
+      TestCase(ForbiddenTlv(UInt64(0)), hex"0d 04012a 0a080123456789abcdef", validBlindedTlvs),
       // Forbidden outgoing channel id.
       TestCase(ForbiddenTlv(UInt64(0)), hex"14 06080000000000000451 0a080123456789abcdef", validBlindedTlvs),
       // Forbidden unknown tlv.

@@ -269,8 +269,6 @@ object PaymentOnion {
         def validate(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, Blinded] = {
           if (records.get[EncryptedRecipientData].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
           // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data` and `current_blinding_point`.
-          if (records.get[AmountToForward].nonEmpty) return Left(ForbiddenTlv(UInt64(2)))
-          if (records.get[OutgoingCltv].nonEmpty) return Left(ForbiddenTlv(UInt64(4)))
           if (records.unknown.nonEmpty) return Left(ForbiddenTlv(records.unknown.head.tag))
           records.records.find {
             case _: EncryptedRecipientData => false

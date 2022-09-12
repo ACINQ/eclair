@@ -122,6 +122,7 @@ object IncomingPaymentPacket {
               case DecodedEncryptedRecipientData(blindedPayload, nextBlinding) =>
                 validateBlindedChannelRelayPayload(add, payload, blindedPayload, nextBlinding, nextPacket)
             }
+          case None if add.blinding_opt.isDefined => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
           case None => IntermediatePayload.ChannelRelay.Standard.validate(payload).left.map(_.failureMessage).map {
             payload => ChannelRelayPacket(add, payload, nextPacket)
           }
@@ -133,6 +134,7 @@ object IncomingPaymentPacket {
             decryptEncryptedRecipientData(add, privateKey, payload, encrypted.data).flatMap {
               case DecodedEncryptedRecipientData(blindedPayload, _) => validateBlindedFinalPayload(add, payload, blindedPayload)
             }
+          case None if add.blinding_opt.isDefined => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
           case None =>
             // We check if the payment is using trampoline: if it is, we may not be the final recipient.
             payload.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
