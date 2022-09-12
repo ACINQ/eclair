@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes, randomBytes32, randomKey}
 import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Success, Try}
@@ -299,7 +299,7 @@ object MultiPartHandler {
                   invoice
                 case r: ReceiveOfferPayment =>
                   // TODO: get blinded paths from the router instead
-                  val pathId = RouteBlindingEncryptedDataTlv.PathId(paymentPreimage.bytes)
+                  val pathId = RouteBlindingEncryptedDataTlv.PathId(randomBytes(32))
                   val dummyConstraints = RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(nodeParams.currentBlockHeight + 144), 1 msat)
                   val dummyRelay = RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(0), 0, 0 msat)
                   val dummyScid = RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(0))
