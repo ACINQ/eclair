@@ -320,10 +320,10 @@ object PostRestartHtlcCleaner {
    * ship some physical goods to a customer).
    */
   private def shouldFulfill(finalPacket: IncomingPaymentPacket.FinalPacket, paymentsDb: IncomingPaymentsDb): Option[ByteVector32] =
-    paymentsDb.getIncomingPayment(finalPacket.add.paymentHash) match {
-      case Some(p) if p.status.isInstanceOf[IncomingPaymentStatus.Received] => Some(p.paymentPreimage)
+    paymentsDb.getIncomingPayment(finalPacket.add.paymentHash).flatMap(p => p.status match {
+      case _: IncomingPaymentStatus.Received => Some(p.paymentPreimage)
       case _ => None
-    }
+    })
 
   def decryptedIncomingHtlcs(paymentsDb: IncomingPaymentsDb): PartialFunction[Either[FailureMessage, IncomingPaymentPacket], IncomingHtlc] = {
     // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
