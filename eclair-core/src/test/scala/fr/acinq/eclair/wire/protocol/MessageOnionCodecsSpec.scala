@@ -35,7 +35,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
       PrivateKey(hex"123456789123456789123456789123456789123456789123456789123456789101"),
       List(PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")),
       List(hex"04210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c", hex"0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
-    )
+    ).route
     val testCases = Map(
       TlvStream[OnionMessagePayloadTlv](EncryptedData(hex"deadbeef")) -> hex"06 0404deadbeef",
       TlvStream[OnionMessagePayloadTlv](ReplyPath(blindedRoute), EncryptedData(hex"deadbeef")) -> hex"f6 02ee02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661902c5ee5d5d559475814916957e167b8c257e06532ae6bfcbe4553e4549b9142ec7039dcddf597c0ea5bfe3c4de00630182d26c8f3cb588fa02c8cd19391a110f41a200330840ad82edc7378794e568deb3a836e3b9bc2e4a684412c34dbc5e50159ecf0b9c3844719f8656af9ff283e1eecb503f5e45b302aa42066bc9802597cac8f9f7193b8fd24b8671e3807e9c61dae8b330b695de780033d76f6388daa82694bcc63d43eaac1c5d189722cb84d0edb3b8b7dccb833c886eda7adb483f44498789f4139b2c12a0bfe8436a 0404deadbeef",

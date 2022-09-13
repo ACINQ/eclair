@@ -107,10 +107,11 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_e = UpdateAddHtlc(randomBytes32(), 2, amount_de, paymentHash, expiry_de, packet_e, None)
     val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(add_e2 == add_e)
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
     assert(payload_e.amount == finalAmount)
     assert(payload_e.totalAmount == finalAmount)
     assert(payload_e.expiry == finalExpiry)
-    assert(payload_e.paymentSecret == paymentSecret)
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentSecret == paymentSecret)
   }
 
   test("build onion with final payload") {
@@ -139,11 +140,12 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_b = UpdateAddHtlc(randomBytes32(), 0, finalAmount, paymentHash, finalExpiry, add.onion, None)
     val Right(FinalPacket(add_b2, payload_b)) = decrypt(add_b, priv_b.privateKey, Features.empty)
     assert(add_b2 == add_b)
+    assert(payload_b.isInstanceOf[FinalPayload.Standard])
     assert(payload_b.amount == finalAmount)
     assert(payload_b.totalAmount == finalAmount)
     assert(payload_b.expiry == finalExpiry)
-    assert(payload_b.paymentSecret == paymentSecret)
-    assert(payload_b.paymentMetadata.contains(paymentMetadata))
+    assert(payload_b.asInstanceOf[FinalPayload.Standard].paymentSecret == paymentSecret)
+    assert(payload_b.asInstanceOf[FinalPayload.Standard].paymentMetadata.contains(paymentMetadata))
   }
 
   test("build a trampoline payment") {

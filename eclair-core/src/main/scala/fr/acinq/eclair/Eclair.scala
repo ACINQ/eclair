@@ -39,7 +39,7 @@ import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator._
@@ -132,11 +132,11 @@ trait Eclair {
 
   def channelStats(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Stats]]
 
-  def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Bolt11Invoice]]
+  def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Invoice]]
 
-  def pendingInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Bolt11Invoice]]
+  def pendingInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Invoice]]
 
-  def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Bolt11Invoice]]
+  def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Invoice]]
 
   def deleteInvoice(paymentHash: ByteVector32): Future[String]
 
@@ -264,7 +264,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[Bolt11Invoice] = {
     fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
-    (appKit.paymentHandler ? ReceivePayment(amount_opt, description, expire_opt, fallbackAddress_opt = fallbackAddress_opt, paymentPreimage_opt = paymentPreimage_opt)).mapTo[Bolt11Invoice]
+    (appKit.paymentHandler ? ReceiveStandardPayment(amount_opt, description, expire_opt, fallbackAddress_opt = fallbackAddress_opt, paymentPreimage_opt = paymentPreimage_opt)).mapTo[Bolt11Invoice]
   }
 
   override def newAddress(): Future[String] = {
@@ -434,15 +434,15 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     Future(appKit.nodeParams.db.audit.stats(from.toTimestampMilli, to.toTimestampMilli))
   }
 
-  override def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Bolt11Invoice]] = Future {
+  override def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
     appKit.nodeParams.db.payments.listIncomingPayments(from.toTimestampMilli, to.toTimestampMilli).map(_.invoice)
   }
 
-  override def pendingInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Bolt11Invoice]] = Future {
+  override def pendingInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
     appKit.nodeParams.db.payments.listPendingIncomingPayments(from.toTimestampMilli, to.toTimestampMilli).map(_.invoice)
   }
 
-  override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Bolt11Invoice]] = Future {
+  override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Invoice]] = Future {
     appKit.nodeParams.db.payments.getIncomingPayment(paymentHash).map(_.invoice)
   }
 

@@ -20,13 +20,13 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
-import fr.acinq.eclair.db.PaymentsDb.{decodeFailures, decodeRoute, encodeFailures, encodeRoute}
+import fr.acinq.eclair.db.PaymentsDb._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 import java.sql.{Connection, ResultSet, Statement}
 import java.util.UUID
@@ -93,16 +93,25 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
     }
 
+    def migration45(statement: Statement): Unit = {
+      // We add a path_ids column for blinded payments.
+      statement.executeUpdate("ALTER TABLE received_payments RENAME to _received_payments_old")
+      statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage BLOB NOT NULL, path_ids BLOB, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
+      statement.executeUpdate("INSERT INTO received_payments (payment_hash, payment_type, payment_preimage, payment_request, received_msat, created_at, expire_at, received_at) SELECT payment_hash, payment_type, payment_preimage, payment_request, received_msat, created_at, expire_at, received_at FROM _received_payments_old")
+      statement.executeUpdate("DROP table _received_payments_old")
+      statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
-        statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
+        statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage BLOB NOT NULL, path_ids BLOB, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
         statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER, recipient_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
 
         statement.executeUpdate("CREATE INDEX sent_parent_id_idx ON sent_payments(parent_id)")
         statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON sent_payments(payment_hash)")
         statement.executeUpdate("CREATE INDEX sent_created_idx ON sent_payments(created_at)")
         statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
-      case Some(v@(1 | 2 | 3)) =>
+      case Some(v@(1 | 2 | 3 | 4)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -112,6 +121,9 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
         }
         if (v < 4) {
           migration34(statement)
+        }
+        if (v < 5) {
+          migration45(statement)
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -237,8 +249,21 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, paymentType)
       statement.setString(4, invoice.toString)
-      statement.setLong(5, invoice.createdAt.toTimestampMilli.toLong) // BOLT11 timestamp is in seconds
+      statement.setLong(5, invoice.createdAt.toTimestampMilli.toLong)
       statement.setLong(6, (invoice.createdAt + invoice.relativeExpiry).toLong.seconds.toMillis)
+      statement.executeUpdate()
+    }
+  }
+
+  override def addIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, pathIds: Map[PublicKey, ByteVector], paymentType: String): Unit = withMetrics("payments/add-incoming-blinded", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, path_ids, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, invoice.paymentHash.toArray)
+      statement.setBytes(2, preimage.toArray)
+      statement.setBytes(3, encodePathIds(pathIds))
+      statement.setString(4, paymentType)
+      statement.setString(5, invoice.toString)
+      statement.setLong(6, invoice.createdAt.toTimestampMilli.toLong)
+      statement.setLong(7, (invoice.createdAt + invoice.relativeExpiry).toLong.seconds.toMillis)
       statement.executeUpdate()
     }
   }
@@ -253,20 +278,29 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
+  private def parseIncomingPayment(rs: ResultSet): Option[IncomingPayment] = {
     val invoice = rs.getString("payment_request")
-    IncomingPayment(
-      Bolt11Invoice.fromString(invoice).get,
-      rs.getByteVector32("payment_preimage"),
-      rs.getString("payment_type"),
-      TimestampMilli(rs.getLong("created_at")),
-      buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(invoice), rs.getLongNullable("received_at").map(TimestampMilli(_))))
+    val preimage = rs.getByteVector32("payment_preimage")
+    val paymentType = rs.getString("payment_type")
+    val createdAt = TimestampMilli(rs.getLong("created_at"))
+    Invoice.fromString(invoice) match {
+      case Success(invoice: Bolt11Invoice) =>
+        val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getLongNullable("received_at").map(TimestampMilli(_)))
+        Some(IncomingStandardPayment(invoice, preimage, paymentType, createdAt, status))
+      case Success(invoice: Bolt12Invoice) =>
+        val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getLongNullable("received_at").map(TimestampMilli(_)))
+        val pathIds = decodePathIds(BitVector(rs.getBytes("path_ids")))
+        Some(IncomingBlindedPayment(invoice, preimage, paymentType, pathIds, createdAt, status))
+      case _ =>
+        logger.error(s"could not parse DB invoice=$invoice, this should not happen")
+        None
+    }
   }
 
-  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedInvoice_opt: Option[String], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
+  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], invoice: Invoice, receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
     amount_opt match {
       case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0 unixms))
-      case None if serializedInvoice_opt.exists(Bolt11Invoice.fastHasExpired) => IncomingPaymentStatus.Expired
+      case None if invoice.isExpired() => IncomingPaymentStatus.Expired
       case None => IncomingPaymentStatus.Pending
     }
   }
@@ -274,7 +308,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = withMetrics("payments/get-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
-      statement.executeQuery().map(parseIncomingPayment).headOption
+      statement.executeQuery().flatMap(parseIncomingPayment).headOption
     }
   }
 
@@ -298,7 +332,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
-      statement.executeQuery().map(parseIncomingPayment).toSeq
+      statement.executeQuery().flatMap(parseIncomingPayment).toSeq
     }
   }
 
@@ -306,7 +340,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
-      statement.executeQuery().map(parseIncomingPayment).toSeq
+      statement.executeQuery().flatMap(parseIncomingPayment).toSeq
     }
   }
 
@@ -315,7 +349,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
       statement.setLong(3, TimestampMilli.now().toLong)
-      statement.executeQuery().map(parseIncomingPayment).toSeq
+      statement.executeQuery().flatMap(parseIncomingPayment).toSeq
     }
   }
 
@@ -324,7 +358,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
       statement.setLong(3, TimestampMilli.now().toLong)
-      statement.executeQuery().map(parseIncomingPayment).toSeq
+      statement.executeQuery().flatMap(parseIncomingPayment).toSeq
     }
   }
 
@@ -332,5 +366,5 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
 
 object SqlitePaymentsDb {
   val DB_NAME = "payments"
-  val CURRENT_VERSION = 4
+  val CURRENT_VERSION = 5
 }

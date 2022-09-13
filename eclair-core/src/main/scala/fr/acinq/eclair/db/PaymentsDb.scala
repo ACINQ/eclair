@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.util.Try
@@ -29,8 +30,11 @@ trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb
 
 trait IncomingPaymentsDb {
 
-  /** Add a new expected incoming payment (not yet received). */
+  /** Add a new expected standard incoming payment (not yet received). */
   def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
+
+  /** Add a new expected blinded incoming payment (not yet received). */
+  def addIncomingBlindedPayment(pr: Bolt12Invoice, preimage: ByteVector32, pathIds: Map[PublicKey, ByteVector], paymentType: String = PaymentType.Blinded): Unit
 
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the invoice amount.
@@ -88,6 +92,7 @@ trait OutgoingPaymentsDb {
 
 case object PaymentType {
   val Standard = "Standard"
+  val Blinded = "Blinded"
   val SwapIn = "SwapIn"
   val SwapOut = "SwapOut"
   val KeySend = "KeySend"
@@ -95,20 +100,42 @@ case object PaymentType {
 
 /**
  * An incoming payment received by this node.
- * At first it is in a pending state once the invoice has been generated, then will become either a success (if
- * we receive a valid HTLC) or a failure (if the invoice expires).
- *
- * @param invoice         Bolt 11 invoice.
- * @param paymentPreimage pre-image associated with the invoice's payment_hash.
- * @param paymentType     distinguish different payment types (standard, swaps, etc).
- * @param createdAt       absolute time in milli-seconds since UNIX epoch when the invoice was generated.
- * @param status          current status of the payment.
+ * At first it is in a pending state once the invoice has been generated, then will become either a success (if we
+ * receive a valid HTLC) or a failure (if the invoice expires).
  */
-case class IncomingPayment(invoice: Bolt11Invoice,
-                           paymentPreimage: ByteVector32,
-                           paymentType: String,
-                           createdAt: TimestampMilli,
-                           status: IncomingPaymentStatus)
+sealed trait IncomingPayment {
+  // @formatter:off
+  /** Bolt invoice. */
+  def invoice: Invoice
+  /** Pre-image associated with the invoice's payment_hash. */
+  def paymentPreimage: ByteVector32
+  /** Distinguish different payment types (standard, swaps, etc). */
+  def paymentType: String
+  /** Absolute time in milli-seconds since UNIX epoch when the invoice was generated. */
+  def createdAt: TimestampMilli
+  /** Current status of the payment. */
+  def status: IncomingPaymentStatus
+  // @formatter:on
+}
+
+/** A standard incoming payment received by this node. */
+case class IncomingStandardPayment(invoice: Bolt11Invoice,
+                                   paymentPreimage: ByteVector32,
+                                   paymentType: String,
+                                   createdAt: TimestampMilli,
+                                   status: IncomingPaymentStatus) extends IncomingPayment
+
+/**
+ * A blinded incoming payment received by this node.
+ *
+ * @param pathIds map the last blinding point of a blinded path to the corresponding pathId.
+ */
+case class IncomingBlindedPayment(invoice: Bolt12Invoice,
+                                  paymentPreimage: ByteVector32,
+                                  paymentType: String,
+                                  pathIds: Map[PublicKey, ByteVector],
+                                  createdAt: TimestampMilli,
+                                  status: IncomingPaymentStatus) extends IncomingPayment
 
 sealed trait IncomingPaymentStatus
 
@@ -239,11 +266,6 @@ object PaymentsDb {
   private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
   val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)
     .typecase(0x01, listOfN(uint8, hopSummaryCodec))
-  private val legacyFailureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec).as[LegacyFailureSummary]
-  private val failureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec :: ("node_id" | optional(bool, CommonCodecs.publicKey))).as[FailureSummary]
-  private val paymentFailuresCodec = discriminated[List[GenericFailureSummary]].by(byte)
-    .typecase(0x02, listOfN(uint8, failureSummaryCodec))
-    .typecase(0x01, listOfN(uint8, legacyFailureSummaryCodec).decodeOnly)
 
   def encodeRoute(route: List[HopSummary]): Array[Byte] = {
     paymentRouteCodec.encode(route).require.toByteArray
@@ -255,6 +277,12 @@ object PaymentsDb {
       case Attempt.Failure(_) => Nil
     }
   }
+
+  private val legacyFailureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec).as[LegacyFailureSummary]
+  private val failureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec :: ("node_id" | optional(bool, CommonCodecs.publicKey))).as[FailureSummary]
+  private val paymentFailuresCodec = discriminated[List[GenericFailureSummary]].by(byte)
+    .typecase(0x02, listOfN(uint8, failureSummaryCodec))
+    .typecase(0x01, listOfN(uint8, legacyFailureSummaryCodec).decodeOnly)
 
   def encodeFailures(failures: List[FailureSummary]): Array[Byte] = {
     paymentFailuresCodec.encode(failures).require.toByteArray
@@ -269,4 +297,19 @@ object PaymentsDb {
       case Attempt.Failure(_) => Nil
     }
   }
+
+  private val pathIdCodec = (("blinding_key" | CommonCodecs.publicKey) :: ("path_id" | variableSizeBytes(uint16, bytes))).as[(PublicKey, ByteVector)]
+  private val pathIdsCodec = "path_ids" | listOfN(uint16, pathIdCodec)
+
+  def encodePathIds(pathIds: Map[PublicKey, ByteVector]): Array[Byte] = {
+    pathIdsCodec.encode(pathIds.toList).require.toByteArray
+  }
+
+  def decodePathIds(b: BitVector): Map[PublicKey, ByteVector] = {
+    pathIdsCodec.decode(b) match {
+      case Attempt.Successful(pathIds) => pathIds.value.toMap
+      case Attempt.Failure(_) => Map.empty
+    }
+  }
+
 }

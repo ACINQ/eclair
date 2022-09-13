@@ -391,7 +391,28 @@ object InvoiceSerializer extends MinimalSerializer({
       amount :+
       features :+
       routingInfo
-
+    JObject(fieldList)
+  case p: Bolt12Invoice =>
+    val fieldList = List(
+      JField("amount", JLong(p.amount.toLong)),
+      JField("nodeId", JString(p.nodeId.toString())),
+      JField("paymentHash", JString(p.paymentHash.toString())),
+      p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
+      JField("features", Extraction.decompose(p.features)(
+        DefaultFormats +
+          FeatureKeySerializer +
+          FeatureSupportSerializer +
+          UnknownFeatureSerializer
+      )),
+      JField("blindedPaths", JArray(p.blindedPaths.map(path => {
+        JObject(List(
+          JField("introductionNodeId", JString(path.introductionNodeId.toString())),
+          JField("blindedNodeIds", JArray(path.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
+        ))
+      }).toList)),
+      JField("createdAt", JLong(p.createdAt.toLong)),
+      JField("expiresAt", JLong((p.createdAt + p.relativeExpiry).toLong)),
+      JField("serialized", JString(p.toString)))
     JObject(fieldList)
 })
 

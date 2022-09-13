@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router
@@ -377,7 +377,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: MilliSatoshi, paymentHandler: ActorRef, paymentInitiator: ActorRef): UUID = {
-      sender.send(paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
+      sender.send(paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Invoice]
       val sendReq = SendPaymentToNode(amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams)
       sender.send(paymentInitiator, sendReq)
@@ -691,7 +691,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
-    sender.send(nodes("F").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
+    sender.send(nodes("F").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
     val invoice = sender.expectMsgType[Invoice]
 
     // then we make the actual payment

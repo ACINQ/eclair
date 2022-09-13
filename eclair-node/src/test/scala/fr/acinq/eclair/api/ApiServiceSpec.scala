@@ -832,7 +832,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'getreceivedinfo' 2") {
     val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
-    val defaultPayment = IncomingPayment(Bolt11Invoice.fromString(invoice).get, ByteVector32.One, PaymentType.Standard, 42 unixms, IncomingPaymentStatus.Pending)
+    val defaultPayment = IncomingStandardPayment(Bolt11Invoice.fromString(invoice).get, ByteVector32.One, PaymentType.Standard, 42 unixms, IncomingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val pending = randomBytes32()
     eclair.receivedInfo(pending)(any) returns Future.successful(Some(defaultPayment))
@@ -852,7 +852,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'getreceivedinfo' 3") {
     val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
-    val defaultPayment = IncomingPayment(Bolt11Invoice.fromString(invoice).get, ByteVector32.One, PaymentType.Standard, 42 unixms, IncomingPaymentStatus.Pending)
+    val defaultPayment = IncomingStandardPayment(Bolt11Invoice.fromString(invoice).get, ByteVector32.One, PaymentType.Standard, 42 unixms, IncomingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val expired = randomBytes32()
     eclair.receivedInfo(expired)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Expired)))
@@ -872,7 +872,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'getreceivedinfo' 4") {
     val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
-    val defaultPayment = IncomingPayment(Bolt11Invoice.fromString(invoice).get, ByteVector32.One, PaymentType.Standard, 42 unixms, IncomingPaymentStatus.Pending)
+    val defaultPayment = IncomingStandardPayment(Bolt11Invoice.fromString(invoice).get, ByteVector32.One, PaymentType.Standard, 42 unixms, IncomingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val received = randomBytes32()
     eclair.receivedInfo(received)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Received(42 msat, TimestampMilli(1633439543777L)))))
@@ -1187,7 +1187,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         val msgrcv = OnionMessages.ReceiveMessage(MessageOnion.FinalPayload(TlvStream[OnionMessagePayloadTlv](
           Seq(
             OnionMessagePayloadTlv.EncryptedData(ByteVector.empty),
-            OnionMessagePayloadTlv.ReplyPath(Sphinx.RouteBlinding.create(PrivateKey(hex"414141414141414141414141414141414141414141414141414141414141414101"), Seq(bobNodeId), Seq(hex"000000")))
+            OnionMessagePayloadTlv.ReplyPath(Sphinx.RouteBlinding.create(PrivateKey(hex"414141414141414141414141414141414141414141414141414141414141414101"), Seq(bobNodeId), Seq(hex"000000")).route)
           ), Seq(
             GenericTlv(UInt64(5), hex"1111")
           )), TlvStream(RouteBlindingEncryptedDataTlv.PathId(hex"2222"))))

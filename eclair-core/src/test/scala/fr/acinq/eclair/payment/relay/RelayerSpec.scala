@@ -130,10 +130,11 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val fp = paymentHandler.expectMessageType[FinalPacket]
     assert(fp.add == add_ab)
+    assert(fp.payload.isInstanceOf[FinalPayload.Standard])
     assert(fp.payload.amount == finalAmount)
     assert(fp.payload.totalAmount == totalAmount)
     assert(fp.payload.expiry == finalExpiry)
-    assert(fp.payload.paymentSecret == paymentSecret)
+    assert(fp.payload.asInstanceOf[FinalPayload.Standard].paymentSecret == paymentSecret)
 
     register.expectNoMessage(50 millis)
   }

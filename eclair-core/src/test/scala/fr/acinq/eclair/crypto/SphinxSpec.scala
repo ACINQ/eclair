@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedRoute, BlindedRouteDetails}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
@@ -365,17 +365,18 @@ class SphinxSpec extends AnyFunSuite {
     val evePayload = hex"011c00000000000000000000000000000000000000000000000000000000 0616c9cf92f45ade68345bc20ae672e2012f4af487ed4415 0c05000b71b032 0e00"
 
     // Eve creates a blinded route to herself through Dave:
-    val (blindingOverride, blindedRouteEnd) = {
+    val (blindingOverride, blindedRouteEnd, lastBlinding) = {
       val sessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
-      val blindedRoute = RouteBlinding.create(sessionKey, Seq(dave, eve).map(_.publicKey), Seq(davePayload, evePayload))
+      val BlindedRouteDetails(blindedRoute, lastBlinding) = RouteBlinding.create(sessionKey, Seq(dave, eve).map(_.publicKey), Seq(davePayload, evePayload))
       assert(blindedRoute.blindingKey == PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
-      (blindedRoute.blindingKey, blindedRoute)
+      assert(lastBlinding == PublicKey(hex"03e09038ee76e50f444b19abf0a555e8697e035f62937168b80adf0931b31ce52a"))
+      (blindedRoute.blindingKey, blindedRoute, lastBlinding)
     }
 
     // Bob also wants to use route blinding:
     val (blinding, blindedRouteStart) = {
       val sessionKey = PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")
-      val blindedRoute = RouteBlinding.create(sessionKey, Seq(bob, carol).map(_.publicKey), Seq(bobPayload, carolPayload))
+      val blindedRoute = RouteBlinding.create(sessionKey, Seq(bob, carol).map(_.publicKey), Seq(bobPayload, carolPayload)).route
       assert(blindedRoute.blindingKey == PublicKey(hex"024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"))
       (blindedRoute.blindingKey, blindedRoute)
     }
@@ -394,6 +395,8 @@ class SphinxSpec extends AnyFunSuite {
       hex"0fa1a72cff3b64a3d6e1e4903cf8c8b0a17144aeb249dcb86561adee1f679ee8db3e561d9e49895fd4bcebf6f58d6f61a6d41a9bf5aa4b0453437856632e8255c351873143ddf2bb2b0832b091e1b4",
       hex"da1c7e5f7881219884beae6ae68971de73bab4c3055d9865b1afb60722a63c688768042ade22f2c22f5724767d171fd221d3e579e43b354cc72e3ef146ada91a892d95fc48662f5b158add0af457da",
     ))
+    // After generating the blinded route, Eve is able to derive the private key corresponding to her blinded identity.
+    assert(RouteBlinding.derivePrivateKey(eve, lastBlinding).publicKey == blindedRoute.blindedNodeIds.last)
 
     // Every node in the route is able to decrypt its payload and extract the blinding point for the next node:
     {
@@ -416,6 +419,7 @@ class SphinxSpec extends AnyFunSuite {
       val Success((payload2, ephKey3)) = RouteBlinding.decryptPayload(dave, blindingOverride, blindedRoute.encryptedPayloads(2))
       assert(payload2 == davePayload)
       assert(ephKey3 == PublicKey(hex"03e09038ee76e50f444b19abf0a555e8697e035f62937168b80adf0931b31ce52a"))
+      assert(ephKey3 == lastBlinding)
 
       // Eve can derive the private key used to unwrap the onion and decrypt its encrypted payload.
       assert(RouteBlinding.derivePrivateKey(eve, ephKey3).publicKey == blindedRoute.blindedNodeIds(3))
@@ -510,7 +514,7 @@ class SphinxSpec extends AnyFunSuite {
       assert(tlvsEve.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
       val Right(decryptedPayloadEve) = RouteBlindingEncryptedDataCodecs.decode(eve, blindingEphemeralKeyForEve, tlvsEve.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val Right(payloadEve) = PaymentOnion.FinalPayload.Blinded.validate(tlvsEve, decryptedPayloadEve.tlvs)
-      assert(payloadEve.pathId_opt.contains(hex"c9cf92f45ade68345bc20ae672e2012f4af487ed4415"))
+      assert(payloadEve.pathId == hex"c9cf92f45ade68345bc20ae672e2012f4af487ed4415")
       assert(payloadEve.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750000), 50 msat))
       assert(payloadEve.allowedFeatures.isEmpty)
 
@@ -527,7 +531,7 @@ class SphinxSpec extends AnyFunSuite {
   }
 
   test("invalid blinded route") {
-    val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).encryptedPayloads
+    val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).route.encryptedPayloads
     // Invalid node private key:
     val ephKey0 = sessionKey.publicKey
     assert(RouteBlinding.decryptPayload(privKeys(1), ephKey0, encryptedPayloads(0)).isFailure)

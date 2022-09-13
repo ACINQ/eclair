@@ -103,6 +103,10 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Se
 
   def unscoped(): Features[Feature] = Features[Feature](activated.collect { case (f, s) => (f: Feature, s) }, unknown)
 
+  def add(feature: T, support: FeatureSupport): Features[T] = copy(activated = activated + (feature -> support))
+
+  def remove(feature: T): Features[T] = copy(activated = activated - feature)
+
   def toByteVector: ByteVector = {
     val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature.supportBit(support) }.toSet)
     val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))

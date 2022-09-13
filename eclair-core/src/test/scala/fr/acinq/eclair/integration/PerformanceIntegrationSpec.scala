@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
@@ -83,7 +83,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     val amountMsat = 100_000.msat
     // first we retrieve a payment hash from B
-    sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
+    sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
     val pr = sender.expectMsgType[Invoice]
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPaymentToNode(amountMsat, pr, routeParams = integrationTestRouteParams, maxAttempts = 1))

@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannel
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
@@ -283,7 +283,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
     eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
-    val receive = paymentHandler.expectMsgType[ReceivePayment]
+    val receive = paymentHandler.expectMsgType[ReceiveStandardPayment]
 
     assert(receive.amount_opt.contains(123 msat))
     assert(receive.expirySeconds_opt.contains(456))
