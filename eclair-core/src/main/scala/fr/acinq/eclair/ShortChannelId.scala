@@ -95,6 +95,9 @@ object ShortChannelId {
     }
     case _ => Failure(new IllegalArgumentException(s"Invalid short channel id: $s"))
   }
+
+  // A special alias for a virtual channel to ourselves. Used to add extra hops at the end of a blinded route.
+  val toSelf: Alias = Alias(aliasUpperBound)
 }
 
 /**
