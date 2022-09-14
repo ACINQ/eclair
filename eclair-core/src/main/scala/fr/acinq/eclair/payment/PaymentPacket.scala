@@ -25,7 +25,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
@@ -120,7 +120,11 @@ object IncomingPaymentPacket {
           case Some(encrypted) =>
             decryptEncryptedRecipientData(add, privateKey, payload, encrypted.data).flatMap {
               case DecodedEncryptedRecipientData(blindedPayload, nextBlinding) =>
-                validateBlindedChannelRelayPayload(add, payload, blindedPayload, nextBlinding, nextPacket)
+                validateBlindedChannelRelayPayload(add, payload, blindedPayload, nextBlinding, nextPacket).flatMap {
+                  case ChannelRelayPacket(_, payload, nextPacket) if payload.outgoingChannelId == ShortChannelId.toSelf =>
+                    decrypt(add.copy(onionRoutingPacket = nextPacket, tlvStream = add.tlvStream.copy(records = Seq(UpdateAddHtlcTlv.BlindingPoint(nextBlinding)))), privateKey, features)
+                  case relayPacket => Right(relayPacket)
+                }
             }
           case None if add.blinding_opt.isDefined => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
           case None => IntermediatePayload.ChannelRelay.Standard.validate(payload).left.map(_.failureMessage).map {
@@ -151,7 +155,11 @@ object IncomingPaymentPacket {
     }
   }
 
-  private def validateBlindedChannelRelayPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey, nextPacket: OnionRoutingPacket): Either[FailureMessage, ChannelRelayPacket] = {
+  private def validateBlindedChannelRelayPayload(add: UpdateAddHtlc,
+                                                 payload: TlvStream[OnionPaymentPayloadTlv],
+                                                 blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv],
+                                                 nextBlinding: PublicKey,
+                                                 nextPacket: OnionRoutingPacket): Either[FailureMessage, ChannelRelayPacket] = {
     IntermediatePayload.ChannelRelay.Blinded.validate(payload, blindedPayload, nextBlinding).left.map(_.failureMessage).flatMap {
       case payload if add.amountMsat < payload.paymentConstraints.minAmount => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if add.cltvExpiry > payload.paymentConstraints.maxCltvExpiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
@@ -173,8 +181,7 @@ object IncomingPaymentPacket {
       case payload if add.amountMsat < payload.paymentConstraints.minAmount => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if add.cltvExpiry > payload.paymentConstraints.maxCltvExpiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if !Features.areCompatible(Features.empty, payload.allowedFeatures) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
-      // TODO: receiving through blinded routes is not supported yet.
-      case _ => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case payload => Right(FinalPacket(add, payload))
     }
   }
 

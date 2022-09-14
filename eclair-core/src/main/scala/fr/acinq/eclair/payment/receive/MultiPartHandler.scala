@@ -299,10 +299,10 @@ object MultiPartHandler {
                   invoice
                 case r: ReceiveOfferPayment =>
                   // TODO: get blinded paths from the router instead
-                  val pathId = RouteBlindingEncryptedDataTlv.PathId(randomBytes(32))
+                  val pathId = RouteBlindingEncryptedDataTlv.PathId(randomBytes32())
                   val dummyConstraints = RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(nodeParams.currentBlockHeight + 144), 1 msat)
                   val dummyRelay = RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(0), 0, 0 msat)
-                  val dummyScid = RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(0))
+                  val dummyScid = RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId.toSelf)
                   val dummyPath = Seq(
                     (nodeParams.nodeId, RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(dummyScid, dummyRelay, dummyConstraints)).require.bytes),
                     (nodeParams.nodeId, RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(dummyConstraints, pathId)).require.bytes),
