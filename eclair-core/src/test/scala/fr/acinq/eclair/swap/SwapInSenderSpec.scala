@@ -29,11 +29,11 @@ import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
-import fr.acinq.eclair.channel.Register.Forward
-import fr.acinq.eclair.channel.{CMD_GET_CHANNEL_DATA, DATA_NORMAL, RES_GET_CHANNEL_DATA}
+import fr.acinq.eclair.channel.DATA_NORMAL
+import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.swap.SwapCommands._
-import fr.acinq.eclair.swap.SwapData.SwapInSenderData
+import fr.acinq.eclair.swap.SwapData.SwapData
 import fr.acinq.eclair.swap.SwapEvents._
 import fr.acinq.eclair.swap.SwapResponses.{Status, SwapInStatus}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
@@ -57,7 +57,8 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
   val channelData: DATA_NORMAL = ChannelCodecsSpec.normal
   val shortChannelId: ShortChannelId = channelData.shortIds.real.toOption.get
   val channelId: ByteVector32 = channelData.channelId
-  val makerPrivkey: PrivateKey = PrivateKey(randomBytes32())
+  val keyManager: SwapKeyManager = TestConstants.Alice.nodeParams.swapKeyManager
+  val makerPrivkey: PrivateKey = keyManager.openingPrivateKey(SwapKeyManager.keyPath(swapId)).privateKey
   val takerPrivkey: PrivateKey = PrivateKey(randomBytes32())
   val makerNodeId: PublicKey = PrivateKey(randomBytes32()).publicKey
   val makerPubkey: PublicKey = makerPrivkey.publicKey
@@ -101,11 +102,11 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     // restore the SwapInSender actor state from a confirmed on-chain opening tx
     val invoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, makerPrivkey, Left("SwapInSender invoice"), CltvExpiryDelta(18))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val swapData = SwapInSenderData(channelId, request, agreement, invoice, openingTxBroadcasted)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
     swapInSender ! RestoreSwapInSender(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
-    register.expectMessageType[Forward[OpeningTxBroadcasted]]
+    register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
 
     // wait for SwapInSender to subscribe to PaymentEventReceived messages
     swapEvents.expectNoMessage()
@@ -132,14 +133,10 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     import f._
 
     // start new SwapInSender
-    swapInSender ! StartSwapInSender(amount, swapId, channelId)
-
-    // SwapInSender will first request channel data to get shortChannelId
-    val getChannelData = register.expectMessageType[Forward[CMD_GET_CHANNEL_DATA]]
-    getChannelData.replyTo.toClassic ! RES_GET_CHANNEL_DATA(channelData)
+    swapInSender ! StartSwapInSender(amount, swapId, shortChannelId)
 
     // SwapInSender: SwapInRequest -> SwapInSender
-    val swapInRequest = register.expectMessageType[Forward[SwapInRequest]]
+    val swapInRequest = register.expectMessageType[ForwardShortId[SwapInRequest]]
 
     // SwapInReceiver: SwapInAgreement -> SwapInSender
     swapInSender ! SwapMessageReceived(SwapInAgreement(swapInRequest.message.protocolVersion, swapInRequest.message.swapId, takerPubkey.toString(), premium))
@@ -148,7 +145,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     val openingTx = swapEvents.expectMessageType[TransactionPublished].tx
 
     // SwapInSender:OpeningTxBroadcasted -> SwapInReceiver
-    val openingTxBroadcasted = register.expectMessageType[Forward[OpeningTxBroadcasted]]
+    val openingTxBroadcasted = register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
     val invoice = Bolt11Invoice.fromString(openingTxBroadcasted.message.payreq).get
 
     // wait for SwapInSender to subscribe to PaymentEventReceived messages
@@ -176,11 +173,11 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     // restore the SwapInSender actor state from a confirmed on-chain opening tx
     val invoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, makerPrivkey, Left("SwapInSender invoice"), CltvExpiryDelta(18))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val swapData = SwapInSenderData(channelId, request, agreement, invoice, openingTxBroadcasted)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
     swapInSender ! RestoreSwapInSender(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
-    register.expectMessageType[Forward[OpeningTxBroadcasted]]
+    register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
 
     // wait for SwapInSender to subscribe to PaymentEventReceived messages
     swapEvents.expectNoMessage()
@@ -213,11 +210,11 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     val invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, makerPrivkey, Left("SwapInSender invoice with short expiry"), CltvExpiryDelta(18),
       expirySeconds = Some(2))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val swapData = SwapInSenderData(channelId, request, agreement, invoice, openingTxBroadcasted)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
     swapInSender ! RestoreSwapInSender(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
-    register.expectMessageType[Forward[OpeningTxBroadcasted]]
+    register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
 
     // wait to subscribe to PaymentEventReceived messages
     swapEvents.expectNoMessage()

@@ -28,10 +28,10 @@ import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
-import fr.acinq.eclair.channel.Register.Forward
-import fr.acinq.eclair.channel.{CMD_GET_CHANNEL_DATA, DATA_NORMAL, RES_GET_CHANNEL_DATA}
+import fr.acinq.eclair.channel.DATA_NORMAL
+import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
-import fr.acinq.eclair.swap.SwapData.SwapInSenderData
+import fr.acinq.eclair.swap.SwapData.SwapData
 import fr.acinq.eclair.swap.SwapEvents.{ClaimByInvoicePaid, SwapEvent, TransactionPublished}
 import fr.acinq.eclair.swap.SwapRegister.{MessageReceived, SwapInRequested, SwapTerminated}
 import fr.acinq.eclair.swap.SwapResponses.{Response, SwapOpened}
@@ -94,7 +94,7 @@ class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val swapInRequest: SwapInRequest = SwapInRequest(protocolVersion, swapId, noAsset, network, shortChannelId.toString, amount.toLong, alicePubkey.toString())
     val swapInAgreement: SwapInAgreement = SwapInAgreement(protocolVersion, swapId, bobPubkey.toString(), premium)
     val openingTxBroadcasted: OpeningTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txId, scriptOut, blindingKey)
-    val savedData: Set[SwapInSenderData] = Set(SwapInSenderData(channelId, swapInRequest, swapInAgreement, invoice, openingTxBroadcasted))
+    val savedData: Set[SwapData] = Set(SwapData(swapInRequest, swapInAgreement, invoice, openingTxBroadcasted, isInitiator = true))
     val swapRegister = testKit.spawn(Behaviors.monitor(monitor.ref, SwapRegister(TestConstants.Alice.nodeParams, paymentHandler.ref.toClassic, watcher.ref, register.ref.toClassic, wallet, savedData)), "SwapRegister")
 
     // wait for SwapInSender to subscribe to PaymentEventReceived messages
@@ -123,16 +123,12 @@ class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     userCli.expectNoMessage()
 
     // User:SwapInRequested -> SwapInRegister
-    swapRegister ! SwapInRequested(userCli.ref, amount, channelId)
+    swapRegister ! SwapInRequested(userCli.ref, amount, shortChannelId)
     val swapId = userCli.expectMessageType[SwapOpened].swapId
     monitor.expectMessageType[SwapInRequested]
 
-    // Alice will first request channel data to get shortChannelId
-    val getChannelData = register.expectMessageType[Forward[CMD_GET_CHANNEL_DATA]]
-    getChannelData.replyTo.toClassic ! RES_GET_CHANNEL_DATA(channelData)
-
     // Alice:SwapInRequest -> Bob
-    val swapInRequest = register.expectMessageType[Forward[SwapInRequest]]
+    val swapInRequest = register.expectMessageType[ForwardShortId[SwapInRequest]]
     assert(swapId === swapInRequest.message.swapId)
 
     // Bob: SwapInAgreement -> Alice
@@ -143,7 +139,7 @@ class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     swapEvents.expectMessageType[TransactionPublished]
 
     // Alice:OpeningTxBroadcasted -> Bob
-    val openingTxBroadcasted = register.expectMessageType[Forward[OpeningTxBroadcasted]]
+    val openingTxBroadcasted = register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
 
     // Bob: payment(paymentHash) -> Alice
     val paymentHash = Bolt11Invoice.fromString(openingTxBroadcasted.message.payreq).get.paymentHash

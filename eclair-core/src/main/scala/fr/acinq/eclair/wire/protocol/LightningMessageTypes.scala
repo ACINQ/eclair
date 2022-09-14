@@ -500,13 +500,33 @@ sealed abstract class JSonBlobMessage() extends PeerSwapMessage {
   }
 }
 
-case class SwapInRequest(protocolVersion: Long, swapId: String, asset: String, network: String, scid: String, amount: Long, pubkey: String) extends JSonBlobMessage with HasSwapId
+sealed trait HasSwapVersion { def protocolVersion: Long}
 
-case class SwapOutRequest(protocolVersion: Long, swapId: String, asset: String, network: String, scid: String, amount: Long, pubkey: String) extends JSonBlobMessage with HasSwapId
+sealed trait SwapRequest extends JSonBlobMessage with HasSwapId with HasSwapVersion {
+  def asset: String
+  def network: String
+  def scid: String
+  def amount: Long
+  def pubkey: String
+}
 
-case class SwapInAgreement(protocolVersion: Long, swapId: String, pubkey: String, premium: Long) extends JSonBlobMessage with HasSwapId
+case class SwapInRequest(protocolVersion: Long, swapId: String, asset: String, network: String, scid: String, amount: Long, pubkey: String) extends SwapRequest
 
-case class SwapOutAgreement(protocolVersion: Long, swapId: String, pubkey: String, payreq: String) extends JSonBlobMessage with HasSwapId
+case class SwapOutRequest(protocolVersion: Long, swapId: String, asset: String, network: String, scid: String, amount: Long, pubkey: String) extends SwapRequest
+
+sealed trait SwapAgreement extends JSonBlobMessage with HasSwapId with HasSwapVersion {
+  def pubkey: String
+  def premium: Long
+  def payreq: String
+}
+
+case class SwapInAgreement(protocolVersion: Long, swapId: String, pubkey: String, premium: Long) extends SwapAgreement {
+  override def payreq: String = ""
+}
+
+case class SwapOutAgreement(protocolVersion: Long, swapId: String, pubkey: String, payreq: String) extends SwapAgreement {
+  override def premium: Long = 0
+}
 
 case class OpeningTxBroadcasted(swapId: String, payreq: String, txId: String, scriptOut: Long, blindingKey: String) extends JSonBlobMessage with HasSwapId
 

@@ -22,37 +22,38 @@ import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, Transaction}
+import fr.acinq.eclair.MilliSatoshi.toMilliSatoshi
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{CMD_GET_CHANNEL_DATA, ChannelData, RES_GET_CHANNEL_DATA, Register}
+import fr.acinq.eclair.db.PaymentType
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent}
 import fr.acinq.eclair.swap.SwapCommands._
 import fr.acinq.eclair.swap.SwapEvents.TransactionPublished
 import fr.acinq.eclair.swap.SwapTransactions.makeSwapOpeningTxOut
 import fr.acinq.eclair.transactions.Transactions.{TransactionWithInputInfo, checkSpendable}
-import fr.acinq.eclair.wire.protocol.{HasSwapId, OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
-import fr.acinq.eclair.{NodeParams, ShortChannelId}
-import scodec.bits.ByteVector
+import fr.acinq.eclair.wire.protocol.{HasSwapId, OpeningTxBroadcasted}
+import fr.acinq.eclair.{NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.reflect.ClassTag
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 object SwapHelpers {
 
-  def queryChannelData(register: actor.ActorRef, channelId: ByteVector32)(implicit context: ActorContext[SwapCommand]): Unit =
-    register ! Register.Forward[CMD_GET_CHANNEL_DATA](channelDataFailureAdapter(context), channelId, CMD_GET_CHANNEL_DATA(channelDataResultAdapter(context).toClassic))
+  def queryChannelData(register: actor.ActorRef, shortChannelId: ShortChannelId)(implicit context: ActorContext[SwapCommand]): Unit =
+    register ! Register.ForwardShortId[CMD_GET_CHANNEL_DATA](channelDataFailureAdapter(context), shortChannelId, CMD_GET_CHANNEL_DATA(channelDataResultAdapter(context).toClassic))
 
   def channelDataResultAdapter(context: ActorContext[SwapCommand]): ActorRef[RES_GET_CHANNEL_DATA[ChannelData]] =
     context.messageAdapter[RES_GET_CHANNEL_DATA[ChannelData]](ChannelDataResult)
 
-  def channelDataFailureAdapter(context: ActorContext[SwapCommand]): ActorRef[Register.ForwardFailure[CMD_GET_CHANNEL_DATA]] =
-    context.messageAdapter[Register.ForwardFailure[CMD_GET_CHANNEL_DATA]](ChannelDataFailure)
+  def channelDataFailureAdapter(context: ActorContext[SwapCommand]): ActorRef[Register.ForwardShortIdFailure[CMD_GET_CHANNEL_DATA]] =
+    context.messageAdapter[Register.ForwardShortIdFailure[CMD_GET_CHANNEL_DATA]](ChannelDataFailure)
 
   def receiveSwapMessage[B <: SwapCommand : ClassTag](context: ActorContext[SwapCommand], stateName: String)(f: B => Behavior[SwapCommand]): Behavior[SwapCommand] = {
     context.log.debug(s"$stateName: waiting for messages, context: ${context.self.toString}")
@@ -65,6 +66,8 @@ object SwapHelpers {
   }
 
   def swapInvoiceExpiredTimer(swapId: String): String = "swap-invoice-expired-timer-" + swapId
+
+  def swapFeeExpiredTimer(swapId: String): String = "swap-fee-expired-timer-" + swapId
 
   def watchForTxConfirmation(watcher: ActorRef[ZmqWatcher.Command])(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: ByteVector32, minDepth: Long): Unit =
     watcher ! WatchTxConfirmed(replyTo, txId, minDepth)
@@ -96,11 +99,11 @@ object SwapHelpers {
   def forwardAdapter(context: ActorContext[SwapCommand]): ActorRef[Register.ForwardFailure[HasSwapId]] =
     context.messageAdapter[Register.ForwardFailure[HasSwapId]](ForwardFailureAdapter)
 
-  def fundOpening(wallet: OnChainWallet, feeRatePerKw: FeeratePerKw)(request: SwapInRequest, agreement: SwapInAgreement, invoice: Bolt11Invoice)(implicit context: ActorContext[SwapCommand]): Unit = {
+  def fundOpening(wallet: OnChainWallet, feeRatePerKw: FeeratePerKw)(amount: Satoshi, makerPubkey: PublicKey, takerPubkey: PublicKey, invoice: Bolt11Invoice)(implicit context: ActorContext[SwapCommand]): Unit = {
     // setup conditions satisfied, create the opening tx
-    val openingTx = makeSwapOpeningTxOut((request.amount + agreement.premium).sat, PublicKey(ByteVector.fromValidHex(request.pubkey)), PublicKey(ByteVector.fromValidHex(agreement.pubkey)), invoice.paymentHash)
+    val openingTx = makeSwapOpeningTxOut(amount, makerPubkey, takerPubkey, invoice.paymentHash)
     // funding successful, commit the opening tx
-    context.pipeToSelf(wallet.makeFundingTx(openingTx.publicKeyScript, (request.amount + agreement.premium).sat, feeRatePerKw)) {
+    context.pipeToSelf(wallet.makeFundingTx(openingTx.publicKeyScript, amount, feeRatePerKw)) {
       case Success(r) => OpeningTxFunded(invoice, r)
       case Failure(cause) => OpeningTxFailed(s"error while funding swap open tx: $cause")
     }
@@ -136,5 +139,16 @@ object SwapHelpers {
     context.pipeToSelf(wallet.rollback(tx)) {
       case Success(status) => RollbackSuccess(error, status)
       case Failure(t) => RollbackFailure(error, t)
+    }
+
+  def createInvoice(nodeParams: NodeParams, amount: Satoshi, description: String)(implicit context: ActorContext[SwapCommand]): Try[Bolt11Invoice] =
+    Try {
+      val paymentPreimage = randomBytes32()
+      val invoice: Bolt11Invoice = Bolt11Invoice(nodeParams.chainHash, Some(toMilliSatoshi(amount)), Crypto.sha256(paymentPreimage), nodeParams.privateKey, Left(description),
+        nodeParams.channelConf.minFinalExpiryDelta, fallbackAddress = None, expirySeconds = Some(nodeParams.invoiceExpiry.toSeconds),
+        extraHops = Nil, timestamp = TimestampSecond.now(), paymentSecret = paymentPreimage, paymentMetadata = None, features = nodeParams.features.invoiceFeatures())
+      context.log.debug("generated invoice={} from amount={} sat, description={}", invoice.toString, amount, description)
+      nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, PaymentType.Standard)
+      invoice
     }
 }

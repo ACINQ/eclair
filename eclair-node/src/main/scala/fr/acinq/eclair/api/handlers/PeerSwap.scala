@@ -27,8 +27,14 @@ trait PeerSwap {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val swapIn: Route = postRequest("swapin") { implicit t =>
-    formFields(channelIdFormParam, amountSatFormParam) { (channelId, amount) =>
+    formFields(shortChannelIdFormParam, amountSatFormParam) { (channelId, amount) =>
       complete(eclairApi.swapIn(channelId, amount))
+    }
+  }
+
+  val swapOut: Route = postRequest("swapout") { implicit t =>
+    formFields(shortChannelIdFormParam, amountSatFormParam) { (channelId, amount) =>
+      complete(eclairApi.swapOut(channelId, amount))
     }
   }
 
@@ -42,6 +48,6 @@ trait PeerSwap {
     }
   }
 
-  val peerSwapRoutes: Route = swapIn ~ listSwaps ~ cancelSwap
+  val peerSwapRoutes: Route = swapIn ~ swapOut ~ listSwaps ~ cancelSwap
 
 }

@@ -16,13 +16,9 @@
 
 package fr.acinq.eclair.swap
 
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.payment.Bolt11Invoice
-import fr.acinq.eclair.wire.protocol.{OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
+import fr.acinq.eclair.wire.protocol.{OpeningTxBroadcasted, SwapAgreement, SwapRequest}
 
 object SwapData {
-
-  final case class SwapInSenderData(channelId: ByteVector32, request: SwapInRequest, agreement: SwapInAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted)
-
-  final case class SwapInReceiverData(request: SwapInRequest, agreement: SwapInAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted)
+  final case class SwapData(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean)
 }

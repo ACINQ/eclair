@@ -16,9 +16,8 @@
 
 package fr.acinq.eclair.swap
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.payment.Bolt11Invoice
-import fr.acinq.eclair.wire.protocol.{HasSwapId, OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
+import fr.acinq.eclair.wire.protocol.{HasSwapId, OpeningTxBroadcasted, SwapAgreement, SwapRequest}
 
 object SwapResponses {
 
@@ -60,25 +59,14 @@ object SwapResponses {
     override def toString: String = s"swap $swapId swap error: $reason."
   }
 
-  case class InsufficientBalanceForReceive(swapId: String, amount: Satoshi, availableForReceive: Satoshi) extends Error {
-    override def toString: String = s"swap $swapId error: requested amount of $amount sat > available channel balance to receive of $availableForReceive sat."
-  }
-
-  case class InsufficientBalanceForSend(swapId: String, amount: Satoshi, availableForSend: Satoshi) extends Error {
-    override def toString: String = s"swap $swapId error: requested amount of $amount sat > available channel balance to send of $availableForSend sat."
-  }
-
-  case class InsufficientOnChainBalance(swapId: String, amount: Satoshi, maxPremium: Satoshi, onChainBalance: Satoshi) extends Error {
-    override def toString: String = s"swap $swapId error: requested amount of $amount + $maxPremium maximum premium > confirmed on-chain balance of $onChainBalance."
-  }
-
   case class InternalError(swapId: String, reason: String) extends Error {
     override def toString: String = s"swap $swapId internal error: $reason."
   }
 
   sealed trait Status extends Response
-  case class SwapInStatus(swapId: String, actor: String, behavior: String, channelId: ByteVector32, request: SwapInRequest, agreement_opt: Option[SwapInAgreement] = None, invoice_opt: Option[Bolt11Invoice] = None, openingTxBroadcasted_opt: Option[OpeningTxBroadcasted] = None) extends Status {
-    override def toString: String = s"$actor[$behavior]: $swapId, $channelId, $request, $agreement_opt, $invoice_opt, $openingTxBroadcasted_opt"
+
+  case class SwapInStatus(swapId: String, actor: String, behavior: String, request: SwapRequest, agreement_opt: Option[SwapAgreement] = None, invoice_opt: Option[Bolt11Invoice] = None, openingTxBroadcasted_opt: Option[OpeningTxBroadcasted] = None) extends Status {
+    override def toString: String = s"$actor[$behavior]: $swapId, ${request.scid}, $request, $agreement_opt, $invoice_opt, $openingTxBroadcasted_opt"
   }
 
 }

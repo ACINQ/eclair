@@ -39,7 +39,8 @@ object SwapTransactions {
   val PlaceHolderSig: ByteVector64 = ByteVector64(ByteVector.fill(64)(0xaa))
   assert(der(PlaceHolderSig).size == 72)
 
-  val claimByInvoiceTxWeight = 593 // TODO: add test to confirm this is the actual weight of claimByInvoice tx
+  val claimByInvoiceTxWeight = 593 // TODO: add test to confirm this is the actual weight of the claimByInvoice tx in vBytes
+  val openingTxWeight = 610 // TODO: compute and add test to confirm this is the actual weight of the opening tx in vBytes
 
   def makeSwapOpeningInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, amount: Satoshi, makerPubkey: PublicKey, takerPubkey: PublicKey, paymentHash: ByteVector32): InputInfo = {
     val redeemScript = swapOpening(makerPubkey, takerPubkey, paymentHash)
