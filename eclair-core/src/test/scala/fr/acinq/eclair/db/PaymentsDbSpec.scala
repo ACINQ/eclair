@@ -622,7 +622,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       db.updateOutgoingPayment(PaymentFailed(s3.id, s3.paymentHash, Nil, 310 unixms))
       val ss3 = s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310 unixms))
       assert(db.getOutgoingPayment(s3.id).contains(ss3))
-      db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(s4.amount, Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(s4.amount, Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320 unixms))
+      db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(s4.amount, FullRoute(Seq(hop_ab)), new RuntimeException("woops")), RemoteFailure(s4.amount, FullRoute(Seq(hop_ab, hop_bc)), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320 unixms))
       val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", List(HopSummary(alice, bob, Some(ShortChannelId(42)))), Some(alice)), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)), Some(carol))), 320 unixms))
       assert(db.getOutgoingPayment(s4.id).contains(ss4))
 
@@ -631,7 +631,7 @@ class PaymentsDbSpec extends AnyFunSuite {
 
       val paymentSent = PaymentSent(parentId, paymentHash1, preimage1, 600 msat, carol, Seq(
         PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32(), None, 400 unixms),
-        PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32(), Some(Seq(hop_ab, hop_bc)), 410 unixms)
+        PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32(), Some(FullRoute(Seq(hop_ab, hop_bc))), 410 unixms)
       ))
       val ss1 = s1.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 15 msat, Nil, 400 unixms))
       val ss2 = s2.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 20 msat, Seq(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)), 410 unixms))

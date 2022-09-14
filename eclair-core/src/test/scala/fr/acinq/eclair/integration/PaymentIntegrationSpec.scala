@@ -33,15 +33,16 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
+import fr.acinq.eclair.payment.receive.MultiPartHandler.{ReceiveOfferPayment, ReceiveStandardPayment}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
 
@@ -159,7 +160,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from D
     val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.paymentMetadata.nonEmpty)
 
     // then we make the actual payment
@@ -332,7 +333,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams.copy(heuristics = Left(WeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0))))))
     sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
-    ps.parts.foreach(part => assert(part.route.getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)))
+    ps.parts.foreach(part => assert(part.route.map(_.hops).getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)))
   }
 
   test("send a multi-part payment B->D") {
@@ -461,7 +462,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     val amount = 4000000000L.msat
     sender.send(nodes("F").paymentHandler, ReceiveStandardPayment(Some(amount), Left("like trampoline much?")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
@@ -506,7 +507,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
     val amount = 2500000000L.msat
     sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(Some(amount), Left("trampoline-MPP is so #reckless")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
@@ -562,7 +563,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val amount = 3000000000L.msat
     sender.send(nodes("A").paymentHandler, ReceiveStandardPayment(Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
@@ -610,7 +611,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // Now we try to send more than C's outgoing capacity to D.
     val amount = 2000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(Some(amount), Left("I iz Satoshi")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
@@ -631,7 +632,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     val amount = 2000000000L.msat // B can forward to C, but C doesn't have that much outgoing capacity to D
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(Some(amount), Left("I iz not Satoshi")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 

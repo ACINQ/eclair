@@ -123,7 +123,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // with finalCltvExpiry
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
-    val invoice2 = Bolt11Invoice("lntb", Some(123 msat), TimestampSecond.now(), nodePrivKey.publicKey, List(Bolt11Invoice.MinFinalCltvExpiry(96), Bolt11Invoice.PaymentHash(ByteVector32.Zeroes), Bolt11Invoice.Description("description")), ByteVector.empty)
+    val invoice2 = Bolt11Invoice("lntb", Some(123 msat), TimestampSecond.now(), nodePrivKey.publicKey, List(Bolt11Invoice.MinFinalCltvExpiry(96), Bolt11Invoice.PaymentHash(ByteVector32.Zeroes), Bolt11Invoice.Description("description"), Bolt11Invoice.PaymentSecret(ByteVector32(hex"abababababababababababababababababababababababababababababababab"))), ByteVector.empty)
     eclair.send(Some(externalId2), 123 msat, invoice2)
     val send2 = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send2.externalId.contains(externalId2))
@@ -314,7 +314,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val secret = randomBytes32()
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
-    paymentInitiator.expectMsg(SendPaymentToRoute(1000 msat, 1200 msat, pr, route, Some("42"), Some(parentId), Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
+    paymentInitiator.expectMsg(SendTrampolinePaymentToRoute(1000 msat, 1200 msat, pr, route, Some("42"), Some(parentId), Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
   }
 
   test("call sendWithPreimage, which generates a random preimage, to perform a KeySend payment") { f =>

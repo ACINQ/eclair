@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.payment.send
 
+import fr.acinq.eclair.payment.Recipient
+import fr.acinq.eclair.router.Router.PredefinedRoute
 import fr.acinq.eclair.{Features, InvoiceFeature}
 
 sealed trait PaymentError extends Throwable
@@ -26,8 +28,10 @@ object PaymentError {
   sealed trait InvalidInvoice extends PaymentError
   /** The invoice contains a feature we don't support. */
   case class UnsupportedFeatures(features: Features[InvoiceFeature]) extends InvalidInvoice { override def getMessage: String = s"unsupported invoice features: ${features.toByteVector.toHex}" }
-  /** The invoice is missing a payment secret. */
-  case object PaymentSecretMissing extends InvalidInvoice { override def getMessage: String = "invalid invoice: payment secret is missing" }
+  /** The invoice recipient does not match the provided route. */
+  case class InvalidRecipientForRoute(route: PredefinedRoute, recipients: Seq[Recipient]) extends InvalidInvoice {
+    override def getMessage: String = s"cannot use route for payment: route ends at ${route.targetNodeId} but payment must reach ${recipients.map(_.introductionNodeId).mkString(",")}"
+  }
   // @formatter:on
 
   // @formatter:off

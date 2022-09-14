@@ -19,7 +19,6 @@ package fr.acinq.eclair.payment.send
 import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
@@ -30,10 +29,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
-import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
-import scodec.bits.ByteVector
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -101,12 +97,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         retriedFailedChannels = true
         stay() using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels())
       } else {
-        val failure = LocalFailure(toSend, Nil, t)
+        val failure = LocalFailure(toSend, FullRoute.empty, t)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
         if (cfg.storeInDb && d.pending.isEmpty && d.failures.isEmpty) {
           // In cases where we fail early (router error during the first attempt), the DB won't have an entry for that
           // payment, which may be confusing for users.
-          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending)
+          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeIds.head, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending)
           nodeParams.db.payments.addOutgoingPayment(dummyPayment)
           nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, paymentHash, failure :: Nil))
         }
@@ -135,7 +131,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       if (abortPayment(pf, d)) {
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else if (d.remainingAttempts == 0) {
-        val failure = LocalFailure(d.request.totalAmount, Nil, PaymentError.RetryExhausted)
+        val failure = LocalFailure(d.request.totalAmount, FullRoute.empty, PaymentError.RetryExhausted)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
       } else {
@@ -240,7 +236,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     val status = event match {
       case Right(_: PaymentSent) => "SUCCESS"
       case Left(f: PaymentFailed) =>
-        if (f.failures.exists({ case r: RemoteFailure => r.e.originNode == cfg.recipientNodeId case _ => false })) {
+        if (f.failures.exists({ case r: RemoteFailure => cfg.isRecipient(r.e.originNode) case _ => false })) {
           "RECIPIENT_FAILURE"
         } else {
           "FAILURE"
@@ -260,12 +256,13 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+                // TODO(trampoline-to-blind): fullRoute.hops may be empty if we are the introduction point of a blinded route.
+                case p@PartialPayment(_, _, _, _, Some(fullRoute), _) => fullRoute.hops.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees
       }
-      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId, request.extraEdges))
+      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeIds.head, request.extraEdges))
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
@@ -288,7 +285,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       parentPaymentId_opt = Some(cfg.parentId),
       paymentId_opt = Some(id),
       paymentHash_opt = Some(paymentHash),
-      remoteNodeId_opt = Some(cfg.recipientNodeId),
+      remoteNodeId_opt = Some(cfg.recipientNodeIds.head),
       nodeAlias_opt = Some(nodeParams.alias))
   }
 
@@ -304,29 +301,20 @@ object MultiPartPaymentLifecycle {
    * Send a payment to a given node. The payment may be split into multiple child payments, for which a path-finding
    * algorithm will run to find suitable payment routes.
    *
-   * @param paymentSecret   payment secret to protect against probing (usually from a Bolt 11 invoice).
-   * @param targetNodeId    target node (may be the final recipient when using source-routing, or the first trampoline
-   *                        node when using trampoline).
-   * @param totalAmount     total amount to send to the target node.
-   * @param targetExpiry    expiry at the target node (CLTV for the target node's received HTLCs).
-   * @param maxAttempts     maximum number of retries.
-   * @param paymentMetadata payment metadata (usually from the Bolt 11 invoice).
-   * @param extraEdges      routing hints (usually from a Bolt 11 invoice).
-   * @param routeParams     parameters to fine-tune the routing algorithm.
-   * @param additionalTlvs  when provided, additional tlvs that will be added to the onion sent to the target node.
-   * @param userCustomTlvs  when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
+   * @param recipients   list of recipients to send the payment to.
+   * @param totalAmount  total amount to send to the target node.
+   * @param targetExpiry expiry at the target node (CLTV for the target node's received HTLCs).
+   * @param maxAttempts  maximum number of retries.
+   * @param extraEdges   routing hints (usually from a Bolt 11 invoice).
+   * @param routeParams  parameters to fine-tune the routing algorithm.
    */
   case class SendMultiPartPayment(replyTo: ActorRef,
-                                  paymentSecret: ByteVector32,
-                                  targetNodeId: PublicKey,
+                                  recipients: Seq[Recipient],
                                   totalAmount: MilliSatoshi,
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
-                                  paymentMetadata: Option[ByteVector],
                                   extraEdges: Seq[ExtraEdge] = Nil,
-                                  routeParams: RouteParams,
-                                  additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
-                                  userCustomTlvs: Seq[GenericTlv] = Nil) {
+                                  routeParams: RouteParams) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
   }
 
@@ -394,7 +382,7 @@ object MultiPartPaymentLifecycle {
   private def createRouteRequest(nodeParams: NodeParams, toSend: MilliSatoshi, maxFee: MilliSatoshi, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest =
     RouteRequest(
       nodeParams.nodeId,
-      d.request.targetNodeId,
+      d.request.recipients,
       toSend,
       maxFee,
       d.request.extraEdges,
@@ -405,13 +393,12 @@ object MultiPartPaymentLifecycle {
       Some(cfg.paymentContext))
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
-    val finalPayload = FinalPayload.Standard.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.paymentMetadata, request.additionalTlvs, request.userCustomTlvs)
-    SendPaymentToRoute(replyTo, Right(route), finalPayload)
+    SendPaymentToRoute(replyTo, Right(route), route.recipient, route.amount, request.totalAmount, request.targetExpiry)
   }
 
   /** When we receive an error from the final recipient or payment gets settled on chain, we should fail the whole payment, it's useless to retry. */
   private def abortPayment(pf: PaymentFailed, d: PaymentProgress): Boolean = pf.failures.exists {
-    case f: RemoteFailure => f.e.originNode == d.request.targetNodeId
+    case f: RemoteFailure => d.request.recipients.flatMap(_.nodeIds).contains(f.e.originNode)
     case LocalFailure(_, _, _: HtlcOverriddenByLocalCommit) => true
     case LocalFailure(_, _, _: HtlcsWillTimeoutUpstream) => true
     case LocalFailure(_, _, _: HtlcsTimedoutDownstream) => true

@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.router.Router.ChannelHop
+import fr.acinq.eclair.router.Router.{ChannelHop, Route}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -118,19 +118,19 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     // we don't want to be below htlcMinimumMsat
     val requiredAmount = 1000000 msat
 
-    def buildCmdAdd(paymentHash: ByteVector32, dest: PublicKey, paymentSecret: ByteVector32): CMD_ADD_HTLC = {
+    def buildCmdAdd(paymentHash: ByteVector32, recipient: ClearRecipient): CMD_ADD_HTLC = {
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight = BlockHeight(400000))
-      OutgoingPaymentPacket.buildCommand(self, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, null, dest, null) :: Nil, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, paymentSecret, None)).get._1
+      OutgoingPaymentPacket.buildCommand(randomKey(), self, Upstream.Local(UUID.randomUUID()), paymentHash, Route(amount, ChannelHop(null, null, recipient.nodeId, null) :: Nil, recipient), amount, amount, expiry).get._1
     }
 
     def initiatePaymentOrStop(remaining: Int): Unit =
       if (remaining > 0) {
         paymentHandler ! ReceiveStandardPayment(Some(requiredAmount), Left("One coffee"))
         context become {
-          case req: Invoice =>
-            sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId, req.paymentSecret.get)
+          case req: Bolt11Invoice =>
+            sendChannel ! buildCmdAdd(req.paymentHash, req.recipient)
             context become {
               case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()
               case RES_ADD_SETTLED(_, htlc, _: HtlcResult.Fulfill) =>

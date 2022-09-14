@@ -18,11 +18,13 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.payment.Invoice
+import fr.acinq.eclair.payment.{BlindRecipient, ClearRecipient, Invoice, Recipient}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.{RealShortChannelId, _}
 
 import scala.annotation.tailrec
@@ -274,12 +276,12 @@ object Graph {
     }
 
     if (targetFound) {
-      val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
+      val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH + 1)
       var current = bestEdges.get(sourceNode)
       while (current.isDefined) {
         edgePath += current.get
         current = bestEdges.get(current.get.desc.b)
-        if (edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH) {
+        if (edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH + 1) {
           throw InfiniteLoop(edgePath.toSeq)
         }
       }
@@ -459,9 +461,10 @@ object Graph {
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
+      private val maxBtc = 21e6.btc
+
       def apply(e: Invoice.ExtraEdge): GraphEdge = e match {
         case e@Invoice.BasicEdge(sourceNodeId, targetNodeId, shortChannelId, _, _, _) =>
-          val maxBtc = 21e6.btc
           GraphEdge(
             desc = ChannelDesc(shortChannelId, sourceNodeId, targetNodeId),
             params = ChannelRelayParams.FromHint(e),
@@ -471,6 +474,22 @@ object Graph {
             balance_opt = Some(maxBtc.toMilliSatoshi)
           )
       }
+
+      def apply(route: RouteBlinding.BlindedRoute,
+                paymentInfo: PaymentInfo,
+                capacity_opt: Option[MilliSatoshi]): GraphEdge = GraphEdge(
+        desc = ChannelDesc(ShortChannelId.generateLocalAlias(), route.introductionNodeId, route.blindedNodeIds.last),
+        params = ChannelRelayParams.FromPaymentInfo(paymentInfo),
+        capacity = maxBtc.toSatoshi,
+        balance_opt = capacity_opt.orElse(Some(maxBtc.toMilliSatoshi))
+      )
+
+      def apply(a: PublicKey, b: PublicKey): GraphEdge = GraphEdge(
+        desc = ChannelDesc(ShortChannelId.generateLocalAlias(), a, b),
+        params = ChannelRelayParams.FromPaymentInfo(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, maxBtc.toMilliSatoshi, Features.empty)),
+        capacity = maxBtc.toSatoshi,
+        balance_opt = Some(maxBtc.toMilliSatoshi)
+      )
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
@@ -642,6 +661,16 @@ object Graph {
       }
 
       def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)
+
+      def graphEdgesToRoute(amount: MilliSatoshi, graphEdges: Seq[GraphEdge], recipients: Seq[Recipient]): Route = {
+        val recipient = recipients.find(_.nodeId == graphEdges.last.desc.b).get
+        recipient match {
+          case _: ClearRecipient => Route(amount, graphEdges.map(graphEdgeToHop), recipient)
+          case _: BlindRecipient =>
+            // The last edge is blinded and already included in the recipient.
+            Route(amount, graphEdges.dropRight(1).map(graphEdgeToHop), recipient)
+        }
+      }
     }
 
   }

@@ -295,12 +295,12 @@ object ColorSerializer extends MinimalSerializer({
 
 // @formatter:off
 private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams)
-private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHopJson])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))))
+private case class RouteFullJson(amount: MilliSatoshi, clearHops: Seq[ChannelHopJson], recipient: Recipient)
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.clearHops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params)), route.recipient))
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
-  val nodeIds = route.hops match {
+  val nodeIds = route.clearHops match {
     case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
     case Nil => Nil
   }
@@ -308,7 +308,7 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
 })
 
 private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
-object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.shortChannelId)))
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.clearHops.map(_.shortChannelId)))
 // @formatter:on
 
 // @formatter:off
@@ -316,11 +316,11 @@ private case class PaymentFailureSummaryJson(amount: MilliSatoshi, route: Seq[Pu
 private case class PaymentFailedSummaryJson(paymentHash: ByteVector32, destination: PublicKey, totalAmount: MilliSatoshi, pathFindingExperiment: String, failures: Seq[PaymentFailureSummaryJson])
 object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFailedSummary](p => PaymentFailedSummaryJson(
   p.cfg.paymentHash,
-  p.cfg.recipientNodeId,
+  p.cfg.recipientNodeIds.head,
   p.cfg.recipientAmount,
   p.pathFindingExperiment,
   p.paymentFailed.failures.map(f => {
-    val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)
+    val route = f.route.hops.map(_.nodeId) ++ f.route.hops.lastOption.map(_.nextNodeId)
     val message = f match {
       case LocalFailure(_, _, t) => t.getMessage
       case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
@@ -404,10 +404,10 @@ object InvoiceSerializer extends MinimalSerializer({
           FeatureSupportSerializer +
           UnknownFeatureSerializer
       )),
-      JField("blindedPaths", JArray(p.blindedPaths.map(path => {
+      JField("blindedPaths", JArray(p.recipients.map(paymentRoute => {
         JObject(List(
-          JField("introductionNodeId", JString(path.introductionNodeId.toString())),
-          JField("blindedNodeIds", JArray(path.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
+          JField("introductionNodeId", JString(paymentRoute.route.introductionNodeId.toString())),
+          JField("blindedNodeIds", JArray(paymentRoute.route.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
         ))
       }).toList)),
       JField("createdAt", JLong(p.createdAt.toLong)),

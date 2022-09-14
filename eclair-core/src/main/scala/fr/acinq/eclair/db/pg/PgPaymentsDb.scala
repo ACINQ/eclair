@@ -126,7 +126,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
           statement.setTimestamp(1, p.timestamp.toSqlTimestamp)
           statement.setString(2, paymentResult.paymentPreimage.toHex)
           statement.setLong(3, p.feesPaid.toLong)
-          statement.setBytes(4, encodeRoute(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList))
+          statement.setBytes(4, encodeRoute(p.route.map(_.hops).getOrElse(Nil).map(h => HopSummary(h)).toList))
           statement.setString(5, p.id.toString)
           statement.addBatch()
         })

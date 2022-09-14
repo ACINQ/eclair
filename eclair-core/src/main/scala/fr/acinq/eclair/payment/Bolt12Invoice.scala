@@ -20,7 +20,6 @@ import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.{OfferCodecs, OfferTypes, TlvStream}
@@ -41,19 +40,27 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
   val amount: MilliSatoshi = records.get[Amount].map(_.amount).get
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
-  override val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
+  val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
   override val paymentHash: ByteVector32 = records.get[PaymentHash].get.hash
-  override val paymentSecret: Option[ByteVector32] = None
-  override val paymentMetadata: Option[ByteVector] = None
   override val description: Either[String, ByteVector32] = Left(records.get[Description].get.description)
-  override val extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty // TODO: the blinded paths need to be converted to graph edges
+  override val extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty
   override val createdAt: TimestampSecond = records.get[CreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[RelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
   override val minFinalCltvExpiryDelta: CltvExpiryDelta = records.get[Cltv].map(_.minFinalCltvExpiry).getOrElse(DEFAULT_MIN_FINAL_EXPIRY_DELTA)
   override val features: Features[InvoiceFeature] = records.get[FeaturesTlv].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
   val chain: ByteVector32 = records.get[Chain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
-  val blindedPaths: Seq[RouteBlinding.BlindedRoute] = records.get[Paths].get.paths
+  val recipients: Seq[BlindRecipient] = {
+    val routesAndInfos = records.get[Paths].get.paths.zip(records.get[PaymentPathsInfo].get.paymentInfo)
+    records.get[PaymentPathsCapacities] match {
+      case Some(PaymentPathsCapacities(capacities)) => routesAndInfos.zip(capacities).map {
+        case ((route, payInfo), capacity) => BlindRecipient(route, payInfo, Some(capacity), Nil, Nil)
+      }
+      case None => routesAndInfos.map {
+        case (route, payInfo) => BlindRecipient(route, payInfo, None, Nil, Nil)
+      }
+    }
+  }
   val issuer: Option[String] = records.get[Issuer].map(_.issuer)
   val quantity: Option[Long] = records.get[Quantity].map(_.quantity)
   val refundFor: Option[ByteVector32] = records.get[RefundFor].map(_.refundedPaymentHash)
@@ -122,8 +129,9 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             features: Features[InvoiceFeature],
-            paths: Seq[Sphinx.RouteBlinding.BlindedRoute]): Bolt12Invoice = {
+            paths: Seq[(Sphinx.RouteBlinding.BlindedRoute, PaymentInfo)]): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
+    require(paths.nonEmpty)
     val amount = request.amount.orElse(offer.amount.map(_ * request.quantity)).get
     val tlvs: Seq[InvoiceTlv] = Seq(
       Some(Chain(request.chain)),
@@ -131,8 +139,8 @@ object Bolt12Invoice {
       Some(Amount(amount)),
       Some(Description(offer.description)),
       if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
-      Some(Paths(paths)),
-      Some(PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty)))),
+      Some(Paths(paths.map(_._1))),
+      Some(PaymentPathsInfo(paths.map(_._2))),
       offer.issuer.map(Issuer),
       Some(NodeId(nodeKey.publicKey)),
       request.quantity_opt.map(Quantity),
@@ -153,6 +161,7 @@ object Bolt12Invoice {
     if (records.get[Description].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
     if (records.get[Paths].isEmpty) return Left(MissingRequiredTlv(UInt64(16)))
     if (records.get[PaymentPathsInfo].map(_.paymentInfo.length) != records.get[Paths].map(_.paths.length)) return Left(MissingRequiredTlv(UInt64(18)))
+    if (records.get[PaymentPathsCapacities].exists(_.capacities.length != records.get[Paths].get.paths.length)) return Left(MissingRequiredTlv(UInt64(19)))
     if (records.get[NodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(30)))
     if (records.get[CreatedAt].isEmpty) return Left(MissingRequiredTlv(UInt64(40)))
     if (records.get[PaymentHash].isEmpty) return Left(MissingRequiredTlv(UInt64(42)))

@@ -22,7 +22,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -217,6 +217,9 @@ object PaymentOnion {
     def records: TlvStream[OnionPaymentPayloadTlv]
   }
 
+  /** An opaque blinded payload. */
+  case class BlindPerHopPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends PerHopPayload
+
   /** Per-hop payload for an intermediate node. */
   sealed trait IntermediatePayload extends PerHopPayload
 
@@ -265,6 +268,7 @@ object PaymentOnion {
         val allowedFeatures = blindedRecords.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
         override def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi = ((incomingAmount - paymentRelay.feeBase).toLong * 1_000_000 + 1_000_000 + paymentRelay.feeProportionalMillionths - 1).msat / (1_000_000 + paymentRelay.feeProportionalMillionths)
         override def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - paymentRelay.cltvExpiryDelta
+        val cltvExpiryDelta: CltvExpiryDelta = paymentRelay.cltvExpiryDelta
         // @formatter:on
       }
 
@@ -283,6 +287,9 @@ object PaymentOnion {
           }
           BlindedRouteData.validatePaymentRelayData(blindedRecords).map(blindedRecords => Blinded(records, blindedRecords, nextBlinding))
         }
+
+        def create(encryptedRecipientData: ByteVector, blinding_opt: Option[PublicKey]): BlindPerHopPayload =
+          BlindPerHopPayload(TlvStream(Seq(blinding_opt.map(BlindingPoint), Some(EncryptedRecipientData(encryptedRecipientData))).flatten))
       }
     }
 
@@ -328,7 +335,7 @@ object PaymentOnion {
           val tlvs = Seq(
             Some(AmountToForward(amount)),
             Some(OutgoingCltv(expiry)),
-            invoice.paymentSecret.map(s => PaymentData(s, totalAmount)),
+            Some(PaymentData(invoice.paymentSecret, totalAmount)),
             invoice.paymentMetadata.map(m => PaymentMetadata(m)),
             Some(OutgoingNodeId(targetNodeId)),
             Some(InvoiceFeatures(invoice.features.toByteVector)),
@@ -394,11 +401,6 @@ object PaymentOnion {
         ).flatten
         Standard(TlvStream(tlvs ++ additionalTlvs, userCustomTlvs))
       }
-
-      /** Create a trampoline outer payload. */
-      def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): Standard = {
-        Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount), TrampolineOnion(trampolinePacket)))
-      }
     }
 
     /**
@@ -408,6 +410,8 @@ object PaymentOnion {
       override val amount = records.get[AmountToForward].get.amount
       override val totalAmount = records.get[TotalAmount].map(_.totalAmount).getOrElse(amount)
       override val expiry = records.get[OutgoingCltv].get.cltv
+      val blinding_opt: Option[PublicKey] = records.get[BlindingPoint].map(_.publicKey)
+
       val pathId = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].get.data
       val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
       val allowedFeatures = blindedRecords.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
@@ -432,6 +436,23 @@ object PaymentOnion {
           case None => // no forbidden tlv found
         }
         BlindedRouteData.validPaymentRecipientData(blindedRecords).map(blindedRecords => Blinded(records, blindedRecords))
+      }
+
+      def create(amount: MilliSatoshi,
+                 totalAmount: MilliSatoshi,
+                 expiry: CltvExpiry,
+                 encryptedRecipientData: ByteVector,
+                 blinding_opt: Option[PublicKey],
+                 additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
+                 userCustomTlvs: Seq[GenericTlv] = Nil): BlindPerHopPayload = {
+        val tlvs = Seq(
+          blinding_opt.map(BlindingPoint),
+          Some(AmountToForward(amount)),
+          Some(TotalAmount(totalAmount)),
+          Some(OutgoingCltv(expiry)),
+          Some(EncryptedRecipientData(encryptedRecipientData)),
+        ).flatten
+        BlindPerHopPayload(TlvStream(tlvs ++ additionalTlvs, userCustomTlvs))
       }
     }
   }

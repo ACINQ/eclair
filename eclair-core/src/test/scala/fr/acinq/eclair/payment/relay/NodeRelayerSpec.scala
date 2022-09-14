@@ -547,7 +547,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeRelayerAdapters = mockPayFSM.expectMessageType[SendMultiPartPayment].replyTo
 
     // The proposed fees are low, so we ask the sender to raise them.
-    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, FullRoute.empty, BalanceTooLow) :: Nil)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
@@ -593,7 +593,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     router.expectMessageType[RouteRequest]
 
     // If we're having a hard time finding routes, raising the fee/cltv will likely help.
-    val failures = LocalFailure(outgoingAmount, Nil, RouteNotFound) :: RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(outgoingAmount, Nil, RouteNotFound) :: Nil
+    val failures = LocalFailure(outgoingAmount, FullRoute.empty, RouteNotFound) :: RemoteFailure(outgoingAmount, FullRoute.empty, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(outgoingAmount, FullRoute.empty, RouteNotFound) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
@@ -615,7 +615,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
     router.expectMessageType[RouteRequest]
 
-    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(outgoingAmount, Nil) :: Nil
+    val failures = RemoteFailure(outgoingAmount, FullRoute.empty, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(outgoingAmount, FullRoute.empty) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
@@ -726,12 +726,12 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
-    assert(outgoingPayment.paymentSecret == invoice.paymentSecret.get) // we should use the provided secret
-    assert(outgoingPayment.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
+    assert(outgoingPayment.recipients.head.asInstanceOf[ClearRecipient].paymentSecret == invoice.paymentSecret) // we should use the provided secret
+    assert(outgoingPayment.recipients.head.asInstanceOf[ClearRecipient].paymentMetadata_opt == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.totalAmount == outgoingAmount)
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
-    assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.additionalTlvs == Nil)
+    assert(outgoingPayment.recipients.head.nodeId == outgoingNodeId)
+    assert(outgoingPayment.recipients.head.additionalTlvs == Nil)
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
@@ -773,11 +773,10 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
-    assert(outgoingPayment.finalPayload.isInstanceOf[FinalPayload.Standard])
-    assert(outgoingPayment.finalPayload.amount == outgoingAmount)
-    assert(outgoingPayment.finalPayload.expiry == outgoingExpiry)
-    assert(outgoingPayment.finalPayload.asInstanceOf[FinalPayload.Standard].paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
-    assert(outgoingPayment.targetNodeId == outgoingNodeId)
+    assert(outgoingPayment.amount == outgoingAmount)
+    assert(outgoingPayment.targetExpiry == outgoingExpiry)
+    assert(outgoingPayment.targetRecipients.head.asInstanceOf[ClearRecipient].paymentMetadata_opt == invoice.paymentMetadata) // we should use the provided metadata
+    assert(outgoingPayment.targetRecipients.head.nodeId == outgoingNodeId)
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
@@ -830,16 +829,16 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingCfg.paymentHash == paymentHash)
     assert(outgoingCfg.invoice.isEmpty)
     assert(outgoingCfg.recipientAmount == outgoingAmount)
-    assert(outgoingCfg.recipientNodeId == outgoingNodeId)
+    assert(outgoingCfg.recipientNodeIds.contains(outgoingNodeId))
     assert(outgoingCfg.upstream == upstream)
   }
 
   def validateOutgoingPayment(outgoingPayment: SendMultiPartPayment): Unit = {
-    assert(outgoingPayment.paymentSecret !== incomingSecret) // we should generate a new outgoing secret
+    assert(outgoingPayment.recipients.head.asInstanceOf[ClearRecipient].paymentSecret !== incomingSecret) // we should generate a new outgoing secret
     assert(outgoingPayment.totalAmount == outgoingAmount)
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
-    assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.additionalTlvs == Seq(OnionPaymentPayloadTlv.TrampolineOnion(nextTrampolinePacket)))
+    assert(outgoingPayment.recipients.head.nodeId == outgoingNodeId)
+    assert(outgoingPayment.recipients.head.additionalTlvs == Seq(OnionPaymentPayloadTlv.TrampolineOnion(nextTrampolinePacket)))
     assert(outgoingPayment.extraEdges == Nil)
   }
 

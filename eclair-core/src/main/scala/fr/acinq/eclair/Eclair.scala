@@ -315,7 +315,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         for {
           ignoredChannels <- getChannelDescs(ignoreShortChannelIds.toSet)
           ignore = Ignore(ignoreNodeIds.toSet, ignoredChannels)
-          response <- (appKit.router ? RouteRequest(sourceNodeId, targetNodeId, amount, maxFee, extraEdges, ignore = ignore, routeParams = routeParams.copy(includeLocalChannelCost = includeLocalChannelCost))).mapTo[RouteResponse]
+          response <- (appKit.router ? RouteRequest(sourceNodeId, Seq(ClearRecipient(targetNodeId, randomBytes32(), None)), amount, maxFee, extraEdges, ignore = ignore, routeParams = routeParams.copy(includeLocalChannelCost = includeLocalChannelCost))).mapTo[RouteResponse]
         } yield response
       case Left(t) => Future.failed(t)
     }
@@ -323,7 +323,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32], trampolineFees_opt: Option[MilliSatoshi], trampolineExpiryDelta_opt: Option[CltvExpiryDelta], trampolineNodes_opt: Seq[PublicKey])(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
     val recipientAmount = recipientAmount_opt.getOrElse(invoice.amount_opt.getOrElse(amount))
-    val sendPayment = SendPaymentToRoute(amount, recipientAmount, invoice, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFees_opt.getOrElse(0 msat), trampolineExpiryDelta_opt.getOrElse(CltvExpiryDelta(0)), trampolineNodes_opt)
+    val sendPayment =
+      if (trampolineNodes_opt.nonEmpty) {
+        SendTrampolinePaymentToRoute(amount, recipientAmount, invoice, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFees_opt.getOrElse(0 msat), trampolineExpiryDelta_opt.getOrElse(CltvExpiryDelta(0)), trampolineNodes_opt)
+      } else {
+        SendPaymentToRoute(amount, recipientAmount, invoice, route, externalId_opt, parentId_opt)
+      }
     if (invoice.isExpired()) {
       Future.failed(new IllegalArgumentException("invoice has expired"))
     } else if (route.isEmpty) {
@@ -405,6 +410,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
               case PendingPaymentToNode(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), OutgoingPaymentStatus.Pending)
               case PendingPaymentToRoute(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), OutgoingPaymentStatus.Pending)
               case PendingTrampolinePayment(_, _, r) => OutgoingPayment(paymentId, paymentId, None, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), OutgoingPaymentStatus.Pending)
+              case PendingTrampolinePaymentToRoute(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), OutgoingPaymentStatus.Pending)
             }
             dummyOutgoingPayment +: outgoingDbPayments
         }
