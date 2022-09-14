@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Try}
 
+case class BlindedPaymentRoute(route: RouteBlinding.BlindedRoute, paymentInfo: PaymentInfo, capacity_opt: Option[MilliSatoshi])
+
 /**
  * Lightning Bolt 12 invoice
  * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
@@ -53,7 +55,17 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   override val features: Features[InvoiceFeature] = records.get[FeaturesTlv].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
   val chain: ByteVector32 = records.get[Chain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
-  val blindedPaths: Seq[RouteBlinding.BlindedRoute] = records.get[Paths].get.paths
+  val blindedPaymentRoutes: Seq[BlindedPaymentRoute] = {
+    val routesAndInfos = records.get[Paths].get.paths.zip(records.get[PaymentPathsInfo].get.paymentInfo)
+    records.get[PaymentPathsCapacities] match {
+      case Some(PaymentPathsCapacities(capacities)) => routesAndInfos.zip(capacities).map {
+        case ((route, payInfo), capacity) => BlindedPaymentRoute(route, payInfo, Some(capacity))
+      }
+      case None => routesAndInfos.map {
+        case (route, payInfo) => BlindedPaymentRoute(route, payInfo, None)
+      }
+    }
+  }
   val issuer: Option[String] = records.get[Issuer].map(_.issuer)
   val quantity: Option[Long] = records.get[Quantity].map(_.quantity)
   val refundFor: Option[ByteVector32] = records.get[RefundFor].map(_.refundedPaymentHash)
@@ -153,6 +165,7 @@ object Bolt12Invoice {
     if (records.get[Description].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
     if (records.get[Paths].isEmpty) return Left(MissingRequiredTlv(UInt64(16)))
     if (records.get[PaymentPathsInfo].map(_.paymentInfo.length) != records.get[Paths].map(_.paths.length)) return Left(MissingRequiredTlv(UInt64(18)))
+    if (records.get[PaymentPathsCapacities].exists(_.capacities.length != records.get[Paths].get.paths.length)) return Left(MissingRequiredTlv(UInt64(19)))
     if (records.get[NodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(30)))
     if (records.get[CreatedAt].isEmpty) return Left(MissingRequiredTlv(UInt64(40)))
     if (records.get[PaymentHash].isEmpty) return Left(MissingRequiredTlv(UInt64(42)))
