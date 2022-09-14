@@ -141,9 +141,9 @@ object RouteBlindingEncryptedDataCodecs {
 
   // @formatter:off
   case class RouteBlindingDecryptedData(tlvs: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey)
-  sealed trait InvalidEncryptedData
-  case class CannotDecryptData(message: String) extends InvalidEncryptedData
-  case class CannotDecodeData(message: String) extends InvalidEncryptedData
+  sealed trait InvalidEncryptedData extends Exception
+  case class CannotDecryptData(message: String) extends Exception(message) with InvalidEncryptedData
+  case class CannotDecodeData(message: String) extends Exception(message) with InvalidEncryptedData
   // @formatter:on
 
   /**

@@ -53,7 +53,7 @@ object RouteCalculation {
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(d => ChannelHop(d.desc.shortChannelId, d.desc.a, d.desc.b, d.params))
-              ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
+              ctx.sender() ! RouteResponse(Route(fr.amount, hops, None) :: Nil)
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
               ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
@@ -82,7 +82,7 @@ object RouteCalculation {
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
             ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
-            ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
+            ctx.sender() ! RouteResponse(Route(fr.amount, hops, None) :: Nil)
           }
       }
 
@@ -186,7 +186,7 @@ object RouteCalculation {
                 routeParams: RouteParams,
                 currentBlockHeight: BlockHeight): Try[Seq[Route]] = Try {
     findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
-      case Right(routes) => routes.map(route => Route(amount, route.path.map(graphEdgeToHop)))
+      case Right(routes) => routes.map(route => Route(amount, route.path.map(graphEdgeToHop), None))
       case Left(ex) => return Failure(ex)
     }
   }
@@ -354,7 +354,7 @@ object RouteCalculation {
       val edgeMaxAmount = edge.maxHtlcAmount(usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat))
       amountMinusFees.min(edgeMaxAmount)
     }
-    Route(amount.max(0 msat), route.map(graphEdgeToHop))
+    Route(amount.max(0 msat), route.map(graphEdgeToHop), None)
   }
 
   /** Initialize known used capacity based on pending HTLCs. */
@@ -362,13 +362,13 @@ object RouteCalculation {
     val usedCapacity = mutable.Map.empty[ShortChannelId, MilliSatoshi]
     // We always skip the first hop: since they are local channels, we already take into account those sent HTLCs in the
     // channel balance (which overrides the channel capacity in route calculation).
-    pendingHtlcs.filter(_.hops.length > 1).foreach(route => updateUsedCapacity(route.copy(hops = route.hops.tail), usedCapacity))
+    pendingHtlcs.filter(_.clearHops.length > 1).foreach(route => updateUsedCapacity(route.copy(clearHops = route.clearHops.tail), usedCapacity))
     usedCapacity
   }
 
   /** Update used capacity by taking into account an HTLC sent to the given route. */
   private def updateUsedCapacity(route: Route, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Unit = {
-    route.hops.reverse.foldLeft(route.amount) { case (amount, hop) =>
+    route.clearHops.reverse.foldLeft(route.amount) { case (amount, hop) =>
       usedCapacity.updateWith(hop.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
       amount + hop.fee(amount)
     }

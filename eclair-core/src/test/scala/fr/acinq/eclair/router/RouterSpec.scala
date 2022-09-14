@@ -355,13 +355,13 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: Nil)
-    assert(res.routes.head.hops.last.nextNodeId == d)
+    assert(res.routes.head.clearHops.map(_.nodeId).toList == a :: b :: c :: Nil)
+    assert(res.routes.head.clearHops.last.nextNodeId == d)
 
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res1 = sender.expectMsgType[RouteResponse]
-    assert(res1.routes.head.hops.map(_.nodeId).toList == a :: g :: Nil)
-    assert(res1.routes.head.hops.last.nextNodeId == h)
+    assert(res1.routes.head.clearHops.map(_.nodeId).toList == a :: g :: Nil)
+    assert(res1.routes.head.clearHops.last.nextNodeId == h)
   }
 
   test("route found (with extra routing info)") { fixture =>
@@ -375,8 +375,8 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
     sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, extraEdges = Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z), routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: x :: y :: Nil)
-    assert(res.routes.head.hops.last.nextNodeId == z)
+    assert(res.routes.head.clearHops.map(_.nodeId).toList == a :: b :: c :: x :: y :: Nil)
+    assert(res.routes.head.clearHops.last.nextNodeId == z)
   }
 
   test("route not found (channel disabled)") { fixture =>
@@ -385,8 +385,8 @@ class RouterSpec extends BaseRouterSpec {
     val peerConnection = TestProbe()
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.routes.head.hops.map(_.nodeId).toList == a :: b :: c :: Nil)
-    assert(res.routes.head.hops.last.nextNodeId == d)
+    assert(res.routes.head.clearHops.map(_.nodeId).toList == a :: b :: c :: Nil)
+    assert(res.routes.head.clearHops.last.nextNodeId == d)
 
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, scid_cd, CltvExpiryDelta(3), 0 msat, 153000 msat, 4, htlcMaximum, enable = false)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cd1))
@@ -400,8 +400,8 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.routes.head.hops.map(_.nodeId).toList == a :: g :: Nil)
-    assert(res.routes.head.hops.last.nextNodeId == h)
+    assert(res.routes.head.clearHops.map(_.nodeId).toList == a :: g :: Nil)
+    assert(res.routes.head.clearHops.last.nextNodeId == h)
 
     val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, alias_ag_private, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
     sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, scids_ag_private, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
@@ -475,9 +475,9 @@ class RouterSpec extends BaseRouterSpec {
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
-    assert(response.routes.head.hops.map(_.nodeId) == preComputedRoute.nodes.dropRight(1))
-    assert(response.routes.head.hops.map(_.nextNodeId) == preComputedRoute.nodes.drop(1))
-    assert(response.routes.head.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ab), ChannelRelayParams.FromAnnouncement(update_bc), ChannelRelayParams.FromAnnouncement(update_cd)))
+    assert(response.routes.head.clearHops.map(_.nodeId) == preComputedRoute.nodes.dropRight(1))
+    assert(response.routes.head.clearHops.map(_.nextNodeId) == preComputedRoute.nodes.drop(1))
+    assert(response.routes.head.clearHops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ab), ChannelRelayParams.FromAnnouncement(update_bc), ChannelRelayParams.FromAnnouncement(update_cd)))
   }
 
   test("given a pre-defined channels route add the proper channel updates") { fixture =>
@@ -489,9 +489,9 @@ class RouterSpec extends BaseRouterSpec {
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
-    assert(response.routes.head.hops.map(_.nodeId) == Seq(a, b, c))
-    assert(response.routes.head.hops.map(_.nextNodeId) == Seq(b, c, d))
-    assert(response.routes.head.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ab), ChannelRelayParams.FromAnnouncement(update_bc), ChannelRelayParams.FromAnnouncement(update_cd)))
+    assert(response.routes.head.clearHops.map(_.nodeId) == Seq(a, b, c))
+    assert(response.routes.head.clearHops.map(_.nextNodeId) == Seq(b, c, d))
+    assert(response.routes.head.clearHops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ab), ChannelRelayParams.FromAnnouncement(update_bc), ChannelRelayParams.FromAnnouncement(update_cd)))
   }
 
   test("given a pre-defined private channels route add the proper channel updates") { fixture =>
@@ -505,9 +505,9 @@ class RouterSpec extends BaseRouterSpec {
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private)))
-      assert(route.hops.head.nodeId == a)
-      assert(route.hops.head.nextNodeId == g)
+      assert(route.clearHops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private)))
+      assert(route.clearHops.head.nodeId == a)
+      assert(route.clearHops.head.nextNodeId == g)
     }
     {
       // using the real scid
@@ -516,9 +516,9 @@ class RouterSpec extends BaseRouterSpec {
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private)))
-      assert(route.hops.head.nodeId == a)
-      assert(route.hops.head.nextNodeId == g)
+      assert(route.clearHops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private)))
+      assert(route.clearHops.head.nodeId == a)
+      assert(route.clearHops.head.nextNodeId == g)
     }
     {
       val preComputedRoute = PredefinedChannelRoute(h, Seq(scid_ag_private, scid_gh))
@@ -526,9 +526,9 @@ class RouterSpec extends BaseRouterSpec {
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.nodeId) == Seq(a, g))
-      assert(route.hops.map(_.nextNodeId) == Seq(g, h))
-      assert(route.hops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private), ChannelRelayParams.FromAnnouncement(update_gh)))
+      assert(route.clearHops.map(_.nodeId) == Seq(a, g))
+      assert(route.clearHops.map(_.nextNodeId) == Seq(g, h))
+      assert(route.clearHops.map(_.params) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private), ChannelRelayParams.FromAnnouncement(update_gh)))
     }
   }
 
@@ -547,10 +547,10 @@ class RouterSpec extends BaseRouterSpec {
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.nodeId) == Seq(a, b))
-      assert(route.hops.map(_.nextNodeId) == Seq(b, targetNodeId))
-      assert(route.hops.head.params == ChannelRelayParams.FromAnnouncement(update_ab))
-      assert(route.hops.last.params == ChannelRelayParams.FromHint(invoiceRoutingHint))
+      assert(route.clearHops.map(_.nodeId) == Seq(a, b))
+      assert(route.clearHops.map(_.nextNodeId) == Seq(b, targetNodeId))
+      assert(route.clearHops.head.params == ChannelRelayParams.FromAnnouncement(update_ab))
+      assert(route.clearHops.last.params == ChannelRelayParams.FromHint(invoiceRoutingHint))
     }
     {
       val invoiceRoutingHint = Invoice.BasicEdge(h, targetNodeId, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
@@ -562,10 +562,10 @@ class RouterSpec extends BaseRouterSpec {
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
-      assert(route.hops.map(_.nodeId) == Seq(a, g, h))
-      assert(route.hops.map(_.nextNodeId) == Seq(g, h, targetNodeId))
-      assert(route.hops.map(_.params).dropRight(1) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private), ChannelRelayParams.FromAnnouncement(update_gh)))
-      assert(route.hops.last.params == ChannelRelayParams.FromHint(invoiceRoutingHint))
+      assert(route.clearHops.map(_.nodeId) == Seq(a, g, h))
+      assert(route.clearHops.map(_.nextNodeId) == Seq(g, h, targetNodeId))
+      assert(route.clearHops.map(_.params).dropRight(1) == Seq(ChannelRelayParams.FromAnnouncement(update_ag_private), ChannelRelayParams.FromAnnouncement(update_gh)))
+      assert(route.clearHops.last.params == ChannelRelayParams.FromHint(invoiceRoutingHint))
     }
   }
 

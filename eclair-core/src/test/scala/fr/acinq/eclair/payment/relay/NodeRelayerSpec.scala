@@ -627,10 +627,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
-    assert(outgoingPayment.finalPayload.isInstanceOf[FinalPayload.Standard])
-    assert(outgoingPayment.finalPayload.amount == outgoingAmount)
-    assert(outgoingPayment.finalPayload.expiry == outgoingExpiry)
-    assert(outgoingPayment.finalPayload.asInstanceOf[FinalPayload.Standard].paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
+    assert(outgoingPayment.amount == outgoingAmount)
+    assert(outgoingPayment.targetExpiry == outgoingExpiry)
+    assert(outgoingPayment.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
