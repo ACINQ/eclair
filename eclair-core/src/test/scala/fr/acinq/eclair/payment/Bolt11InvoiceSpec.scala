@@ -642,7 +642,19 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(Bolt11Invoice.fromString(invoice.toString).get == invoice)
   }
 
-  test("Invoices can't have high features") {
+  test("filter non-invoice features when parsing invoices") {
+    // The following invoice has feature bit 20 activated (option_anchor_outputs) without feature bit 12 (option_static_remotekey).
+    // This doesn't satisfy the feature dependency graph, but since those aren't invoice features, we should ignore it.
+    val bin = "lntb250u1p3jxdmwpp5mnjuf5zwkndq4e29lmvqen8cnwc57aqr0658jlfl3q42667q3lgsdpqdehkuttfdemx76trv5sxvetpw36hyetncqpxsp5a0epznfadhwjrtsrqykjpxu97800grzzjv3kuq3xnlsdgaytqn3s9pqzqqqqqqzqqqqqqqqqqqqqqqqqqqqqsgqk243r3nnm92d8qaam7hgwc5yhupq4wvmnufyyt6kk6hww98a4vtrzxy0pqrpj7dyffykdfx326k0ggcw4l2d08xkknes4unt6vu3ptgqk9zn8r"
+    val features = Features(
+      Map(VariableLengthOnion -> FeatureSupport.Mandatory, PaymentSecret -> FeatureSupport.Mandatory),
+      Set(UnknownFeature(121), UnknownFeature(156))
+    )
+    val Success(pr) = Bolt11Invoice.fromString(bin)
+    assert(features == pr.features)
+  }
+
+  test("invoices can't have high features") {
     assertThrows[Exception](createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features[Feature](Map[Feature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(424242)))))
   }
 }
