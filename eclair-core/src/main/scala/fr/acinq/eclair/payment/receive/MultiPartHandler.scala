@@ -20,6 +20,7 @@ import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.scala.{ByteVector32, Crypto}
+import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb, PaymentType, _}
 import fr.acinq.eclair.io.PayToOpenRequestEvent
@@ -64,11 +65,11 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
         val features = {
-          val f1 = Seq(Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
+          val f1 = Set(ActivatedFeature(Features.PaymentSecret, Optional), ActivatedFeature(Features.VariableLengthOnion, Optional))
           val allowMultiPart = nodeParams.features.hasFeature(Features.BasicMultiPartPayment)
-          val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
-          val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
-          Some(PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*))
+          val f2 = if (allowMultiPart) Set(ActivatedFeature(Features.BasicMultiPartPayment, Optional)) else Set.empty
+          val f3 = if (nodeParams.enableTrampolinePayment) Set(ActivatedFeature(Features.TrampolinePayment, Optional)) else Set.empty
+          Some(PaymentRequest.PaymentRequestFeatures(Features(f1 ++ f2 ++ f3)))
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
@@ -230,9 +231,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         }
         parts.collectFirst {
           case p: MultiPartPaymentFSM.PayToOpenPart => p.peer ! PayToOpenResponse(
-          chainHash = p.payToOpen.chainHash,
-          paymentHash = p.paymentHash,
-          paymentPreimage = preimage,
+            chainHash = p.payToOpen.chainHash,
+            paymentHash = p.paymentHash,
+            paymentPreimage = preimage,
             failureReason_opt = None)
         }
         postFulfill(received)

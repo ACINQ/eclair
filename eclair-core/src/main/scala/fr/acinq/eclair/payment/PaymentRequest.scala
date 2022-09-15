@@ -18,8 +18,9 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scala.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, UnknownFeature, randomBytes32}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, UnknownFeature, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -127,7 +128,7 @@ object PaymentRequest {
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional))): PaymentRequest = {
+            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features(Set(ActivatedFeature(Features.VariableLengthOnion, Optional), ActivatedFeature(Features.PaymentSecret, Optional)))))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
     val tags = {
@@ -278,6 +279,18 @@ object PaymentRequest {
     }
   }
 
+  private def leftPaddedBits(bits: BitVector): BitVector = {
+    var highest = -1
+    for (i <- 0 until bits.size.toInt) {
+      if (highest == -1 && bits(i)) highest = i
+    }
+    val nonPadded = if (highest == -1) BitVector.empty else bits.drop(highest)
+    nonPadded.size % 5 match {
+      case 0 => nonPadded
+      case remaining => BitVector.fill(5 - remaining)(high = false) ++ nonPadded
+    }
+  }
+
   /**
    * Extra hop contained in RoutingInfoTag
    *
@@ -343,9 +356,7 @@ object PaymentRequest {
   }
 
   object PaymentRequestFeatures {
-    def apply(features: Int*): PaymentRequestFeatures = PaymentRequestFeatures(long2bits(features.foldLeft(0L) {
-      case (current, feature) => current + (1L << feature)
-    }))
+    def apply(features: Features): PaymentRequestFeatures = PaymentRequestFeatures(leftPaddedBits(features.toByteVector.bits))
   }
 
   object Codecs {

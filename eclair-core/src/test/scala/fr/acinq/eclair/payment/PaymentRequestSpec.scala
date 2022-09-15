@@ -16,17 +16,18 @@
 
 package fr.acinq.eclair.payment
 
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scala.{Block, ByteVector32, Crypto, Protocol}
+import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
 import scodec.codecs.bits
+
+import java.nio.ByteOrder
 
 /**
  * Created by fabrice on 15/05/17.
@@ -86,6 +87,14 @@ class PaymentRequestSpec extends AnyFunSuite {
     val codec = PaymentRequest.Codecs.alignedBytesCodec(bits)
     assert(codec.decode(bin"1010101000").require == DecodeResult(bin"10101010", BitVector.empty))
     assert(codec.decode(bin"1010101001").isFailure) // non-zero padding
+  }
+
+  test("correctly encode/decode high feature bits") {
+    val bits = bin"100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    val features = Features(Set(ActivatedFeature(TrampolinePayment, Optional)))
+    assert(Features(bits) == features)
+    assert(PaymentRequestFeatures(features).bitmask == bits)
+
   }
 
   test("Please make a donation of any amount using payment_hash 0001020304050607080900010203040506070809000102030405060708090102 to me @03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad") {
@@ -434,7 +443,7 @@ class PaymentRequestSpec extends AnyFunSuite {
   test("payment secret") {
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
     assert(pr.paymentSecret.isDefined)
-    assert(pr.features === PaymentRequestFeatures(PaymentSecret.optional, VariableLengthOnion.optional))
+    assert(pr.features === PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional)))))
     assert(!pr.features.requirePaymentSecret)
 
     val pr1 = PaymentRequest.read(PaymentRequest.write(pr))
@@ -461,11 +470,11 @@ class PaymentRequestSpec extends AnyFunSuite {
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
     assert(!pr.features.allowTrampoline)
 
-    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, TrampolinePayment.optional)))
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(TrampolinePayment, Optional))))))
     assert(!pr1.features.allowMultiPart)
     assert(pr1.features.allowTrampoline)
 
-    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)))
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional), ActivatedFeature(TrampolinePayment, Optional))))))
     assert(pr2.features.allowMultiPart)
     assert(pr2.features.allowTrampoline)
 

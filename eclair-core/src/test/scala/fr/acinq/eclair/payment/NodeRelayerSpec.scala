@@ -17,10 +17,10 @@
 package fr.acinq.eclair.payment
 
 import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scala.{Block, Crypto}
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, nodeFee, randomBytes, randomBytes32, randomKey}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiry, CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, nodeFee, randomBytes, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -325,7 +325,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // Receive an upstream multi-part payment.
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.mandatory, BasicMultiPartPayment.optional)
+    val features = PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Mandatory), ActivatedFeature(BasicMultiPartPayment, Optional))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, randomKey, "Some invoice", extraHops = hints, features = Some(features))
     incomingMultiPart.foreach(incoming => relayer.send(nodeRelayer, incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, outgoingAmount * 3, outgoingExpiry, outgoingNodeId, pr
@@ -358,7 +358,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // Receive an upstream multi-part payment.
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey, "Some invoice", extraHops = hints, features = Some(PaymentRequestFeatures()))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey, "Some invoice", extraHops = hints, features = Some(PaymentRequestFeatures(Features.empty)))
     incomingMultiPart.foreach(incoming => relayer.send(nodeRelayer, incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, pr
     ))))
