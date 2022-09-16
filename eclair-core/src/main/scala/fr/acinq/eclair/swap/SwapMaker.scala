@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.swap.SwapCommands._
 import fr.acinq.eclair.swap.SwapEvents._
 import fr.acinq.eclair.swap.SwapHelpers._
-import fr.acinq.eclair.swap.SwapResponses.{CreateFailed, Error, Fail, InternalError, InvalidMessage, PeerCanceled, SwapError, SwapInStatus, UserCanceled}
+import fr.acinq.eclair.swap.SwapResponses.{CreateFailed, Error, Fail, InternalError, InvalidMessage, PeerCanceled, SwapError, SwapStatus, UserCanceled}
 import fr.acinq.eclair.swap.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.swap.SwapTransactions._
 import fr.acinq.eclair.transactions.Transactions.{SwapClaimByCoopTx, SwapClaimByCsvTx}
@@ -45,10 +45,11 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
 
-object SwapInSender {
+object SwapMaker {
   /*
-                         SwapInSender                                  SwapInReceiver
+                             SwapMaker                                SwapTaker
 
+                                                "Swap Out"
                                  RESPONDER                        INITIATOR
                                      |                                | [createSwap]
                                      |        SwapOutRequest          |
@@ -68,6 +69,7 @@ object SwapInSender {
                                      |------------------------------->|
                                      |                                | [awaitOpeningTxConfirmed]
 
+                                                 "Swap In"
                                  INITIATOR                        RESPONDER
                         [createSwap] |                                |
                                      |         SwapInRequest          |
@@ -91,6 +93,7 @@ object SwapInSender {
                                      |                                | [claimSwap] (claim_by_invoice)
 
                                             "Refund Cooperatively"
+                                     |                                |
                                      |            CoopClose           | [sendCoopClose]
                                      |<-------------------------------|
      (claim_by_coop) [claimSwapCoop] |                                |
@@ -106,28 +109,28 @@ object SwapInSender {
     Behaviors.setup { context =>
       Behaviors.receiveMessagePartial {
         case StartSwapInSender(amount, swapId, shortChannelId) =>
-          new SwapInSender(shortChannelId, nodeParams, watcher, register, wallet, context)
+          new SwapMaker(shortChannelId, nodeParams, watcher, register, wallet, context)
             .createSwap(amount, swapId)
         case StartSwapOutReceiver(request: SwapOutRequest) =>
           ShortChannelId.fromCoordinates(request.scid) match {
-            case Success(shortChannelId) => new SwapInSender(shortChannelId, nodeParams, watcher, register, wallet, context)
+            case Success(shortChannelId) => new SwapMaker(shortChannelId, nodeParams, watcher, register, wallet, context)
               .validateRequest(request)
             case Failure(e) => context.log.error(s"received swap request with invalid shortChannelId: $request, $e")
               Behaviors.stopped
           }
-        case RestoreSwapInSender(d) =>
+        case RestoreSwapMaker(d) =>
           ShortChannelId.fromCoordinates(d.request.scid) match {
-            case Success(shortChannelId) => new SwapInSender(shortChannelId, nodeParams, watcher, register, wallet, context)
+            case Success(shortChannelId) => new SwapMaker(shortChannelId, nodeParams, watcher, register, wallet, context)
               .awaitClaimPayment(d.request, d.agreement, d.invoice, d.openingTxBroadcasted, d.isInitiator)
             case Failure(e) => context.log.error(s"could not restore swap sender with invalid shortChannelId: $d, $e")
               Behaviors.stopped
           }
-        case AbortSwapInSender => Behaviors.stopped
+        case AbortSwap => Behaviors.stopped
       }
     }
 }
 
-private class SwapInSender(shortChannelId: ShortChannelId, nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, implicit val context: ActorContext[SwapCommands.SwapCommand]) {
+private class SwapMaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, implicit val context: ActorContext[SwapCommands.SwapCommand]) {
   val protocolVersion = 2
   val noAsset = ""
   implicit val timeout: Timeout = 30 seconds
@@ -180,7 +183,7 @@ private class SwapInSender(shortChannelId: ShortChannelId, nodeParams: NodeParam
         case ForwardShortIdFailureAdapter(_) => swapCanceled(InternalError(request.swapId, s"could not forward swap agreement to peer."))
         case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
           swapCanceled(UserCanceled(request.swapId))
-        case GetStatus(replyTo) => replyTo ! SwapInStatus(request.swapId, context.self.toString, "awaitFeePayment", request, Some(agreement))
+        case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "awaitFeePayment", request, Some(agreement))
           Behaviors.same
       }
     }
@@ -201,7 +204,7 @@ private class SwapInSender(shortChannelId: ShortChannelId, nodeParams: NodeParam
       case SwapMessageReceived(m) => swapCanceled(InvalidMessage(request.swapId, "awaitAgreement", m))
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
         swapCanceled(UserCanceled(request.swapId))
-      case GetStatus(replyTo) => replyTo ! SwapInStatus(request.swapId, context.self.toString, "awaitAgreement", request)
+      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "awaitAgreement", request)
         Behaviors.same
     }
   }
@@ -230,7 +233,7 @@ private class SwapInSender(shortChannelId: ShortChannelId, nodeParams: NodeParam
         swapCanceled(InternalError(request.swapId, "timeout during CreateOpeningTx"))
       case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
         Behaviors.same // ignore
-      case GetStatus(replyTo) => replyTo ! SwapInStatus(request.swapId, context.self.toString, "createOpeningTx", request, Some(agreement))
+      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "createOpeningTx", request, Some(agreement))
         Behaviors.same
     }
   }
@@ -253,7 +256,7 @@ private class SwapInSender(shortChannelId: ShortChannelId, nodeParams: NodeParam
           waitCsv(request, agreement, invoice, openingTxBroadcasted, isInitiator)
         case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
           Behaviors.same
-        case GetStatus(replyTo) => replyTo ! SwapInStatus(request.swapId, context.self.toString, "awaitClaimPayment", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
+        case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "awaitClaimPayment", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
           Behaviors.same
       }
     }
@@ -281,7 +284,7 @@ private class SwapInSender(shortChannelId: ShortChannelId, nodeParams: NodeParam
       case ClaimTxInvalid(_) => waitCsv(request, agreement, invoice, openingTxBroadcasted, isInitiator)
       case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
         Behaviors.same
-      case GetStatus(replyTo) => replyTo ! SwapInStatus(request.swapId, context.self.toString, "claimSwapCoop", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
+      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "claimSwapCoop", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
         Behaviors.same
     }
   }
@@ -300,7 +303,7 @@ private class SwapInSender(shortChannelId: ShortChannelId, nodeParams: NodeParam
         Behaviors.same
       case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
         Behaviors.same
-      case GetStatus(replyTo) => replyTo ! SwapInStatus(request.swapId, context.self.toString, "waitCsv", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
+      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "waitCsv", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
         Behaviors.same
     }
   }
@@ -324,7 +327,7 @@ private class SwapInSender(shortChannelId: ShortChannelId, nodeParams: NodeParam
         Behaviors.same
       case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
         Behaviors.same
-      case GetStatus(replyTo) => replyTo ! SwapInStatus(request.swapId, context.self.toString, "claimSwapCsv", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
+      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "claimSwapCsv", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
         Behaviors.same
     }
   }

@@ -36,7 +36,7 @@ import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.swap.SwapCommands._
 import fr.acinq.eclair.swap.SwapData.SwapData
 import fr.acinq.eclair.swap.SwapEvents.{ClaimByInvoiceConfirmed, SwapEvent, TransactionPublished}
-import fr.acinq.eclair.swap.SwapResponses.{Status, SwapInStatus}
+import fr.acinq.eclair.swap.SwapResponses.{Status, SwapStatus}
 import fr.acinq.eclair.swap.SwapTransactions.{claimByInvoiceTxWeight, makeSwapClaimByInvoiceTx, makeSwapOpeningTxOut}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
@@ -92,7 +92,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // subscribe to notification events from SwapInReceiver when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapInReceiver = testKit.spawn(Behaviors.monitor(monitor.ref, SwapInReceiver(TestConstants.Bob.nodeParams, paymentInitiator.ref.toClassic, watcher.ref, register.ref.toClassic, wallet)), "swap-in-sender")
+    val swapInReceiver = testKit.spawn(Behaviors.monitor(monitor.ref, SwapTaker(TestConstants.Bob.nodeParams, paymentInitiator.ref.toClassic, watcher.ref, register.ref.toClassic, wallet)), "swap-in-receiver")
 
     withFixture(test.toNoArgTest(FixtureParam(swapInReceiver, userCli, monitor, register, relayer, router, paymentInitiator, switchboard, paymentHandler, sender, TestConstants.Bob.nodeParams, watcher, wallet, swapEvents)))
   }
@@ -106,13 +106,13 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
     val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = false)
-    swapInReceiver ! RestoreSwapInReceiver(swapData)
-    monitor.expectMessageType[RestoreSwapInReceiver]
+    swapInReceiver ! RestoreSwapTaker(swapData)
+    monitor.expectMessageType[RestoreSwapTaker]
 
     // SwapInReceiver reports status of awaiting opening transaction
     swapInReceiver ! GetStatus(userCli.ref)
     monitor.expectMessageType[GetStatus]
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "awaitOpeningTxConfirmed")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "awaitOpeningTxConfirmed")
 
     // ZmqWatcher -> SwapInReceiver, trigger confirmation of opening transaction
     val openingTx = Transaction(2, Seq(), Seq(makeSwapOpeningTxOut((request.amount + agreement.premium).sat, makerPubkey, takerPubkey, invoice.paymentHash)), 0)
@@ -189,7 +189,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // SwapInReceiver reports status of awaiting claim by invoice tx to confirm
     swapInReceiver ! GetStatus(userCli.ref)
     monitor.expectMessageType[GetStatus]
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "claimSwap")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "claimSwap")
 
     // SwapInReceiver reports a successful claim by invoice
     swapEvents.expectMessageType[TransactionPublished]

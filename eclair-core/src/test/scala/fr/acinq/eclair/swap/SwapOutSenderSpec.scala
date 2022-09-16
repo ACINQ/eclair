@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.swap.SwapCommands._
 import fr.acinq.eclair.swap.SwapEvents.{ClaimByInvoiceConfirmed, SwapEvent, TransactionPublished}
-import fr.acinq.eclair.swap.SwapResponses.{Status, SwapInStatus}
+import fr.acinq.eclair.swap.SwapResponses.{Status, SwapStatus}
 import fr.acinq.eclair.swap.SwapTransactions.{makeSwapClaimByInvoiceTx, makeSwapOpeningTxOut}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{OpeningTxBroadcasted, SwapOutAgreement, SwapOutRequest}
@@ -68,9 +68,9 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
   val feeRatePerKw: FeeratePerKw = TestConstants.Bob.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = TestConstants.Bob.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
   val paymentPreimage: ByteVector32 = ByteVector32.One
   val feePreimage: ByteVector32 = ByteVector32.Zeroes
-  val paymentInvoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), Crypto.sha256(paymentPreimage), makerPrivkey, Left("SwapInReceiver payment invoice"), CltvExpiryDelta(18))
-  val feeInvoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(fee.toMilliSatoshi), Crypto.sha256(feePreimage), makerPrivkey, Left("SwapOutReceiver fee invoice"), CltvExpiryDelta(18))
-  val otherInvoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(fee.toMilliSatoshi), randomBytes32(), makerPrivkey, Left("SwapOutReceiver fee invoice"), CltvExpiryDelta(18))
+  val paymentInvoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), Crypto.sha256(paymentPreimage), makerPrivkey, Left("SwapOutSender payment invoice"), CltvExpiryDelta(18))
+  val feeInvoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(fee.toMilliSatoshi), Crypto.sha256(feePreimage), makerPrivkey, Left("SwapOutSender fee invoice"), CltvExpiryDelta(18))
+  val otherInvoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(fee.toMilliSatoshi), randomBytes32(), makerPrivkey, Left("SwapOutSender other invoice"), CltvExpiryDelta(18))
   val txid: String = ByteVector32.One.toHex
   val scriptOut: Long = 0
   val blindingKey: String = ""
@@ -94,7 +94,7 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
     // subscribe to notification events from SwapInReceiver when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapInReceiver = testKit.spawn(Behaviors.monitor(monitor.ref, SwapInReceiver(TestConstants.Bob.nodeParams, paymentInitiator.ref.toClassic, watcher.ref, register.ref.toClassic, wallet)), "swap-in-sender")
+    val swapInReceiver = testKit.spawn(Behaviors.monitor(monitor.ref, SwapTaker(TestConstants.Bob.nodeParams, paymentInitiator.ref.toClassic, watcher.ref, register.ref.toClassic, wallet)), "swap-out-sender")
 
     withFixture(test.toNoArgTest(FixtureParam(swapInReceiver, userCli, monitor, register, relayer, router, paymentInitiator, switchboard, paymentHandler, sender, TestConstants.Bob.nodeParams, watcher, wallet, swapEvents)))
   }
@@ -120,7 +120,7 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
     assert(paymentInitiator.expectMessageType[SendPaymentToNode] === SendPaymentToNode(feeInvoice.amount_opt.get, feeInvoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, blockUntilComplete = true))
     swapInReceiver ! GetStatus(userCli.ref)
     monitor.expectMessageType[GetStatus]
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "payFeeInvoice")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "payFeeInvoice")
 
     // wait for SwapInReceiver to subscribe to PaymentEventReceived messages
     swapEvents.expectNoMessage()
@@ -133,7 +133,7 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
     // SwapInReceiver reports status of awaiting opening transaction after paying claim invoice
     swapInReceiver ! GetStatus(userCli.ref)
     monitor.expectMessageType[GetStatus]
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "payFeeInvoice")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "payFeeInvoice")
 
     // SwapInSender:OpeningTxBroadcasted -> SwapInReceiver
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, paymentInvoice.toString, txid, scriptOut, blindingKey)

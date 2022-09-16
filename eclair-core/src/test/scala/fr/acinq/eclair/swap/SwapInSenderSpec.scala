@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.swap.SwapCommands._
 import fr.acinq.eclair.swap.SwapData.SwapData
 import fr.acinq.eclair.swap.SwapEvents._
-import fr.acinq.eclair.swap.SwapResponses.{Status, SwapInStatus}
+import fr.acinq.eclair.swap.SwapResponses.{Status, SwapStatus}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{CoopClose, OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, ShortChannelId, TestConstants, TimestampMilli, ToMilliSatoshiConversion, randomBytes32}
@@ -89,7 +89,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     // subscribe to notification events from SwapInSender when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapInSender = testKit.spawn(Behaviors.monitor(monitor.ref, SwapInSender(TestConstants.Alice.nodeParams, watcher.ref, register.ref.toClassic, wallet)), "swap-in-sender")
+    val swapInSender = testKit.spawn(Behaviors.monitor(monitor.ref, SwapMaker(TestConstants.Alice.nodeParams, watcher.ref, register.ref.toClassic, wallet)), "swap-in-sender")
 
     withFixture(test.toNoArgTest(FixtureParam(swapInSender, userCli, monitor, register, relayer, router, paymentInitiator, switchboard, paymentHandler, sender, watcher, wallet, swapEvents)))
   }
@@ -103,7 +103,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     val invoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, makerPrivkey, Left("SwapInSender invoice"), CltvExpiryDelta(18))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
-    swapInSender ! RestoreSwapInSender(swapData)
+    swapInSender ! RestoreSwapMaker(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
@@ -153,7 +153,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
 
     // SwapInSender reports status of awaiting payment
     swapInSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "awaitClaimPayment")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "awaitClaimPayment")
 
     // SwapInSender receives a payment with the corresponding payment hash
     // TODO: convert from ShortChannelId to ByteVector32
@@ -174,7 +174,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     val invoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, makerPrivkey, Left("SwapInSender invoice"), CltvExpiryDelta(18))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
-    swapInSender ! RestoreSwapInSender(swapData)
+    swapInSender ! RestoreSwapMaker(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
@@ -190,7 +190,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
 
     // SwapInSender reports status of awaiting claim by cooperative close tx to confirm
     swapInSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "claimSwapCoop")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "claimSwapCoop")
 
     // ZmqWatcher -> SwapInSender, trigger confirmation of coop close transaction
     swapEvents.expectMessageType[TransactionPublished]
@@ -211,7 +211,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
       expirySeconds = Some(2))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
-    swapInSender ! RestoreSwapInSender(swapData)
+    swapInSender ! RestoreSwapMaker(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
@@ -224,7 +224,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
 
     // SwapInSender reports status of awaiting claim by csv tx to confirm
     swapInSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "claimSwapCsv")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "claimSwapCsv")
 
     // watch for and trigger that the claim-by-csv tx has been confirmed on chain
     watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(0), scriptOut.toInt, Transaction(2, Seq(), Seq(), 0))

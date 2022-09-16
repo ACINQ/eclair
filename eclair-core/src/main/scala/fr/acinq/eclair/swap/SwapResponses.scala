@@ -65,7 +65,7 @@ object SwapResponses {
 
   sealed trait Status extends Response
 
-  case class SwapInStatus(swapId: String, actor: String, behavior: String, request: SwapRequest, agreement_opt: Option[SwapAgreement] = None, invoice_opt: Option[Bolt11Invoice] = None, openingTxBroadcasted_opt: Option[OpeningTxBroadcasted] = None) extends Status {
+  case class SwapStatus(swapId: String, actor: String, behavior: String, request: SwapRequest, agreement_opt: Option[SwapAgreement] = None, invoice_opt: Option[Bolt11Invoice] = None, openingTxBroadcasted_opt: Option[OpeningTxBroadcasted] = None) extends Status {
     override def toString: String = s"$actor[$behavior]: $swapId, ${request.scid}, $request, $agreement_opt, $invoice_opt, $openingTxBroadcasted_opt"
   }
 

@@ -33,7 +33,7 @@ import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.swap.SwapCommands._
 import fr.acinq.eclair.swap.SwapEvents.{ClaimByInvoicePaid, SwapEvent, TransactionPublished}
-import fr.acinq.eclair.swap.SwapResponses.{Status, SwapInStatus}
+import fr.acinq.eclair.swap.SwapResponses.{Status, SwapStatus}
 import fr.acinq.eclair.swap.SwapTransactions.openingTxWeight
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{OpeningTxBroadcasted, SwapOutAgreement, SwapOutRequest}
@@ -88,7 +88,7 @@ case class SwapOutReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory
     // subscribe to notification events from SwapInReceiver when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapInSender = testKit.spawn(Behaviors.monitor(monitor.ref, SwapInSender(TestConstants.Alice.nodeParams, watcher.ref, register.ref.toClassic, wallet)), "swap-in-sender")
+    val swapInSender = testKit.spawn(Behaviors.monitor(monitor.ref, SwapMaker(TestConstants.Alice.nodeParams, watcher.ref, register.ref.toClassic, wallet)), "swap-out-receiver")
 
     withFixture(test.toNoArgTest(FixtureParam(swapInSender, userCli, monitor, register, relayer, router, paymentInitiator, switchboard, paymentHandler, sender, TestConstants.Bob.nodeParams, watcher, wallet, swapEvents)))
   }
@@ -125,7 +125,7 @@ case class SwapOutReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory
 
     // SwapInSender reports status of awaiting payment
     swapInSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapInStatus].behavior == "awaitClaimPayment")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "awaitClaimPayment")
 
     // SwapInSender receives a payment with the corresponding payment hash
     // TODO: convert from ShortChannelId to ByteVector32

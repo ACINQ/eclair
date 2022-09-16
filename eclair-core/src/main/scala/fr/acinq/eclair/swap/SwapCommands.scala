@@ -34,8 +34,8 @@ object SwapCommands {
   // @formatter:off
   case class StartSwapInSender(amount: Satoshi, swapId: String, shortChannelId: ShortChannelId) extends SwapCommand
   case class StartSwapOutReceiver(request: SwapOutRequest) extends SwapCommand
-  case class RestoreSwapInSender(swapData: SwapData) extends SwapCommand
-  case object AbortSwapInSender extends SwapCommand
+  case class RestoreSwapMaker(swapData: SwapData) extends SwapCommand
+  case object AbortSwap extends SwapCommand
 
   sealed trait CreateSwapMessages extends SwapCommand
   case object StateTimeout extends CreateSwapMessages with AwaitAgreementMessages with CreateOpeningTxMessages with ClaimSwapCsvMessages with WaitCsvMessages with AwaitFeePaymentMessages with ClaimSwapMessages with PayFeeInvoiceMessages  with SendAgreementMessages
@@ -77,8 +77,7 @@ object SwapCommands {
   // @formatter:off
   case class StartSwapInReceiver(request: SwapInRequest) extends SwapCommand
   case class StartSwapOutSender(amount: Satoshi, swapId: String, shortChannelId: ShortChannelId) extends SwapCommand
-  case class RestoreSwapInReceiver(swapData: SwapData) extends SwapCommand
-  case object AbortSwapInReceiver extends SwapCommand
+  case class RestoreSwapTaker(swapData: SwapData) extends SwapCommand
 
   sealed trait SendAgreementMessages extends SwapCommand
   sealed trait AwaitFeePaymentMessages extends SwapCommand

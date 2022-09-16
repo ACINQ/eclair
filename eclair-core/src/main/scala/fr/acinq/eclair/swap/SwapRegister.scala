@@ -70,13 +70,14 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
     }
 
   private def initializing: Behavior[Command] = {
-    // TODO: restore SwapInReceiver from 'data'
+    // TODO: restore SwapTaker from 'data'
     // TODO: restore 'data' from database
     val swaps = data.map { state =>
-      val swap: typed.ActorRef[SwapCommands.SwapCommand] = context.spawn(Behaviors.supervise(SwapInSender(nodeParams, watcher, register, wallet))
-        .onFailure(typed.SupervisorStrategy.restart), "SwapInSender-"+state.request.scid)
+      val swap: typed.ActorRef[SwapCommands.SwapCommand] =
+        context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet))
+        .onFailure(typed.SupervisorStrategy.restart), "SwapMaker-"+state.request.scid)
       context.watchWith(swap, SwapTerminated(state.request.swapId))
-      swap ! RestoreSwapInSender(state)
+      swap ! RestoreSwapMaker(state)
       state.request.swapId -> swap.unsafeUpcast
     }.toMap
     registering(swaps)
@@ -87,8 +88,8 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
     myReceive[RegisteringMessages]("registering") {
       case SwapInRequested(replyTo, amount, shortChannelId) =>
         val swapId = randomBytes32().toHex
-        val swap = context.spawn(Behaviors.supervise(SwapInSender(nodeParams, watcher, register, wallet))
-          .onFailure(SupervisorStrategy.restart), "Swap-"+shortChannelId)
+        val swap = context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet))
+          .onFailure(SupervisorStrategy.restart), "SwapMaker-"+shortChannelId)
         context.watchWith(swap, SwapTerminated(swapId))
         swap ! StartSwapInSender(amount, swapId, shortChannelId)
         replyTo ! SwapOpened(swapId)
@@ -96,7 +97,7 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
 
       case SwapOutRequested(replyTo, amount, shortChannelId) =>
         val swapId = randomBytes32().toHex
-        val swap = context.spawn(Behaviors.supervise(SwapInReceiver(nodeParams, paymentInitiator, watcher, register, wallet))
+        val swap = context.spawn(Behaviors.supervise(SwapTaker(nodeParams, paymentInitiator, watcher, register, wallet))
           .onFailure(SupervisorStrategy.restart), "Swap-" + shortChannelId.toString)
         context.watchWith(swap, SwapTerminated(swapId))
         swap ! StartSwapOutSender(amount, swapId, shortChannelId)
@@ -104,14 +105,14 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
         registering(swaps + (swapId -> swap))
 
       case MessageReceived(request: SwapInRequest) =>
-        val swap = context.spawn(Behaviors.supervise(SwapInReceiver(nodeParams, paymentInitiator, watcher, register, wallet))
+        val swap = context.spawn(Behaviors.supervise(SwapTaker(nodeParams, paymentInitiator, watcher, register, wallet))
           .onFailure(SupervisorStrategy.restart), "Swap-"+ request.scid)
         context.watchWith(swap, SwapTerminated(request.swapId))
         swap ! StartSwapInReceiver(request)
         registering(swaps + (request.swapId -> swap))
 
       case MessageReceived(request: SwapOutRequest) =>
-        val swap = context.spawn(Behaviors.supervise(SwapInSender(nodeParams, watcher, register, wallet))
+        val swap = context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet))
           .onFailure(SupervisorStrategy.restart), "Swap-" + request.scid)
         context.watchWith(swap, SwapTerminated(request.swapId))
         swap ! StartSwapOutReceiver(request)

@@ -66,7 +66,7 @@ class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   val alicePrivkey: PrivateKey = PrivateKey(randomBytes32())
   val alicePubkey: PublicKey = alicePrivkey.publicKey
   val bobPubkey: PublicKey = PrivateKey(randomBytes32()).publicKey
-  val invoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, alicePrivkey, Left("SwapInSender invoice"), CltvExpiryDelta(18))
+  val invoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, alicePrivkey, Left("PeerSwap invoice"), CltvExpiryDelta(18))
   val feeRatePerKw: FeeratePerKw = TestConstants.Alice.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = TestConstants.Alice.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
 
   override def withFixture(test: OneArgTest): Outcome = {
