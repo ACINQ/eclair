@@ -642,7 +642,19 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(Bolt11Invoice.fromString(invoice.toString).get == invoice)
   }
 
-  test("Invoices can't have high features") {
+  test("filter non-invoice features when parsing invoices") {
+    // The following invoice has feature bit 20 activated (option_anchor_outputs) without feature bit 12 (option_static_remotekey).
+    // This doesn't satisfy the feature dependency graph, but since those aren't invoice features, we should ignore it.
+    val features = Features(
+      Map(VariableLengthOnion -> FeatureSupport.Mandatory, PaymentSecret -> FeatureSupport.Mandatory, AnchorOutputs -> Mandatory),
+      Set(UnknownFeature(121), UnknownFeature(156))
+    )
+    val invoice = createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, None, randomBytes32(), priv, Left("non-invoice features"), CltvExpiryDelta(6), features = features.unscoped()).toString
+    val Success(pr) = Bolt11Invoice.fromString(invoice)
+    assert(pr.features == features.remove(AnchorOutputs))
+  }
+
+  test("invoices can't have high features") {
     assertThrows[Exception](createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features[Feature](Map[Feature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(424242)))))
   }
 }
