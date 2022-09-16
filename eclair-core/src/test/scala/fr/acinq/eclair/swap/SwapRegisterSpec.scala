@@ -109,7 +109,7 @@ class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(swapEvents.expectMessageType[ClaimByInvoicePaid].swapId === swapId)
 
     // SwapRegister receives notification that the swap actor stopped
-    assert(monitor.expectMessageType[SwapTerminated].swapInSenderId.id === swapId)
+    assert(monitor.expectMessageType[SwapTerminated].swapId === swapId)
 
     testKit.stop(swapRegister)
   }
@@ -150,7 +150,7 @@ class SwapRegisterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(swapEvents.expectMessageType[ClaimByInvoicePaid].swapId === swapId)
 
     // SwapRegister receives notification that the swap actor stopped
-    assert(monitor.expectMessageType[SwapTerminated].swapInSenderId.id === swapId)
+    assert(monitor.expectMessageType[SwapTerminated].swapId === swapId)
 
     testKit.stop(swapRegister)
   }
