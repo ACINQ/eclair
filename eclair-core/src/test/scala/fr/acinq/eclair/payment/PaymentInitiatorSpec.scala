@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scala.Block
@@ -36,12 +34,13 @@ import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router.{MultiPartParams, NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
-import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient, _}
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, NodeParams, TestConstants, TestKitBaseClass, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 /**
@@ -102,7 +101,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("reject payment with unknown mandatory feature") { f =>
     import f._
     val unknownFeature = 42
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(PaymentRequestFeatures(unknownFeature)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(PaymentRequestFeatures(Features(Set.empty, Set(UnknownFeature(unknownFeature))))))
     val req = SendPaymentRequest(finalAmount + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -137,7 +136,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward single-part payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some MPP invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some MPP invoice", features = Some(PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional))))))
     val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -147,7 +146,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward multi-part payment") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional))))))
     val req = SendPaymentRequest(finalAmount + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -157,7 +156,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward multi-part payment with pre-defined route") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some invoice", features = Some(PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional))))))
     val req = SendPaymentToRouteRequest(finalAmount / 2, finalAmount, None, None, pr, Channel.MIN_CLTV_EXPIRY_DELTA, Seq(a, b, c), None, 0 msat, CltvExpiryDelta(0), Nil)
     sender.send(initiator, req)
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
@@ -171,7 +170,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward trampoline payment") { f =>
     import f._
-    val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)
+    val features = PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional), ActivatedFeature(TrampolinePayment, Optional))))
     val ignoredRoutingHints = List(List(ExtraHop(b, channelUpdate_bc.shortChannelId, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some phoenix invoice", features = Some(features), extraHops = ignoredRoutingHints)
     val trampolineFees = 21000 msat
@@ -244,7 +243,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     // This is disabled because it would let the trampoline node steal the whole payment (if malicious).
     val routingHints = List(List(PaymentRequest.ExtraHop(b, channelUpdate_bc.shortChannelId, 10 msat, 100, CltvExpiryDelta(144))))
-    val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)
+    val features = PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional))))
     val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_a.privateKey, "#abittooreckless", None, None, routingHints, features = Some(features))
     val trampolineFees = 21000 msat
     val req = SendTrampolinePaymentRequest(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), CltvExpiryDelta(9))
@@ -260,7 +259,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("retry trampoline payment") { f =>
     import f._
-    val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)
+    val features = PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional), ActivatedFeature(TrampolinePayment, Optional))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some phoenix invoice", features = Some(features))
     val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
     val req = SendTrampolinePaymentRequest(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9))
@@ -290,7 +289,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("retry trampoline payment and fail") { f =>
     import f._
-    val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)
+    val features = PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional), ActivatedFeature(TrampolinePayment, Optional))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some phoenix invoice", features = Some(features))
     val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
     val req = SendTrampolinePaymentRequest(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9))
@@ -320,7 +319,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("retry trampoline payment and fail (route not found)") { f =>
     import f._
-    val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)
+    val features = PaymentRequestFeatures(Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional), ActivatedFeature(TrampolinePayment, Optional))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some phoenix invoice", features = Some(features))
     val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
     val req = SendTrampolinePaymentRequest(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9))

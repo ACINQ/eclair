@@ -172,7 +172,7 @@ object Features {
   // This is why we haven't added them yet to `areSupported`.
   case object TrampolinePayment extends Feature {
     val rfcName = "trampoline_payment"
-    val mandatory = 50
+    val mandatory = 148
   }
 
   val knownFeatures: Set[Feature] = Set(
