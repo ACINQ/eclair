@@ -39,8 +39,8 @@ object SwapResponses {
     override def toString: String = s"swap $swapId canceled by user."
   }
 
-  case class PeerCanceled(swapId: String) extends Fail {
-    override def toString: String = s"swap $swapId canceled by peer."
+  case class PeerCanceled(swapId: String, reason: String) extends Fail {
+    override def toString: String = s"swap $swapId canceled by peer, reason: $reason."
   }
 
   case class CreateFailed(swapId: String, reason: String) extends Fail {

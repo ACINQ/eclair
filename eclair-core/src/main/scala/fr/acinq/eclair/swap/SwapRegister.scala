@@ -26,7 +26,6 @@ import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.swap.SwapCommands._
-import fr.acinq.eclair.swap.SwapData.SwapData
 import fr.acinq.eclair.swap.SwapRegister.Command
 import fr.acinq.eclair.swap.SwapResponses.{Response, Status, SwapOpened}
 import fr.acinq.eclair.wire.protocol.{HasSwapId, SwapInRequest, SwapOutRequest}
@@ -52,12 +51,12 @@ object SwapRegister {
   case class CancelSwapRequested(replyTo: ActorRef[Response], swapId: String) extends RegisteringMessages with ReplyToMessages
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, paymentInitiator: actor.ActorRef, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, data: Set[SwapData] = Set()): Behavior[Command] = Behaviors.setup { context =>
+  def apply(nodeParams: NodeParams, paymentInitiator: actor.ActorRef, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, data: Set[SwapData]): Behavior[Command] = Behaviors.setup { context =>
     new SwapRegister(context, nodeParams, paymentInitiator, watcher, register, wallet, data).initializing
   }
 }
 
-private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParams, paymentInitiator: actor.ActorRef, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, data: Set[SwapData] = Set()) {
+private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParams, paymentInitiator: actor.ActorRef, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, data: Set[SwapData]) {
   import SwapRegister._
 
   private def myReceive[B <: Command : ClassTag](stateName: String)(f: B => Behavior[Command]): Behavior[Command] =
@@ -70,14 +69,17 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
     }
 
   private def initializing: Behavior[Command] = {
-    // TODO: restore SwapTaker from 'data'
-    // TODO: restore 'data' from database
     val swaps = data.map { state =>
-      val swap: typed.ActorRef[SwapCommands.SwapCommand] =
-        context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet))
-        .onFailure(typed.SupervisorStrategy.restart), "SwapMaker-"+state.request.scid)
+      val swap: typed.ActorRef[SwapCommands.SwapCommand] = {
+        state.swapRole match {
+          case SwapRole.Maker => context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet))
+            .onFailure(typed.SupervisorStrategy.restart), "SwapMaker-" + state.request.scid)
+          case SwapRole.Taker => context.spawn(Behaviors.supervise(SwapTaker(nodeParams, paymentInitiator, watcher, register, wallet))
+            .onFailure(typed.SupervisorStrategy.restart), "SwapTaker-" + state.request.scid)
+        }
+      }
       context.watchWith(swap, SwapTerminated(state.request.swapId))
-      swap ! RestoreSwapMaker(state)
+      swap ! RestoreSwap(state)
       state.request.swapId -> swap.unsafeUpcast
     }.toMap
     registering(swaps)
@@ -85,11 +87,12 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
 
   private def registering(swaps: Map[String, ActorRef[SwapCommands.SwapCommand]]): Behavior[Command] = {
     // TODO: fail requests for swaps on a channel if one already exists for the channel; keep a list of channels with active swaps
+    // TODO: check currently registered swaps, and swap db, to prevent reuse of a swapId
     myReceive[RegisteringMessages]("registering") {
       case SwapInRequested(replyTo, amount, shortChannelId) =>
         val swapId = randomBytes32().toHex
         val swap = context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet))
-          .onFailure(SupervisorStrategy.restart), "SwapMaker-"+shortChannelId)
+          .onFailure(SupervisorStrategy.restart), "Swap-" + shortChannelId.toString)
         context.watchWith(swap, SwapTerminated(swapId))
         swap ! StartSwapInSender(amount, swapId, shortChannelId)
         replyTo ! SwapOpened(swapId)

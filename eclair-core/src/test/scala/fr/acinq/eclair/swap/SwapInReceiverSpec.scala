@@ -34,7 +34,6 @@ import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.swap.SwapCommands._
-import fr.acinq.eclair.swap.SwapData.SwapData
 import fr.acinq.eclair.swap.SwapEvents.{ClaimByInvoiceConfirmed, SwapEvent, TransactionPublished}
 import fr.acinq.eclair.swap.SwapResponses.{Status, SwapStatus}
 import fr.acinq.eclair.swap.SwapTransactions.{claimByInvoiceTxWeight, makeSwapClaimByInvoiceTx, makeSwapOpeningTxOut}
@@ -105,9 +104,9 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // restore the SwapInReceiver actor state from a confirmed on-chain opening tx
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
-    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = false)
-    swapInReceiver ! RestoreSwapTaker(swapData)
-    monitor.expectMessageType[RestoreSwapTaker]
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false)
+    swapInReceiver ! RestoreSwap(swapData)
+    monitor.expectMessageType[RestoreSwap]
 
     // SwapInReceiver reports status of awaiting opening transaction
     swapInReceiver ! GetStatus(userCli.ref)

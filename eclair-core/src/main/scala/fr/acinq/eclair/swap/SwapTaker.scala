@@ -32,6 +32,7 @@ import fr.acinq.eclair.swap.SwapCommands._
 import fr.acinq.eclair.swap.SwapEvents._
 import fr.acinq.eclair.swap.SwapHelpers._
 import fr.acinq.eclair.swap.SwapResponses.{CreateFailed, Error, Fail, InternalError, InvalidMessage, PeerCanceled, SwapError, SwapStatus, UserCanceled}
+import fr.acinq.eclair.swap.SwapRole.Taker
 import fr.acinq.eclair.swap.SwapTransactions._
 import fr.acinq.eclair.transactions.Transactions.SwapClaimByCoopTx
 import fr.acinq.eclair.wire.protocol._
@@ -114,7 +115,7 @@ object SwapTaker {
             case Failure(e) => context.log.error(s"received swap request with invalid shortChannelId: $request, $e")
               Behaviors.stopped
           }
-        case RestoreSwapTaker(d) =>
+        case RestoreSwap(d) =>
           ShortChannelId.fromCoordinates(d.request.scid) match {
             case Success(shortChannelId) => new SwapTaker(shortChannelId, nodeParams, paymentInitiator, watcher, register, wallet, context)
               .awaitOpeningTxConfirmed(d.request, d.agreement, d.openingTxBroadcasted, d.isInitiator)
@@ -158,7 +159,7 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
       case SwapMessageReceived(agreement: SwapOutAgreement) if agreement.protocolVersion != protocolVersion =>
         swapCanceled(InternalError(request.swapId, s"protocol version must be $protocolVersion."))
       case SwapMessageReceived(agreement: SwapOutAgreement) => validateFeeInvoice(request, agreement)
-      case SwapMessageReceived(_: CancelSwap) => swapCanceled(PeerCanceled(request.swapId))
+      case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
       case StateTimeout => swapCanceled(InternalError(request.swapId, "timeout during awaitAgreement"))
       case ForwardFailureAdapter(_) => swapCanceled(InternalError(request.swapId, s"could not forward swap request to peer."))
       case SwapMessageReceived(m) => swapCanceled(InvalidMessage(request.swapId, "awaitAgreement", m))
@@ -195,7 +196,7 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
       case PaymentEventReceived(p: PaymentFailed) => swapCanceled(CreateFailed(request.swapId, s"Lightning payment failed: $p"))
       case PaymentEventReceived(p: PaymentEvent) => swapCanceled(CreateFailed(request.swapId, s"Lightning payment failed, invalid PaymentEvent received: $p."))
       case SwapMessageReceived(openingTxBroadcasted: OpeningTxBroadcasted) => awaitOpeningTxConfirmed(request, agreement, openingTxBroadcasted, isInitiator = true)
-      case SwapMessageReceived(_: CancelSwap) => swapCanceled(PeerCanceled(request.swapId))
+      case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
       case SwapMessageReceived(m) => swapCanceled(CreateFailed(request.swapId, s"Invalid message received during payOpeningTxFeeInvoice: $m"))
       case StateTimeout => swapCanceled(InternalError(request.swapId, "timeout during payFeeInvoice"))
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
@@ -220,7 +221,7 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
 
     receiveSwapMessage[SendAgreementMessages](context, "sendAgreement") {
       case SwapMessageReceived(openingTxBroadcasted: OpeningTxBroadcasted) => awaitOpeningTxConfirmed(request, agreement, openingTxBroadcasted, isInitiator = false)
-      case SwapMessageReceived(_: CancelSwap) => swapCanceled(PeerCanceled(request.swapId))
+      case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
       case SwapMessageReceived(m) => sendCoopClose(request, s"Invalid message received during sendAgreement: $m")
       case StateTimeout => swapCanceled(InternalError(request.swapId, "timeout during sendAgreement"))
       case ForwardShortIdFailureAdapter(_) => swapCanceled(InternalError(request.swapId, s"could not forward swap agreement to peer."))
@@ -237,7 +238,7 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
 
     receiveSwapMessage[AwaitOpeningTxConfirmedMessages](context, "awaitOpeningTxConfirmed") {
       case OpeningTxConfirmed(opening) => validateOpeningTx(request, agreement, openingTxBroadcasted, opening.tx, isInitiator)
-      case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId))
+      case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
       case SwapMessageReceived(m) => sendCoopClose(request, s"Invalid message received during awaitOpeningTxConfirmed: $m")
       case InvoiceExpired => sendCoopClose(request, "Timeout waiting for opening tx to confirm.")
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
@@ -261,6 +262,7 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
 
     receiveSwapMessage[ValidateTxMessages](context, "validateOpeningTx") {
       case ValidInvoice(invoice) if validOpeningTx(openingTx, openingTxBroadcasted.scriptOut, (request.amount + agreement.premium).sat, makerPubkey(request, agreement, isInitiator), takerPubkey(request.swapId), invoice.paymentHash) =>
+        nodeParams.db.swaps.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Taker, isInitiator))
         payClaimInvoice(request, agreement, openingTxBroadcasted, invoice, openingTx, isInitiator)
       case ValidInvoice(_) => sendCoopClose(request,s"Invalid opening tx: $openingTx", Some(openingTxBroadcasted))
       case InvalidInvoice(reason) => sendCoopClose(request, reason, Some(openingTxBroadcasted))
@@ -340,7 +342,8 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
   }
 
   def swapCanceled(failure: Fail): Behavior[SwapCommand] = {
-    context.system.eventStream ! Publish(Canceled(failure.swapId))
+    val swapEvent = Canceled(failure.swapId, failure.toString)
+    context.system.eventStream ! Publish(swapEvent)
     failure match {
       case e: Error => context.log.error(s"canceled swap: $e")
       case s: CreateFailed => sendShortId(register, shortChannelId)(CancelSwap(s.swapId, s.toString))

@@ -29,8 +29,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.swap.{LocalSwapKeyManager, SwapRegister}
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
-import org.scalatest.concurrent.PatienceConfiguration
-import org.scalatest.concurrent.{Eventually, IntegrationPatience}
+import org.scalatest.concurrent.{Eventually, IntegrationPatience, PatienceConfiguration}
 import org.scalatest.{Assertions, EitherValues}
 
 import java.net.InetAddress
@@ -92,7 +91,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val channelFactory = Peer.SimpleChannelFactory(nodeParams, watcherTyped, relayer, wallet, txPublisherFactory)
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
-    val swapRegister = system.spawn(Behaviors.supervise(SwapRegister(nodeParams, paymentInitiator, watcherTyped, register, wallet)).onFailure(SupervisorStrategy.stop), "swap-register")
+    val swapRegister = system.spawn(Behaviors.supervise(SwapRegister(nodeParams, paymentInitiator, watcherTyped, register, wallet, Set())).onFailure(SupervisorStrategy.stop), "swap-register")
     val peerFactory = Switchboard.SimplePeerFactory(nodeParams, wallet, channelFactory, swapRegister)
     val switchboard = system.actorOf(Switchboard.props(nodeParams, peerFactory), "switchboard")
     readyListener.expectMsgAllOf(

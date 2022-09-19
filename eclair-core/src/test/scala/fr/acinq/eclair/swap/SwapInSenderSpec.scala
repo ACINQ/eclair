@@ -33,7 +33,6 @@ import fr.acinq.eclair.channel.DATA_NORMAL
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.swap.SwapCommands._
-import fr.acinq.eclair.swap.SwapData.SwapData
 import fr.acinq.eclair.swap.SwapEvents._
 import fr.acinq.eclair.swap.SwapResponses.{Status, SwapStatus}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
@@ -102,8 +101,8 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     // restore the SwapInSender actor state from a confirmed on-chain opening tx
     val invoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, makerPrivkey, Left("SwapInSender invoice"), CltvExpiryDelta(18))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
-    swapInSender ! RestoreSwapMaker(swapData)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Maker, isInitiator = true)
+    swapInSender ! RestoreSwap(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
@@ -173,8 +172,8 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     // restore the SwapInSender actor state from a confirmed on-chain opening tx
     val invoice: Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, makerPrivkey, Left("SwapInSender invoice"), CltvExpiryDelta(18))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
-    swapInSender ! RestoreSwapMaker(swapData)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Maker, isInitiator = true)
+    swapInSender ! RestoreSwap(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]
@@ -210,8 +209,8 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     val invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), ByteVector32.One, makerPrivkey, Left("SwapInSender invoice with short expiry"), CltvExpiryDelta(18),
       expirySeconds = Some(2))
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, isInitiator = true)
-    swapInSender ! RestoreSwapMaker(swapData)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Maker, isInitiator = true)
+    swapInSender ! RestoreSwap(swapData)
 
     // resend OpeningTxBroadcasted when swap restored
     register.expectMessageType[ForwardShortId[OpeningTxBroadcasted]]

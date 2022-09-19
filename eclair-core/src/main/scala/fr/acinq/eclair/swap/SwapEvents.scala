@@ -21,9 +21,11 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.payment.PaymentReceived
 
 object SwapEvents {
-  sealed trait SwapEvent
+  sealed trait SwapEvent {
+    def swapId: String
+  }
 
-  case class Canceled(swapId: String) extends SwapEvent
+  case class Canceled(swapId: String, reason: String) extends SwapEvent
   case class TransactionPublished(swapId: String, tx: Transaction, desc: String) extends SwapEvent
   case class TransactionConfirmed(swapId: String, tx: Transaction) extends SwapEvent
   case class ClaimByInvoiceConfirmed(swapId: String, confirmation: WatchTxConfirmedTriggered) extends SwapEvent

@@ -17,8 +17,17 @@
 package fr.acinq.eclair.swap
 
 import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.swap
+import fr.acinq.eclair.swap.SwapRole.SwapRole
 import fr.acinq.eclair.wire.protocol.{OpeningTxBroadcasted, SwapAgreement, SwapRequest}
 
+object SwapRole extends Enumeration {
+  type SwapRole = Value
+  val Maker: swap.SwapRole.Value = Value(1, "Maker")
+  val Taker: swap.SwapRole.Value = Value(2, "Taker")
+}
+
+case class SwapData(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, swapRole: SwapRole, isInitiator: Boolean)
+
 object SwapData {
-  final case class SwapData(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean)
 }
