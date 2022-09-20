@@ -1264,7 +1264,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       // they haven't detected that we were closing and are trying to reestablish a connection
       // we give them one of the published txes as a hint
       // note spendingTx != Nil (that's a requirement of DATA_CLOSING)
-      val exc = FundingTxSpent(d.channelId, d.spendingTxs.head)
+      val exc = FundingTxSpent(d.channelId, d.spendingTxs.head.txid)
       val error = Error(d.channelId, exc.getMessage)
       stay() sending error
 

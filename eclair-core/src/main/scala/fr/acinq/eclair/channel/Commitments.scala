@@ -725,7 +725,7 @@ object Commitments {
     log.info(s"built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.collect(incoming).map(_.id).mkString(","), spec.htlcs.collect(outgoing).map(_.id).mkString(","), localCommitTx.tx)
 
     if (!Transactions.checkSig(localCommitTx, commit.signature, remoteParams.fundingPubKey, TxOwner.Remote, commitmentFormat)) {
-      return Left(InvalidCommitmentSignature(commitments.channelId, localCommitTx.tx))
+      return Left(InvalidCommitmentSignature(commitments.channelId, localCommitTx.tx.txid))
     }
 
     val sortedHtlcTxs: Seq[HtlcTx] = htlcTxs.sortBy(_.input.outPoint.index)
@@ -737,7 +737,7 @@ object Commitments {
     val htlcTxsAndRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
       case (htlcTx: HtlcTx, remoteSig) =>
         if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, TxOwner.Remote, commitmentFormat)) {
-          return Left(InvalidHtlcSignature(commitments.channelId, htlcTx.tx))
+          return Left(InvalidHtlcSignature(commitments.channelId, htlcTx.tx.txid))
         }
         HtlcTxAndRemoteSig(htlcTx, remoteSig)
     }

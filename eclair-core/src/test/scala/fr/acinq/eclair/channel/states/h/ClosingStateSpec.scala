@@ -1626,7 +1626,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! ChannelReestablish(channelId(bob), 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint)
 
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data.toArray) == FundingTxSpent(channelId(alice), initialState.spendingTxs.head).getMessage)
+    assert(new String(error.data.toArray) == FundingTxSpent(channelId(alice), initialState.spendingTxs.head.txid).getMessage)
   }
 
   test("recv CMD_CLOSE") { f =>

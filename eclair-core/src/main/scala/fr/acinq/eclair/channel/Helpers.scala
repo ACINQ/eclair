@@ -707,10 +707,10 @@ object Helpers {
             val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
             Transactions.checkSpendable(signedClosingTx) match {
               case Success(_) => Right(signedClosingTx, closingSigned)
-              case _ => Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+              case _ => Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx.txid))
             }
           } else {
-            Left(InvalidCloseAmountBelowDust(commitments.channelId, closingTx.tx))
+            Left(InvalidCloseAmountBelowDust(commitments.channelId, closingTx.tx.txid))
           }
         }
       }

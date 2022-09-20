@@ -356,7 +356,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", txSigs.txId, unsignedFundingTx.txid, cause.getMessage)
             // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
             // so we cannot close the channel yet.
-            stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx)).getMessage)
+            stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
           case Right(fundingTx) =>
             log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
             val d1 = d.copy(fundingTx = fundingTx)
