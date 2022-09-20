@@ -20,7 +20,6 @@ import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.{OfferCodecs, OfferTypes, TlvStream}
@@ -30,8 +29,6 @@ import scodec.bits.ByteVector
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Try}
-
-case class BlindedPaymentRoute(route: RouteBlinding.BlindedRoute, paymentInfo: PaymentInfo, capacity_opt: Option[MilliSatoshi])
 
 /**
  * Lightning Bolt 12 invoice
@@ -43,26 +40,25 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
   val amount: MilliSatoshi = records.get[Amount].map(_.amount).get
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
-  override val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
+  val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
   override val paymentHash: ByteVector32 = records.get[PaymentHash].get.hash
-  override val paymentSecret: Option[ByteVector32] = None
   override val paymentMetadata: Option[ByteVector] = None
   override val description: Either[String, ByteVector32] = Left(records.get[Description].get.description)
-  override val extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty // TODO: the blinded paths need to be converted to graph edges
+  override val extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty
   override val createdAt: TimestampSecond = records.get[CreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[RelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
   override val minFinalCltvExpiryDelta: CltvExpiryDelta = records.get[Cltv].map(_.minFinalCltvExpiry).getOrElse(DEFAULT_MIN_FINAL_EXPIRY_DELTA)
   override val features: Features[InvoiceFeature] = records.get[FeaturesTlv].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
   val chain: ByteVector32 = records.get[Chain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
-  val blindedPaymentRoutes: Seq[BlindedPaymentRoute] = {
+  val recipients: Seq[BlindRecipient] = {
     val routesAndInfos = records.get[Paths].get.paths.zip(records.get[PaymentPathsInfo].get.paymentInfo)
     records.get[PaymentPathsCapacities] match {
       case Some(PaymentPathsCapacities(capacities)) => routesAndInfos.zip(capacities).map {
-        case ((route, payInfo), capacity) => BlindedPaymentRoute(route, payInfo, Some(capacity))
+        case ((route, payInfo), capacity) => BlindRecipient(route, payInfo, Some(capacity), Nil, Nil)
       }
       case None => routesAndInfos.map {
-        case (route, payInfo) => BlindedPaymentRoute(route, payInfo, None)
+        case (route, payInfo) => BlindRecipient(route, payInfo, None, Nil, Nil)
       }
     }
   }

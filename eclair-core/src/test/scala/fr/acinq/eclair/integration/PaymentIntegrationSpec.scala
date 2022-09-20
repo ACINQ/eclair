@@ -33,15 +33,16 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
+import fr.acinq.eclair.payment.receive.MultiPartHandler.{ReceiveOfferPayment, ReceiveStandardPayment}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
 
@@ -678,6 +679,17 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       sender.send(nodes("D").router, Router.GetChannels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels.size + 8 // 8 original channels (A -> B is private)
     }, max = 120 seconds, interval = 1 second)
+  }
+
+  test("blinded payment") {
+    val sender = TestProbe()
+    val amount = 1000_000 msat
+    val offer = Offer(Some(amount), "test offer", nodes("A").nodeParams.nodeId, Features.empty, nodes("A").nodeParams.chainHash)
+    val payerKey = randomKey()
+    val invoiceRequest = InvoiceRequest(offer, amount, 1, Features.empty, payerKey, nodes("A").nodeParams.chainHash)
+    sender.send(nodes("A").paymentHandler, ReceiveOfferPayment(nodes("A").nodeParams.privateKey, offer, invoiceRequest))
+    val invoice = sender.expectMsgType[Invoice]
+
   }
 
   /** Handy way to check what the channel balances are before adding new tests. */

@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.{Bolt11Invoice, ClearRecipient, Recipient}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
@@ -335,7 +335,7 @@ object PaymentOnion {
           val tlvs = Seq(
             Some(AmountToForward(amount)),
             Some(OutgoingCltv(expiry)),
-            invoice.paymentSecret.map(s => PaymentData(s, totalAmount)),
+            Some(PaymentData(invoice.paymentSecret, totalAmount)),
             invoice.paymentMetadata.map(m => PaymentMetadata(m)),
             Some(OutgoingNodeId(targetNodeId)),
             Some(InvoiceFeatures(invoice.features.toByteVector)),
@@ -437,6 +437,7 @@ object PaymentOnion {
       }
 
       def create(amount: MilliSatoshi,
+                 totalAmount: MilliSatoshi,
                  expiry: CltvExpiry,
                  encryptedRecipientData: ByteVector,
                  blinding_opt: Option[PublicKey],
@@ -445,6 +446,7 @@ object PaymentOnion {
         val tlvs = Seq(
           blinding_opt.map(BlindingPoint),
           Some(AmountToForward(amount)),
+          Some(TotalAmount(totalAmount)),
           Some(OutgoingCltv(expiry)),
           Some(EncryptedRecipientData(encryptedRecipientData)),
         ).flatten

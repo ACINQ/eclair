@@ -31,11 +31,9 @@ trait Invoice {
 
   val createdAt: TimestampSecond
 
-  val nodeId: PublicKey
+  val recipients: Seq[Recipient]
 
   val paymentHash: ByteVector32
-
-  val paymentSecret: Option[ByteVector32]
 
   val paymentMetadata: Option[ByteVector]
 

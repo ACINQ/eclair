@@ -32,10 +32,10 @@ import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
+import fr.acinq.eclair.router.Router.ChannelRelayParams.FromPaymentInfo
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol._
-import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
 import scala.util.{Failure, Success}
@@ -57,19 +57,19 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
       log.debug("sending {} to route {}", c.amount, c.printRoute())
       c.route.fold(
-        hops => router ! FinalizeRoute(c.amount, hops, c.extraEdges, paymentContext = Some(cfg.paymentContext)),
+        hops => router ! FinalizeRoute(c.amount, hops, c.targetRecipient, c.extraEdges, paymentContext = Some(cfg.paymentContext)),
         route => self ! RouteResponse(route :: Nil)
       )
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipients.head.nodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
 
     case Event(c: SendPaymentToNode, WaitingForRequest) =>
-      log.debug("sending {} to {}", c.amount, c.targetNodeId)
-      router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amount, c.maxFee, c.extraEdges, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
+      log.debug("sending {} to {}", c.amount, c.targetRecipients.head.nodeId)
+      router ! RouteRequest(nodeParams.nodeId, c.targetRecipients, c.amount, c.maxFee, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipients.head.nodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
   }
@@ -77,7 +77,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(c, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
-      OutgoingPaymentPacket.buildCommand(nodeParams.privateKey, self, cfg.upstream, paymentHash, route.clearHops, route.blinded_opt, c.amount, c.totalAmount, c.targetExpiry, c.paymentSecret, c.paymentMetadata, c.additionalTlvs, c.userCustomTlvs) match {
+      OutgoingPaymentPacket.buildCommand(nodeParams.privateKey, self, cfg.upstream, paymentHash, route, c.amount, c.totalAmount, c.targetExpiry) match {
         case Success((cmd, sharedSecrets, shortChannelId: ShortChannelId)) =>
           register ! Register.ForwardShortId(self.toTyped[Register.ForwardShortIdFailure[CMD_ADD_HTLC]], shortChannelId, cmd)
           goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(c, cmd, failures, sharedSecrets, ignore, route)
@@ -139,7 +139,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     data.c match {
       case sendPaymentToNode: SendPaymentToNode =>
         val ignore1 = PaymentFailure.updateIgnored(failure, data.ignore)
-        router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.amount, sendPaymentToNode.maxFee, data.c.extraEdges, ignore1, sendPaymentToNode.routeParams, paymentContext = Some(cfg.paymentContext))
+        router ! RouteRequest(nodeParams.nodeId, data.c.targetRecipients, data.c.amount, sendPaymentToNode.maxFee, data.c.extraEdges, ignore1, sendPaymentToNode.routeParams, paymentContext = Some(cfg.paymentContext))
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.c, data.failures :+ failure, ignore1)
       case _: SendPaymentToRoute =>
         log.error("unexpected retry during SendPaymentToRoute")
@@ -194,7 +194,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         res
       case res => res
     }) match {
-      case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
+      case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if c.targetRecipients.exists(_.contains(nodeId)) =>
         // if destination node returns an error, we fail the payment immediately
         log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
         myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ RemoteFailure(d.c.amount, cfg.fullRoute(route), e))))
@@ -234,7 +234,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
             case c: SendPaymentToNode =>
-              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amount, c.maxFee, extraEdges1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
+              router ! RouteRequest(nodeParams.nodeId, c.targetRecipients, c.amount, c.maxFee, extraEdges1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
           }
         } else {
@@ -245,7 +245,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
             case c: SendPaymentToNode =>
-              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.amount, c.maxFee, c.extraEdges, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
+              router ! RouteRequest(nodeParams.nodeId, c.targetRecipients, c.amount, c.maxFee, c.extraEdges, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore + nodeId)
           }
         }
@@ -298,6 +298,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             // we remove this edge for our next payment attempt
             data.c.extraEdges.filterNot { case edge: BasicEdge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId }
           }
+        case _: FromPaymentInfo =>
+          log.error(s"received an update from a blinded node=$nodeId, this should never happen")
+          data.c.extraEdges
       }
       case None =>
         log.error(s"couldn't find node=$nodeId in the route, this should never happen")
@@ -328,7 +331,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     val status = result match {
       case Right(_: PaymentSent) => "SUCCESS"
       case Left(f: PaymentFailed) =>
-        if (f.failures.exists({ case r: RemoteFailure => r.e.originNode == cfg.recipientNodeId case _ => false })) {
+        if (f.failures.exists({ case r: RemoteFailure => cfg.isRecipient(r.e.originNode) case _ => false })) {
           "RECIPIENT_FAILURE"
         } else {
           "FAILURE"
@@ -390,15 +393,11 @@ object PaymentLifecycle {
   sealed trait SendPayment {
     // @formatter:off
     def replyTo: ActorRef
-    def paymentSecret: ByteVector32
     def amount: MilliSatoshi
     def totalAmount: MilliSatoshi
     def targetExpiry: CltvExpiry
-    def paymentMetadata: Option[ByteVector]
-    def additionalTlvs: Seq[OnionPaymentPayloadTlv]
-    def userCustomTlvs: Seq[GenericTlv]
     def extraEdges: Seq[ExtraEdge]
-    def targetNodeId: PublicKey
+    def targetRecipients: Seq[Recipient]
     def maxAttempts: Int
     // @formatter:on
   }
@@ -407,24 +406,19 @@ object PaymentLifecycle {
    * Send a payment to a given route.
    *
    * @param route        payment route to use.
-   * @param amount          amount to send to the target node.
-   * @param targetExpiry    expiry at the target node (CLTV for the target node's received HTLCs).
-   * @param paymentSecret   payment secret to protect against probing (usually from a Bolt 11 invoice).
-   * @param paymentMetadata payment metadata (usually from the Bolt 11 invoice).
+   * @param amount       amount to send to the target node.
+   * @param targetExpiry expiry at the target node (CLTV for the target node's received HTLCs).
    */
   case class SendPaymentToRoute(replyTo: ActorRef,
                                 route: Either[PredefinedRoute, Route],
+                                targetRecipient: Recipient,
                                 amount: MilliSatoshi,
                                 totalAmount: MilliSatoshi,
                                 targetExpiry: CltvExpiry,
-                                paymentSecret: ByteVector32,
-                                paymentMetadata: Option[ByteVector],
-                                extraEdges: Seq[ExtraEdge] = Nil,
-                                additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
-                                userCustomTlvs: Seq[GenericTlv] = Nil) extends SendPayment {
+                                extraEdges: Seq[ExtraEdge] = Nil) extends SendPayment {
     require(route.fold(!_.isEmpty, _.clearHops.nonEmpty), "payment route must not be empty")
 
-    val targetNodeId: PublicKey = route.fold(_.targetNodeId, _.clearHops.last.nextNodeId)
+    override def targetRecipients: Seq[Recipient] = Seq(targetRecipient)
 
     override def maxAttempts: Int = 1
 
@@ -438,30 +432,21 @@ object PaymentLifecycle {
   /**
    * Send a payment to a given node. A path-finding algorithm will run to find a suitable payment route.
    *
-   * @param targetNodeId    target node (may be the final recipient when using source-routing, or the first trampoline
-   *                        node when using trampoline).
-   * @param paymentSecret   payment secret to protect against probing (usually from a Bolt 11 invoice).
-   * @param amount          amount to send to the target node.
-   * @param targetExpiry    expiry at the target node (CLTV for the target node's received HTLCs).
-   * @param paymentMetadata payment metadata (usually from the Bolt 11 invoice).
-   * @param maxAttempts     maximum number of retries.
+   * @param targetRecipients target recipients to send the payment to.
+   * @param amount           amount to send to the target node.
+   * @param targetExpiry     expiry at the target node (CLTV for the target node's received HTLCs).
+   * @param maxAttempts      maximum number of retries.
    * @param extraEdges      routing hints (usually from a Bolt 11 invoice).
-   * @param routeParams     parameters to fine-tune the routing algorithm.
-   * @param additionalTlvs  when provided, additional tlvs that will be added to the onion sent to the target node.
-   * @param userCustomTlvs  when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
+   * @param routeParams      parameters to fine-tune the routing algorithm.
    */
   case class SendPaymentToNode(replyTo: ActorRef,
-                               targetNodeId: PublicKey,
+                               targetRecipients: Seq[Recipient],
                                amount: MilliSatoshi,
                                totalAmount: MilliSatoshi,
                                targetExpiry: CltvExpiry,
-                               paymentSecret: ByteVector32,
-                               paymentMetadata: Option[ByteVector],
                                maxAttempts: Int,
                                extraEdges: Seq[ExtraEdge] = Nil,
-                               routeParams: RouteParams,
-                               additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
-                               userCustomTlvs: Seq[GenericTlv] = Nil) extends SendPayment {
+                               routeParams: RouteParams) extends SendPayment {
     require(amount > 0.msat, s"total amount must be > 0")
 
     val maxFee: MilliSatoshi = routeParams.getMaxFee(amount)

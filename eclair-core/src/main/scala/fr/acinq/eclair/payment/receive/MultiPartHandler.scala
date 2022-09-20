@@ -410,10 +410,10 @@ object MultiPartHandler {
   }
 
   private def validatePaymentSecret(add: UpdateAddHtlc, payload: FinalPayload.Standard, invoice: Bolt11Invoice)(implicit log: LoggingAdapter): Boolean = {
-    if (payload.amount < payload.totalAmount && !invoice.paymentSecret.contains(payload.paymentSecret)) {
+    if (payload.amount < payload.totalAmount && invoice.paymentSecret != payload.paymentSecret) {
       log.warning("received multi-part payment with invalid secret={} for amount={} totalAmount={}", payload.paymentSecret, add.amountMsat, payload.totalAmount)
       false
-    } else if (!invoice.paymentSecret.contains(payload.paymentSecret)) {
+    } else if (invoice.paymentSecret != payload.paymentSecret) {
       log.warning("received payment with invalid secret={} for amount={} totalAmount={}", payload.paymentSecret, add.amountMsat, payload.totalAmount)
       false
     } else {

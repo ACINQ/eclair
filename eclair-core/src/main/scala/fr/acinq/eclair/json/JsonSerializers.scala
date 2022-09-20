@@ -295,8 +295,8 @@ object ColorSerializer extends MinimalSerializer({
 
 // @formatter:off
 private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams)
-private case class RouteFullJson(amount: MilliSatoshi, clearHops: Seq[ChannelHopJson], blindedEnd: Option[BlindedPaymentRoute])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.clearHops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params)), route.blinded_opt))
+private case class RouteFullJson(amount: MilliSatoshi, clearHops: Seq[ChannelHopJson], recipient: Recipient)
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.clearHops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params)), route.recipient))
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
@@ -404,7 +404,7 @@ object InvoiceSerializer extends MinimalSerializer({
           FeatureSupportSerializer +
           UnknownFeatureSerializer
       )),
-      JField("blindedPaths", JArray(p.blindedPaymentRoutes.map(paymentRoute => {
+      JField("blindedPaths", JArray(p.recipients.map(paymentRoute => {
         JObject(List(
           JField("introductionNodeId", JString(paymentRoute.route.introductionNodeId.toString())),
           JField("blindedNodeIds", JArray(paymentRoute.route.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))

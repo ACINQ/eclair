@@ -302,7 +302,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }.toClassic
 
   private def relay(upstream: Upstream.Trampoline, payloadOut: IntermediatePayload.NodeRelay.Standard, packetOut: OnionRoutingPacket): ActorRef = {
-    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, Nil)
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, Seq(ClearRecipient.fromTrampolinePayload(payloadOut)), upstream, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     val payFSM = payloadOut.invoiceFeatures match {
@@ -311,13 +311,13 @@ class NodeRelay private(nodeParams: NodeParams,
         val paymentSecret = payloadOut.paymentSecret.get // NB: we've verified that there was a payment secret in validateRelay
         if (Features(features).hasFeature(Features.BasicMultiPartPayment)) {
           context.log.debug("sending the payment to non-trampoline recipient using MPP")
-          val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, payloadOut.paymentMetadata, extraEdges, routeParams)
+          val payment = SendMultiPartPayment(payFsmAdapters, Seq(ClearRecipient(payloadOut.outgoingNodeId, paymentSecret, payloadOut.paymentMetadata)), payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, extraEdges, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
           payFSM ! payment
           payFSM
         } else {
           context.log.debug("sending the payment to non-trampoline recipient without MPP")
-          val payment = SendPaymentToNode(payFsmAdapters, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, payloadOut.paymentMetadata, nodeParams.maxPaymentAttempts, extraEdges, routeParams)
+          val payment = SendPaymentToNode(payFsmAdapters, Seq(ClearRecipient(payloadOut.outgoingNodeId, paymentSecret, payloadOut.paymentMetadata)), payloadOut.amountToForward, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, extraEdges, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
           payFSM ! payment
           payFSM
@@ -325,8 +325,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case None =>
         context.log.debug("sending the payment to the next trampoline node")
         val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
-        val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
-        val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, None, routeParams = routeParams, additionalTlvs = Seq(OnionPaymentPayloadTlv.TrampolineOnion(packetOut)))
+        val payment = SendMultiPartPayment(payFsmAdapters, Seq(TrampolineRecipient(payloadOut.outgoingNodeId, packetOut, None)), payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = routeParams)
         payFSM ! payment
         payFSM
     }

@@ -33,11 +33,12 @@ import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.payment.{BlindedPaymentRoute, Bolt11Invoice, Invoice}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, Recipient}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol._
 
 import java.util.UUID
@@ -448,6 +449,13 @@ object Router {
       override def htlcMinimum: MilliSatoshi = extraHop.htlcMinimum
       override def htlcMaximum_opt: Option[MilliSatoshi] = extraHop.htlcMaximum_opt
     }
+    /** It's a blinded route we learnt about from an invoice */
+    case class FromPaymentInfo(paymentInfo: PaymentInfo) extends ChannelRelayParams {
+      override def cltvExpiryDelta: CltvExpiryDelta = paymentInfo.cltvExpiryDelta
+      override def relayFees: Relayer.RelayFees = Relayer.RelayFees(paymentInfo.feeBase, paymentInfo.feeProportionalMillionths)
+      override def htlcMinimum: MilliSatoshi = paymentInfo.minHtlc
+      override def htlcMaximum_opt: Option[MilliSatoshi] = Some(paymentInfo.maxHtlc)
+    }
 
     def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&
@@ -514,7 +522,7 @@ object Router {
   }
 
   case class RouteRequest(source: PublicKey,
-                          target: PublicKey,
+                          targets: Seq[payment.Recipient],
                           amount: MilliSatoshi,
                           maxFee: MilliSatoshi,
                           extraEdges: Seq[ExtraEdge] = Nil,
@@ -526,6 +534,7 @@ object Router {
 
   case class FinalizeRoute(amount: MilliSatoshi,
                            route: PredefinedRoute,
+                           recipient: Recipient,
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
@@ -538,15 +547,14 @@ object Router {
    * There must be a next node to relay the payment to. If there are no clear hops, it must end with a blinded route for
    * which we are the introduction point and there must be a second blinded hop that is not us.
    */
-  case class Route(amount: MilliSatoshi, clearHops: Seq[ChannelHop], blinded_opt: Option[BlindedPaymentRoute]) {
-    require(clearHops.nonEmpty || blinded_opt.nonEmpty, "route cannot be empty")
+  case class Route(amount: MilliSatoshi, clearHops: Seq[ChannelHop], recipient: payment.Recipient) {
+    require(clearHops.nonEmpty || recipient.isInstanceOf[payment.BlindRecipient], "route cannot be empty")
 
     val length: Int = clearHops.length
 
     def fee(includeLocalChannelCost: Boolean): MilliSatoshi = {
       val hopsToPay = if (includeLocalChannelCost) clearHops else clearHops.drop(1)
-      val amountBeforeBlinded = amount + blinded_opt.map(_.paymentInfo.fee(amount)).getOrElse(0 msat)
-      val amountToSend = hopsToPay.reverse.foldLeft(amountBeforeBlinded) { case (amount1, hop) => amount1 + hop.fee(amount1) }
+      val amountToSend = hopsToPay.reverse.foldLeft(recipient.amountToSend(amount)) { case (amount1, hop) => amount1 + hop.fee(amount1) }
       amountToSend - amount
     }
 
@@ -556,7 +564,7 @@ object Router {
 
     def stopAt(nodeId: PublicKey): Route = {
       val amountAtStop = clearHops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
-      Route(amountAtStop, clearHops.takeWhile(_.nodeId != nodeId), None)
+      Route(amountAtStop, clearHops.takeWhile(_.nodeId != nodeId), recipient)
     }
   }
 

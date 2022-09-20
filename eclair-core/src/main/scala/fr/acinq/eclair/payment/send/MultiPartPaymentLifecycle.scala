@@ -239,7 +239,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     val status = event match {
       case Right(_: PaymentSent) => "SUCCESS"
       case Left(f: PaymentFailed) =>
-        if (f.failures.exists({ case r: RemoteFailure => r.e.originNode == cfg.recipientNodeId case _ => false })) {
+        if (f.failures.exists({ case r: RemoteFailure => cfg.recipients.exists(_.contains(r.e.originNode)) case _ => false })) {
           "RECIPIENT_FAILURE"
         } else {
           "FAILURE"
@@ -303,29 +303,20 @@ object MultiPartPaymentLifecycle {
    * Send a payment to a given node. The payment may be split into multiple child payments, for which a path-finding
    * algorithm will run to find suitable payment routes.
    *
-   * @param paymentSecret   payment secret to protect against probing (usually from a Bolt 11 invoice).
-   * @param targetNodeId    target node (may be the final recipient when using source-routing, or the first trampoline
-   *                        node when using trampoline).
+   * @param recipients      list of recipients to send the payment to.
    * @param totalAmount     total amount to send to the target node.
    * @param targetExpiry    expiry at the target node (CLTV for the target node's received HTLCs).
    * @param maxAttempts     maximum number of retries.
-   * @param paymentMetadata payment metadata (usually from the Bolt 11 invoice).
    * @param extraEdges      routing hints (usually from a Bolt 11 invoice).
    * @param routeParams     parameters to fine-tune the routing algorithm.
-   * @param additionalTlvs  when provided, additional tlvs that will be added to the onion sent to the target node.
-   * @param userCustomTlvs  when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
    */
   case class SendMultiPartPayment(replyTo: ActorRef,
-                                  paymentSecret: ByteVector32,
-                                  targetNodeId: PublicKey,
+                                  recipients: Seq[Recipient],
                                   totalAmount: MilliSatoshi,
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
-                                  paymentMetadata: Option[ByteVector],
                                   extraEdges: Seq[ExtraEdge] = Nil,
-                                  routeParams: RouteParams,
-                                  additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
-                                  userCustomTlvs: Seq[GenericTlv] = Nil) {
+                                  routeParams: RouteParams) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
   }
 
@@ -393,7 +384,7 @@ object MultiPartPaymentLifecycle {
   private def createRouteRequest(nodeParams: NodeParams, toSend: MilliSatoshi, maxFee: MilliSatoshi, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest =
     RouteRequest(
       nodeParams.nodeId,
-      d.request.targetNodeId,
+      d.request.recipients,
       toSend,
       maxFee,
       d.request.extraEdges,
@@ -404,12 +395,12 @@ object MultiPartPaymentLifecycle {
       Some(cfg.paymentContext))
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
-    SendPaymentToRoute(replyTo, Right(route), route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.paymentMetadata, additionalTlvs = request.additionalTlvs, userCustomTlvs = request.userCustomTlvs)
+    SendPaymentToRoute(replyTo, Right(route), route.recipient, route.amount, request.totalAmount, request.targetExpiry)
   }
 
   /** When we receive an error from the final recipient or payment gets settled on chain, we should fail the whole payment, it's useless to retry. */
   private def abortPayment(pf: PaymentFailed, d: PaymentProgress): Boolean = pf.failures.exists {
-    case f: RemoteFailure => f.e.originNode == d.request.targetNodeId
+    case f: RemoteFailure => d.request.recipients.exists(_.contains(f.e.originNode))
     case LocalFailure(_, _, _: HtlcOverriddenByLocalCommit) => true
     case LocalFailure(_, _, _: HtlcsWillTimeoutUpstream) => true
     case LocalFailure(_, _, _: HtlcsTimedoutDownstream) => true

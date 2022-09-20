@@ -18,11 +18,13 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.payment.Invoice
+import fr.acinq.eclair.payment.{BlindRecipient, ClearRecipient, Invoice, Recipient}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.{RealShortChannelId, _}
 
 import scala.annotation.tailrec
@@ -99,7 +101,7 @@ object Graph {
    *
    * @param graph                   the graph on which will be performed the search
    * @param sourceNode              the starting node of the path we're looking for (payer)
-   * @param targetNode              the destination node of the path (recipient)
+   * @param targets                 the recipients
    * @param amount                  amount to send to the last node
    * @param ignoredEdges            channels that should be avoided
    * @param ignoredVertices         nodes that should be avoided
@@ -112,7 +114,7 @@ object Graph {
    */
   def yenKshortestPaths(graph: DirectedGraph,
                         sourceNode: PublicKey,
-                        targetNode: PublicKey,
+                        targets: Seq[PublicKey],
                         amount: MilliSatoshi,
                         ignoredEdges: Set[ChannelDesc],
                         ignoredVertices: Set[PublicKey],
@@ -124,7 +126,7 @@ object Graph {
                         includeLocalChannelCost: Boolean): Seq[WeightedPath] = {
     // find the shortest path (k = 0)
     val targetWeight = RichWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0)
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targets, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
     if (shortestPath.isEmpty) {
       return Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
     }
@@ -163,7 +165,7 @@ object Graph {
           val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
           val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
           // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
+          val spurPath = dijkstraShortestPath(graph, sourceNode, Seq(spurNode), ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
           if (spurPath.nonEmpty) {
             val completePath = spurPath ++ rootPathEdges
             val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
@@ -191,7 +193,7 @@ object Graph {
    *
    * @param g                       the graph on which will be performed the search
    * @param sourceNode              the starting node of the path we're looking for (payer)
-   * @param targetNode              the destination node of the path
+   * @param targets                 the destinations of the path
    * @param ignoredEdges            channels that should be avoided
    * @param ignoredVertices         nodes that should be avoided
    * @param extraEdges              additional edges that can be used (e.g. private channels from invoices)
@@ -203,7 +205,7 @@ object Graph {
    */
   private def dijkstraShortestPath(g: DirectedGraph,
                                    sourceNode: PublicKey,
-                                   targetNode: PublicKey,
+                                   targets: Seq[PublicKey],
                                    ignoredEdges: Set[ChannelDesc],
                                    ignoredVertices: Set[PublicKey],
                                    extraEdges: Set[GraphEdge],
@@ -214,8 +216,8 @@ object Graph {
                                    includeLocalChannelCost: Boolean): Seq[GraphEdge] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
-    val targetNotInGraph = !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
-    if (sourceNotInGraph || targetNotInGraph) {
+    val targetsNotInGraph = targets.forall(targetNode => !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode))
+    if (sourceNotInGraph || targetsNotInGraph) {
       return Seq.empty
     }
 
@@ -228,9 +230,11 @@ object Graph {
     val toExplore = mutable.PriorityQueue.empty[WeightedNode](NodeComparator.reverse)
     val visitedNodes = mutable.HashSet[PublicKey]()
 
-    // initialize the queue and cost array with the initial weight
-    bestWeights.put(targetNode, initialWeight)
-    toExplore.enqueue(WeightedNode(targetNode, initialWeight))
+    for (targetNode <- targets) {
+      // initialize the queue and cost array with the initial weight
+      bestWeights.put(targetNode, initialWeight)
+      toExplore.enqueue(WeightedNode(targetNode, initialWeight))
+    }
 
     var targetFound = false
     while (toExplore.nonEmpty && !targetFound) {
@@ -459,9 +463,10 @@ object Graph {
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
+      private val maxBtc = 21e6.btc
+
       def apply(e: Invoice.ExtraEdge): GraphEdge = e match {
         case e@Invoice.BasicEdge(sourceNodeId, targetNodeId, shortChannelId, _, _, _) =>
-          val maxBtc = 21e6.btc
           GraphEdge(
             desc = ChannelDesc(shortChannelId, sourceNodeId, targetNodeId),
             params = ChannelRelayParams.FromHint(e),
@@ -471,6 +476,15 @@ object Graph {
             balance_opt = Some(maxBtc.toMilliSatoshi)
           )
       }
+
+      def apply(route: RouteBlinding.BlindedRoute,
+                paymentInfo: PaymentInfo,
+                capacity_opt: Option[MilliSatoshi]): GraphEdge = GraphEdge(
+        desc = ChannelDesc(ShortChannelId.generateLocalAlias(), route.introductionNodeId, route.blindedNodeIds.last),
+        params = ChannelRelayParams.FromPaymentInfo(paymentInfo),
+        capacity = maxBtc.toSatoshi,
+        balance_opt = capacity_opt.orElse(Some(maxBtc.toMilliSatoshi))
+      )
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
@@ -642,6 +656,16 @@ object Graph {
       }
 
       def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)
+
+      def graphEdgesToRoute(amount: MilliSatoshi, graphEdges: Seq[GraphEdge], recipients: Seq[Recipient]): Route = {
+        val recipient = recipients.find(_.nodeId == graphEdges.last.desc.b).get
+        recipient match {
+          case _: ClearRecipient => Route(amount, graphEdges.map(graphEdgeToHop), recipient)
+          case _: BlindRecipient =>
+            // The last edge is blinded and already included in the recipient.
+            Route(amount, graphEdges.dropRight(1).map(graphEdgeToHop), recipient)
+        }
+      }
     }
 
   }
