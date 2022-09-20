@@ -32,9 +32,11 @@ trait OnChain {
   }
 
   val sendOnChain: Route = postRequest("sendonchain") { implicit t =>
-    formFields("address".as[String], "amountSatoshis".as[Satoshi], "confirmationTarget".as[Long]) {
-      (address, amount, confirmationTarget) =>
-        complete(eclairApi.sendOnChain(address, amount, confirmationTarget))
+    withValidApiKey {
+      formFields("address".as[String], "amountSatoshis".as[Satoshi], "confirmationTarget".as[Long]) {
+        (address, amount, confirmationTarget) =>
+          complete(eclairApi.sendOnChain(address, amount, confirmationTarget))
+      }
     }
   }
 

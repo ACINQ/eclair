@@ -39,4 +39,7 @@ trait AuthDirective {
     case _ => akka.pattern.after(1 second, using = actorSystem.scheduler)(Future.successful(None))(actorSystem.dispatcher) // force a 1 sec pause to deter brute force
   }
 
+  def withValidApiKey: Directive0 = formFields("apiKey".as[String].?).flatMap { key =>
+    authorize(apiKey.forall(k => key.contains(k)))
+  }
 }

@@ -86,10 +86,12 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     }
   }
 
-  class MockService(eclair: Eclair) extends Service {
+  class MockService(eclair: Eclair, key: Option[String] = None) extends Service {
     override val eclairApi: Eclair = eclair
 
     override def password: String = "mock"
+
+    override def apiKey = key
 
     override implicit val actorSystem: ActorSystem = system
 
@@ -292,6 +294,61 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
+  test("'open' channels with valid api key") {
+    val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+
+    val eclair = mock[Eclair]
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    val mockService = new MockService(eclair, Some("myKey"))
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002", "apiKey" -> "myKey").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.open) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
+        eclair.open(nodeId, 100002 sat, None, None, None, None, None)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'open' channels with missing api key") {
+    val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair, Some("myKey"))
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.open) ~>
+      check {
+        assert(handled)
+        assert(status == Forbidden)
+        eclair.open(any, any, any, any, any, any, any)(any[Timeout]) wasNever (called)
+      }
+  }
+
+  test("'open' channels with invalid api key") {
+    val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair, Some("myKey"))
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002", "apiKey" -> "wrongKey").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.open) ~>
+      check {
+        assert(handled)
+        assert(status == Forbidden)
+        eclair.open(any, any, any, any, any, any, any)(any[Timeout]) wasNever (called)
+      }
+  }
   test("'open' channels with bad channelType") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 

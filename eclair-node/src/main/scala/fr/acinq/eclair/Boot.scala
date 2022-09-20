@@ -74,6 +74,7 @@ object Boot extends App with Logging {
       val service: Service = new Service {
         override val actorSystem: ActorSystem = system
         override val password: String = apiPassword
+        override val apiKey: Option[String] = if (config.hasPath("api.key")) Some(config.getString("api.key")) else None
         override val eclairApi: Eclair = new EclairImpl(kit)
       }
       Http().newServerAt(config.getString("api.binding-ip"), config.getInt("api.port")).bindFlow(service.finalRoutes(providers)).recover {

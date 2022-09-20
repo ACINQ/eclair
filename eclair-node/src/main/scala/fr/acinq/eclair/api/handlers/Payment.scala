@@ -38,43 +38,49 @@ trait Payment {
   }
 
   val payInvoice: Route = postRequest("payinvoice") { implicit t =>
-    formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "blocking".as[Boolean].?, "pathFindingExperimentName".?) {
-      case (invoice@Bolt11Invoice(_, Some(amount), _, nodeId, _, _), None, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, blocking_opt, pathFindingExperimentName_opt) =>
-        blocking_opt match {
-          case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, amount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
-          case _ => complete(eclairApi.send(externalId_opt, amount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
-        }
-      case (invoice, Some(overrideAmount), maxAttempts, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, blocking_opt, pathFindingExperimentName_opt) =>
-        blocking_opt match {
-          case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, overrideAmount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
-          case _ => complete(eclairApi.send(externalId_opt, overrideAmount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
-        }
-      case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
+    withValidApiKey {
+      formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "blocking".as[Boolean].?, "pathFindingExperimentName".?) {
+        case (invoice@Bolt11Invoice(_, Some(amount), _, nodeId, _, _), None, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, blocking_opt, pathFindingExperimentName_opt) =>
+          blocking_opt match {
+            case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, amount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+            case _ => complete(eclairApi.send(externalId_opt, amount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+          }
+        case (invoice, Some(overrideAmount), maxAttempts, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, blocking_opt, pathFindingExperimentName_opt) =>
+          blocking_opt match {
+            case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, overrideAmount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+            case _ => complete(eclairApi.send(externalId_opt, overrideAmount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+          }
+        case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
+      }
     }
   }
 
   val sendToRoute: Route = postRequest("sendtoroute") { implicit t =>
-    withRoute { hops =>
-      formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "externalId".?, "parentId".as[UUID].?,
-        "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, "trampolineNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?) {
-        (amountMsat, recipientAmountMsat_opt, invoice, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) => {
-          val route = hops match {
-            case Left(shortChannelIds) => PredefinedChannelRoute(invoice.nodeId, shortChannelIds)
-            case Right(nodeIds) => PredefinedNodeRoute(nodeIds)
+    withValidApiKey {
+      withRoute { hops =>
+        formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "externalId".?, "parentId".as[UUID].?,
+          "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, "trampolineNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?) {
+          (amountMsat, recipientAmountMsat_opt, invoice, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) => {
+            val route = hops match {
+              case Left(shortChannelIds) => PredefinedChannelRoute(invoice.nodeId, shortChannelIds)
+              case Right(nodeIds) => PredefinedNodeRoute(nodeIds)
+            }
+            complete(eclairApi.sendToRoute(
+              amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, route, trampolineSecret_opt, trampolineFeesMsat_opt,
+              trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)
+            ))
           }
-          complete(eclairApi.sendToRoute(
-            amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, route, trampolineSecret_opt, trampolineFeesMsat_opt,
-            trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)
-          ))
         }
       }
     }
   }
 
   val sendToNode: Route = postRequest("sendtonode") { implicit t =>
-    formFields(amountMsatFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?) {
-      case (amountMsat, nodeId, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt) =>
-        complete(eclairApi.sendWithPreimage(externalId_opt, nodeId, amountMsat, randomBytes32(), maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+    withValidApiKey {
+      formFields(amountMsatFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?) {
+        case (amountMsat, nodeId, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt) =>
+          complete(eclairApi.sendWithPreimage(externalId_opt, nodeId, amountMsat, randomBytes32(), maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+      }
     }
   }
 

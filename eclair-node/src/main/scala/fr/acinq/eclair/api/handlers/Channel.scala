@@ -52,51 +52,59 @@ trait Channel {
   ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, channelTypeName_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
-        val (channelTypeOk, channelType_opt) = channelTypeName_opt match {
-          case Some(channelTypeName) => supportedChannelTypes.get(channelTypeName) match {
-            case Some(channelType) => (true, Some(channelType))
-            case None => (false, None) // invalid channel type name
+    withValidApiKey {
+      formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
+        (nodeId, fundingSatoshis, pushMsat, channelTypeName_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
+          val (channelTypeOk, channelType_opt) = channelTypeName_opt match {
+            case Some(channelTypeName) => supportedChannelTypes.get(channelTypeName) match {
+              case Some(channelType) => (true, Some(channelType))
+              case None => (false, None) // invalid channel type name
+            }
+            case None => (true, None)
           }
-          case None => (true, None)
-        }
-        if (!channelTypeOk) {
-          reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be one of ${supportedChannelTypes.keys.mkString(",")}"))
-        } else {
-          complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt))
-        }
+          if (!channelTypeOk) {
+            reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be one of ${supportedChannelTypes.keys.mkString(",")}"))
+          } else {
+            complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt))
+          }
+      }
     }
   }
 
   val rbfOpen: Route = postRequest("rbfopen") { implicit f =>
-    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "lockTime".as[Long] ?) {
-      (channelId, targetFeerateSatByte, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), lockTime_opt))
+    withValidApiKey {
+      formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "lockTime".as[Long] ?) {
+        (channelId, targetFeerateSatByte, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), lockTime_opt))
+      }
     }
   }
 
   val close: Route = postRequest("close") { implicit t =>
     withChannelsIdentifier { channels =>
-      formFields("scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
-        (scriptPubKey_opt, preferredFeerate_opt, minFeerate_opt, maxFeerate_opt) =>
-          val closingFeerates = preferredFeerate_opt.map(preferredPerByte => {
-            val preferredFeerate = FeeratePerKw(preferredPerByte)
-            val minFeerate = minFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate / 2)
-            val maxFeerate = maxFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate * 2)
-            ClosingFeerates(preferredFeerate, minFeerate, maxFeerate)
-          })
-          if (scriptPubKey_opt.forall(Script.isNativeWitnessScript)) {
-            complete(eclairApi.close(channels, scriptPubKey_opt, closingFeerates))
-          } else {
-            reject(MalformedFormFieldRejection("scriptPubKey", "Non-segwit scripts are not allowed"))
-          }
+      withValidApiKey {
+        formFields("scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
+          (scriptPubKey_opt, preferredFeerate_opt, minFeerate_opt, maxFeerate_opt) =>
+            val closingFeerates = preferredFeerate_opt.map(preferredPerByte => {
+              val preferredFeerate = FeeratePerKw(preferredPerByte)
+              val minFeerate = minFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate / 2)
+              val maxFeerate = maxFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate * 2)
+              ClosingFeerates(preferredFeerate, minFeerate, maxFeerate)
+            })
+            if (scriptPubKey_opt.forall(Script.isNativeWitnessScript)) {
+              complete(eclairApi.close(channels, scriptPubKey_opt, closingFeerates))
+            } else {
+              reject(MalformedFormFieldRejection("scriptPubKey", "Non-segwit scripts are not allowed"))
+            }
+        }
       }
     }
   }
 
   val forceClose: Route = postRequest("forceclose") { implicit t =>
     withChannelsIdentifier { channels =>
-      complete(eclairApi.forceClose(channels))
+      withValidApiKey {
+        complete(eclairApi.forceClose(channels))
+      }
     }
   }
 

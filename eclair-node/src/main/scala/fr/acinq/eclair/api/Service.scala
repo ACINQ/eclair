@@ -30,6 +30,7 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
    */
   def password: String
 
+  def apiKey: Option[String]
   /**
    * The API of Eclair core.
    */

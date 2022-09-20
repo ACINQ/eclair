@@ -34,9 +34,11 @@ trait Fees {
   }
 
   val updateRelayFee: Route = postRequest("updaterelayfee") { implicit t =>
-    withNodesIdentifier { nodes =>
-      formFields("feeBaseMsat".as[MilliSatoshi], "feeProportionalMillionths".as[Long]) { (feeBase, feeProportional) =>
-        complete(eclairApi.updateRelayFee(nodes, feeBase, feeProportional))
+    withValidApiKey {
+      withNodesIdentifier { nodes =>
+        formFields("feeBaseMsat".as[MilliSatoshi], "feeProportionalMillionths".as[Long]) { (feeBase, feeProportional) =>
+          complete(eclairApi.updateRelayFee(nodes, feeBase, feeProportional))
+        }
       }
     }
   }
