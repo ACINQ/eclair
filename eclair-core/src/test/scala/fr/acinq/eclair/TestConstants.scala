@@ -211,6 +211,7 @@ object TestConstants {
       Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
       isInitiator = true,
+      dualFunded = false,
       fundingSatoshis
     ).copy(
       requestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
@@ -353,6 +354,7 @@ object TestConstants {
       Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
       isInitiator = false,
+      dualFunded = false,
       fundingSatoshis
     ).copy(
       requestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance

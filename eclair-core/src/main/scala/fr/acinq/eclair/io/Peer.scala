@@ -158,7 +158,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           val selfRef = self
           val origin = sender()
           implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
-          createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = true, c.fundingAmount).andThen {
+          val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
+          createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = true, dualFunded = dualFunded, c.fundingAmount).andThen {
             case Success(localParams) => selfRef ! SpawnChannelInitiator(c, ChannelConfig.standard, channelType, localParams, origin)
             case Failure(t) => origin.tell(Status.Failure(new RuntimeException("channel creation failed", t)), selfRef)
           }
@@ -384,11 +385,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       s(e)
   }
 
-  def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], channelType: SupportedChannelType, isInitiator: Boolean, fundingAmount: Satoshi)(implicit ec: ExecutionContext): Future[LocalParams] = {
+  def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], channelType: SupportedChannelType, isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi)(implicit ec: ExecutionContext): Future[LocalParams] = {
     if (channelType.paysDirectlyToWallet) {
-      wallet.getReceivePubkey().map(walletKey => makeChannelParams(nodeParams, initFeatures, Script.write(Script.pay2wpkh(walletKey)), Some(walletKey), isInitiator, fundingAmount))
+      wallet.getReceivePubkey().map(walletKey => makeChannelParams(nodeParams, initFeatures, Script.write(Script.pay2wpkh(walletKey)), Some(walletKey), isInitiator = isInitiator, dualFunded = dualFunded, fundingAmount))
     } else {
-      wallet.getReceiveAddress().map(address => makeChannelParams(nodeParams, initFeatures, Script.write(addressToPublicKeyScript(address, nodeParams.chainHash)), None, isInitiator, fundingAmount))
+      wallet.getReceiveAddress().map(address => makeChannelParams(nodeParams, initFeatures, Script.write(addressToPublicKeyScript(address, nodeParams.chainHash)), None, isInitiator = isInitiator, dualFunded = dualFunded, fundingAmount))
     }
   }
 
@@ -409,7 +410,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         // NB: we need to capture parameters in a val to use them in andThen
         val selfRef = self
         implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
-        createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = false, fundingAmount).andThen {
+        val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
+        createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount).andThen {
           case Success(localParams) => selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
           case Failure(_) => selfRef ! Peer.OutgoingMessage(Error(temporaryChannelId, "channel creation failed"), d.peerConnection)
         }
@@ -562,13 +564,13 @@ object Peer {
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, fundingAmount: Satoshi): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
       nodeParams.channelKeyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key paths end differently
       dustLimit = nodeParams.channelConf.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.channelConf.maxHtlcValueInFlightMsat,
-      requestedChannelReserve_opt = Some((fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit)), // BOLT #2: make sure that our reserve is above our dust limit
+      requestedChannelReserve_opt = if (dualFunded) None else Some((fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit)), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.channelConf.htlcMinimum,
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,

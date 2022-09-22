@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script}
+import fr.acinq.eclair.Features.DualFunding
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -85,6 +86,10 @@ case class Commitments(channelId: ByteVector32,
                        remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
 
   require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
+  if (channelFeatures.hasFeature(DualFunding)) {
+    require(localParams.requestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
+    require(remoteParams.requestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
+  }
 
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
 
