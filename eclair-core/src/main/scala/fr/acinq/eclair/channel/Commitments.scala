@@ -222,14 +222,14 @@ case class Commitments(channelId: ByteVector32,
   val localChannelReserve: Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
     (capacity / 100).max(remoteParams.dustLimit)
   } else {
-    remoteParams.requestedChannelReserve_opt.getOrElse(0 sat)
+    remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Commitments
   }
 
   /** Channel reserve that applies to our peer's funds. */
   val remoteChannelReserve: Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
     (capacity / 100).max(localParams.dustLimit)
   } else {
-    localParams.requestedChannelReserve_opt.getOrElse(0 sat)
+    localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Commitments
   }
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the initiator keeps an extra buffer on
