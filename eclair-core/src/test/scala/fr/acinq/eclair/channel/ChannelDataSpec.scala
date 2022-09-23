@@ -54,13 +54,13 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
     // Alice and Bob both know the preimage for only one of the two HTLCs they received.
     alice ! CMD_FULFILL_HTLC(htlcb1.id, rb1, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
     bob ! CMD_FULFILL_HTLC(htlca1.id, ra1, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
 
     // Alice publishes her commitment.
     alice ! CMD_FORCECLOSE(probe.ref)
-    probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+    probe.expectMsgType[CommandSuccess]
     awaitCond(alice.stateName == CLOSING)
 
     // Bob detects it.
@@ -90,7 +90,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     val htlcSuccessTxs = getHtlcSuccessTxs(lcp)
     assert(htlcSuccessTxs.length == 1) // we only have the preimage for 1 of the 2 non-dust htlcs
     val remainingHtlcOutpoint = lcp.htlcTxs.collect { case (outpoint, None) => outpoint }.head
-    assert(lcp.claimHtlcDelayedTxs.length == 0) // we will publish 3rd-stage txs once htlc txs confirm
+    assert(lcp.claimHtlcDelayedTxs.isEmpty) // we will publish 3rd-stage txs once htlc txs confirm
     assert(!lcp.isConfirmed)
     assert(!lcp.isDone)
 
@@ -153,7 +153,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!lcp4.isDone)
 
     alice ! CMD_FULFILL_HTLC(alicePendingHtlc.htlc.id, alicePendingHtlc.preimage, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
     val aliceClosing1 = alice.stateData.asInstanceOf[DATA_CLOSING]
     val lcp5 = aliceClosing1.localCommitPublished.get.copy(irrevocablySpent = lcp4.irrevocablySpent, claimHtlcDelayedTxs = lcp4.claimHtlcDelayedTxs)
     assert(lcp5.htlcTxs(remainingHtlcOutpoint) !== None)
@@ -246,10 +246,10 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!lcp4.isDone)
 
     // at this point the pending incoming htlc is waiting for a preimage
-    assert(lcp4.htlcTxs(remainingHtlcOutpoint) == None)
+    assert(lcp4.htlcTxs(remainingHtlcOutpoint).isEmpty)
 
     alice ! CMD_FAIL_HTLC(1, Right(UnknownNextPeer), replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FAIL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
     val aliceClosing1 = alice.stateData.asInstanceOf[DATA_CLOSING]
     val lcp5 = aliceClosing1.localCommitPublished.get.copy(irrevocablySpent = lcp4.irrevocablySpent, claimHtlcDelayedTxs = lcp4.claimHtlcDelayedTxs)
     assert(!lcp5.htlcTxs.contains(remainingHtlcOutpoint))
@@ -321,7 +321,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!rcp3.isDone)
 
     bob ! CMD_FULFILL_HTLC(bobPendingHtlc.htlc.id, bobPendingHtlc.preimage, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
     val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
     val rcp4 = bobClosing1.remoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
     assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) !== None)
@@ -379,7 +379,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!rcp3.isDone)
 
     bob ! CMD_FAIL_HTLC(bobPendingHtlc.htlc.id, Right(UnknownNextPeer), replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FAIL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
     val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
     val rcp4 = bobClosing1.remoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
     assert(!rcp4.claimHtlcTxs.contains(remainingHtlcOutpoint))
@@ -406,20 +406,20 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     crossSign(bob, alice, bob2alice, alice2bob)
     addHtlc(18_000_000 msat, bob, alice, bob2alice, alice2bob)
     bob ! CMD_SIGN(Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_SIGN]]
+    probe.expectMsgType[CommandSuccess]
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
 
     // Alice and Bob both know the preimage for only one of the two HTLCs they received.
     alice ! CMD_FULFILL_HTLC(htlcb1.id, rb1, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
     bob ! CMD_FULFILL_HTLC(htlca1.id, ra1, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
 
     // Alice publishes her last commitment.
     alice ! CMD_FORCECLOSE(probe.ref)
-    probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+    probe.expectMsgType[CommandSuccess]
     awaitCond(alice.stateName == CLOSING)
     val aliceClosing = alice.stateData.asInstanceOf[DATA_CLOSING]
     val lcp = aliceClosing.localCommitPublished.get
@@ -483,7 +483,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!rcp3.isDone)
 
     bob ! CMD_FULFILL_HTLC(bobPendingHtlc.htlc.id, bobPendingHtlc.preimage, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
     val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
     val rcp4 = bobClosing1.nextRemoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)
     assert(rcp4.claimHtlcTxs(remainingHtlcOutpoint) !== None)

@@ -215,13 +215,13 @@ final case class CMD_GET_CHANNEL_INFO(replyTo: ActorRef)extends HasReplyToComman
  */
 
 /** response to [[Command]] requests */
-sealed trait CommandResponse[+C <: Command]
-sealed trait CommandSuccess[+C <: Command] extends CommandResponse[C]
-sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: T }
+sealed trait CommandResponse
+sealed trait CommandSuccess extends CommandResponse
+sealed trait CommandFailure[+T <: Throwable] extends CommandResponse { def t: T }
 
 /** generic responses */
-final case class RES_SUCCESS[+C <: Command](cmd: C, channelId: ByteVector32) extends CommandSuccess[C]
-final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) extends CommandFailure[C, T]
+final case class RES_SUCCESS[+C <: Command](cmd: C, channelId: ByteVector32) extends CommandSuccess
+final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) extends CommandFailure[T]
 
 /**
  * special case for [[CMD_ADD_HTLC]]
@@ -229,7 +229,7 @@ final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) exten
  * - either [[RES_ADD_FAILED]]
  * - or [[RES_SUCCESS[CMD_ADD_HTLC]]] followed by [[RES_ADD_SETTLED]] (possibly a while later)
  */
-final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
+final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
 sealed trait HtlcResult
 object HtlcResult {
   sealed trait Fulfill extends HtlcResult { def paymentPreimage: ByteVector32 }
@@ -242,12 +242,12 @@ object HtlcResult {
   case object ChannelFailureBeforeSigned extends Fail
   case class DisconnectedBeforeSigned(channelUpdate: ChannelUpdate) extends Fail { require(!channelUpdate.channelFlags.isEnabled, "channel update must have disabled flag set") }
 }
-final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
+final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess
 
 /** other specific responses */
-final case class RES_GET_CHANNEL_STATE(state: ChannelState) extends CommandSuccess[CMD_GET_CHANNEL_STATE]
-final case class RES_GET_CHANNEL_DATA[+D <: ChannelData](data: D) extends CommandSuccess[CMD_GET_CHANNEL_DATA]
-final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32, state: ChannelState, data: ChannelData) extends CommandSuccess[CMD_GET_CHANNEL_INFO]
+final case class RES_GET_CHANNEL_STATE(state: ChannelState) extends CommandSuccess
+final case class RES_GET_CHANNEL_DATA[+D <: ChannelData](data: D) extends CommandSuccess
+final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32, state: ChannelState, data: ChannelData) extends CommandSuccess
 
 /**
  * Those are not response to [[Command]], but to [[fr.acinq.eclair.io.Peer.OpenChannel]]

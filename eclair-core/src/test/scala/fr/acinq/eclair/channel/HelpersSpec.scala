@@ -85,13 +85,13 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // Alice and Bob both know the preimage for only one of the two HTLCs they received.
     alice ! CMD_FULFILL_HTLC(htlcb2.id, rb2, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
     bob ! CMD_FULFILL_HTLC(htlca2.id, ra2, replyTo_opt = Some(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
 
     // Alice publishes her commitment.
     alice ! CMD_FORCECLOSE(probe.ref)
-    probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+    probe.expectMsgType[CommandSuccess]
     awaitCond(alice.stateName == CLOSING)
 
     // Bob detects it.

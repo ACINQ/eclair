@@ -154,7 +154,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(alice.underlyingActor.nodeParams.channelKeyManager)
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+    probe.expectMsgType[CommandSuccess]
 
     // Forward the commit tx to the publisher.
     val publishCommitTx = alice2blockchain.expectMsg(PublishFinalTx(commitTx, commitTx.fee, None))
@@ -688,11 +688,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val (r, htlc) = addHtlc(4_000_000 msat, bob, alice, bob2alice, alice2bob)
       crossSign(bob, alice, bob2alice, alice2bob)
       probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
-      probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+      probe.expectMsgType[CommandSuccess]
 
       // Force-close channel.
       probe.send(alice, CMD_FORCECLOSE(probe.ref))
-      probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+      probe.expectMsgType[CommandSuccess]
       alice2blockchain.expectMsgType[PublishFinalTx]
       assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
       alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
@@ -734,13 +734,13 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val (r, htlc) = addHtlc(4_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
 
     // Force-close channel and verify txs sent to watcher.
     val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(alice.underlyingActor.nodeParams.channelKeyManager)
     assert(commitTx.tx.txOut.size == 6)
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
-    probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+    probe.expectMsgType[CommandSuccess]
 
     // We make the commit tx confirm because htlc txs have a relative delay.
     alice2blockchain.expectMsg(PublishFinalTx(commitTx, commitTx.fee, None))
@@ -1155,7 +1155,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val (r, htlc) = addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob)
       crossSign(bob, alice, bob2alice, alice2bob)
       probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
-      probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+      probe.expectMsgType[CommandSuccess]
 
       // Force-close channel.
       val localCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(alice.underlyingActor.nodeParams.channelKeyManager)
@@ -1200,7 +1200,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val (r, htlc) = addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
-    probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+    probe.expectMsgType[CommandSuccess]
 
     // Force-close channel and verify txs sent to watcher.
     val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)

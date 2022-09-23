@@ -42,7 +42,7 @@ object ChannelRelay {
   sealed trait Command
   private case object DoRelay extends Command
   private case class WrappedForwardFailure(failure: Register.ForwardFailure[CMD_ADD_HTLC]) extends Command
-  private case class WrappedAddResponse(res: CommandResponse[CMD_ADD_HTLC]) extends Command
+  private case class WrappedAddResponse(res: CommandResponse) extends Command
   // @formatter:on
 
   // @formatter:off
@@ -115,7 +115,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   import ChannelRelay._
 
   private val forwardFailureAdapter = context.messageAdapter[Register.ForwardFailure[CMD_ADD_HTLC]](WrappedForwardFailure)
-  private val addResponseAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
+  private val addResponseAdapter = context.messageAdapter[CommandResponse](WrappedAddResponse)
 
   private case class PreviouslyTried(channelId: ByteVector32, failure: RES_ADD_FAILED[ChannelException])
 

@@ -189,7 +189,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     awaitCond({
       val c = CMD_CLOSE(sender.ref, None, None)
       alice ! c
-      sender.expectMsgType[CommandResponse[CMD_CLOSE]].isInstanceOf[RES_SUCCESS[CMD_CLOSE]]
+      val res = sender.expectMsgType[CommandResponse]
+      res == RES_SUCCESS(c, channelId(alice))
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)
@@ -207,11 +208,11 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     awaitCond({
       val c = CMD_CLOSE(sender.ref, None, None)
       alice ! c
-      val resa = sender.expectMsgType[CommandResponse[CMD_CLOSE]]
+      val resa = sender.expectMsgType[CommandResponse]
       sender.send(bob, c)
-      val resb = sender.expectMsgType[CommandResponse[CMD_CLOSE]]
+      val resb = sender.expectMsgType[CommandResponse]
       // we only need that one of them succeeds
-      resa.isInstanceOf[RES_SUCCESS[CMD_CLOSE]] || resb.isInstanceOf[RES_SUCCESS[CMD_CLOSE]]
+      resa == RES_SUCCESS(c, channelId(alice)) || resb == RES_SUCCESS(c, channelId(bob))
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)

@@ -384,7 +384,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val shortChannelId = ShortChannelId.fromCoordinates(shortChannelIdSerialized).success.value
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
     val channelIdSerialized = channelId.toHex
-    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse]](
       Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), channelId)),
       Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
       Right(shortChannelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
@@ -412,7 +412,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val shortChannelId = ShortChannelId.fromCoordinates(shortChannelIdSerialized).success.value
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
     val channelIdSerialized = channelId.toHex
-    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse]](
       Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), channelId)),
       Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
       Right(shortChannelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
@@ -440,7 +440,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val shortChannelId = ShortChannelId.fromCoordinates(shortChannelIdSerialized).success.value
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
     val channelIdSerialized = channelId.toHex
-    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse]](
       Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), channelId)),
       Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
       Right(shortChannelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
@@ -466,7 +466,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'close' accepts custom closing feerates 1") {
     val shortChannelIdSerialized = "1701x42x3"
     val shortChannelId = ShortChannelId.fromCoordinates(shortChannelIdSerialized).success.value
-    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse]](
       Right(shortChannelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32()))
     )
 
@@ -489,7 +489,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'close' accepts custom closing feerates 2") {
     val shortChannelIdSerialized = "1701x42x3"
     val shortChannelId = ShortChannelId.fromCoordinates(shortChannelIdSerialized).success.value
-    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse]](
       Right(shortChannelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32()))
     )
 
@@ -512,7 +512,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'close' accepts custom closing feerates 3") {
     val shortChannelIdSerialized = "1701x42x3"
     val shortChannelId = ShortChannelId.fromCoordinates(shortChannelIdSerialized).success.value
-    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse]](
       Right(shortChannelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32()))
     )
 
@@ -535,7 +535,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'close' accepts custom closing feerates 4") {
     val shortChannelIdSerialized = "1701x42x3"
     val shortChannelId = ShortChannelId.fromCoordinates(shortChannelIdSerialized).success.value
-    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse]](
       Right(shortChannelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32()))
     )
 
