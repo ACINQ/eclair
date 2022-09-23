@@ -96,8 +96,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   private def createChannelParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: Boolean = false): ChannelParams = {
     val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
-    val localParamsA = Peer.makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), ByteVector.empty, None, isInitiator = true, fundingAmountA)
-    val localParamsB = Peer.makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), ByteVector.empty, None, isInitiator = false, fundingAmountB)
+    val localParamsA = Peer.makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), ByteVector.empty, None, isInitiator = true, dualFunded = true, fundingAmountA)
+    val localParamsB = Peer.makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), ByteVector.empty, None, isInitiator = false, dualFunded = true, fundingAmountB)
 
     val Seq(remoteParamsA, remoteParamsB) = Seq((nodeParamsA, localParamsA), (nodeParamsB, localParamsB)).map {
       case (nodeParams, localParams) =>
