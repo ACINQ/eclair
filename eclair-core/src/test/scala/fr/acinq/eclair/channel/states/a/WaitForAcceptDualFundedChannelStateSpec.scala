@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, Error, Init, OpenDualFundedChannel}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -45,9 +45,10 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     val nonInitiatorContribution = if (test.tags.contains("dual_funding_contribution")) Some(TestConstants.nonInitiatorFundingSatoshis) else None
+    val nonInitiatorPushAmount = if (test.tags.contains(ChannelStateTestsTags.NonInitiatorPushAmount)) Some(TestConstants.nonInitiatorPushAmount) else None
     within(30 seconds) {
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorContribution, dualFunded = true, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorContribution, dualFunded = true, nonInitiatorPushAmount, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       val open = alice2bob.expectMsgType[OpenDualFundedChannel]
       alice2bob.forward(bob, open)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL)
@@ -62,6 +63,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     assert(accept.upfrontShutdownScript_opt.isEmpty)
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
     assert(accept.fundingAmount == 0.sat)
+    assert(accept.pushAmount == 0.msat)
 
     val listener = TestProbe()
     alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[ChannelIdAssigned])
@@ -79,8 +81,32 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     assert(accept.upfrontShutdownScript_opt.isEmpty)
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
     assert(accept.fundingAmount == TestConstants.nonInitiatorFundingSatoshis)
+    assert(accept.pushAmount == 0.msat)
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
+  }
+
+  test("recv AcceptDualFundedChannel (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("dual_funding_contribution"), Tag(ChannelStateTestsTags.NonInitiatorPushAmount), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    assert(accept.upfrontShutdownScript_opt.isEmpty)
+    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
+    assert(accept.fundingAmount == TestConstants.nonInitiatorFundingSatoshis)
+    assert(accept.pushAmount == TestConstants.nonInitiatorPushAmount)
+    bob2alice.forward(alice, accept)
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
+  }
+
+  test("recv AcceptDualFundedChannel (invalid push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("dual_funding_contribution"), Tag(ChannelStateTestsTags.NonInitiatorPushAmount), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    alice ! accept.copy(fundingAmount = 25_000 sat)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error == Error(accept.temporaryChannelId, InvalidPushAmount(accept.temporaryChannelId, TestConstants.nonInitiatorPushAmount, 25_000_000 msat).getMessage))
+    awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[Status.Failure]
   }
 
   test("recv AcceptDualFundedChannel (invalid max accepted htlcs)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

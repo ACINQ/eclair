@@ -61,8 +61,10 @@ object ChannelStateTestsTags {
   val ShutdownAnySegwit = "shutdown_anysegwit"
   /** If set, channels will be public (otherwise we don't announce them by default). */
   val ChannelsPublic = "channels_public"
-  /** If set, no amount will be pushed when opening a channel (by default we push a small amount). */
-  val NoPushMsat = "no_push_msat"
+  /** If set, no amount will be pushed when opening a channel (by default the initiator pushes a small amount). */
+  val NoPushAmount = "no_push_amount"
+  /** If set, the non-initiator will push a small amount when opening a dual-funded channel. */
+  val NonInitiatorPushAmount = "non_initiator_push_amount"
   /** If set, max-htlc-value-in-flight will be set to the highest possible value for Alice and Bob. */
   val NoMaxHtlcValueInFlight = "no_max_htlc_value_in_flight"
   /** If set, max-htlc-value-in-flight will be set to a low value for Alice. */
@@ -225,7 +227,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val dualFunded = tags.contains(ChannelStateTestsTags.DualFunding)
     val fundingAmount = TestConstants.fundingSatoshis
-    val pushMsat = if (tags.contains(ChannelStateTestsTags.NoPushMsat) || dualFunded) 0 msat else TestConstants.pushMsat
+    val initiatorPushAmount = if (tags.contains(ChannelStateTestsTags.NoPushAmount)) None else Some(TestConstants.initiatorPushAmount)
+    val nonInitiatorPushAmount = if (tags.contains(ChannelStateTestsTags.NonInitiatorPushAmount)) Some(TestConstants.nonInitiatorPushAmount) else None
     val nonInitiatorFundingAmount = if (dualFunded) Some(TestConstants.nonInitiatorFundingSatoshis) else None
 
     val eventListener = TestProbe()
@@ -233,9 +236,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
-    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded, commitTxFeerate, TestConstants.feeratePerKw, Some(pushMsat), aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
+    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded, commitTxFeerate, TestConstants.feeratePerKw, initiatorPushAmount, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
-    bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFundingAmount, dualFunded, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+    bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFundingAmount, dualFunded, nonInitiatorPushAmount, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
 
     val fundingTx = if (!dualFunded) {
@@ -329,7 +332,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(bobCommitments.availableBalanceForSend == (nonInitiatorFundingAmount.getOrElse(0 sat) + pushMsat - aliceCommitments.remoteChannelReserve).max(0 msat))
+    val expectedBalanceBob = (nonInitiatorFundingAmount.getOrElse(0 sat) + initiatorPushAmount.getOrElse(0 msat) - nonInitiatorPushAmount.getOrElse(0 msat) - aliceCommitments.remoteChannelReserve).max(0 msat)
+    assert(bobCommitments.availableBalanceForSend == expectedBalanceBob)
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]

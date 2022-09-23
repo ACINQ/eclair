@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelReady, CommitSig, Error, Init, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxInitRbf, TxSignatures, Warning}
-import fr.acinq.eclair.{Features, TestConstants, TestKitBaseClass, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
@@ -50,9 +50,10 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     val bobContribution = if (channelType.features.contains(Features.ZeroConf)) None else Some(TestConstants.nonInitiatorFundingSatoshis)
+    val (initiatorPushAmount, nonInitiatorPushAmount) = if (test.tags.contains("both_push_amount")) (Some(TestConstants.initiatorPushAmount), Some(TestConstants.nonInitiatorPushAmount)) else (None, None)
     within(30 seconds) {
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, bobContribution, dualFunded = true, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.feeratePerKw, TestConstants.feeratePerKw, initiatorPushAmount, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, bobContribution, dualFunded = true, nonInitiatorPushAmount, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId] // temporary channel id
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId] // temporary channel id
       alice2bob.expectMsgType[OpenDualFundedChannel]
@@ -169,6 +170,55 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY]
     assert(aliceData.commitments.channelFeatures.hasFeature(Features.DualFunding))
     assert(aliceData.commitments.channelFeatures.hasFeature(Features.ZeroConf))
+  }
+
+  test("complete interactive-tx protocol (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
+    import f._
+
+    val listener = TestProbe()
+    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+
+    // The initiator sends the first interactive-tx message.
+    bob2alice.expectNoMessage(100 millis)
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.expectNoMessage(100 millis)
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddOutput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxComplete]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    val expectedBalanceAlice = TestConstants.fundingSatoshis.toMilliSatoshi + TestConstants.nonInitiatorPushAmount - TestConstants.initiatorPushAmount
+    assert(expectedBalanceAlice == 900_000_000.msat)
+    val expectedBalanceBob = TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi + TestConstants.initiatorPushAmount - TestConstants.nonInitiatorPushAmount
+    assert(expectedBalanceBob == 600_000_000.msat)
+
+    // Bob sends its signatures first as he contributed less than Alice.
+    bob2alice.expectMsgType[TxSignatures]
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    assert(bobData.commitments.localCommit.spec.toLocal == expectedBalanceBob)
+    assert(bobData.commitments.localCommit.spec.toRemote == expectedBalanceAlice)
+
+    // Alice receives Bob's signatures and sends her own signatures.
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxSignatures]
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    assert(aliceData.commitments.localCommit.spec.toLocal == expectedBalanceAlice)
+    assert(aliceData.commitments.localCommit.spec.toRemote == expectedBalanceBob)
   }
 
   test("recv invalid interactive-tx message", Tag(ChannelStateTestsTags.DualFunding)) { f =>

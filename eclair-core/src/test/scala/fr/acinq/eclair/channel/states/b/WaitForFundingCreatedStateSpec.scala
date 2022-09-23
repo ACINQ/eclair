@@ -51,9 +51,9 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
       (1000100 sat, (1000000 sat).toMilliSatoshi) // toLocal = 100 satoshis
     } else if (test.tags.contains(ChannelStateTestsTags.Wumbo)) {
-      (Btc(5).toSatoshi, TestConstants.pushMsat)
+      (Btc(5).toSatoshi, TestConstants.initiatorPushAmount)
     } else {
-      (TestConstants.fundingSatoshis, TestConstants.pushMsat)
+      (TestConstants.fundingSatoshis, TestConstants.initiatorPushAmount)
     }
 
     val setup = init(aliceNodeParams, bobNodeParams, tags = test.tags)
@@ -67,7 +67,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     within(30 seconds) {
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(pushMsat), aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)

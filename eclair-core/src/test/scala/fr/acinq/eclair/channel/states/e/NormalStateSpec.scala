@@ -201,7 +201,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectNoMessage(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (increasing balance but still below reserve)", Tag(ChannelStateTestsTags.NoPushMsat)) { f =>
+  test("recv CMD_ADD_HTLC (increasing balance but still below reserve)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
     import f._
     val sender = TestProbe()
     // channel starts with all funds on alice's side, alice sends some funds to bob, but not enough to make it go above reserve
@@ -879,7 +879,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo == Left(waitForRevocation.copy(reSignAsap = true)))
   }
 
-  test("recv CMD_SIGN (going above reserve)", Tag(ChannelStateTestsTags.NoPushMsat)) { f =>
+  test("recv CMD_SIGN (going above reserve)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
     import f._
     // channel starts with all funds on alice's side, so channel will be initially disabled on bob's side
     assert(!bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
@@ -3412,7 +3412,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testErrorAnchorOutputsWithoutHtlcs(f, commitFeeBumpDisabled = true)
   }
 
-  test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.NoPushMsat)) { f =>
+  test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
     import f._
 
     // when receiving an error bob should publish its commitment even if it has nothing at stake, because alice could

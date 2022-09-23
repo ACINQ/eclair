@@ -43,12 +43,13 @@ import scala.concurrent.duration._
  */
 object TestConstants {
 
-  val defaultBlockHeight = 400000
-  val fundingSatoshis: Satoshi = 1000000 sat
-  val nonInitiatorFundingSatoshis: Satoshi = 500000 sat
-  val pushMsat: MilliSatoshi = 200000000L msat
-  val feeratePerKw: FeeratePerKw = FeeratePerKw(10000 sat)
-  val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2500 sat)
+  val defaultBlockHeight = 400_000
+  val fundingSatoshis: Satoshi = 1_000_000 sat
+  val nonInitiatorFundingSatoshis: Satoshi = 500_000 sat
+  val initiatorPushAmount: MilliSatoshi = 200_000_000L msat
+  val nonInitiatorPushAmount: MilliSatoshi = 100_000_000L msat
+  val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
+  val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
   case object TestFeature extends Feature with InitFeature with NodeFeature {

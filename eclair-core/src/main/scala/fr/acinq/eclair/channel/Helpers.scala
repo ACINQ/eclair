@@ -138,10 +138,11 @@ object Helpers {
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
 
+    // BOLT #2: Channel funding limits
     if (open.fundingAmount < nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel) || open.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingAmount, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), nodeParams.channelConf.maxFundingSatoshis))
 
-    // BOLT #2: Channel funding limits
-    if (open.fundingAmount >= Channel.MAX_FUNDING && !localFeatures.hasFeature(Features.Wumbo)) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingAmount, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Channel.MAX_FUNDING))
+    // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
+    if (open.pushAmount > open.fundingAmount) return Left(InvalidPushAmount(open.temporaryChannelId, open.pushAmount, open.fundingAmount.toMilliSatoshi))
 
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
@@ -221,6 +222,12 @@ object Helpers {
       case Some(t) => return Left(t)
       case None => // we agree on channel type
     }
+
+    // BOLT #2: Channel funding limits
+    if (accept.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) return Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount, 0 sat, nodeParams.channelConf.maxFundingSatoshis))
+
+    // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
+    if (accept.pushAmount > accept.fundingAmount) return Left(InvalidPushAmount(accept.temporaryChannelId, accept.pushAmount, accept.fundingAmount.toMilliSatoshi))
 
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
 
@@ -402,34 +409,35 @@ object Helpers {
      */
     def makeFirstCommitTxs(keyManager: ChannelKeyManager, channelConfig: ChannelConfig, channelFeatures: ChannelFeatures, temporaryChannelId: ByteVector32,
                            localParams: LocalParams, remoteParams: RemoteParams,
-                           localFundingAmount: Satoshi, remoteFundingAmount: Satoshi, pushMsat: MilliSatoshi,
+                           localFundingAmount: Satoshi, remoteFundingAmount: Satoshi,
+                           localPushAmount: MilliSatoshi, remotePushAmount: MilliSatoshi,
                            commitTxFeerate: FeeratePerKw,
                            fundingTxHash: ByteVector32, fundingTxOutputIndex: Int,
                            remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
-      val toLocalMsat = if (localParams.isInitiator) localFundingAmount.toMilliSatoshi - pushMsat else localFundingAmount.toMilliSatoshi + pushMsat
-      val toRemoteMsat = if (localParams.isInitiator) remoteFundingAmount.toMilliSatoshi + pushMsat else remoteFundingAmount.toMilliSatoshi - pushMsat
+      val fundingAmount = localFundingAmount + remoteFundingAmount
+      val toLocalMsat = localFundingAmount.toMilliSatoshi - localPushAmount + remotePushAmount
+      val toRemoteMsat = remoteFundingAmount.toMilliSatoshi + localPushAmount - remotePushAmount
 
       val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
 
       if (!localParams.isInitiator) {
         // they initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
-        val toRemoteMsat = remoteSpec.toLocal
         val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
         val reserve = if (channelFeatures.hasFeature(Features.DualFunding)) {
-          ((localFundingAmount + remoteFundingAmount) / 100).max(localParams.dustLimit)
+          (fundingAmount / 100).max(localParams.dustLimit)
         } else {
           localParams.requestedChannelReserve_opt.get
         }
         val missing = toRemoteMsat.truncateToSatoshi - reserve - fees
-        if (missing < Satoshi(0)) {
+        if (missing < 0.sat) {
           return Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = reserve, fees = fees))
         }
       }
 
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, localFundingAmount + remoteFundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
       val (localCommitTx, _) = Commitments.makeLocalTxs(keyManager, channelConfig, channelFeatures, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, channelConfig, channelFeatures, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
