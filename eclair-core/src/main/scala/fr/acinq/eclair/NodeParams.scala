@@ -83,7 +83,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogThreshold: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration]) {
+                      purgeInvoicesInterval: Option[FiniteDuration],
+                      asyncPaymentsTimeout: Option[FiniteDuration]) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -419,6 +420,12 @@ object NodeParams extends Logging {
       None
     }
 
+    val asyncPaymentsTimeout = if (config.getBoolean("relay.async-payments.enabled")) {
+      Some(FiniteDuration(config.getDuration("relay.async-payments.timeout").toMinutes, TimeUnit.MINUTES))
+    } else {
+      None
+    }
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -529,7 +536,8 @@ object NodeParams extends Logging {
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval
+      purgeInvoicesInterval = purgeInvoicesInterval,
+      asyncPaymentsTimeout = asyncPaymentsTimeout
     )
   }
 }

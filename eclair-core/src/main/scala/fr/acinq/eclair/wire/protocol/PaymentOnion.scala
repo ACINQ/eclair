@@ -22,7 +22,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -181,6 +181,9 @@ object OnionPaymentPayloadTlv {
 
   /** Pre-image included by the sender of a payment in case of a donation */
   case class KeySend(paymentPreimage: ByteVector32) extends OnionPaymentPayloadTlv
+
+  /** Invoice feature bits. Only included for intermediate trampoline nodes that should wait before forwarding this payment */
+  case class AsyncPaymentFeatures(features: ByteVector) extends OnionPaymentPayloadTlv
 }
 
 object PaymentOnion {
@@ -301,6 +304,8 @@ object PaymentOnion {
         val paymentMetadata = records.get[PaymentMetadata].map(_.data)
         val invoiceFeatures = records.get[InvoiceFeatures].map(_.features)
         val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
+        // The following fields are only included in the async payment case.
+        val isAsyncPayment: Boolean = records.get[AsyncPaymentFeatures].isDefined
       }
 
       object Standard {
@@ -328,6 +333,17 @@ object PaymentOnion {
             Some(OutgoingNodeId(targetNodeId)),
             Some(InvoiceFeatures(invoice.features.toByteVector)),
             Some(InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
+          ).flatten
+          Standard(TlvStream(tlvs))
+        }
+
+        /** Create a standard trampoline inner payload instructing the trampoline node to wait for a trigger before sending an async payment. */
+        def createNodeRelayForAsyncPayment(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey, invoiceFeatures: Features[InvoiceFeature]): Standard = {
+          val tlvs = Seq(
+            Some(AmountToForward(amount)),
+            Some(OutgoingCltv(expiry)),
+            Some(OutgoingNodeId(nextNodeId)),
+            Some(AsyncPaymentFeatures(invoiceFeatures.toByteVector))
           ).flatten
           Standard(TlvStream(tlvs))
         }
@@ -475,6 +491,8 @@ object PaymentOnionCodecs {
 
   private val keySend: Codec[KeySend] = variableSizeBytesLong(varintoverflow, bytes32).as[KeySend]
 
+  private val asyncPayment: Codec[AsyncPaymentFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[AsyncPaymentFeatures]
+
   private val onionTlvCodec = discriminated[OnionPaymentPayloadTlv].by(varint)
     .typecase(UInt64(2), amountToForward)
     .typecase(UInt64(4), outgoingCltv)
@@ -490,6 +508,7 @@ object PaymentOnionCodecs {
     .typecase(UInt64(66099), invoiceRoutingInfo)
     .typecase(UInt64(66100), trampolineOnion)
     .typecase(UInt64(5482373484L), keySend)
+    .typecase(UInt64(181324718L), asyncPayment)
 
   val perHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete
 

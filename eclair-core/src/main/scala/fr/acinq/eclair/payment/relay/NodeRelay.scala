@@ -43,6 +43,7 @@ import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UI
 
 import java.util.UUID
 import scala.collection.immutable.Queue
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * It [[NodeRelay]] aggregates incoming HTLCs (in case multi-part was used upstream) and then forwards the requested amount (using the
@@ -54,12 +55,14 @@ object NodeRelay {
   sealed trait Command
   case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
   case object Stop extends Command
+  case object AsyncPaymentTrigger extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
   private case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
   private case class WrappedPreimageReceived(preimageReceived: PreimageReceived) extends Command
   private case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
+  private case object AsyncPaymentTimeout extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
@@ -178,14 +181,15 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPayload relay instructions (should be identical across HTLCs in this set).
    * @param nextPacket  trampoline onion to relay to the next trampoline node.
    * @param handler     actor handling the aggregation of the incoming HTLC set.
+   * @param triggered   async payment trigger received
    */
-  private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
+  private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket, handler: ActorRef, triggered: Boolean = false): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case Relay(IncomingPaymentPacket.NodeRelayPacket(add, outer, _, _)) =>
         require(outer.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", add.id, add.channelId)
         handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
-        receiving(htlcs :+ add, nextPayload, nextPacket, handler)
+        receiving(htlcs :+ add, nextPayload, nextPacket, handler, triggered)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
@@ -200,9 +204,42 @@ class NodeRelay private(nodeParams: NodeParams,
             rejectPayment(upstream, Some(failure))
             stopping()
           case None =>
+            if (!triggered && nextPayload.isAsyncPayment && nodeParams.asyncPaymentsTimeout.isDefined) {
+              waitForTrigger(upstream, nextPayload, nextPacket, nodeParams.asyncPaymentsTimeout.get)
+            } else {
+              doSend(upstream, nextPayload, nextPacket)
+            }
+        }
+      case AsyncPaymentTrigger => context.log.debug("received async payment trigger while waiting to receive all incoming payment packets")
+        receiving(htlcs, nextPayload, nextPacket, handler, triggered = true)
+    }
+
+  private def waitForTrigger(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket, asyncPaymentsTimeout: FiniteDuration): Behavior[Command] = {
+    context.log.info(s"waiting for async payment to trigger before relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv}, asyncPaymentsTimeout=$asyncPaymentsTimeout)")
+    Behaviors.withTimers { timers =>
+      timers.startSingleTimer(AsyncPaymentTimeout, asyncPaymentsTimeout)
+      Behaviors.receiveMessagePartial {
+        case AsyncPaymentTimeout =>
+          context.log.warn(s"rejecting async payment that was not triggered before timeout: $asyncPaymentsTimeout")
+          rejectPayment(upstream, Some(PaymentTimeout))
+          stopping()
+        case AsyncPaymentTrigger =>
+          // check cltv timeouts again before forwarding the payment
+          validateRelay(nodeParams, upstream, nextPayload) match {
+          case Some(failure) =>
+            context.log.warn(s"rejecting async payment, reason=$failure")
+            rejectPayment(upstream, Some(failure))
+            stopping()
+          case None =>
             doSend(upstream, nextPayload, nextPacket)
         }
+        case Stop =>
+          context.log.warn(s"async payment stopped while waiting for trigger")
+          rejectPayment(upstream, Some(PaymentTimeout))
+          stopping()
+      }
     }
+  }
 
   private def doSend(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket): Behavior[Command] = {
     context.log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
