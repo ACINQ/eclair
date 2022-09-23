@@ -381,7 +381,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         stay()
       } else {
         d.rbfStatus match {
-          case RbfStatus.NoRbf => val minNextFeerate = d.fundingParams.minNextFeerate
+          case RbfStatus.NoRbf =>
+            val minNextFeerate = d.fundingParams.minNextFeerate
             if (cmd.targetFeerate < minNextFeerate) {
               replyTo ! Status.Failure(InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
               stay()
