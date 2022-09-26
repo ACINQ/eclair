@@ -129,7 +129,8 @@ object Relayer extends Logging {
   case class RelayParams(publicChannelFees: RelayFees,
                          privateChannelFees: RelayFees,
                          minTrampolineFees: RelayFees,
-                         enforcementDelay: FiniteDuration) {
+                         enforcementDelay: FiniteDuration,
+                         timeout: FiniteDuration) {
     def defaultFees(announceChannel: Boolean): RelayFees = {
       if (announceChannel) {
         publicChannelFees

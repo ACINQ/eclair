@@ -83,8 +83,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogThreshold: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration],
-                      asyncPaymentsTimeout: Option[FiniteDuration]) {
+                      purgeInvoicesInterval: Option[FiniteDuration]) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -420,12 +419,6 @@ object NodeParams extends Logging {
       None
     }
 
-    val asyncPaymentsTimeout = if (config.getBoolean("relay.async-payments.enabled")) {
-      Some(FiniteDuration(config.getDuration("relay.async-payments.timeout").toMinutes, TimeUnit.MINUTES))
-    } else {
-      None
-    }
-
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -495,7 +488,8 @@ object NodeParams extends Logging {
         publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
-        enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS)
+        enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS),
+        timeout = FiniteDuration(config.getDuration("relay.timeout").toMinutes, TimeUnit.MINUTES)
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),
@@ -536,8 +530,7 @@ object NodeParams extends Logging {
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval,
-      asyncPaymentsTimeout = asyncPaymentsTimeout
+      purgeInvoicesInterval = purgeInvoicesInterval
     )
   }
 }
