@@ -323,7 +323,7 @@ object Features {
     RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
-    AsyncPaymentPrototype -> (VariableLengthOnion :: TrampolinePaymentPrototype :: Nil)
+    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
