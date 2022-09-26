@@ -419,7 +419,7 @@ object Helpers {
         val reserve = if (channelFeatures.hasFeature(Features.DualFunding)) {
           ((localFundingAmount + remoteFundingAmount) / 100).max(localParams.dustLimit)
         } else {
-          localParams.requestedChannelReserve_opt.getOrElse(0 sat)
+          localParams.requestedChannelReserve_opt.get
         }
         val missing = toRemoteMsat.truncateToSatoshi - reserve - fees
         if (missing < Satoshi(0)) {
