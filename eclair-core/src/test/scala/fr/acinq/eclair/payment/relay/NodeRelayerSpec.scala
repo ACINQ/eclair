@@ -858,7 +858,7 @@ object NodeRelayerSpec {
     createValidIncomingPacket(1000000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry)
   )
   val incomingSinglePart = createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry)
-  val incomingAsyncPayment: Seq[NodeRelayPacket] = incomingMultiPart.map(p => p.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(p.innerPayload.amountToForward, p.innerPayload.outgoingCltv, outgoingNodeId, Features.empty)))
+  val incomingAsyncPayment: Seq[NodeRelayPacket] = incomingMultiPart.map(p => p.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(p.innerPayload.amountToForward, p.innerPayload.outgoingCltv, outgoingNodeId)))
 
   def createSuccessEvent(): PaymentSent =
     PaymentSent(relayId, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32(), None)))
@@ -870,7 +870,7 @@ object NodeRelayerSpec {
       FinalPayload.Standard.createMultiPartPayload(amountIn, totalAmountIn, expiryIn, incomingSecret, None)
     }
     val innerPayload = if (isAsyncPayment) {
-      IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(amountOut, expiryOut, outgoingNodeId, Features.empty)
+      IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(amountOut, expiryOut, outgoingNodeId)
     } else {
       IntermediatePayload.NodeRelay.Standard(amountOut, expiryOut, outgoingNodeId)
     }
