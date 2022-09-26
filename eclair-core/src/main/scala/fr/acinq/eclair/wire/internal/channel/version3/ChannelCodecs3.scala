@@ -387,6 +387,8 @@ private[channel] object ChannelCodecs3 {
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | signedSharedTransactionCodec) ::
         ("fundingParams" | fundingParamsCodec) ::
+        ("localPushAmount" | millisatoshi) ::
+        ("remotePushAmount" | millisatoshi) ::
         ("previousFundingTxs" | listOfN(uint16, dualFundingTxCodec)) ::
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::

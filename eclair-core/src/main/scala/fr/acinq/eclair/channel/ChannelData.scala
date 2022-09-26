@@ -105,6 +105,7 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
                                             fundingContribution_opt: Option[Satoshi],
                                             dualFunded: Boolean,
+                                            pushAmount_opt: Option[MilliSatoshi],
                                             localParams: LocalParams,
                                             remote: ActorRef,
                                             remoteInit: Init,
@@ -498,11 +499,15 @@ final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANN
   val channelId: ByteVector32 = lastSent.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
+                                                    localPushAmount: MilliSatoshi,
+                                                    remotePushAmount: MilliSatoshi,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
                                                     deferred: Option[ChannelReady]) extends TransientChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       fundingTx: SignedSharedTransaction,
                                                       fundingParams: InteractiveTxParams,
+                                                      localPushAmount: MilliSatoshi,
+                                                      remotePushAmount: MilliSatoshi,
                                                       previousFundingTxs: List[DualFundingTx],
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent

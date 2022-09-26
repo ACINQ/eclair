@@ -50,7 +50,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ==
       MainAndHtlcBalance(
-        toLocal = (TestConstants.fundingSatoshis - TestConstants.pushMsat - 30_000_000.msat).truncateToSatoshi,
+        toLocal = (TestConstants.fundingSatoshis - TestConstants.initiatorPushAmount - 30_000_000.msat).truncateToSatoshi,
         htlcs = 30_000.sat
       )
     )
@@ -67,7 +67,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(CheckBalance.computeOffChainBalance(Seq(bob.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ==
       MainAndHtlcBalance(
-        toLocal = TestConstants.pushMsat.truncateToSatoshi,
+        toLocal = TestConstants.initiatorPushAmount.truncateToSatoshi,
         htlcs = htlc.amountMsat.truncateToSatoshi
       )
     )

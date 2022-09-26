@@ -30,7 +30,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshiLong, UInt64, randomKey}
+import fr.acinq.eclair.{Logs, MilliSatoshi, UInt64, randomKey}
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -197,6 +197,8 @@ object InteractiveTxBuilder {
   def apply(remoteNodeId: PublicKey,
             fundingParams: InteractiveTxParams,
             keyManager: ChannelKeyManager,
+            localPushAmount: MilliSatoshi,
+            remotePushAmount: MilliSatoshi,
             localParams: LocalParams,
             remoteParams: RemoteParams,
             commitTxFeerate: FeeratePerKw,
@@ -213,7 +215,7 @@ object InteractiveTxBuilder {
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
             case Start(replyTo, previousTransactions) =>
-              val actor = new InteractiveTxBuilder(replyTo, fundingParams, keyManager, localParams, remoteParams, commitTxFeerate, remoteFirstPerCommitmentPoint, channelFlags, channelConfig, channelFeatures, wallet, previousTransactions, stash, context)
+              val actor = new InteractiveTxBuilder(replyTo, fundingParams, keyManager, localPushAmount, remotePushAmount, localParams, remoteParams, commitTxFeerate, remoteFirstPerCommitmentPoint, channelFlags, channelConfig, channelFeatures, wallet, previousTransactions, stash, context)
               actor.start()
             case Abort => Behaviors.stopped
           }
@@ -263,6 +265,8 @@ object InteractiveTxBuilder {
 private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Response],
                                    fundingParams: InteractiveTxBuilder.InteractiveTxParams,
                                    keyManager: ChannelKeyManager,
+                                   localPushAmount: MilliSatoshi,
+                                   remotePushAmount: MilliSatoshi,
                                    localParams: LocalParams,
                                    remoteParams: RemoteParams,
                                    commitTxFeerate: FeeratePerKw,
@@ -701,7 +705,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   def signCommitTx(completeTx: SharedTransaction, fundingOutputIndex: Int): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
-    Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, fundingParams.channelId, localParams, remoteParams, fundingParams.localAmount, fundingParams.remoteAmount, 0 msat, commitTxFeerate, fundingTx.hash, fundingOutputIndex, remoteFirstPerCommitmentPoint) match {
+    Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, fundingParams.channelId, localParams, remoteParams, fundingParams.localAmount, fundingParams.remoteAmount, localPushAmount, remotePushAmount, commitTxFeerate, fundingTx.hash, fundingOutputIndex, remoteFirstPerCommitmentPoint) match {
       case Left(cause) =>
         replyTo ! RemoteFailure(cause)
         unlockAndStop(completeTx)

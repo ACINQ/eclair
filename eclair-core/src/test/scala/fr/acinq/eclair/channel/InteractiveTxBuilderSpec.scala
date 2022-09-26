@@ -32,7 +32,7 @@ import fr.acinq.eclair.channel.InteractiveTxBuilder._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, NodeParams, TestConstants, TestKitBaseClass, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, UInt64, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -81,6 +81,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderAlice(fundingParams: InteractiveTxParams, commitFeerate: FeeratePerKw, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       nodeParamsA.nodeId,
       fundingParams, nodeParamsA.channelKeyManager,
+      0 msat, 0 msat,
       localParamsA, remoteParamsB,
       commitFeerate, firstPerCommitmentPointB,
       ChannelFlags.Public, ChannelConfig.standard, channelFeatures, wallet))
@@ -88,6 +89,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderBob(fundingParams: InteractiveTxParams, commitFeerate: FeeratePerKw, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       nodeParamsB.nodeId,
       fundingParams, nodeParamsB.channelKeyManager,
+      0 msat, 0 msat,
       localParamsB, remoteParamsA,
       commitFeerate, firstPerCommitmentPointA,
       ChannelFlags.Public, ChannelConfig.standard, channelFeatures, wallet))

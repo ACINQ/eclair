@@ -288,7 +288,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     awaitCond(bob.stateName == CLOSING)
   }
 
-  test("recv ClosingSigned (nothing at stake)", Tag(ChannelStateTestsTags.NoPushMsat)) { f =>
+  test("recv ClosingSigned (nothing at stake)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
     import f._
     setFeerate(alice.feeEstimator, FeeratePerKw(5000 sat))
     setFeerate(bob.feeEstimator, FeeratePerKw(10000 sat))
