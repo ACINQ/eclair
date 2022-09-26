@@ -347,7 +347,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val g = f.copy(nodeParams = f.nodeParams.copy(features = f.nodeParams.features.add(AsyncPaymentPrototype, Optional), relayParams = f.nodeParams.relayParams.copy(timeout = 5 seconds)))
     import g._
 
-    val (nodeRelayer, parent) = g.createNodeRelay(incomingAsyncPayment.head)
+    val (nodeRelayer, _) = g.createNodeRelay(incomingAsyncPayment.head)
     incomingAsyncPayment.dropRight(1).foreach { p =>
       nodeRelayer ! NodeRelay.Relay(p)
       relayMonitor.expectMessageType[NodeRelay.Relay]
@@ -355,8 +355,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a complete upstream payment
 
     // trigger before last incoming part received
-    nodeRelayer ! NodeRelay.AsyncPaymentTrigger
-    relayMonitor.expectMessage(NodeRelay.AsyncPaymentTrigger)
+    nodeRelayer ! NodeRelay.RelayAsyncPayment
+    relayMonitor.expectMessage(NodeRelay.RelayAsyncPayment)
 
     // receive last incoming part
     nodeRelayer ! NodeRelay.Relay(incomingAsyncPayment.last)
@@ -394,7 +394,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     blockHeight.set(outgoingExpiry.toLong - 1)
 
     // trigger the node relay to forward the payment
-    nodeRelayer ! NodeRelay.AsyncPaymentTrigger
+    nodeRelayer ! NodeRelay.RelayAsyncPayment
 
     // upstream payment relayed
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
@@ -426,7 +426,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val g = f.copy(nodeParams = f.nodeParams.copy(features = f.nodeParams.features.add(AsyncPaymentPrototype, Optional), relayParams = f.nodeParams.relayParams.copy(timeout = 5 seconds)))
     import g._
 
-    val (nodeRelayer, parent) = g.createNodeRelay(incomingAsyncPayment.head)
+    val (nodeRelayer, _) = g.createNodeRelay(incomingAsyncPayment.head)
 
     incomingAsyncPayment.foreach { p =>
       nodeRelayer ! NodeRelay.Relay(p)
@@ -441,7 +441,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     blockHeight.set(outgoingExpiry.toLong)
 
     // trigger the node relay to forward the payment
-    nodeRelayer ! NodeRelay.AsyncPaymentTrigger
+    nodeRelayer ! NodeRelay.RelayAsyncPayment
 
     incomingAsyncPayment.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]

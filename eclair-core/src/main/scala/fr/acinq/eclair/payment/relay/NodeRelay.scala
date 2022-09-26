@@ -54,7 +54,7 @@ object NodeRelay {
   sealed trait Command
   case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
   case object Stop extends Command
-  case object AsyncPaymentTrigger extends Command
+  case object RelayAsyncPayment extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
   private case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
@@ -208,7 +208,7 @@ class NodeRelay private(nodeParams: NodeParams,
               doSend(upstream, nextPayload, nextPacket)
             }
         }
-      case AsyncPaymentTrigger => context.log.debug("received async payment trigger while waiting to receive all incoming payment packets")
+      case RelayAsyncPayment => context.log.debug("received async payment trigger while waiting to receive all incoming payment packets")
         receiving(htlcs, nextPayload, nextPacket, handler)
     }
 
@@ -221,7 +221,7 @@ class NodeRelay private(nodeParams: NodeParams,
           context.log.warn(s"rejecting async payment that was not triggered before relay timeout: ${nodeParams.relayParams.timeout}")
           rejectPayment(upstream, Some(PaymentTimeout))
           stopping()
-        case AsyncPaymentTrigger =>
+        case RelayAsyncPayment =>
           // check cltv timeouts again before forwarding the payment
           validateRelay(nodeParams, upstream, nextPayload) match {
           case Some(failure) =>
