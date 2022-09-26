@@ -507,8 +507,8 @@ object PaymentOnionCodecs {
     .typecase(UInt64(66098), outgoingNodeId)
     .typecase(UInt64(66099), invoiceRoutingInfo)
     .typecase(UInt64(66100), trampolineOnion)
-    .typecase(UInt64(5482373484L), keySend)
     .typecase(UInt64(181324718L), asyncPayment)
+    .typecase(UInt64(5482373484L), keySend)
 
   val perHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete
 
