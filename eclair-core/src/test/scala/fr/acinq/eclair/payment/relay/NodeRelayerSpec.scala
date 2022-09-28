@@ -414,6 +414,27 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
+  test("fail to relay payment when canceled by sender before timeout", Tag("async_payments")) { f =>
+    import f._
+
+    val (nodeRelayer, _) = createNodeRelay(incomingAsyncPayment.head)
+    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
+
+    // wait until the NodeRelay is waiting for the trigger
+    eventListener.expectMessageType[WaitingToRelayPayment]
+    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a trigger
+
+    // fail the payment if waiting when payment sender sends cancel message
+    nodeRelayer ! NodeRelay.CancelAsyncPayment
+
+    incomingAsyncPayment.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))
+    }
+    register.expectNoMessage(100 millis)
+  }
+
   test("fail to relay when fees are insufficient (single-part)") { f =>
     import f._
 

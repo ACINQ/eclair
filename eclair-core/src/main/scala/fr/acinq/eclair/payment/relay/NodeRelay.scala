@@ -56,6 +56,7 @@ object NodeRelay {
   case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
   case object Stop extends Command
   case object RelayAsyncPayment extends Command
+  case object CancelAsyncPayment extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
   private case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
@@ -229,6 +230,10 @@ class NodeRelay private(nodeParams: NodeParams,
         stopping()
       case WrappedCurrentBlockHeight(blockHeight) if blockHeight >= timeoutBlock =>
         context.log.warn(s"rejecting async payment at block $blockHeight; was not triggered after waiting ${nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks} blocks")
+        rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
+        stopping()
+      case CancelAsyncPayment =>
+        context.log.warn(s"payment sender canceled a waiting async payment")
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
         stopping()
       case RelayAsyncPayment =>
