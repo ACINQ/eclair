@@ -282,7 +282,7 @@ object Features {
   }
 
   // TODO: @remyers update feature bits once spec-ed (currently reserved here: https://github.com/lightning/bolts/pull/989)
-  case object AsyncPaymentPrototype extends Feature with InvoiceFeature {
+  case object AsyncPaymentPrototype extends Feature with InitFeature with InvoiceFeature {
     val rfcName = "async_payment_prototype"
     val mandatory = 152
   }
