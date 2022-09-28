@@ -209,8 +209,6 @@ class NodeRelay private(nodeParams: NodeParams,
               doSend(upstream, nextPayload, nextPacket)
             }
         }
-      case RelayAsyncPayment => context.log.debug("received async payment trigger while waiting to receive all incoming payment packets")
-        receiving(htlcs, nextPayload, nextPacket, handler)
     }
 
   private def waitForTrigger(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket): Behavior[Command] = {
