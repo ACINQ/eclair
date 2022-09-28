@@ -120,6 +120,8 @@ case class PaymentMetadataReceived(paymentHash: ByteVector32, paymentMetadata: B
 
 case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
 
+case class WaitingToRelayPayment(remoteNodeId: PublicKey, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
+
 sealed trait PaymentFailure {
   // @formatter:off
   def amount: MilliSatoshi

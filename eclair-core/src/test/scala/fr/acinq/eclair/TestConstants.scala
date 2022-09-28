@@ -26,7 +26,7 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
-import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
+import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
@@ -143,7 +143,7 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        timeout = 1 day),
+       asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -286,7 +286,7 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        timeout = 1 day),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,

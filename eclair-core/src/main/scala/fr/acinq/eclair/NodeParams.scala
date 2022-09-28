@@ -30,7 +30,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
-import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
+import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
@@ -419,6 +419,12 @@ object NodeParams extends Logging {
       None
     }
 
+    val asyncPaymentCancelSafetyBeforeTimeoutBlocks = CltvExpiryDelta(config.getInt("relay.async-payments.cancel-safety-before-timeout-blocks"))
+    require(asyncPaymentCancelSafetyBeforeTimeoutBlocks >= expiryDelta, "relay.async-payments.cancel-safety-before-timeout-blocks must not be less than channel.expiry-delta-blocks; this may lead to undesired channel closure")
+
+    val asyncPaymentHoldTimeoutBlocks = config.getInt("relay.async-payments.hold-timeout-blocks")
+    require(asyncPaymentHoldTimeoutBlocks >= (asyncPaymentCancelSafetyBeforeTimeoutBlocks + expiryDelta).toInt, "relay.async-payments.hold-timeout-blocks must not be less than relay.async-payments.cancel-safety-before-timeout-blocks + channel.expiry-delta-blocks; otherwise it will have no effect")
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -489,7 +495,7 @@ object NodeParams extends Logging {
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
         enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS),
-        timeout = FiniteDuration(config.getDuration("relay.timeout").toMinutes, TimeUnit.MINUTES)
+        asyncPaymentsParams = AsyncPaymentsParams(asyncPaymentHoldTimeoutBlocks, asyncPaymentCancelSafetyBeforeTimeoutBlocks)
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),
