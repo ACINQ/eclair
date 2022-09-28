@@ -351,7 +351,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("relay the payment while waiting", Tag("async_payments"), Tag("long_hold_timeout")) { f =>
+  test("relay the payment when triggered while waiting", Tag("async_payments"), Tag("long_hold_timeout")) { f =>
     import f._
 
     val (nodeRelayer, parent) = createNodeRelay(incomingAsyncPayment.head)
@@ -432,6 +432,40 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.channelId == p.add.channelId)
       assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))
     }
+    register.expectNoMessage(100 millis)
+  }
+
+  test("relay the payment immediately when the async payment feature is disabled") { f =>
+    import f._
+
+    assert(!nodeParams.features.hasFeature(AsyncPaymentPrototype))
+
+    val (nodeRelayer, parent) = createNodeRelay(incomingAsyncPayment.head)
+    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
+
+    // upstream payment relayed
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingAsyncPayment.map(_.add)))
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = outgoingPayment.replyTo
+
+    // A first downstream HTLC is fulfilled: we should immediately forward the fulfill upstream.
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
+    incomingAsyncPayment.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
+    }
+
+    // Once all the downstream payments have settled, we should emit the relayed event.
+    nodeRelayerAdapters ! createSuccessEvent()
+    val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
+    validateRelayEvent(relayEvent)
+    assert(relayEvent.incoming.toSet == incomingAsyncPayment.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)).toSet)
+    assert(relayEvent.outgoing.nonEmpty)
+    parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
   }
 
