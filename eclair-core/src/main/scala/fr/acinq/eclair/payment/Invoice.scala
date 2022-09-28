@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
@@ -34,8 +33,6 @@ trait Invoice {
   val recipients: Seq[Recipient]
 
   val paymentHash: ByteVector32
-
-  val paymentMetadata: Option[ByteVector]
 
   val description: Either[String, ByteVector32]
 

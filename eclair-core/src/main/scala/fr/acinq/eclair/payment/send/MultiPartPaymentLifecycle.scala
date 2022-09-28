@@ -239,7 +239,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     val status = event match {
       case Right(_: PaymentSent) => "SUCCESS"
       case Left(f: PaymentFailed) =>
-        if (f.failures.exists({ case r: RemoteFailure => cfg.recipients.exists(_.contains(r.e.originNode)) case _ => false })) {
+        if (f.failures.exists({ case r: RemoteFailure => cfg.isRecipient(r.e.originNode) case _ => false })) {
           "RECIPIENT_FAILURE"
         } else {
           "FAILURE"
@@ -400,7 +400,7 @@ object MultiPartPaymentLifecycle {
 
   /** When we receive an error from the final recipient or payment gets settled on chain, we should fail the whole payment, it's useless to retry. */
   private def abortPayment(pf: PaymentFailed, d: PaymentProgress): Boolean = pf.failures.exists {
-    case f: RemoteFailure => d.request.recipients.exists(_.contains(f.e.originNode))
+    case f: RemoteFailure => d.request.recipients.flatMap(_.nodeIds).contains(f.e.originNode)
     case LocalFailure(_, _, _: HtlcOverriddenByLocalCommit) => true
     case LocalFailure(_, _, _: HtlcsWillTimeoutUpstream) => true
     case LocalFailure(_, _, _: HtlcsTimedoutDownstream) => true

@@ -28,6 +28,7 @@ import scodec.bits.ByteVector
 sealed trait Recipient {
   def nodeId: PublicKey
   def introductionNodeId: PublicKey
+  def nodeIds: Seq[PublicKey]
 
   def features: Features[InvoiceFeature]
 
@@ -38,8 +39,6 @@ sealed trait Recipient {
   def userCustomTlvs: Seq[GenericTlv]
 
   def withCustomTlvs(customTlvs: Seq[GenericTlv]): Recipient
-
-  def contains(id: PublicKey): Boolean
 
   def buildFinalPayloads(amount: MilliSatoshi,
                          totalAmount: MilliSatoshi,
@@ -52,23 +51,18 @@ case class ClearRecipient(nodeId: PublicKey,
                           features: Features[InvoiceFeature] = Features.empty,
                           additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
                           userCustomTlvs: Seq[GenericTlv] = Nil) extends Recipient {
-  override def introductionNodeId: PublicKey = nodeId
+  override val introductionNodeId: PublicKey = nodeId
+
+  override val nodeIds: Seq[PublicKey] = Seq(nodeId)
 
   override def amountToSend(amount: MilliSatoshi): MilliSatoshi = amount
 
   override def withCustomTlvs(customTlvs: Seq[GenericTlv]): Recipient = copy(userCustomTlvs = customTlvs)
 
-  override def contains(id: PublicKey): Boolean = id == nodeId
-
   override def buildFinalPayloads(amount: MilliSatoshi,
                          totalAmount: MilliSatoshi,
                          expiry: CltvExpiry): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) =
     (amount, expiry, Seq(FinalPayload.Standard.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, additionalTlvs, userCustomTlvs)))
-}
-
-object ClearRecipient {
-  def fromTrampolinePayload(payload : IntermediatePayload.NodeRelay.Standard): ClearRecipient =
-    ClearRecipient(payload.outgoingNodeId, payload.paymentSecret.get, payload.paymentMetadata, payload.invoiceFeatures.map(Features(_).invoiceFeatures()).getOrElse(Features.empty))
 }
 
 object KeySendRecipient {
@@ -77,8 +71,8 @@ object KeySendRecipient {
 }
 
 object TrampolineRecipient {
-  def apply(trampolineNodeId: PublicKey, trampolineOnion: OnionRoutingPacket, paymentMetadata_opt: Option[ByteVector]): ClearRecipient =
-    ClearRecipient(trampolineNodeId, randomBytes32(), paymentMetadata_opt, additionalTlvs = Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
+  def apply(trampolineNodeId: PublicKey, trampolineOnion: OnionRoutingPacket, paymentMetadata_opt: Option[ByteVector], trampolineSecret: ByteVector32 = randomBytes32()): ClearRecipient =
+    ClearRecipient(trampolineNodeId, trampolineSecret, paymentMetadata_opt, additionalTlvs = Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
 }
 
 case class BlindRecipient(route: RouteBlinding.BlindedRoute,
@@ -86,18 +80,17 @@ case class BlindRecipient(route: RouteBlinding.BlindedRoute,
                           capacity_opt: Option[MilliSatoshi],
                           additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
                           userCustomTlvs: Seq[GenericTlv] = Nil) extends Recipient {
-  override def nodeId: PublicKey = route.blindedNodeIds.last
+  override val nodeId: PublicKey = route.blindedNodeIds.last
 
-  override def introductionNodeId: PublicKey = route.introductionNodeId
+  override val introductionNodeId: PublicKey = route.introductionNodeId
 
-  override def features: Features[InvoiceFeature] = paymentInfo.allowedFeatures.invoiceFeatures()
+  override val nodeIds: Seq[PublicKey] = (introductionNodeId +: route.blindedNodeIds).reverse
+
+  override val features: Features[InvoiceFeature] = paymentInfo.allowedFeatures.invoiceFeatures()
 
   override def amountToSend(amount: MilliSatoshi): MilliSatoshi = amount + paymentInfo.fee(amount)
 
   override def withCustomTlvs(customTlvs: Seq[GenericTlv]): Recipient = copy(userCustomTlvs = customTlvs)
-
-  override def contains(id: PublicKey): Boolean =
-    id == route.introductionNodeId || route.blindedNodeIds.contains(id)
 
   override def buildFinalPayloads(amount: MilliSatoshi,
                          totalAmount: MilliSatoshi,

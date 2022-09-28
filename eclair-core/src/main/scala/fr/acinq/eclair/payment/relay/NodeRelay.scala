@@ -302,7 +302,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }.toClassic
 
   private def relay(upstream: Upstream.Trampoline, payloadOut: IntermediatePayload.NodeRelay.Standard, packetOut: OnionRoutingPacket): ActorRef = {
-    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, Seq(ClearRecipient.fromTrampolinePayload(payloadOut)), upstream, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, Nil)
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, Seq(payloadOut.outgoingNodeId), upstream, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     val payFSM = payloadOut.invoiceFeatures match {

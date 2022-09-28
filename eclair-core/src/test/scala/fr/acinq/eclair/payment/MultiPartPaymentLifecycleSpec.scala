@@ -35,7 +35,6 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Announcements, RouteNotFound}
-import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -67,7 +66,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
   override def withFixture(test: OneArgTest): Outcome = {
     val id = UUID.randomUUID()
-    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, finalAmount, finalRecipient, Upstream.Local(id), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil)
+    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, finalAmount, Seq(finalRecipient), Upstream.Local(id), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil)
     val nodeParams = TestConstants.Alice.nodeParams
     val (childPayFsm, router, sender, eventListener, metricsListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val paymentHandler = TestFSMRef(new MultiPartPaymentLifecycle(nodeParams, cfg, router.ref, FakePaymentFactory(childPayFsm)))
@@ -80,18 +79,18 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     assert(payFsm.stateName == WAIT_FOR_PAYMENT_REQUEST)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 1, None, routeParams = routeParams.copy(randomize = true))
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 1, routeParams = routeParams.copy(randomize = true))
     sender.send(payFsm, payment)
 
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, routeParams = routeParams.copy(randomize = false), allowMultiPart = true, paymentContext = Some(cfg.paymentContext)))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, Seq(eRecipient), finalAmount, maxFee, routeParams = routeParams.copy(randomize = false), allowMultiPart = true, paymentContext = Some(cfg.paymentContext)))
     assert(payFsm.stateName == WAIT_FOR_ROUTES)
 
-    val singleRoute = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, None)
+    val singleRoute = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, eRecipient)
     router.send(payFsm, RouteResponse(Seq(singleRoute)))
     val childPayment = childPayFsm.expectMsgType[SendPaymentToRoute]
     assert(childPayment.route == Right(singleRoute))
     assert(childPayment.targetExpiry == expiry)
-    assert(childPayment.paymentSecret == payment.paymentSecret)
+    assert(payment.recipients.contains(childPayment.targetRecipient))
     assert(childPayment.amount == finalAmount)
     assert(childPayment.totalAmount == finalAmount)
     assert(payFsm.stateName == PAYMENT_IN_PROGRESS)
@@ -113,22 +112,23 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     assert(payFsm.stateName == WAIT_FOR_PAYMENT_REQUEST)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, 1200000 msat, expiry, 1, Some(hex"012345"), routeParams = routeParams.copy(randomize = false))
+    val recipient = eRecipient.copy(paymentMetadata_opt = Some(hex"012345"))
+    val payment = SendMultiPartPayment(sender.ref, Seq(recipient), 1200000 msat, expiry, 1, routeParams = routeParams.copy(randomize = false))
     sender.send(payFsm, payment)
 
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, 1200000 msat, maxFee, routeParams = routeParams.copy(randomize = false), allowMultiPart = true, paymentContext = Some(cfg.paymentContext)))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, Seq(recipient), 1200000 msat, maxFee, routeParams = routeParams.copy(randomize = false), allowMultiPart = true, paymentContext = Some(cfg.paymentContext)))
     assert(payFsm.stateName == WAIT_FOR_ROUTES)
 
     val routes = Seq(
-      Route(500000 msat, hop_ab_1 :: hop_be :: Nil, None),
-      Route(700000 msat, hop_ac_1 :: hop_ce :: Nil, None),
+      Route(500000 msat, hop_ab_1 :: hop_be :: Nil, recipient),
+      Route(700000 msat, hop_ac_1 :: hop_ce :: Nil, recipient),
     )
     router.send(payFsm, RouteResponse(routes))
     val childPayments = childPayFsm.expectMsgType[SendPaymentToRoute] :: childPayFsm.expectMsgType[SendPaymentToRoute] :: Nil
     assert(childPayments.map(_.route).toSet == routes.map(r => Right(r)).toSet)
     assert(childPayments.map(_.targetExpiry).toSet == Set(expiry))
-    assert(childPayments.map(_.paymentSecret).toSet == Set(payment.paymentSecret))
-    assert(childPayments.map(_.paymentMetadata).toSet == Set(Some(hex"012345")))
+    assert(childPayments.map(_.targetRecipient.asInstanceOf[ClearRecipient].paymentSecret).toSet == Set(recipient.paymentSecret))
+    assert(childPayments.map(_.targetRecipient.asInstanceOf[ClearRecipient].paymentMetadata_opt).toSet == Set(Some(hex"012345")))
     assert(childPayments.map(_.amount).toSet == Set(500000 msat, 700000 msat))
     assert(childPayments.map(_.totalAmount).toSet == Set(1200000 msat))
     assert(payFsm.stateName == PAYMENT_IN_PROGRESS)
@@ -152,14 +152,15 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     // We include a bunch of additional tlv records.
     val trampolineTlv = OnionPaymentPayloadTlv.TrampolineOnion(OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(400)(0), randomBytes32()))
     val userCustomTlv = GenericTlv(UInt64(561), hex"deadbeef")
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount + 1000.msat, expiry, 1, None, routeParams = routeParams, additionalTlvs = Seq(trampolineTlv), userCustomTlvs = Seq(userCustomTlv))
+    val recipient = eRecipient.copy(additionalTlvs = Seq(trampolineTlv), userCustomTlvs = Seq(userCustomTlv))
+    val payment = SendMultiPartPayment(sender.ref, Seq(recipient), finalAmount + 1000.msat, expiry, 1, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(501000 msat, hop_ac_1 :: hop_ce :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil, recipient), Route(501000 msat, hop_ac_1 :: hop_ce :: Nil, recipient))))
     val childPayments = childPayFsm.expectMsgType[SendPaymentToRoute] :: childPayFsm.expectMsgType[SendPaymentToRoute] :: Nil
     childPayments.foreach(p => {
-      assert(p.additionalTlvs.contains(trampolineTlv))
-      assert(p.userCustomTlvs == Seq(userCustomTlv))
+      assert(p.targetRecipient.additionalTlvs.contains(trampolineTlv))
+      assert(p.targetRecipient.userCustomTlvs == Seq(userCustomTlv))
     })
 
     val result = fulfillPendingPayments(f, 2)
@@ -176,10 +177,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("successful retry") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 3, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    val failingRoute = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, None)
+    val failingRoute = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, eRecipient)
     router.send(payFsm, RouteResponse(Seq(failingRoute)))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectNoMessage(100 millis)
@@ -187,8 +188,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(failingRoute.amount, failingRoute.clearHops, Sphinx.DecryptedFailurePacket(b, PermanentChannelFailure)))))
     // We retry ignoring the failing channel.
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, routeParams = routeParams.copy(randomize = true), allowMultiPart = true, ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_be, b, e))), paymentContext = Some(cfg.paymentContext)))
-    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ac_1 :: hop_ce :: Nil, None), Route(600000 msat, hop_ad :: hop_de :: Nil, None))))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, Seq(eRecipient), finalAmount, maxFee, routeParams = routeParams.copy(randomize = true), allowMultiPart = true, ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_be, b, e))), paymentContext = Some(cfg.paymentContext)))
+    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ac_1 :: hop_ce :: Nil, eRecipient), Route(600000 msat, hop_ad :: hop_de :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
     assert(!payFsm.stateData.asInstanceOf[PaymentProgress].pending.contains(childId))
@@ -209,10 +210,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("retry failures while waiting for routes") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 3, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(600000 msat, hop_ab_2 :: hop_be :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, eRecipient), Route(600000 msat, hop_ab_2 :: hop_be :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectNoMessage(100 millis)
@@ -221,18 +222,18 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.send(payFsm, PaymentFailed(failedId1, paymentHash, Seq(RemoteFailure(failedRoute1.amount, failedRoute1.clearHops, Sphinx.DecryptedFailurePacket(b, TemporaryNodeFailure)))))
 
     // When we retry, we ignore the failing node and we let the router know about the remaining pending route.
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, failedRoute1.amount, maxFee - failedRoute1.fee(false), ignore = Ignore(Set(b), Set.empty), pendingPayments = Seq(failedRoute2), allowMultiPart = true, routeParams = routeParams.copy(randomize = true), paymentContext = Some(cfg.paymentContext)))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, Seq(eRecipient), failedRoute1.amount, maxFee - failedRoute1.fee(false), ignore = Ignore(Set(b), Set.empty), pendingPayments = Seq(failedRoute2), allowMultiPart = true, routeParams = routeParams.copy(randomize = true), paymentContext = Some(cfg.paymentContext)))
     // The second part fails while we're still waiting for new routes.
     childPayFsm.send(payFsm, PaymentFailed(failedId2, paymentHash, Seq(RemoteFailure(failedRoute2.amount, failedRoute2.clearHops, Sphinx.DecryptedFailurePacket(b, TemporaryNodeFailure)))))
     // We receive a response to our first request, but it's now obsolete: we re-sent a new route request that takes into
     // account the latest failures.
-    router.send(payFsm, RouteResponse(Seq(Route(failedRoute1.amount, hop_ac_1 :: hop_ce :: Nil, None))))
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, ignore = Ignore(Set(b), Set.empty), allowMultiPart = true, routeParams = routeParams.copy(randomize = true), paymentContext = Some(cfg.paymentContext)))
+    router.send(payFsm, RouteResponse(Seq(Route(failedRoute1.amount, hop_ac_1 :: hop_ce :: Nil, eRecipient))))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, Seq(eRecipient), finalAmount, maxFee, ignore = Ignore(Set(b), Set.empty), allowMultiPart = true, routeParams = routeParams.copy(randomize = true), paymentContext = Some(cfg.paymentContext)))
     awaitCond(payFsm.stateData.asInstanceOf[PaymentProgress].pending.isEmpty)
     childPayFsm.expectNoMessage(100 millis)
 
     // We receive new routes that work.
-    router.send(payFsm, RouteResponse(Seq(Route(300000 msat, hop_ac_1 :: hop_ce :: Nil, None), Route(700000 msat, hop_ad :: hop_de :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(300000 msat, hop_ac_1 :: hop_ce :: Nil, eRecipient), Route(700000 msat, hop_ad :: hop_de :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
@@ -251,10 +252,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("retry local channel failures") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 3, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(finalAmount, hop_ab_1 :: hop_be :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(finalAmount, hop_ab_1 :: hop_be :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectNoMessage(100 millis)
 
@@ -263,7 +264,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // We retry without the failing channel.
     val expectedRouteRequest = RouteRequest(
-      nodeParams.nodeId, e,
+      nodeParams.nodeId, Seq(eRecipient),
       failedRoute.amount, maxFee,
       ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab_1, a, b))),
       pendingPayments = Nil,
@@ -276,10 +277,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("retry without ignoring channels") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 3, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(500000 msat, hop_ab_1 :: hop_be :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil, eRecipient), Route(500000 msat, hop_ab_1 :: hop_be :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectNoMessage(100 millis)
@@ -290,7 +291,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     // If the router doesn't find routes, we will retry without ignoring the channel: it may work with a different split
     // of the amount to send.
     val expectedRouteRequest = RouteRequest(
-      nodeParams.nodeId, e,
+      nodeParams.nodeId, Seq(eRecipient),
       failedRoute.amount, maxFee - failedRoute.fee(false),
       ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab_1, a, b))),
       pendingPayments = Seq(pendingRoute),
@@ -301,7 +302,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     router.send(payFsm, Status.Failure(RouteNotFound))
     router.expectMsg(expectedRouteRequest.copy(ignore = Ignore.empty))
 
-    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ac_1 :: hop_ce :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ac_1 :: hop_ce :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val result = fulfillPendingPayments(f, 2)
@@ -320,10 +321,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The B -> E channel is private and provided in the invoice routing hints.
     val extraEdge = Invoice.BasicEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(extraEdge))
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 3, routeParams = routeParams, extraEdges = List(extraEdge))
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].extraEdges.head == extraEdge)
-    val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, None)
+    val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, eRecipient)
     router.send(payFsm, RouteResponse(Seq(route)))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectNoMessage(100 millis)
@@ -342,10 +343,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The B -> E channel is private and provided in the invoice routing hints.
     val extraEdge = Invoice.BasicEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, None, routeParams = routeParams, extraEdges = List(extraEdge))
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 3, routeParams = routeParams, extraEdges = List(extraEdge))
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].extraEdges.head == extraEdge)
-    val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, None)
+    val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil, eRecipient)
     router.send(payFsm, RouteResponse(Seq(route)))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectNoMessage(100 millis)
@@ -402,17 +403,17 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("abort after too many failed attempts") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 2, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 2, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(500000 msat, hop_ac_1 :: hop_ce :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil, eRecipient), Route(500000 msat, hop_ac_1 :: hop_ce :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val (failedId1, failedRoute1) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
     childPayFsm.send(payFsm, PaymentFailed(failedId1, paymentHash, Seq(UnreadableRemoteFailure(failedRoute1.amount, failedRoute1.clearHops))))
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ad :: hop_de :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ad :: hop_de :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     assert(!payFsm.stateData.asInstanceOf[PaymentProgress].pending.contains(failedId1))
@@ -433,7 +434,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     sender.watch(payFsm)
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 5, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 5, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
     router.send(payFsm, Status.Failure(RouteNotFound))
@@ -463,10 +464,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("abort if recipient sends error") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 5, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 5, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(finalAmount, hop_ab_1 :: hop_be :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(finalAmount, hop_ab_1 :: hop_be :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val (failedId, failedRoute) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
@@ -484,10 +485,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("abort if payment gets settled on chain") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 5, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 5, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(finalAmount, hop_ab_1 :: hop_be :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(finalAmount, hop_ab_1 :: hop_be :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val (failedId, failedRoute) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
@@ -498,10 +499,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("abort if recipient sends error during retry") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 5, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 5, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(600000 msat, hop_ac_1 :: hop_ce :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, eRecipient), Route(600000 msat, hop_ac_1 :: hop_ce :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
@@ -516,10 +517,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("receive partial success after retriable failure (recipient spec violation)") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 5, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 5, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(600000 msat, hop_ac_1 :: hop_ce :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, eRecipient), Route(600000 msat, hop_ac_1 :: hop_ce :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
@@ -536,10 +537,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("receive partial success after abort (recipient spec violation)") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 5, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 5, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(600000 msat, hop_ac_1 :: hop_ce :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, eRecipient), Route(600000 msat, hop_ac_1 :: hop_ce :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
@@ -569,10 +570,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   test("receive partial failure after success (recipient spec violation)") { f =>
     import f._
 
-    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 5, None, routeParams = routeParams)
+    val payment = SendMultiPartPayment(sender.ref, Seq(eRecipient), finalAmount, expiry, 5, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
-    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, None), Route(600000 msat, hop_ac_1 :: hop_ce :: Nil, None))))
+    router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ab_1 :: hop_be :: Nil, eRecipient), Route(600000 msat, hop_ac_1 :: hop_ce :: Nil, eRecipient))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
@@ -711,4 +712,6 @@ object MultiPartPaymentLifecycleSpec {
   val hop_ad = channelHopFromUpdate(a, d, channelUpdate_ad)
   val hop_de = channelHopFromUpdate(d, e, channelUpdate_de)
 
+
+  val eRecipient = ClearRecipient(e, randomBytes32(), None)
 }

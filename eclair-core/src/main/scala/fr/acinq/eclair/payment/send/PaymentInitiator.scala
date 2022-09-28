@@ -50,7 +50,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         sender() ! paymentId
       }
       val recipients = r.recipients.map(_.withCustomTlvs(r.userCustomTlvs))
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, recipients, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, recipients.flatMap(_.nodeIds), Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       if (!nodeParams.features.invoiceFeatures().areSupported(r.invoice.features)) {
         sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil)
@@ -68,7 +68,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentId = UUID.randomUUID()
       sender() ! paymentId
       val recipients = Seq(KeySendRecipient(r.recipientNodeId, r.paymentPreimage, r.userCustomTlvs))
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, recipients, Upstream.Local(paymentId), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics, Nil)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, recipients.flatMap(_.nodeIds), Upstream.Local(paymentId), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics, Nil)
       val finalExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1)
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
       fsm ! PaymentLifecycle.SendPaymentToNode(self, recipients, r.recipientAmount, r.recipientAmount, finalExpiry, r.maxAttempts, routeParams = r.routeParams)
@@ -97,7 +97,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentId = UUID.randomUUID()
       val parentPaymentId = r.parentId.getOrElse(UUID.randomUUID())
       val additionalHops = r.trampolineNodes.sliding(2).map(hop => NodeHop(hop.head, hop(1), CltvExpiryDelta(0), 0 msat)).toSeq
-      val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipients, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, additionalHops)
+      val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipients.flatMap(_.nodeIds), Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, additionalHops)
       r.trampolineNodes match {
         case trampoline :: recipient :: Nil =>
           log.info(s"sending trampoline payment to $recipient with trampoline=$trampoline, trampoline fees=${r.trampolineFees}, expiry delta=${r.trampolineExpiryDelta}")
@@ -107,7 +107,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
               val trampolineSecret = r.trampolineSecret.getOrElse(randomBytes32())
               sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
               val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-              payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), TrampolineRecipient(trampoline, trampolineOnion, r.invoice.paymentMetadata), r.amount, trampolineAmount, trampolineExpiry, r.invoice.extraEdges)
+              payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), TrampolineRecipient(trampoline, trampolineOnion, r.invoice.paymentMetadata, trampolineSecret), r.amount, trampolineAmount, trampolineExpiry, r.invoice.extraEdges)
               context become main(pending + (paymentId -> PendingTrampolinePaymentToRoute(sender(), r)))
             case Failure(t) =>
               log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
@@ -121,7 +121,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentId = UUID.randomUUID()
       val parentPaymentId = r.parentId.getOrElse(UUID.randomUUID())
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
-      val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipients, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, Nil)
+      val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipients.flatMap(_.nodeIds), Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, Nil)
       sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
       val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
       r.recipients.find(_.introductionNodeId == r.route.targetNodeId) match {
@@ -216,7 +216,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
   }
 
   private def sendTrampolinePayment(paymentId: UUID, r: SendTrampolinePayment, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): Try[Unit] = {
-    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.recipientAmount, r.recipients, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = false, recordPathFindingMetrics = true, Seq(NodeHop(r.trampolineNodeId, r.invoice.nodeId, trampolineExpiryDelta, trampolineFees)))
+    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.recipientAmount, r.recipients.flatMap(_.nodeIds), Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = false, recordPathFindingMetrics = true, Seq(NodeHop(r.trampolineNodeId, r.invoice.nodeId, trampolineExpiryDelta, trampolineFees)))
     buildTrampolinePayment(r, r.trampolineNodeId, trampolineFees, trampolineExpiryDelta).map {
       case (trampolineAmount, trampolineExpiry, trampolineOnion) =>
         val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
@@ -448,14 +448,14 @@ object PaymentInitiator {
                                externalId: Option[String],
                                paymentHash: ByteVector32,
                                recipientAmount: MilliSatoshi,
-                               recipients: Seq[Recipient],
+                               recipientNodeIds: Seq[PublicKey],
                                upstream: Upstream,
                                invoice: Option[Invoice],
                                storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments
                                publishEvent: Boolean,
                                recordPathFindingMetrics: Boolean,
                                additionalHops: Seq[NodeHop]) {
-    val recipientNodeId: PublicKey = recipients.head.nodeId
+    val recipientNodeId: PublicKey = recipientNodeIds.head
 
     def fullRoute(route: Route): Seq[Hop] = route.clearHops ++ additionalHops
 
@@ -463,7 +463,7 @@ object PaymentInitiator {
 
     def paymentContext: PaymentContext = PaymentContext(id, parentId, paymentHash)
 
-    def isRecipient(nodeId: PublicKey): Boolean = recipients.exists(_.contains(nodeId))
+    def isRecipient(nodeId: PublicKey): Boolean = recipientNodeIds.contains(nodeId)
   }
 
 }

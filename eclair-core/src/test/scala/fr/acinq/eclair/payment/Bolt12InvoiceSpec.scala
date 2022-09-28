@@ -340,7 +340,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(codedDecoded.features == features)
     assert(codedDecoded.issuer.contains(issuer))
     assert(codedDecoded.nodeId.value.drop(1) == nodeKey.publicKey.value.drop(1))
-    assert(codedDecoded.blindedPaymentRoutes == Seq(BlindedPaymentRoute(path, payInfo, None)))
+    assert(codedDecoded.recipients == Seq(BlindRecipient(path, payInfo, None)))
     assert(codedDecoded.quantity.contains(quantity))
     assert(codedDecoded.payerKey.contains(payerKey))
     assert(codedDecoded.payerNote.contains(payerNote))

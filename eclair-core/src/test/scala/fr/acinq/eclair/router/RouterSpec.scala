@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Graph.RoutingHeuristics
-import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, DEFAULT_ROUTE_PARAMS}
+import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, DEFAULT_ROUTE_PARAMS, makeRecipient, makeRecipients}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
@@ -330,7 +330,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(f), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -338,7 +338,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(randomKey().publicKey, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(randomKey().publicKey, makeRecipients(f), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -346,19 +346,19 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, randomKey().publicKey, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(randomKey().publicKey), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route found") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(d), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.clearHops.map(_.nodeId).toList == a :: b :: c :: Nil)
     assert(res.routes.head.clearHops.last.nextNodeId == d)
 
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(h), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res1 = sender.expectMsgType[RouteResponse]
     assert(res1.routes.head.clearHops.map(_.nodeId).toList == a :: g :: Nil)
     assert(res1.routes.head.clearHops.last.nextNodeId == h)
@@ -373,7 +373,7 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
-    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, extraEdges = Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z), routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(z), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, extraEdges = Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z), routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.clearHops.map(_.nodeId).toList == a :: b :: c :: x :: y :: Nil)
     assert(res.routes.head.clearHops.last.nextNodeId == z)
@@ -383,7 +383,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     val peerConnection = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(d), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.clearHops.map(_.nodeId).toList == a :: b :: c :: Nil)
     assert(res.routes.head.clearHops.last.nextNodeId == d)
@@ -391,21 +391,21 @@ class RouterSpec extends BaseRouterSpec {
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, scid_cd, CltvExpiryDelta(3), 0 msat, 153000 msat, 4, htlcMaximum, enable = false)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cd1))
     peerConnection.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(d), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route not found (private channel disabled)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(h), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.clearHops.map(_.nodeId).toList == a :: g :: Nil)
     assert(res.routes.head.clearHops.last.nextNodeId == h)
 
     val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, alias_ag_private, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
     sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, scids_ag_private, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(h), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -414,44 +414,44 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
 
     // Via private channels.
-    sender.send(router, RouteRequest(a, g, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(g), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
-    sender.send(router, RouteRequest(a, g, 50000000 msat, Long.MaxValue.msat, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(g), 50000000 msat, Long.MaxValue.msat, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(BalanceTooLow))
-    sender.send(router, RouteRequest(a, g, 50000000 msat, Long.MaxValue.msat, allowMultiPart = true, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(g), 50000000 msat, Long.MaxValue.msat, allowMultiPart = true, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(BalanceTooLow))
 
     // Via public channels.
-    sender.send(router, RouteRequest(a, b, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(b), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
     val commitments1 = CommitmentsSpec.makeCommitments(10000000 msat, 20000000 msat, a, b, announceChannel = true)
     sender.send(router, LocalChannelUpdate(sender.ref, null, scids_ab, b, Some(chan_ab), update_ab, commitments1))
-    sender.send(router, RouteRequest(a, b, 12000000 msat, Long.MaxValue.msat, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(b), 12000000 msat, Long.MaxValue.msat, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(BalanceTooLow))
-    sender.send(router, RouteRequest(a, b, 12000000 msat, Long.MaxValue.msat, allowMultiPart = true, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(b), 12000000 msat, Long.MaxValue.msat, allowMultiPart = true, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(BalanceTooLow))
-    sender.send(router, RouteRequest(a, b, 5000000 msat, Long.MaxValue.msat, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(b), 5000000 msat, Long.MaxValue.msat, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
-    sender.send(router, RouteRequest(a, b, 5000000 msat, Long.MaxValue.msat, allowMultiPart = true, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(b), 5000000 msat, Long.MaxValue.msat, allowMultiPart = true, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
   }
 
   test("temporary channel exclusion") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(d), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
     val bc = ChannelDesc(scid_bc, b, c)
     // let's exclude channel b->c
     sender.send(router, ExcludeChannel(bc, Some(1 hour)))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(d), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
     // note that cb is still available!
-    sender.send(router, RouteRequest(d, a, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(d, makeRecipients(a), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
     // let's remove the exclusion
     sender.send(router, LiftChannelExclusion(bc))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
+    sender.send(router, RouteRequest(a, makeRecipients(d), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
   }
 
@@ -471,7 +471,7 @@ class RouterSpec extends BaseRouterSpec {
 
     val sender = TestProbe()
     val preComputedRoute = PredefinedNodeRoute(Seq(a, b, c, d))
-    sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+    sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(d)))
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
@@ -485,7 +485,7 @@ class RouterSpec extends BaseRouterSpec {
 
     val sender = TestProbe()
     val preComputedRoute = PredefinedChannelRoute(d, Seq(scid_ab, scid_bc, scid_cd))
-    sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+    sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(d)))
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
@@ -501,7 +501,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // using the channel alias
       val preComputedRoute = PredefinedChannelRoute(g, Seq(alias_ag_private))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(g)))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
@@ -512,7 +512,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // using the real scid
       val preComputedRoute = PredefinedChannelRoute(g, Seq(scid_ag_private))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(g)))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
@@ -522,7 +522,7 @@ class RouterSpec extends BaseRouterSpec {
     }
     {
       val preComputedRoute = PredefinedChannelRoute(h, Seq(scid_ag_private, scid_gh))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(h)))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
@@ -543,7 +543,7 @@ class RouterSpec extends BaseRouterSpec {
       val amount = 10_000.msat
       // the amount affects the way we estimate the channel capacity of the hinted channel
       assert(amount < RoutingHeuristics.CAPACITY_CHANNEL_LOW)
-      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Seq(invoiceRoutingHint)))
+      sender.send(router, FinalizeRoute(amount, preComputedRoute, makeRecipient(targetNodeId), extraEdges = Seq(invoiceRoutingHint)))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
@@ -558,7 +558,7 @@ class RouterSpec extends BaseRouterSpec {
       val amount = RoutingHeuristics.CAPACITY_CHANNEL_LOW * 2
       // the amount affects the way we estimate the channel capacity of the hinted channel
       assert(amount > RoutingHeuristics.CAPACITY_CHANNEL_LOW)
-      sender.send(router, FinalizeRoute(amount, preComputedRoute, extraEdges = Seq(invoiceRoutingHint)))
+      sender.send(router, FinalizeRoute(amount, preComputedRoute, makeRecipient(targetNodeId), extraEdges = Seq(invoiceRoutingHint)))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length == 1)
       val route = response.routes.head
@@ -575,22 +575,22 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       val preComputedRoute = PredefinedChannelRoute(d, Seq(scid_ab, scid_cd))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(d)))
       sender.expectMsgType[Status.Failure]
     }
     {
       val preComputedRoute = PredefinedChannelRoute(d, Seq(scid_ab, scid_bc))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(d)))
       sender.expectMsgType[Status.Failure]
     }
     {
       val preComputedRoute = PredefinedChannelRoute(d, Seq(scid_bc, scid_cd))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(d)))
       sender.expectMsgType[Status.Failure]
     }
     {
       val preComputedRoute = PredefinedChannelRoute(d, Seq(scid_ab, ShortChannelId(1105), scid_cd))
-      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, makeRecipient(d)))
       sender.expectMsgType[Status.Failure]
     }
   }

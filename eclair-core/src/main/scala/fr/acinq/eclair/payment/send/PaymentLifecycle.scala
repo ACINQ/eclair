@@ -61,15 +61,15 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         route => self ! RouteResponse(route :: Nil)
       )
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipients.head.nodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
 
     case Event(c: SendPaymentToNode, WaitingForRequest) =>
       log.debug("sending {} to {}", c.amount, c.targetRecipients.head.nodeId)
-      router ! RouteRequest(nodeParams.nodeId, c.targetRecipients, c.amount, c.maxFee, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
+      router ! RouteRequest(nodeParams.nodeId, c.targetRecipients, c.amount, c.maxFee, c.extraEdges, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipients.head.nodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
   }
@@ -194,7 +194,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         res
       case res => res
     }) match {
-      case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if c.targetRecipients.exists(_.contains(nodeId)) =>
+      case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if c.targetRecipients.flatMap(_.nodeIds).contains(nodeId) =>
         // if destination node returns an error, we fail the payment immediately
         log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
         myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ RemoteFailure(d.c.amount, cfg.fullRoute(route), e))))

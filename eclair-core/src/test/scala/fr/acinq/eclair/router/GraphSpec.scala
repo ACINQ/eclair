@@ -257,7 +257,7 @@ class GraphSpec extends AnyFunSuite {
     val edgeDE = makeEdge(6L, d, e, 9 msat, 0, capacity = 200000 sat)
     val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
 
-    val path :: Nil = yenKshortestPaths(graph, a, e, 100000000 msat,
+    val path :: Nil = yenKshortestPaths(graph, a, Seq(e), 100000000 msat,
       Set.empty, Set.empty, Set.empty, 1,
       Right(HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20), useLogProbability = true)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
@@ -281,7 +281,7 @@ class GraphSpec extends AnyFunSuite {
     val edgeDE = makeEdge(6L, d, e, 1 msat, 0, capacity = 200000 sat)
     val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
 
-    val paths = yenKshortestPaths(graph, a, e, 90000000 msat,
+    val paths = yenKshortestPaths(graph, a, Seq(e), 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
       Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
@@ -307,7 +307,7 @@ class GraphSpec extends AnyFunSuite {
     val edgeDE = makeEdge(6L, d, e, 1 msat, 0, capacity = 200000 sat)
     val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
 
-    val paths = yenKshortestPaths(graph, a, e, 90000000 msat,
+    val paths = yenKshortestPaths(graph, a, Seq(e), 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
       Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
@@ -340,7 +340,7 @@ class GraphSpec extends AnyFunSuite {
     val edgeGH = makeEdge(9L, g, h, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
     val graph = DirectedGraph(Seq(edgeCD, edgeDF, edgeCE, edgeED, edgeEF, edgeFG, edgeFH, edgeEG, edgeGH))
 
-    val paths = yenKshortestPaths(graph, c, h, 10000000 msat,
+    val paths = yenKshortestPaths(graph, c, Seq(h), 10000000 msat,
       Set.empty, Set.empty, Set.empty, 3,
       Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
