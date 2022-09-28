@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvStream, tmillisatoshi}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
 import fr.acinq.eclair.{Alias, FeatureSupport, Features, MilliSatoshi, UInt64}
 import scodec.Codec
 import scodec.bits.ByteVector
@@ -40,19 +40,19 @@ object ChannelTlv {
     val isEmpty: Boolean = script.isEmpty
   }
 
-  val upfrontShutdownScriptCodec: Codec[UpfrontShutdownScriptTlv] = variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScriptTlv]
+  val upfrontShutdownScriptCodec: Codec[UpfrontShutdownScriptTlv] = tlvField(bytes.as[UpfrontShutdownScriptTlv])
 
   /** A channel type is a set of even feature bits that represent persistent features which affect channel operations. */
   case class ChannelTypeTlv(channelType: ChannelType) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
 
-  val channelTypeCodec: Codec[ChannelTypeTlv] = variableSizeBytesLong(varintoverflow, bytes).xmap(
+  val channelTypeCodec: Codec[ChannelTypeTlv] = tlvField(bytes.xmap(
     b => ChannelTypeTlv(ChannelTypes.fromFeatures(Features(b).initFeatures())),
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
-  )
+  ))
 
   case class PushAmountTlv(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
 
-  val pushAmountCodec: Codec[PushAmountTlv] = variableSizeBytesLong(varintoverflow, tmillisatoshi).as[PushAmountTlv]
+  val pushAmountCodec: Codec[PushAmountTlv] = tlvField(tmillisatoshi.as[PushAmountTlv])
 
 }
 

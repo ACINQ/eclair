@@ -21,6 +21,7 @@ import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvField
 import scodec.bits.ByteVector
 
 /** Tlv types used inside the onion of an [[OnionMessage]]. */
@@ -127,16 +128,16 @@ object MessageOnionCodecs {
 
   val blindedRouteCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | list(replyHopCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
 
-  private val replyPathCodec: Codec[ReplyPath] = variableSizeBytesLong(varintoverflow, blindedRouteCodec).as[ReplyPath]
+  private val replyPathCodec: Codec[ReplyPath] = tlvField(blindedRouteCodec.as[ReplyPath])
 
-  private val encryptedDataCodec: Codec[EncryptedData] = variableSizeBytesLong(varintoverflow, bytes).as[EncryptedData]
+  private val encryptedDataCodec: Codec[EncryptedData] = tlvField(bytes.as[EncryptedData])
 
   private val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
     .typecase(UInt64(2), replyPathCodec)
     .typecase(UInt64(4), encryptedDataCodec)
-    .typecase(UInt64(64), variableSizeBytesLong(varintoverflow, OfferCodecs.invoiceRequestTlvCodec.as[InvoiceRequest]))
-    .typecase(UInt64(66), variableSizeBytesLong(varintoverflow, OfferCodecs.invoiceTlvCodec.as[Invoice]))
-    .typecase(UInt64(68), variableSizeBytesLong(varintoverflow, OfferCodecs.invoiceErrorTlvCodec.as[InvoiceError]))
+    .typecase(UInt64(64), tlvField(OfferCodecs.invoiceRequestTlvCodec.as[InvoiceRequest]))
+    .typecase(UInt64(66), tlvField(OfferCodecs.invoiceTlvCodec.as[Invoice]))
+    .typecase(UInt64(68), tlvField(OfferCodecs.invoiceErrorTlvCodec.as[InvoiceError]))
 
   val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 

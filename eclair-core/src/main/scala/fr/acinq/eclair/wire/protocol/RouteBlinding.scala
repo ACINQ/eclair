@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.featuresCodec
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
-import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tmillisatoshi32}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{fixedLengthTlvField, tlvField, tmillisatoshi, tmillisatoshi32}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -108,24 +108,18 @@ object BlindedRouteData {
 object RouteBlindingEncryptedDataCodecs {
 
   import RouteBlindingEncryptedDataTlv._
-  import fr.acinq.eclair.wire.protocol.CommonCodecs.{publicKey, shortchannelid, varint, varintoverflow}
-  import scodec.bits.HexStringSyntax
+  import fr.acinq.eclair.wire.protocol.CommonCodecs.{publicKey, shortchannelid, varint}
   import scodec.codecs._
   import scodec.{Attempt, Codec, DecodeResult}
 
-  private val padding: Codec[Padding] = variableSizeBytesLong(varintoverflow, "padding" | bytes).as[Padding]
-  private val outgoingChannelId: Codec[OutgoingChannelId] = variableSizeBytesLong(varintoverflow, "short_channel_id" | shortchannelid).as[OutgoingChannelId]
-  private val outgoingNodeId: Codec[OutgoingNodeId] = (("length" | constant(hex"21")) :: ("node_id" | publicKey)).as[OutgoingNodeId]
-  private val pathId: Codec[PathId] = variableSizeBytesLong(varintoverflow, "path_id" | bytes).as[PathId]
-  private val nextBlinding: Codec[NextBlinding] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[NextBlinding]
-  private val paymentRelay: Codec[PaymentRelay] = variableSizeBytesLong(varintoverflow,
-    ("cltv_expiry_delta" | cltvExpiryDelta) ::
-      ("fee_proportional_millionths" | uint32) ::
-      ("fee_base_msat" | tmillisatoshi32)).as[PaymentRelay]
-  private val paymentConstraints: Codec[PaymentConstraints] = variableSizeBytesLong(varintoverflow,
-    ("max_cltv_expiry" | cltvExpiry) ::
-      ("htlc_minimum_msat" | tmillisatoshi)).as[PaymentConstraints]
-  private val allowedFeatures: Codec[AllowedFeatures] = variableSizeBytesLong(varintoverflow, featuresCodec).as[AllowedFeatures]
+  private val padding: Codec[Padding] = tlvField(bytes.as[Padding])
+  private val outgoingChannelId: Codec[OutgoingChannelId] = tlvField(shortchannelid.as[OutgoingChannelId])
+  private val outgoingNodeId: Codec[OutgoingNodeId] = fixedLengthTlvField(33, publicKey.as[OutgoingNodeId])
+  private val pathId: Codec[PathId] = tlvField(bytes.as[PathId])
+  private val nextBlinding: Codec[NextBlinding] = fixedLengthTlvField(33, publicKey.as[NextBlinding])
+  private val paymentRelay: Codec[PaymentRelay] = tlvField((("cltv_expiry_delta" | cltvExpiryDelta) :: ("fee_proportional_millionths" | uint32) :: ("fee_base_msat" | tmillisatoshi32)).as[PaymentRelay])
+  private val paymentConstraints: Codec[PaymentConstraints] = tlvField((("max_cltv_expiry" | cltvExpiry) :: ("htlc_minimum_msat" | tmillisatoshi)).as[PaymentConstraints])
+  private val allowedFeatures: Codec[AllowedFeatures] = tlvField(featuresCodec.as[AllowedFeatures])
 
   private val encryptedDataTlvCodec = discriminated[RouteBlindingEncryptedDataTlv].by(varint)
     .typecase(UInt64(1), padding)

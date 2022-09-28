@@ -431,7 +431,6 @@ object PaymentOnion {
 object PaymentOnionCodecs {
 
   import OnionPaymentPayloadTlv._
-  import scodec.bits.HexStringSyntax
   import scodec.codecs._
   import scodec.{Codec, DecodeResult, Decoder}
 
@@ -449,31 +448,31 @@ object PaymentOnionCodecs {
   val payloadLengthDecoder = Decoder[Long]((bits: BitVector) =>
     varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
 
-  private val amountToForward: Codec[AmountToForward] = ("amount_msat" | ltmillisatoshi).as[AmountToForward]
+  private val amountToForward: Codec[AmountToForward] = tlvField(tmillisatoshi.as[AmountToForward])
 
-  private val outgoingCltv: Codec[OutgoingCltv] = ("cltv" | ltu32).xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong)
+  private val outgoingCltv: Codec[OutgoingCltv] = tlvField(tu32.xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong))
 
-  private val outgoingChannelId: Codec[OutgoingChannelId] = variableSizeBytesLong(varintoverflow, "short_channel_id" | shortchannelid).as[OutgoingChannelId]
+  private val outgoingChannelId: Codec[OutgoingChannelId] = tlvField(shortchannelid.as[OutgoingChannelId])
 
-  private val paymentData: Codec[PaymentData] = variableSizeBytesLong(varintoverflow, ("payment_secret" | bytes32) :: ("total_msat" | tmillisatoshi)).as[PaymentData]
+  private val paymentData: Codec[PaymentData] = tlvField((("payment_secret" | bytes32) :: ("total_msat" | tmillisatoshi)).as[PaymentData])
 
-  private val encryptedRecipientData: Codec[EncryptedRecipientData] = variableSizeBytesLong(varintoverflow, "encrypted_data" | bytes).as[EncryptedRecipientData]
+  private val encryptedRecipientData: Codec[EncryptedRecipientData] = tlvField(bytes.as[EncryptedRecipientData])
 
-  private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
+  private val blindingPoint: Codec[BlindingPoint] = fixedLengthTlvField(33, publicKey.as[BlindingPoint])
 
-  private val outgoingNodeId: Codec[OutgoingNodeId] = (("length" | constant(hex"21")) :: ("node_id" | publicKey)).as[OutgoingNodeId]
+  private val outgoingNodeId: Codec[OutgoingNodeId] = fixedLengthTlvField(33, publicKey.as[OutgoingNodeId])
 
-  private val paymentMetadata: Codec[PaymentMetadata] = variableSizeBytesLong(varintoverflow, "payment_metadata" | bytes).as[PaymentMetadata]
+  private val paymentMetadata: Codec[PaymentMetadata] = tlvField(bytes.as[PaymentMetadata])
 
-  private val totalAmount: Codec[TotalAmount] = ("total_amount_msat" | ltmillisatoshi).as[TotalAmount]
+  private val totalAmount: Codec[TotalAmount] = tlvField(tmillisatoshi.as[TotalAmount])
 
-  private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
+  private val invoiceFeatures: Codec[InvoiceFeatures] = tlvField(bytes.as[InvoiceFeatures])
 
-  private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = variableSizeBytesLong(varintoverflow, list(listOfN(uint8, Bolt11Invoice.Codecs.extraHopCodec))).as[InvoiceRoutingInfo]
+  private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = tlvField(list(listOfN(uint8, Bolt11Invoice.Codecs.extraHopCodec)).as[InvoiceRoutingInfo])
 
-  private val trampolineOnion: Codec[TrampolineOnion] = variableSizeBytesLong(varintoverflow, trampolineOnionPacketCodec).as[TrampolineOnion]
+  private val trampolineOnion: Codec[TrampolineOnion] = tlvField(trampolineOnionPacketCodec.as[TrampolineOnion])
 
-  private val keySend: Codec[KeySend] = variableSizeBytesLong(varintoverflow, bytes32).as[KeySend]
+  private val keySend: Codec[KeySend] = tlvField(bytes32.as[KeySend])
 
   private val onionTlvCodec = discriminated[OnionPaymentPayloadTlv].by(varint)
     .typecase(UInt64(2), amountToForward)
