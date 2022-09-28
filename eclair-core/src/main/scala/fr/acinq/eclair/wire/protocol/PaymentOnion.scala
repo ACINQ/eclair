@@ -485,7 +485,7 @@ object PaymentOnionCodecs {
 
   private val keySend: Codec[KeySend] = variableSizeBytesLong(varintoverflow, bytes32).as[KeySend]
 
-  private val asyncPayment: Codec[AsyncPayment] = provide(AsyncPayment())
+  private val asyncPayment: Codec[AsyncPayment] = variableSizeBytesLong(varintoverflow, provide(AsyncPayment())).as[AsyncPayment]
 
   private val onionTlvCodec = discriminated[OnionPaymentPayloadTlv].by(varint)
     .typecase(UInt64(2), amountToForward)
