@@ -22,6 +22,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelFlagsCodec, channelUpdateCodec, meteredLightningMessageCodec}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, UInt64}
+import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
@@ -139,19 +140,27 @@ object FailureMessageCodecs {
     }, (_: FailureMessage).code)
   )
 
+  private def failureOnionPayload(payloadAndPadLength: Int): Codec[FailureMessage] = Codec(
+    // We create payloads of the requested size: by always using the same size we ensure error messages are indistinguishable.
+    encoder = f => variableSizeBytes(uint16, failureMessageCodec).encode(f).flatMap(bits => {
+      val payloadLength = bits.bytes.length - 2
+      val padLen = payloadAndPadLength - payloadLength
+      variableSizeBytes(uint16, bytes).encode(ByteVector.fill(padLen)(0)).map(pad => bits ++ pad)
+    }),
+    // We accept payloads of any size in case more space is needed for future failure messages.
+    decoder = bits => (
+      ("failure" | variableSizeBytes(uint16, failureMessageCodec))
+        :: ("padding" | variableSizeBytes(uint16, bytes))
+      ).map(_.head).decode(bits)
+  )
+
   /**
    * An onion-encrypted failure from an intermediate node:
-   * {{{
    * +----------------+----------------------------------+-----------------+----------------------+-----+
    * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
    * +----------------+----------------------------------+-----------------+----------------------+-----+
-   * }}}
-   * with failure message length + pad length = 256
+   * Bolt 4: SHOULD set pad such that the failure_len plus pad_len is equal to 256
    */
-  def failureOnionCodec(mac: Mac32): Codec[FailureMessage] = CommonCodecs.prependmac(
-    paddedFixedSizeBytesDependent(
-      260,
-      "failureMessage" | variableSizeBytes(uint16, FailureMessageCodecs.failureMessageCodec),
-      nBits => "padding" | variableSizeBytes(uint16, ignore(nBits - 2 * 8)) // two bytes are used to encode the padding length
-    ).as[FailureMessage], mac)
+  def failureOnionCodec(mac: Mac32, payloadAndPadLength: Int = 256): Codec[FailureMessage] = CommonCodecs.prependmac(failureOnionPayload(payloadAndPadLength).complete, mac)
+
 }

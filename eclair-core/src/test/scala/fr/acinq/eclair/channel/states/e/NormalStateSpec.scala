@@ -1925,16 +1925,16 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectMsgType[WatchTxConfirmed]
   }
 
-  test("recv UpdateFailHtlc (invalid onion error length)") { f =>
+  test("recv UpdateFailHtlc (onion error bigger than recommended value)") { f =>
     import f._
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     // Bob receives a failure with a completely invalid onion error (missing mac)
-    bob ! CMD_FAIL_HTLC(htlc.id, Left(ByteVector.fill(260)(42)))
+    bob ! CMD_FAIL_HTLC(htlc.id, Left(ByteVector.fill(561)(42)))
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     assert(fail.id == htlc.id)
-    // We should rectify the packet length before forwarding upstream.
-    assert(fail.reason.length == Sphinx.FailurePacket.PacketLength)
+    // We propagate failure upstream (hopefully the sender knows how to unwrap them).
+    assert(fail.reason.length == 561)
   }
 
   private def testCmdUpdateFee(f: FixtureParam): Unit = {
