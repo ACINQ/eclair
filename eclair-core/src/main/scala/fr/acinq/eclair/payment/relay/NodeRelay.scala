@@ -232,6 +232,8 @@ class NodeRelay private(nodeParams: NodeParams,
         context.log.warn(s"rejecting async payment at block $blockHeight; was not triggered after waiting ${nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks} blocks")
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
         stopping()
+      case WrappedCurrentBlockHeight(blockHeight) =>
+        Behaviors.same
       case CancelAsyncPayment =>
         context.log.warn(s"payment sender canceled a waiting async payment")
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
