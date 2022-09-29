@@ -401,7 +401,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
     mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a complete upstream payment
 
-    // publish block height one block before the cancel-safety-before-timeout-block interval before the current incoming payment expiry
+    // publish block height at the cancel-safety-before-timeout-block threshold before the current incoming payment expiry
     assert(asyncTimeoutHeight(nodeParams) > asyncSafetyHeight(incomingAsyncPayment, nodeParams))
     system.eventStream ! EventStream.Publish(CurrentBlockHeight(asyncSafetyHeight(incomingAsyncPayment, nodeParams)))
 
