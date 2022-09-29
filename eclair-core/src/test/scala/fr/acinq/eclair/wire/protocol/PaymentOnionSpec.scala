@@ -343,4 +343,13 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode empty AsyncPayment TLV") {
+    val tlvs = TlvStream[OnionPaymentPayloadTlv](AsyncPayment())
+    val bin = hex"06 fe0acecbae00"
+
+    val encoded = perHopPayloadCodec.encode(tlvs).require.bytes
+    assert(encoded == bin)
+    assert(perHopPayloadCodec.decode(bin.bits).require.value == tlvs)
+  }
+
 }

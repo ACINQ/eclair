@@ -281,6 +281,12 @@ object Features {
     val mandatory = 148
   }
 
+  // TODO: @remyers update feature bits once spec-ed (currently reserved here: https://github.com/lightning/bolts/pull/989)
+  case object AsyncPaymentPrototype extends Feature with InitFeature with InvoiceFeature {
+    val rfcName = "async_payment_prototype"
+    val mandatory = 152
+  }
+
   val knownFeatures: Set[Feature] = Set(
     DataLossProtect,
     InitialRoutingSync,
@@ -303,7 +309,8 @@ object Features {
     PaymentMetadata,
     ZeroConf,
     KeySend,
-    TrampolinePaymentPrototype
+    TrampolinePaymentPrototype,
+    AsyncPaymentPrototype
   )
 
   // Features may depend on other features, as specified in Bolt 9.
@@ -315,7 +322,8 @@ object Features {
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
     RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
-    KeySend -> (VariableLengthOnion :: Nil)
+    KeySend -> (VariableLengthOnion :: Nil),
+    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)

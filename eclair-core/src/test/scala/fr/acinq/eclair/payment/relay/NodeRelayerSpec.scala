@@ -22,13 +22,16 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.adapter._
+import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret, VariableLengthOnion}
+import fr.acinq.eclair.Features.{AsyncPaymentPrototype, BasicMultiPartPayment, PaymentSecret, VariableLengthOnion}
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.IncomingPaymentPacket.NodeRelayPacket
 import fr.acinq.eclair.payment.Invoice.BasicEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
@@ -40,9 +43,9 @@ import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
-import org.scalatest.Outcome
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
 
 import java.util.UUID
@@ -82,7 +85,10 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   }
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val nodeParams = TestConstants.Bob.nodeParams.copy(multiPartPaymentExpiry = 5 seconds)
+    val nodeParams = TestConstants.Bob.nodeParams
+      .modify(_.multiPartPaymentExpiry).setTo(5 seconds)
+      .modify(_.features).setToIf(test.tags.contains("async_payments"))(Features(AsyncPaymentPrototype -> Optional))
+      .modify(_.relayParams.asyncPaymentsParams.holdTimeoutBlocks).setToIf(test.tags.contains("long_hold_timeout"))(200000) // timeout after payment expires
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
     val eventListener = TestProbe[PaymentEvent]("event-listener")
@@ -289,7 +295,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     val expiryIn = CltvExpiry(500000)
-    val expiryOut = CltvExpiry(300000) // not ok (chain heigh = 400000)
+    val expiryOut = CltvExpiry(300000) // not ok (chain height = 400000)
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, expiryIn, 1000000 msat, expiryOut)
     val (nodeRelayer, _) = f.createNodeRelay(p)
     nodeRelayer ! NodeRelay.Relay(p)
@@ -320,6 +326,146 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TrampolineExpiryTooSoon), commit = true))
     }
 
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fail to relay when not triggered before the hold timeout", Tag("async_payments")) { f =>
+    import f._
+
+    val (nodeRelayer, _) = createNodeRelay(incomingAsyncPayment.head)
+    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
+
+    // wait until the NodeRelay is waiting for the trigger
+    eventListener.expectMessageType[WaitingToRelayPayment]
+    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a trigger
+
+    // publish a block height at the timeout height
+    assert(asyncTimeoutHeight(nodeParams) < asyncSafetyHeight(incomingAsyncPayment, nodeParams))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(asyncTimeoutHeight(nodeParams)))
+
+    incomingAsyncPayment.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))
+    }
+    register.expectNoMessage(100 millis)
+  }
+
+  test("relay the payment when triggered while waiting", Tag("async_payments"), Tag("long_hold_timeout")) { f =>
+    import f._
+
+    val (nodeRelayer, parent) = createNodeRelay(incomingAsyncPayment.head)
+    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
+
+    // wait until the NodeRelay is waiting for the trigger
+    eventListener.expectMessageType[WaitingToRelayPayment]
+    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a trigger
+
+    // publish a block height one block before the safety interval before the current incoming payment expires (and before the timeout height)
+    assert(asyncTimeoutHeight(nodeParams) > asyncSafetyHeight(incomingAsyncPayment, nodeParams))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(asyncSafetyHeight(incomingAsyncPayment, nodeParams) - 1))
+
+    // send trigger to forward the payment
+    nodeRelayer ! NodeRelay.RelayAsyncPayment
+
+    // upstream payment relayed
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingAsyncPayment.map(_.add)))
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = outgoingPayment.replyTo
+
+    // A first downstream HTLC is fulfilled: we should immediately forward the fulfill upstream.
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
+    incomingAsyncPayment.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
+    }
+
+    // Once all the downstream payments have settled, we should emit the relayed event.
+    nodeRelayerAdapters ! createSuccessEvent()
+    val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
+    validateRelayEvent(relayEvent)
+    assert(relayEvent.incoming.toSet == incomingAsyncPayment.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)).toSet)
+    assert(relayEvent.outgoing.nonEmpty)
+    parent.expectMessageType[NodeRelayer.RelayComplete]
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fail to relay when not triggered before the incoming expiry safety timeout", Tag("async_payments"), Tag("long_hold_timeout")) { f =>
+    import f._
+
+    val (nodeRelayer, _) = createNodeRelay(incomingAsyncPayment.head)
+    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
+    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a complete upstream payment
+
+    // publish block height at the cancel-safety-before-timeout-block threshold before the current incoming payment expiry
+    assert(asyncTimeoutHeight(nodeParams) > asyncSafetyHeight(incomingAsyncPayment, nodeParams))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(asyncSafetyHeight(incomingAsyncPayment, nodeParams)))
+
+    incomingAsyncPayment.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))
+    }
+
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fail to relay payment when canceled by sender before timeout", Tag("async_payments")) { f =>
+    import f._
+
+    val (nodeRelayer, _) = createNodeRelay(incomingAsyncPayment.head)
+    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
+
+    // wait until the NodeRelay is waiting for the trigger
+    eventListener.expectMessageType[WaitingToRelayPayment]
+    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a trigger
+
+    // fail the payment if waiting when payment sender sends cancel message
+    nodeRelayer ! NodeRelay.CancelAsyncPayment
+
+    incomingAsyncPayment.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))
+    }
+    register.expectNoMessage(100 millis)
+  }
+
+  test("relay the payment immediately when the async payment feature is disabled") { f =>
+    import f._
+
+    assert(!nodeParams.features.hasFeature(AsyncPaymentPrototype))
+
+    val (nodeRelayer, parent) = createNodeRelay(incomingAsyncPayment.head)
+    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
+
+    // upstream payment relayed
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingAsyncPayment.map(_.add)))
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = outgoingPayment.replyTo
+
+    // A first downstream HTLC is fulfilled: we should immediately forward the fulfill upstream.
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
+    incomingAsyncPayment.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
+    }
+
+    // Once all the downstream payments have settled, we should emit the relayed event.
+    nodeRelayerAdapters ! createSuccessEvent()
+    val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
+    validateRelayEvent(relayEvent)
+    assert(relayEvent.incoming.toSet == incomingAsyncPayment.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)).toSet)
+    assert(relayEvent.outgoing.nonEmpty)
+    parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
   }
 
@@ -723,12 +869,19 @@ object NodeRelayerSpec {
 
   val incomingAmount = 5000000 msat
   val incomingSecret = randomBytes32()
-  val incomingMultiPart = Seq(
+  val incomingMultiPart: Seq[NodeRelayPacket] = Seq(
     createValidIncomingPacket(2000000 msat, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
     createValidIncomingPacket(2000000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry),
     createValidIncomingPacket(1000000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry)
   )
   val incomingSinglePart = createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry)
+  val incomingAsyncPayment: Seq[NodeRelayPacket] = incomingMultiPart.map(p => p.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(p.innerPayload.amountToForward, p.innerPayload.outgoingCltv, outgoingNodeId)))
+
+  def asyncTimeoutHeight(nodeParams: NodeParams): BlockHeight =
+    nodeParams.currentBlockHeight + nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks
+
+  def asyncSafetyHeight(paymentPackets: Seq[NodeRelayPacket], nodeParams: NodeParams): BlockHeight =
+    (paymentPackets.map(_.outerPayload.expiry).min - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
 
   def createSuccessEvent(): PaymentSent =
     PaymentSent(relayId, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32(), None)))

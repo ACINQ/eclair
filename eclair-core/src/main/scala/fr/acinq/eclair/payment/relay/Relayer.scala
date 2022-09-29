@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams}
+import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
@@ -126,10 +126,13 @@ object Relayer extends Logging {
     require(feeProportionalMillionths >= 0.0, "feeProportionalMillionths must be nonnegative")
   }
 
+  case class AsyncPaymentsParams(holdTimeoutBlocks: Int, cancelSafetyBeforeTimeout: CltvExpiryDelta)
+
   case class RelayParams(publicChannelFees: RelayFees,
                          privateChannelFees: RelayFees,
                          minTrampolineFees: RelayFees,
-                         enforcementDelay: FiniteDuration) {
+                         enforcementDelay: FiniteDuration,
+                         asyncPaymentsParams: AsyncPaymentsParams) {
     def defaultFees(announceChannel: Boolean): RelayFees = {
       if (announceChannel) {
         publicChannelFees

@@ -181,6 +181,9 @@ object OnionPaymentPayloadTlv {
 
   /** Pre-image included by the sender of a payment in case of a donation */
   case class KeySend(paymentPreimage: ByteVector32) extends OnionPaymentPayloadTlv
+
+  /** Only included for intermediate trampoline nodes that should wait before forwarding this payment */
+  case class AsyncPayment() extends OnionPaymentPayloadTlv
 }
 
 object PaymentOnion {
@@ -301,6 +304,8 @@ object PaymentOnion {
         val paymentMetadata = records.get[PaymentMetadata].map(_.data)
         val invoiceFeatures = records.get[InvoiceFeatures].map(_.features)
         val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
+        // The following fields are only included in the async payment case.
+        val isAsyncPayment: Boolean = records.get[AsyncPayment].isDefined
       }
 
       object Standard {
@@ -330,6 +335,11 @@ object PaymentOnion {
             Some(InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
           ).flatten
           Standard(TlvStream(tlvs))
+        }
+
+        /** Create a standard trampoline inner payload instructing the trampoline node to wait for a trigger before sending an async payment. */
+        def createNodeRelayForAsyncPayment(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): Standard = {
+          Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(nextNodeId), AsyncPayment()))
         }
       }
     }
@@ -475,6 +485,8 @@ object PaymentOnionCodecs {
 
   private val keySend: Codec[KeySend] = variableSizeBytesLong(varintoverflow, bytes32).as[KeySend]
 
+  private val asyncPayment: Codec[AsyncPayment] = variableSizeBytesLong(varintoverflow, provide(AsyncPayment())).as[AsyncPayment]
+
   private val onionTlvCodec = discriminated[OnionPaymentPayloadTlv].by(varint)
     .typecase(UInt64(2), amountToForward)
     .typecase(UInt64(4), outgoingCltv)
@@ -489,6 +501,7 @@ object PaymentOnionCodecs {
     .typecase(UInt64(66098), outgoingNodeId)
     .typecase(UInt64(66099), invoiceRoutingInfo)
     .typecase(UInt64(66100), trampolineOnion)
+    .typecase(UInt64(181324718L), asyncPayment)
     .typecase(UInt64(5482373484L), keySend)
 
   val perHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete
