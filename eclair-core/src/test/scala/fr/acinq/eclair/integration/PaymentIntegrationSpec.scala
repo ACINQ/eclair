@@ -681,17 +681,6 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }, max = 120 seconds, interval = 1 second)
   }
 
-  test("blinded payment") {
-    val sender = TestProbe()
-    val amount = 1000_000 msat
-    val offer = Offer(Some(amount), "test offer", nodes("A").nodeParams.nodeId, Features.empty, nodes("A").nodeParams.chainHash)
-    val payerKey = randomKey()
-    val invoiceRequest = InvoiceRequest(offer, amount, 1, Features.empty, payerKey, nodes("A").nodeParams.chainHash)
-    sender.send(nodes("A").paymentHandler, ReceiveOfferPayment(nodes("A").nodeParams.privateKey, offer, invoiceRequest))
-    val invoice = sender.expectMsgType[Invoice]
-
-  }
-
   /** Handy way to check what the channel balances are before adding new tests. */
   def debugChannelBalances(): Unit = {
     val sender = TestProbe()
