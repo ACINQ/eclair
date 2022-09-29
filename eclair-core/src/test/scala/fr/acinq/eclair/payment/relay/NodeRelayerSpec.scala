@@ -829,7 +829,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingCfg.paymentHash == paymentHash)
     assert(outgoingCfg.invoice.isEmpty)
     assert(outgoingCfg.recipientAmount == outgoingAmount)
-    assert(outgoingCfg.recipientNodeId == outgoingNodeId)
+    assert(outgoingCfg.recipientNodeIds.contains(outgoingNodeId))
     assert(outgoingCfg.upstream == upstream)
   }
 

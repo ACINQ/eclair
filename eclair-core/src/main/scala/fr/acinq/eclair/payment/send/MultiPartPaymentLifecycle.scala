@@ -19,7 +19,6 @@ package fr.acinq.eclair.payment.send
 import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
@@ -30,9 +29,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
-import scodec.bits.ByteVector
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -105,7 +102,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         if (cfg.storeInDb && d.pending.isEmpty && d.failures.isEmpty) {
           // In cases where we fail early (router error during the first attempt), the DB won't have an entry for that
           // payment, which may be confusing for users.
-          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending)
+          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeIds.head, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending)
           nodeParams.db.payments.addOutgoingPayment(dummyPayment)
           nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, paymentHash, failure :: Nil))
         }
@@ -264,7 +261,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
           }
           paymentSent.feesPaid + localFees
       }
-      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId, request.extraEdges))
+      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeIds.head, request.extraEdges))
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
@@ -287,7 +284,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       parentPaymentId_opt = Some(cfg.parentId),
       paymentId_opt = Some(id),
       paymentHash_opt = Some(paymentHash),
-      remoteNodeId_opt = Some(cfg.recipientNodeId),
+      remoteNodeId_opt = Some(cfg.recipientNodeIds.head),
       nodeAlias_opt = Some(nodeParams.alias))
   }
 
@@ -303,12 +300,12 @@ object MultiPartPaymentLifecycle {
    * Send a payment to a given node. The payment may be split into multiple child payments, for which a path-finding
    * algorithm will run to find suitable payment routes.
    *
-   * @param recipients      list of recipients to send the payment to.
-   * @param totalAmount     total amount to send to the target node.
-   * @param targetExpiry    expiry at the target node (CLTV for the target node's received HTLCs).
-   * @param maxAttempts     maximum number of retries.
-   * @param extraEdges      routing hints (usually from a Bolt 11 invoice).
-   * @param routeParams     parameters to fine-tune the routing algorithm.
+   * @param recipients   list of recipients to send the payment to.
+   * @param totalAmount  total amount to send to the target node.
+   * @param targetExpiry expiry at the target node (CLTV for the target node's received HTLCs).
+   * @param maxAttempts  maximum number of retries.
+   * @param extraEdges   routing hints (usually from a Bolt 11 invoice).
+   * @param routeParams  parameters to fine-tune the routing algorithm.
    */
   case class SendMultiPartPayment(replyTo: ActorRef,
                                   recipients: Seq[Recipient],

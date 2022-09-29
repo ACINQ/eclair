@@ -324,9 +324,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32], trampolineFees_opt: Option[MilliSatoshi], trampolineExpiryDelta_opt: Option[CltvExpiryDelta], trampolineNodes_opt: Seq[PublicKey])(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
     val recipientAmount = recipientAmount_opt.getOrElse(invoice.amount_opt.getOrElse(amount))
     val sendPayment =
-      if(trampolineNodes_opt.nonEmpty){
+      if (trampolineNodes_opt.nonEmpty) {
         SendTrampolinePaymentToRoute(amount, recipientAmount, invoice, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFees_opt.getOrElse(0 msat), trampolineExpiryDelta_opt.getOrElse(CltvExpiryDelta(0)), trampolineNodes_opt)
-      }else{
+      } else {
         SendPaymentToRoute(amount, recipientAmount, invoice, route, externalId_opt, parentId_opt)
       }
     if (invoice.isExpired()) {

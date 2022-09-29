@@ -380,7 +380,7 @@ object OutgoingPaymentPacket {
               IntermediatePayload.ChannelRelay.Blinded.validate(TlvStream(EncryptedRecipientData(ByteVector.empty)), encryptedDataTlvs, nextBlindingKey) match {
                 case Left(invalidTlv) => return Failure(RouteBlindingEncryptedDataCodecs.CannotDecodeData(invalidTlv.failureMessage.message))
                 case Right(payload) =>
-                  // We assume that fees were checked in the router.
+                  // We assume that fees and CLTV were checked in the router.
                   val amountWithFees = recipient.amountToSend(amount)
                   val remainingFee = amountWithFees - payload.amountToForward(amountWithFees)
                   val tailPaymentInfo = recipient.paymentInfo.copy(feeBase = remainingFee, feeProportionalMillionths = 0, cltvExpiryDelta = recipient.paymentInfo.cltvExpiryDelta - payload.cltvExpiryDelta)

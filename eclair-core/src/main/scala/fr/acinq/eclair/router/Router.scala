@@ -33,7 +33,7 @@ import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, Recipient}
+import fr.acinq.eclair.payment.{Bolt11Invoice, ClearRecipient, Invoice, Recipient}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
@@ -522,7 +522,7 @@ object Router {
   }
 
   case class RouteRequest(source: PublicKey,
-                          targets: Seq[payment.Recipient],
+                          targets: Seq[Recipient],
                           amount: MilliSatoshi,
                           maxFee: MilliSatoshi,
                           extraEdges: Seq[ExtraEdge] = Nil,
@@ -544,8 +544,8 @@ object Router {
   case class PaymentContext(id: UUID, parentId: UUID, paymentHash: ByteVector32)
 
   /* A route is composed of zero or more hops chosen by us, optionally followed by blinded hops chosen by someone else.
-   * There must be a next node to relay the payment to. If there are no clear hops, it must end with a blinded route for
-   * which we are the introduction point and there must be a second blinded hop that is not us.
+   * There must be a next node to relay the payment to. If there are no clear hops, the recipient must be a blinded
+   * route for which we are the introduction point and there must be a second blinded hop that is not us.
    */
   case class Route(amount: MilliSatoshi, clearHops: Seq[ChannelHop], recipient: payment.Recipient) {
     require(clearHops.nonEmpty || recipient.isInstanceOf[payment.BlindRecipient], "route cannot be empty")
@@ -563,8 +563,8 @@ object Router {
     def printChannels(): String = clearHops.map(_.shortChannelId).mkString("->")
 
     def stopAt(nodeId: PublicKey): Route = {
-      val amountAtStop = clearHops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
-      Route(amountAtStop, clearHops.takeWhile(_.nodeId != nodeId), recipient)
+      val amountAtStop = clearHops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(recipient.amountToSend(amount)) { case (amount1, hop) => amount1 + hop.fee(amount1) }
+      Route(amountAtStop, clearHops.takeWhile(_.nodeId != nodeId), ClearRecipient(nodeId, randomBytes32(), None))
     }
   }
 

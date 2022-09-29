@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Success, Try}

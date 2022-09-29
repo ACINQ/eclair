@@ -197,6 +197,8 @@ class BlindPaymentIntegrationSpec extends IntegrationSpec {
     assert(pf.failures.head.asInstanceOf[LocalFailure].t == CannotRouteToSelf)
   }
 
+  // TODO: Add more tests with more cases of blinded routes and with MPP.
+
   /** Handy way to check what the channel balances are before adding new tests. */
   def debugChannelBalances(): Unit = {
     val sender = TestProbe()

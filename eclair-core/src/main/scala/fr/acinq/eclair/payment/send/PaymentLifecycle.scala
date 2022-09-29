@@ -61,15 +61,15 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         route => self ! RouteResponse(route :: Nil)
       )
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipientNodeIds.head, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
 
     case Event(c: SendPaymentToNode, WaitingForRequest) =>
-      log.debug("sending {} to {}", c.amount, c.targetRecipients.head.nodeId)
+      log.debug("sending {} to {}", c.amount, c.targetRecipients.map(_.nodeId).mkString(","))
       router ! RouteRequest(nodeParams.nodeId, c.targetRecipients, c.amount, c.maxFee, c.extraEdges, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.amount, cfg.recipientAmount, cfg.recipientNodeIds.head, TimestampMilli.now(), cfg.invoice, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
   }
@@ -362,7 +362,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
       request match {
         case request: SendPaymentToNode =>
-          context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.amount, fees, status, duration, now, isMultiPart = false, request.routeParams.experimentName, cfg.recipientNodeId, request.extraEdges))
+          context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.paymentHash, request.amount, fees, status, duration, now, isMultiPart = false, request.routeParams.experimentName, cfg.recipientNodeIds.head, request.extraEdges))
         case _: SendPaymentToRoute => ()
       }
     }
@@ -379,7 +379,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       parentPaymentId_opt = Some(cfg.parentId),
       paymentId_opt = Some(id),
       paymentHash_opt = Some(paymentHash),
-      remoteNodeId_opt = Some(cfg.recipientNodeId),
+      remoteNodeId_opt = Some(cfg.recipientNodeIds.head),
       nodeAlias_opt = Some(nodeParams.alias))
   }
 
@@ -406,7 +406,8 @@ object PaymentLifecycle {
    * Send a payment to a given route.
    *
    * @param route        payment route to use.
-   * @param amount       amount to send to the target node.
+   * @param amount       amount to send through this route.
+   * @param totalAmount  amount to send to the recipient.
    * @param targetExpiry expiry at the target node (CLTV for the target node's received HTLCs).
    */
   case class SendPaymentToRoute(replyTo: ActorRef,
@@ -433,10 +434,11 @@ object PaymentLifecycle {
    * Send a payment to a given node. A path-finding algorithm will run to find a suitable payment route.
    *
    * @param targetRecipients target recipients to send the payment to.
-   * @param amount           amount to send to the target node.
+   * @param amount           amount to send through this route.
+   * @param totalAmount      amount to send to the recipient.
    * @param targetExpiry     expiry at the target node (CLTV for the target node's received HTLCs).
    * @param maxAttempts      maximum number of retries.
-   * @param extraEdges      routing hints (usually from a Bolt 11 invoice).
+   * @param extraEdges       routing hints (usually from a Bolt 11 invoice).
    * @param routeParams      parameters to fine-tune the routing algorithm.
    */
   case class SendPaymentToNode(replyTo: ActorRef,
@@ -447,7 +449,7 @@ object PaymentLifecycle {
                                maxAttempts: Int,
                                extraEdges: Seq[ExtraEdge] = Nil,
                                routeParams: RouteParams) extends SendPayment {
-    require(amount > 0.msat, s"total amount must be > 0")
+    require(amount > 0.msat, s"amount must be > 0")
 
     val maxFee: MilliSatoshi = routeParams.getMaxFee(amount)
 

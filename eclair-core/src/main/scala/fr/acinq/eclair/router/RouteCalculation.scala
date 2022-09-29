@@ -104,12 +104,9 @@ object RouteCalculation {
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
-      log.info(s"finding routes ${r.source}->${r.targets.head.nodeId} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", extraEdges.map(_.desc.shortChannelId).mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
+      log.info(s"finding routes ${r.source}->${r.targets.map(_.nodeId).mkString(",")} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", extraEdges.map(_.desc.shortChannelId).mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
       log.info("finding routes with params={}, multiPart={}", params, r.allowMultiPart)
-      val clearTargetNodeIs = r.targets.map {
-        case ClearRecipient(nodeId, _, _, _, _, _) => nodeId
-        case BlindRecipient(route, _, _, _, _) => route.introductionNodeId
-      }.distinct
+      val clearTargetNodeIs = r.targets.map(_.introductionNodeId).distinct
       val directChannels = clearTargetNodeIs.flatMap(d.graphWithBalances.graph.getEdgesBetween(r.source, _))
       log.info("local channels to recipient: {}", directChannels.map(e => s"${e.desc.shortChannelId} (${e.balance_opt}/${e.capacity})").mkString(", "))
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
@@ -223,7 +220,6 @@ object RouteCalculation {
 
     val targetNodes = targets.map(_.nodeId)
     val blindedEdges = targets.collect { case BlindRecipient(route, paymentInfo, capacity_opt, _, _) => GraphEdge(route, paymentInfo, capacity_opt) }.toSet
-
     val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodes, amount, ignoredEdges, ignoredVertices, extraEdges ++ blindedEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
@@ -297,10 +293,7 @@ object RouteCalculation {
     // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
     val routeParams1 = {
-      val clearTargetNodeIs = targets.map {
-        case ClearRecipient(nodeId, _, _, _, _, _) => nodeId
-        case BlindRecipient(route, _, _, _, _) => route.introductionNodeId
-      }.distinct
+      val clearTargetNodeIs = targets.map(_.introductionNodeId).distinct
       val directChannelsCount = clearTargetNodeIs.map(g.getEdgesBetween(localNodeId, _).length).sum
       // If we have direct channels to the target, we can use them all.
       // We also count empty channels, which allows replacing them with a non-direct route (multiple hops).
@@ -394,10 +387,7 @@ object RouteCalculation {
    * the target node it means we'd like to reach it via direct channels as much as possible.
    */
   private def isNeighborBalanceTooLow(g: DirectedGraph, r: RouteRequest): Boolean = {
-    val clearTargetNodeIs = r.targets.map {
-      case ClearRecipient(nodeId, _, _, _, _, _) => nodeId
-      case BlindRecipient(route, _, _, _, _) => route.introductionNodeId
-    }.distinct
+    val clearTargetNodeIs = r.targets.map(_.introductionNodeId).distinct
     val neighborEdges = clearTargetNodeIs.flatMap(g.getEdgesBetween(r.source, _))
     neighborEdges.nonEmpty && neighborEdges.map(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)).sum < r.amount
   }

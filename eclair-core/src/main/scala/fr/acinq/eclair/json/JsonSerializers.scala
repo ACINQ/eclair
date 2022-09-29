@@ -316,7 +316,7 @@ private case class PaymentFailureSummaryJson(amount: MilliSatoshi, route: Seq[Pu
 private case class PaymentFailedSummaryJson(paymentHash: ByteVector32, destination: PublicKey, totalAmount: MilliSatoshi, pathFindingExperiment: String, failures: Seq[PaymentFailureSummaryJson])
 object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFailedSummary](p => PaymentFailedSummaryJson(
   p.cfg.paymentHash,
-  p.cfg.recipientNodeId,
+  p.cfg.recipientNodeIds.head,
   p.cfg.recipientAmount,
   p.pathFindingExperiment,
   p.paymentFailed.failures.map(f => {

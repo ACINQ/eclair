@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.payment.{Bolt11Invoice, ClearRecipient, Recipient}
+import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._

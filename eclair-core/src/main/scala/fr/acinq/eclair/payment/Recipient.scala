@@ -26,25 +26,45 @@ import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, rand
 import scodec.bits.ByteVector
 
 sealed trait Recipient {
+  /** Id of the final receiving node. */
   def nodeId: PublicKey
+
+  /** Id of the node to compute the route to. */
   def introductionNodeId: PublicKey
+
+  /** All node ids of the route. The first one is `nodeId`. */
   def nodeIds: Seq[PublicKey]
 
   def features: Features[InvoiceFeature]
 
+  /** Computes the amount to send to the introduction node taking into account potential fees for the blinded route.
+   *
+   * @param amount amount to send to the recipient
+   * @return amount to send to the introduction node
+   */
   def amountToSend(amount: MilliSatoshi): MilliSatoshi
 
+  /** Additional TLVs to add to the final payload (for keysend and trampoline). */
   def additionalTlvs: Seq[OnionPaymentPayloadTlv]
 
+  /** Additional, user-supplied TLVs to add to the final payload. */
   def userCustomTlvs: Seq[GenericTlv]
 
   def withCustomTlvs(customTlvs: Seq[GenericTlv]): Recipient
 
+  /** Builds the HTLC payloads to send to this recipient.
+   *
+   * @param amount      amount to send on this route
+   * @param totalAmount total amount to send to the recipient
+   * @param expiry      CLTV expiry for this route
+   * @return amount to send to the introduction node, CLTV expiry for the introduction node, HTLC payloads
+   */
   def buildFinalPayloads(amount: MilliSatoshi,
                          totalAmount: MilliSatoshi,
                          expiry: CltvExpiry): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload])
 }
 
+/** A classic node id recipient. */
 case class ClearRecipient(nodeId: PublicKey,
                           paymentSecret: ByteVector32,
                           paymentMetadata_opt: Option[ByteVector],
@@ -60,8 +80,8 @@ case class ClearRecipient(nodeId: PublicKey,
   override def withCustomTlvs(customTlvs: Seq[GenericTlv]): Recipient = copy(userCustomTlvs = customTlvs)
 
   override def buildFinalPayloads(amount: MilliSatoshi,
-                         totalAmount: MilliSatoshi,
-                         expiry: CltvExpiry): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) =
+                                  totalAmount: MilliSatoshi,
+                                  expiry: CltvExpiry): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) =
     (amount, expiry, Seq(FinalPayload.Standard.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, additionalTlvs, userCustomTlvs)))
 }
 
@@ -75,6 +95,7 @@ object TrampolineRecipient {
     ClearRecipient(trampolineNodeId, trampolineSecret, paymentMetadata_opt, additionalTlvs = Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
 }
 
+/** A recipient hidden behind a blinded route. */
 case class BlindRecipient(route: RouteBlinding.BlindedRoute,
                           paymentInfo: PaymentInfo,
                           capacity_opt: Option[MilliSatoshi],
@@ -93,17 +114,16 @@ case class BlindRecipient(route: RouteBlinding.BlindedRoute,
   override def withCustomTlvs(customTlvs: Seq[GenericTlv]): Recipient = copy(userCustomTlvs = customTlvs)
 
   override def buildFinalPayloads(amount: MilliSatoshi,
-                         totalAmount: MilliSatoshi,
-                         expiry: CltvExpiry): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) = {
+                                  totalAmount: MilliSatoshi,
+                                  expiry: CltvExpiry): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) = {
     val blindedPayloads = if (route.encryptedPayloads.length > 1) {
+      val introductionPayload = IntermediatePayload.ChannelRelay.Blinded.create(route.encryptedPayloads.head, Some(route.blindingKey))
       val middlePayloads = route.encryptedPayloads.drop(1).dropRight(1).map(IntermediatePayload.ChannelRelay.Blinded.create(_, None))
       val finalPayload = FinalPayload.Blinded.create(amount, totalAmount, expiry, route.encryptedPayloads.last, None, additionalTlvs, userCustomTlvs)
-      val introductionPayload = IntermediatePayload.ChannelRelay.Blinded.create(route.encryptedPayloads.head, Some(route.blindingKey))
       introductionPayload +: middlePayloads :+ finalPayload
     } else {
       Seq(FinalPayload.Blinded.create(amount, totalAmount, expiry, route.encryptedPayloads.last, Some(route.blindingKey), additionalTlvs, userCustomTlvs))
     }
     (amount + paymentInfo.fee(amount), expiry + paymentInfo.cltvExpiryDelta, blindedPayloads)
-
   }
 }

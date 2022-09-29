@@ -40,7 +40,7 @@ import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee}
 
 import java.util.UUID
 import scala.collection.immutable.Queue
