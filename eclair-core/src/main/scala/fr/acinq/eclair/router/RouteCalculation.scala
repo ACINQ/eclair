@@ -22,7 +22,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.payment.{BlindRecipient, ClearRecipient, Recipient}
+import fr.acinq.eclair.payment.{BlindRecipient, Recipient}
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgesToRoute
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
@@ -189,7 +189,7 @@ object RouteCalculation {
                 routeParams: RouteParams,
                 currentBlockHeight: BlockHeight): Try[Seq[Route]] = Try {
     findRouteInternal(g, localNodeId, recipients, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
-      case Right(routes) => routes.map(route => graphEdgesToRoute(amount, route.path, recipients))
+      case Right(routes) => routes.map(route => graphEdgesToRoute(amount, route, recipients))
       case Left(ex) => return Failure(ex)
     }
   }
@@ -205,7 +205,7 @@ object RouteCalculation {
                                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
-                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[Graph.WeightedPath]] = {
+                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[Seq[GraphEdge]]] = {
     require(amount > 0.msat, "route amount must be strictly positive")
 
     if (targets.exists(_.introductionNodeId == localNodeId)) return Left(CannotRouteToSelf)
@@ -220,9 +220,30 @@ object RouteCalculation {
 
     val targetNodes = targets.map(_.nodeId)
     val blindedEdges = targets.collect { case BlindRecipient(route, paymentInfo, capacity_opt, _, _) => GraphEdge(route, paymentInfo, capacity_opt) }.toSet
-    val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodes, amount, ignoredEdges, ignoredVertices, extraEdges ++ blindedEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
+    val foundRoutes: Seq[Seq[GraphEdge]] =
+      if (targetNodes.length > 1) {
+        // We need to add a dummy node that connects to all the targets.
+        val dummyTarget = randomKey().publicKey
+        val dummyLinks = targetNodes.map(GraphEdge(_, dummyTarget)).toSet
+        val routes =
+          Graph.yenKshortestPaths(g,
+            localNodeId, dummyTarget,
+            amount,
+            ignoredEdges, ignoredVertices,
+            extraEdges ++ blindedEdges ++ dummyLinks,
+            numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost).map(_.path)
+        // We drop the last dummy hop.
+        routes.map(_.dropRight(1))
+      } else {
+        Graph.yenKshortestPaths(g,
+          localNodeId, targetNodes.head,
+          amount,
+          ignoredEdges, ignoredVertices,
+          extraEdges ++ blindedEdges,
+          numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost).map(_.path)
+      }
     if (foundRoutes.nonEmpty) {
-      val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
+      val (directRoutes, indirectRoutes) = foundRoutes.partition(_.length == 1)
       val routes = if (routeParams.randomize) {
         Random.shuffle(directRoutes) ++ Random.shuffle(indirectRoutes)
       } else {
@@ -315,14 +336,14 @@ object RouteCalculation {
   }
 
   @tailrec
-  private def split(amount: MilliSatoshi, paths: mutable.Queue[Graph.WeightedPath], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, recipients: Seq[Recipient], selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
+  private def split(amount: MilliSatoshi, paths: mutable.Queue[Seq[GraphEdge]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, recipients: Seq[Recipient], selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
     if (amount == 0.msat) {
       Right(selectedRoutes)
     } else if (paths.isEmpty) {
       Left(RouteNotFound)
     } else {
       val current = paths.dequeue()
-      val candidate = computeRouteMaxAmount(current.path, usedCapacity, recipients)
+      val candidate = computeRouteMaxAmount(current, usedCapacity, recipients)
       if (candidate.amount < routeParams.mpp.minPartAmount.min(amount)) {
         // this route doesn't have enough capacity left: we remove it and continue.
         split(amount, paths, usedCapacity, routeParams, recipients, selectedRoutes)
