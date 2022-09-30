@@ -1904,6 +1904,30 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val route :: Nil = routes
     assert(route2Ids(route) == 3 :: 4 :: Nil)
   }
+
+  test("several recipients"){
+    /*
+      B
+     /
+    A   D
+     \ /
+      C
+       \
+        E
+    */
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 100 msat, 100, minHtlc = 1000 msat),
+      makeEdge(2L, a, c, 100 msat, 100, minHtlc = 1000 msat),
+      makeEdge(3L, c, d, 100 msat, 100, minHtlc = 1000 msat),
+      makeEdge(4L, c, e, 200 msat, 200, minHtlc = 1000 msat),
+    ))
+
+    val Success(routes) = findRoute(g, a, Seq(makeRecipient(b), makeRecipient(d), makeRecipient(e)), 50000 msat, 100000000 msat, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+    val route1 :: route2 :: route3 :: Nil = routes
+    assert(route2Ids(route1) == 1 :: Nil)
+    assert(route2Ids(route2) == 2 :: 3 :: Nil)
+    assert(route2Ids(route3) == 2 :: 4 :: Nil)
+  }
 }
 
 object RouteCalculationSpec {

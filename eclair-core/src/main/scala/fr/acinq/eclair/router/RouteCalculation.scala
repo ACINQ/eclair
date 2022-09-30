@@ -212,7 +212,8 @@ object RouteCalculation {
 
     def feeOk(fee: MilliSatoshi): Boolean = fee <= maxFee
 
-    def lengthOk(length: Int): Boolean = length <= routeParams.boundaries.maxRouteLength && length <= ROUTE_MAX_LENGTH
+    // We use (length - 1) to ignore the dummy edge at the end.
+    def lengthOk(length: Int): Boolean = (length - 1) <= routeParams.boundaries.maxRouteLength && (length - 1) <= ROUTE_MAX_LENGTH
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.boundaries.maxCltv
 
@@ -220,28 +221,18 @@ object RouteCalculation {
 
     val targetNodes = targets.map(_.nodeId)
     val blindedEdges = targets.collect { case BlindRecipient(route, paymentInfo, capacity_opt, _, _) => GraphEdge(route, paymentInfo, capacity_opt) }.toSet
-    val foundRoutes: Seq[Seq[GraphEdge]] =
-      if (targetNodes.length > 1) {
-        // We need to add a dummy node that connects to all the targets.
-        val dummyTarget = randomKey().publicKey
-        val dummyLinks = targetNodes.map(GraphEdge(_, dummyTarget)).toSet
-        val routes =
-          Graph.yenKshortestPaths(g,
-            localNodeId, dummyTarget,
-            amount,
-            ignoredEdges, ignoredVertices,
-            extraEdges ++ blindedEdges ++ dummyLinks,
-            numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost).map(_.path)
-        // We drop the last dummy hop.
-        routes.map(_.dropRight(1))
-      } else {
-        Graph.yenKshortestPaths(g,
-          localNodeId, targetNodes.head,
-          amount,
-          ignoredEdges, ignoredVertices,
-          extraEdges ++ blindedEdges,
-          numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost).map(_.path)
-      }
+    // In case there are multiple targets, we need to add a dummy node that connects to all the targets.
+    val dummyTarget = randomKey().publicKey
+    val dummyLinks = targetNodes.map(GraphEdge(_, dummyTarget)).toSet
+    val routes =
+      Graph.yenKshortestPaths(g,
+        localNodeId, dummyTarget,
+        amount,
+        ignoredEdges, ignoredVertices,
+        extraEdges ++ blindedEdges ++ dummyLinks,
+        numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost).map(_.path)
+    // We drop the last dummy hop.
+    val foundRoutes: Seq[Seq[GraphEdge]] = routes.map(_.dropRight(1))
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.length == 1)
       val routes = if (routeParams.randomize) {

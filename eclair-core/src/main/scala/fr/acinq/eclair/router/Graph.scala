@@ -276,12 +276,12 @@ object Graph {
     }
 
     if (targetFound) {
-      val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
+      val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH + 1)
       var current = bestEdges.get(sourceNode)
       while (current.isDefined) {
         edgePath += current.get
         current = bestEdges.get(current.get.desc.b)
-        if (edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH) {
+        if (edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH + 1) {
           throw InfiniteLoop(edgePath.toSeq)
         }
       }
