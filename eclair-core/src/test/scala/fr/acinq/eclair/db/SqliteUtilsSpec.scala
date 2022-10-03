@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.eclair.db.Databases.JdbcUrlChanged
+import fr.acinq.eclair.db.jdbc.JdbcUtils
 import fr.acinq.eclair.db.sqlite.SqliteUtils.using
 import fr.acinq.eclair.{TestDatabases, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
@@ -46,7 +47,7 @@ class SqliteUtilsSpec extends AnyFunSuite {
       assert(!results.next())
     }
 
-    assertThrows[SQLException](using(conn.createStatement(), inTransaction = true) { statement =>
+    assertThrows[SQLException](JdbcUtils.using(conn.createStatement(), inTransaction = true) { statement =>
       statement.executeUpdate("INSERT INTO utils_test VALUES (3, 3)")
       statement.executeUpdate("INSERT INTO utils_test VALUES (1, 3)") // should throw (primary key violation)
     })
