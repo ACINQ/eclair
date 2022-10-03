@@ -132,7 +132,7 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-                <version>4.6.2</version>
+                <version>4.7.2</version>
                 <configuration>
                     <args combine.children="append">
                         <arg>-feature</arg>
