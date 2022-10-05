@@ -16,38 +16,22 @@
 
 package fr.acinq.eclair.integration
 
-import akka.actor.ActorRef
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, SatoshiLong}
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
+import fr.acinq.bitcoin.scalacompat.{Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fsm.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
-import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.{ReceiveOfferPayment, ReceiveStandardPayment}
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveOfferPayment
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
-import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, CannotRouteToSelf, Router}
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
+import fr.acinq.eclair.router.{CannotRouteToSelf, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
-import org.json4s.JsonAST.{JString, JValue}
-import scodec.bits.ByteVector
+import fr.acinq.eclair.{Kit, MilliSatoshiLong, randomKey}
 
 import java.util.UUID
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
@@ -171,30 +155,6 @@ class BlindPaymentIntegrationSpec extends IntegrationSpec {
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
     assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
-  }
-
-  test("send an HTLC D->D") {
-    val (sender, eventListener) = (TestProbe(), TestProbe())
-    nodes("D").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
-
-    val recipientKey = randomKey()
-    val payerKey = randomKey()
-
-    // first we retrieve an invoice from D
-    val amount = 4200000 msat
-    val chain = nodes("D").nodeParams.chainHash
-    val offer = Offer(Some(amount), "test offer", recipientKey.publicKey, nodes("D").nodeParams.features.invoiceFeatures(), chain)
-    val invoiceRequest = InvoiceRequest(offer, amount, 1, nodes("D").nodeParams.features.invoiceFeatures(), payerKey, chain)
-
-    sender.send(nodes("D").paymentHandler, ReceiveOfferPayment(recipientKey, offer, invoiceRequest))
-    val invoice = sender.expectMsgType[Bolt12Invoice]
-
-    // then we make the actual payment
-    sender.send(nodes("D").paymentInitiator, SendPaymentToNode(amount, invoice, routeParams = integrationTestRouteParams, maxAttempts = 1))
-    val paymentId = sender.expectMsgType[UUID]
-    val pf = sender.expectMsgType[PaymentFailed]
-    assert(pf.id == paymentId)
-    assert(pf.failures.head.asInstanceOf[LocalFailure].t == CannotRouteToSelf)
   }
 
   // TODO: Add more tests with more cases of blinded routes and with MPP.

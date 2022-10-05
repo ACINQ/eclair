@@ -53,7 +53,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, recipients.flatMap(_.nodeIds), Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       if (!nodeParams.features.invoiceFeatures().areSupported(r.invoice.features)) {
-        sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil)
+        sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, FullRoute.empty, UnsupportedFeatures(r.invoice.features)) :: Nil)
       } else if (r.invoice.features.hasFeature(Features.BasicMultiPartPayment) && nodeParams.features.hasFeature(BasicMultiPartPayment)) {
         val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
         fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipients, r.recipientAmount, finalExpiry, r.maxAttempts, r.invoice.extraEdges, r.routeParams)
@@ -79,9 +79,9 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       sender() ! paymentId
       r.trampolineAttempts match {
         case Nil =>
-          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineFeesMissing) :: Nil)
+          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, FullRoute.empty, TrampolineFeesMissing) :: Nil)
         case _ if !r.invoice.features.hasFeature(Features.TrampolinePaymentPrototype) && r.invoice.amount_opt.isEmpty =>
-          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineLegacyAmountLessInvoice) :: Nil)
+          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, FullRoute.empty, TrampolineLegacyAmountLessInvoice) :: Nil)
         case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts =>
           log.info(s"sending trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
           sendTrampolinePayment(paymentId, r, trampolineFees, trampolineExpiryDelta) match {
@@ -89,7 +89,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
               context become main(pending + (paymentId -> PendingTrampolinePayment(sender(), remainingAttempts, r)))
             case Failure(t) =>
               log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
-              sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, t) :: Nil)
+              sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, FullRoute.empty, t) :: Nil)
           }
       }
 
@@ -111,10 +111,10 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
               context become main(pending + (paymentId -> PendingTrampolinePaymentToRoute(sender(), r)))
             case Failure(t) =>
               log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
-              sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, t) :: Nil)
+              sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, FullRoute.empty, t) :: Nil)
           }
         case _ =>
-          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineMultiNodeNotSupported) :: Nil)
+          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, FullRoute.empty, TrampolineMultiNodeNotSupported) :: Nil)
       }
 
     case r: SendPaymentToRoute =>
@@ -130,7 +130,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           context become main(pending + (paymentId -> PendingPaymentToRoute(sender(), r)))
         case None =>
           log.warning("the provided route does not reach the correct recipient")
-          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, InvalidRecipientForRoute(r.route, r.recipients)) :: Nil)
+          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, FullRoute.empty, InvalidRecipientForRoute(r.route, r.recipients)) :: Nil)
       }
 
     case pf: PaymentFailed => pending.get(pf.id).foreach {
@@ -150,14 +150,14 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
                   context become main(pending + (pf.id -> pp.copy(remainingAttempts = remaining)))
                 case Failure(t) =>
                   log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
-                  val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, trampolineRoute, t)))
+                  val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, FullRoute(trampolineRoute, None), t)))
                   pp.sender ! localFailure
                   context.system.eventStream.publish(localFailure)
                   context become main(pending - pf.id)
               }
             case Nil =>
               log.info("trampoline node couldn't find a route after all retries")
-              val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, trampolineRoute, RouteNotFound)))
+              val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, FullRoute(trampolineRoute, None), RouteNotFound)))
               pp.sender ! localFailure
               context.system.eventStream.publish(localFailure)
               context become main(pending - pf.id)
@@ -446,7 +446,13 @@ object PaymentInitiator {
                                publishEvent: Boolean,
                                recordPathFindingMetrics: Boolean,
                                additionalHops: Seq[NodeHop]) {
-    def fullRoute(route: Route): Seq[Hop] = route.clearHops ++ additionalHops
+    def fullRoute(route: Route): FullRoute =
+      route.recipient match {
+        case _:ClearRecipient => FullRoute(route.clearHops ++ additionalHops, None)
+        case b:BlindRecipient =>
+          require(additionalHops.isEmpty, "Can't add hops after a blinded route.")
+          FullRoute(route.clearHops, Some(b))
+      }
 
     def createPaymentSent(preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) = PaymentSent(parentId, paymentHash, preimage, recipientAmount, recipientNodeIds.head, parts)
 

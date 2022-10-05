@@ -333,7 +333,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams.copy(heuristics = Left(WeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0))))))
     sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
-    ps.parts.foreach(part => assert(part.route.getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)))
+    ps.parts.foreach(part => assert(part.route.map(_.hops).getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)))
   }
 
   test("send a multi-part payment B->D") {

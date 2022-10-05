@@ -83,14 +83,14 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(c, cmd, failures, sharedSecrets, ignore, route)
         case Failure(t) =>
           log.warning("cannot send outgoing payment: {}", t.getMessage)
-          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(c.amount, Nil, t))).increment()
-          myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(c.amount, Nil, t))))
+          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(c.amount, FullRoute.empty, t))).increment()
+          myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(c.amount, FullRoute.empty, t))))
       }
 
     case Event(Status.Failure(t), WaitingForRoute(c, failures, _)) =>
       log.warning("router error: {}", t.getMessage)
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(c.amount, Nil, t))).increment()
-      myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(c.amount, Nil, t))))
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(c.amount, FullRoute.empty, t))).increment()
+      myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(c.amount, FullRoute.empty, t))))
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
@@ -170,10 +170,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     import d._
     ((Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
       case success@Success(e) =>
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(d.c.amount, Nil, e))).increment()
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(d.c.amount, FullRoute.empty, e))).increment()
         success
       case failure@Failure(_) =>
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(d.c.amount, Nil))).increment()
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(d.c.amount, FullRoute.empty))).increment()
         failure
     }) match {
       case res@Success(Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
@@ -348,7 +348,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+                // TODO(trampoline-to-blind): fullRoute.hops may be empty if we are the introduction point of a blinded route.
+                case p@PartialPayment(_, _, _, _, Some(fullRoute), _) => fullRoute.hops.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees
@@ -417,7 +418,7 @@ object PaymentLifecycle {
                                 totalAmount: MilliSatoshi,
                                 targetExpiry: CltvExpiry,
                                 extraEdges: Seq[ExtraEdge] = Nil) extends SendPayment {
-    require(route.fold(!_.isEmpty, _.clearHops.nonEmpty), "payment route must not be empty")
+    require(route.fold(!_.isEmpty, _ => true), "payment route must not be empty")
 
     override def targetRecipients: Seq[Recipient] = Seq(targetRecipient)
 

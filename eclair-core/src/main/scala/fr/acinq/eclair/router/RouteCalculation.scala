@@ -208,7 +208,7 @@ object RouteCalculation {
                                 currentBlockHeight: BlockHeight): Either[RouterException, Seq[Seq[GraphEdge]]] = {
     require(amount > 0.msat, "route amount must be strictly positive")
 
-    if (targets.exists(_.introductionNodeId == localNodeId)) return Left(CannotRouteToSelf)
+    if (targets.exists(_.nodeId == localNodeId)) return Left(CannotRouteToSelf)
 
     def feeOk(fee: MilliSatoshi): Boolean = fee <= maxFee
 

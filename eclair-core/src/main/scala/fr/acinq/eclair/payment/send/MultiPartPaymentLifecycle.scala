@@ -97,7 +97,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         retriedFailedChannels = true
         stay() using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels())
       } else {
-        val failure = LocalFailure(toSend, Nil, t)
+        val failure = LocalFailure(toSend, FullRoute.empty, t)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
         if (cfg.storeInDb && d.pending.isEmpty && d.failures.isEmpty) {
           // In cases where we fail early (router error during the first attempt), the DB won't have an entry for that
@@ -131,7 +131,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       if (abortPayment(pf, d)) {
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else if (d.remainingAttempts == 0) {
-        val failure = LocalFailure(d.request.totalAmount, Nil, PaymentError.RetryExhausted)
+        val failure = LocalFailure(d.request.totalAmount, FullRoute.empty, PaymentError.RetryExhausted)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
       } else {
@@ -256,7 +256,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+                // TODO(trampoline-to-blind): fullRoute.hops may be empty if we are the introduction point of a blinded route.
+                case p@PartialPayment(_, _, _, _, Some(fullRoute), _) => fullRoute.hops.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees

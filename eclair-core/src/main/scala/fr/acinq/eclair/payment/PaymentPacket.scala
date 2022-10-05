@@ -297,7 +297,7 @@ object OutgoingPaymentPacket {
   }
 
   def buildPaymentPacket(paymentHash: ByteVector32,
-                         clearHops: Seq[Hop],
+                         clearHops: Seq[ChannelHop],
                          recipient: Recipient,
                          amount: MilliSatoshi,
                          totalAmount: MilliSatoshi,
@@ -305,7 +305,7 @@ object OutgoingPaymentPacket {
     buildPacket(PaymentOnionCodecs.paymentOnionPayloadLength, paymentHash, clearHops, recipient, amount, totalAmount, expiry)
 
   def buildTrampolinePacket(paymentHash: ByteVector32,
-                            hops: Seq[Hop],
+                            hops: Seq[NodeHop],
                             recipient: Recipient,
                             amount: MilliSatoshi,
                             totalAmount: MilliSatoshi,
@@ -373,16 +373,16 @@ object OutgoingPaymentPacket {
     } else {
       route.recipient match {
         case recipient: BlindRecipient if recipient.route.introductionNodeId == privateKey.publicKey =>
-          // We assume that there is a next node that is not us, that should be checked before calling the router.
+          // TODO(trampoline-to-blind): Check that we are not the final recipient.
           RouteBlindingEncryptedDataCodecs.decode(privateKey, recipient.route.blindingKey, recipient.route.encryptedPayloads.head) match {
             case Left(e) => return Failure(e)
             case Right(RouteBlindingDecryptedData(encryptedDataTlvs, nextBlindingKey)) =>
               IntermediatePayload.ChannelRelay.Blinded.validate(TlvStream(EncryptedRecipientData(ByteVector.empty)), encryptedDataTlvs, nextBlindingKey) match {
                 case Left(invalidTlv) => return Failure(RouteBlindingEncryptedDataCodecs.CannotDecodeData(invalidTlv.failureMessage.message))
                 case Right(payload) =>
-                  // We assume that fees and CLTV were checked in the router.
+                  // TODO(trampoline-to-blind): Check fees and CLTV. As long as we are the sender it's fine but it is needed if we trampoline the payment for someone else.
                   val amountWithFees = recipient.amountToSend(amount)
-                  val remainingFee = amountWithFees - payload.amountToForward(amountWithFees)
+                  val remainingFee = payload.amountToForward(amountWithFees) - amount
                   val tailPaymentInfo = recipient.paymentInfo.copy(feeBase = remainingFee, feeProportionalMillionths = 0, cltvExpiryDelta = recipient.paymentInfo.cltvExpiryDelta - payload.cltvExpiryDelta)
                   (payload.outgoingChannelId, Some(nextBlindingKey), recipient.copy(paymentInfo = tailPaymentInfo))
               }

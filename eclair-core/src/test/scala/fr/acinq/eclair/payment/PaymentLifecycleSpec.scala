@@ -118,7 +118,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == parentId)
-    assert(ps.parts.head.route.contains(route.clearHops))
+    assert(ps.parts.head.route.contains(FullRoute(route.clearHops)))
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
 
     metricsListener.expectNoMessage()
@@ -230,7 +230,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
     routerForwarder.forward(routerFixture.router, routeRequest)
-    assert(sender.expectMsgType[PaymentFailed].failures == LocalFailure(defaultAmountMsat, Nil, RouteNotFound) :: Nil)
+    assert(sender.expectMsgType[PaymentFailed].failures == LocalFailure(defaultAmountMsat, FullRoute.empty, RouteNotFound) :: Nil)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
@@ -262,7 +262,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     routerForwarder.forward(routerFixture.router, routeRequest)
-    val Seq(LocalFailure(_, Nil, RouteNotFound)) = sender.expectMsgType[PaymentFailed].failures
+    val Seq(LocalFailure(_, FullRoute.empty, RouteNotFound)) = sender.expectMsgType[PaymentFailed].failures
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
@@ -327,7 +327,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash)))) // unparsable message
 
     // we allow 2 tries, so we send a 2nd request to the router
-    assert(sender.expectMsgType[PaymentFailed].failures == UnreadableRemoteFailure(route.amount, route.clearHops) :: UnreadableRemoteFailure(route.amount, route.clearHops) :: Nil)
+    assert(sender.expectMsgType[PaymentFailed].failures == UnreadableRemoteFailure(route.amount, FullRoute(route.clearHops)) :: UnreadableRemoteFailure(route.amount, FullRoute(route.clearHops)) :: Nil)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) // after last attempt the payment is failed
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
@@ -478,7 +478,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsg(defaultRouteRequest(a, defaultInvoice.recipients, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(update_bc.shortChannelId, b, c)))))
     routerForwarder.forward(routerFixture.router)
     // we allow 2 tries, so we send a 2nd request to the router
-    assert(sender.expectMsgType[PaymentFailed].failures == RemoteFailure(route.amount, route.clearHops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(defaultAmountMsat, Nil, RouteNotFound) :: Nil)
+    assert(sender.expectMsgType[PaymentFailed].failures == RemoteFailure(route.amount, FullRoute(route.clearHops), Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(defaultAmountMsat, FullRoute.empty, RouteNotFound) :: Nil)
   }
 
   test("payment failed (Update)") { routerFixture =>
@@ -530,7 +530,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(routerFixture.router)
 
     // this time the router can't find a route: game over
-    assert(sender.expectMsgType[PaymentFailed].failures == RemoteFailure(route1.amount, route1.clearHops, Sphinx.DecryptedFailurePacket(b, failure)) :: RemoteFailure(route2.amount, route2.clearHops, Sphinx.DecryptedFailurePacket(b, failure2)) :: LocalFailure(defaultAmountMsat, Nil, RouteNotFound) :: Nil)
+    assert(sender.expectMsgType[PaymentFailed].failures == RemoteFailure(route1.amount, FullRoute(route1.clearHops), Sphinx.DecryptedFailurePacket(b, failure)) :: RemoteFailure(route2.amount, FullRoute(route2.clearHops), Sphinx.DecryptedFailurePacket(b, failure2)) :: LocalFailure(defaultAmountMsat, FullRoute.empty, RouteNotFound) :: Nil)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
 
     routerForwarder.expectNoMessage(100 millis)
@@ -657,7 +657,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(router)
     // we allow 2 tries, so we send a 2nd request to the router, which won't find another route
 
-    assert(sender.expectMsgType[PaymentFailed].failures == RemoteFailure(route1.amount, route1.clearHops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(defaultAmountMsat, Nil, RouteNotFound) :: Nil)
+    assert(sender.expectMsgType[PaymentFailed].failures == RemoteFailure(route1.amount, FullRoute(route1.clearHops), Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(defaultAmountMsat, FullRoute.empty, RouteNotFound) :: Nil)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
   }
 
@@ -764,16 +764,16 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("filter errors properly") { () =>
     val failures = Seq(
-      LocalFailure(defaultAmountMsat, Nil, RouteNotFound),
-      RemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
-      LocalFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes)),
-      LocalFailure(defaultAmountMsat, Nil, RouteNotFound)
+      LocalFailure(defaultAmountMsat, FullRoute.empty, RouteNotFound),
+      RemoteFailure(defaultAmountMsat, FullRoute(channelHopFromUpdate(a, b, update_ab) :: Nil), Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
+      LocalFailure(defaultAmountMsat, FullRoute(channelHopFromUpdate(a, b, update_ab) :: Nil), ChannelUnavailable(ByteVector32.Zeroes)),
+      LocalFailure(defaultAmountMsat, FullRoute.empty, RouteNotFound)
     )
     val filtered = PaymentFailure.transformForUser(failures)
     val expected = Seq(
-      LocalFailure(defaultAmountMsat, Nil, RouteNotFound),
-      RemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
-      LocalFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes))
+      LocalFailure(defaultAmountMsat, FullRoute.empty, RouteNotFound),
+      RemoteFailure(defaultAmountMsat, FullRoute(channelHopFromUpdate(a, b, update_ab) :: Nil), Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
+      LocalFailure(defaultAmountMsat, FullRoute(channelHopFromUpdate(a, b, update_ab) :: Nil), ChannelUnavailable(ByteVector32.Zeroes))
     )
     assert(filtered == expected)
   }
@@ -782,20 +782,20 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val route_abcd = channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil
     val testCases = Seq(
       // local failures -> ignore first channel if there is one
-      (LocalFailure(defaultAmountMsat, Nil, RouteNotFound), Set.empty, Set.empty),
-      (LocalFailure(defaultAmountMsat, NodeHop(a, b, CltvExpiryDelta(144), 0 msat) :: NodeHop(b, c, CltvExpiryDelta(144), 0 msat) :: Nil, RouteNotFound), Set.empty, Set.empty),
-      (LocalFailure(defaultAmountMsat, route_abcd, new RuntimeException("fatal")), Set.empty, Set(ChannelDesc(scid_ab, a, b))),
+      (LocalFailure(defaultAmountMsat, FullRoute.empty, RouteNotFound), Set.empty, Set.empty),
+      (LocalFailure(defaultAmountMsat, FullRoute(NodeHop(a, b, CltvExpiryDelta(144), 0 msat) :: NodeHop(b, c, CltvExpiryDelta(144), 0 msat) :: Nil), RouteNotFound), Set.empty, Set.empty),
+      (LocalFailure(defaultAmountMsat, FullRoute(route_abcd), new RuntimeException("fatal")), Set.empty, Set(ChannelDesc(scid_ab, a, b))),
       // remote failure from final recipient -> all intermediate nodes behaved correctly
-      (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(d, IncorrectOrUnknownPaymentDetails(100 msat, BlockHeight(42)))), Set.empty, Set.empty),
+      (RemoteFailure(defaultAmountMsat, FullRoute(route_abcd), Sphinx.DecryptedFailurePacket(d, IncorrectOrUnknownPaymentDetails(100 msat, BlockHeight(42)))), Set.empty, Set.empty),
       // remote failures from intermediate nodes -> depending on the failure, ignore either the failing node or its outgoing channel
-      (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, PermanentNodeFailure)), Set(b), Set.empty),
-      (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(c, TemporaryNodeFailure)), Set(c), Set.empty),
-      (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, PermanentChannelFailure)), Set.empty, Set(ChannelDesc(scid_bc, b, c))),
-      (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(c, UnknownNextPeer)), Set.empty, Set(ChannelDesc(scid_cd, c, d))),
-      (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, update_bc))), Set.empty, Set.empty),
+      (RemoteFailure(defaultAmountMsat, FullRoute(route_abcd), Sphinx.DecryptedFailurePacket(b, PermanentNodeFailure)), Set(b), Set.empty),
+      (RemoteFailure(defaultAmountMsat, FullRoute(route_abcd), Sphinx.DecryptedFailurePacket(c, TemporaryNodeFailure)), Set(c), Set.empty),
+      (RemoteFailure(defaultAmountMsat, FullRoute(route_abcd), Sphinx.DecryptedFailurePacket(b, PermanentChannelFailure)), Set.empty, Set(ChannelDesc(scid_bc, b, c))),
+      (RemoteFailure(defaultAmountMsat, FullRoute(route_abcd), Sphinx.DecryptedFailurePacket(c, UnknownNextPeer)), Set.empty, Set(ChannelDesc(scid_cd, c, d))),
+      (RemoteFailure(defaultAmountMsat, FullRoute(route_abcd), Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, update_bc))), Set.empty, Set.empty),
       // unreadable remote failures -> blacklist all nodes except our direct peer and the final recipient
-      (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil), Set.empty, Set.empty),
-      (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: ChannelHop(ShortChannelId(5656986L), d, e, null) :: Nil), Set(c, d), Set.empty)
+      (UnreadableRemoteFailure(defaultAmountMsat, FullRoute(channelHopFromUpdate(a, b, update_ab) :: Nil)), Set.empty, Set.empty),
+      (UnreadableRemoteFailure(defaultAmountMsat, FullRoute(channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: ChannelHop(ShortChannelId(5656986L), d, e, null) :: Nil)), Set(c, d), Set.empty)
     )
 
     for ((failure, expectedNodes, expectedChannels) <- testCases) {
@@ -805,9 +805,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     }
 
     val failures = Seq(
-      RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(c, TemporaryNodeFailure)),
-      RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, UnknownNextPeer)),
-      LocalFailure(defaultAmountMsat, route_abcd, new RuntimeException("fatal"))
+      RemoteFailure(defaultAmountMsat, FullRoute(route_abcd), Sphinx.DecryptedFailurePacket(c, TemporaryNodeFailure)),
+      RemoteFailure(defaultAmountMsat, FullRoute(route_abcd), Sphinx.DecryptedFailurePacket(b, UnknownNextPeer)),
+      LocalFailure(defaultAmountMsat, FullRoute(route_abcd), new RuntimeException("fatal"))
     )
     val ignore = PaymentFailure.updateIgnored(failures, Ignore.empty)
     assert(ignore.nodes == Set(c))

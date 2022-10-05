@@ -547,7 +547,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeRelayerAdapters = mockPayFSM.expectMessageType[SendMultiPartPayment].replyTo
 
     // The proposed fees are low, so we ask the sender to raise them.
-    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, FullRoute.empty, BalanceTooLow) :: Nil)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
@@ -593,7 +593,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     router.expectMessageType[RouteRequest]
 
     // If we're having a hard time finding routes, raising the fee/cltv will likely help.
-    val failures = LocalFailure(outgoingAmount, Nil, RouteNotFound) :: RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(outgoingAmount, Nil, RouteNotFound) :: Nil
+    val failures = LocalFailure(outgoingAmount, FullRoute.empty, RouteNotFound) :: RemoteFailure(outgoingAmount, FullRoute.empty, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(outgoingAmount, FullRoute.empty, RouteNotFound) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
@@ -615,7 +615,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
     router.expectMessageType[RouteRequest]
 
-    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(outgoingAmount, Nil) :: Nil
+    val failures = RemoteFailure(outgoingAmount, FullRoute.empty, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(outgoingAmount, FullRoute.empty) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>

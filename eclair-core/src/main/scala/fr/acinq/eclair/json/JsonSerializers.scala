@@ -320,7 +320,7 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
   p.cfg.recipientAmount,
   p.pathFindingExperiment,
   p.paymentFailed.failures.map(f => {
-    val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)
+    val route = f.route.hops.map(_.nodeId) ++ f.route.hops.lastOption.map(_.nextNodeId)
     val message = f match {
       case LocalFailure(_, _, t) => t.getMessage
       case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
