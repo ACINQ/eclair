@@ -390,8 +390,8 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePaymentCltv(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
-    val minExpiry = record.invoice.minFinalCltvExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
+  private def validatePaymentCltv(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload)(implicit log: LoggingAdapter): Boolean = {
+    val minExpiry = nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
     if (add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
       false
@@ -435,7 +435,7 @@ object MultiPartHandler {
 
   private def validateCommon(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     val paymentAmountOk = record.invoice.amount_opt.forall(a => validatePaymentAmount(add, payload, a))
-    val paymentCltvOk = validatePaymentCltv(nodeParams, add, payload, record)
+    val paymentCltvOk = validatePaymentCltv(nodeParams, add, payload)
     val paymentStatusOk = validatePaymentStatus(add, payload, record)
     val paymentFeaturesOk = validateInvoiceFeatures(add, payload, record.invoice)
     paymentAmountOk && paymentCltvOk && paymentStatusOk && paymentFeaturesOk
