@@ -98,21 +98,6 @@ object TlvCodecs {
   /** Truncated satoshi (0 to 8 bytes unsigned). */
   val tsatoshi: Codec[Satoshi] = tu64overflow.xmap(l => Satoshi(l), s => s.toLong)
 
-  /** Length-prefixed truncated uint64 (1 to 9 bytes unsigned integer). */
-  val ltu64: Codec[UInt64] = variableSizeBytes(uint8, tu64)
-
-  /** Length-prefixed truncated long (1 to 9 bytes unsigned integer). */
-  val ltu64overflow: Codec[Long] = variableSizeBytes(uint8, tu64overflow)
-
-  /** Length-prefixed truncated millisatoshi (1 to 9 bytes unsigned). */
-  val ltmillisatoshi: Codec[MilliSatoshi] = variableSizeBytes(uint8, tmillisatoshi)
-
-  /** Length-prefixed truncated uint32 (1 to 5 bytes unsigned integer). */
-  val ltu32: Codec[Long] = variableSizeBytes(uint8, tu32)
-
-  /** Length-prefixed truncated uint16 (1 to 3 bytes unsigned integer). */
-  val ltu16: Codec[Int] = variableSizeBytes(uint8, tu16)
-
   private def validateUnknownTlv(g: GenericTlv): Attempt[GenericTlv] = {
     if (g.tag < TLV_TYPE_HIGH_RANGE && g.tag.toBigInt % 2 == 0) {
       Attempt.Failure(Err("unknown even tlv type"))
@@ -120,6 +105,12 @@ object TlvCodecs {
       Attempt.Successful(g)
     }
   }
+
+  /** Codec for a tlv field that contains the field length and its value, without its tag. */
+  def tlvField[T <: Tlv](valueCodec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, valueCodec)
+
+  /** Codec for a tlv field that has a known, fixed length. */
+  def fixedLengthTlvField[T <: Tlv](length: Long, valueCodec: Codec[T]): Codec[T] = ("length" | constant(varintoverflow.encode(length).require)) ~> ("value" | valueCodec)
 
   val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
 

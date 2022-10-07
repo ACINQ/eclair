@@ -19,9 +19,9 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
-import scodec.codecs.{discriminated, list, variableSizeBytesLong}
+import scodec.codecs.{discriminated, list}
 
 /**
  * Created by t-bast on 13/12/2019.
@@ -47,8 +47,8 @@ object InitTlvCodecs {
 
   import InitTlv._
 
-  private val networks: Codec[Networks] = variableSizeBytesLong(varintoverflow, list(bytes32)).as[Networks]
-  private val remoteAddress: Codec[RemoteAddress] = variableSizeBytesLong(varintoverflow, nodeaddress).as[RemoteAddress]
+  private val networks: Codec[Networks] = tlvField(list(bytes32).as[Networks])
+  private val remoteAddress: Codec[RemoteAddress] = tlvField(nodeaddress.as[RemoteAddress])
 
   val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)

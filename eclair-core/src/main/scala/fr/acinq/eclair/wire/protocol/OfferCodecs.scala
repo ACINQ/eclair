@@ -21,43 +21,43 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.lengthPrefixedFeaturesCodec
 import fr.acinq.eclair.wire.protocol.OfferTypes._
-import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tu32, tu64overflow}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64}
 import scodec.Codec
 import scodec.codecs._
 
 object OfferCodecs {
-  private val chains: Codec[Chains] = variableSizeBytesLong(varintoverflow, list(bytes32)).xmap[Seq[ByteVector32]](_.toSeq, _.toList).as[Chains]
+  private val chains: Codec[Chains] = tlvField(list(bytes32).xmap[Seq[ByteVector32]](_.toSeq, _.toList).as[Chains])
 
-  private val currency: Codec[Currency] = variableSizeBytesLong(varintoverflow, utf8).as[Currency]
+  private val currency: Codec[Currency] = tlvField(utf8.as[Currency])
 
-  private val amount: Codec[Amount] = variableSizeBytesLong(varintoverflow, tmillisatoshi).as[Amount]
+  private val amount: Codec[Amount] = tlvField(tmillisatoshi.as[Amount])
 
-  private val description: Codec[Description] = variableSizeBytesLong(varintoverflow, utf8).as[Description]
+  private val description: Codec[Description] = tlvField(utf8.as[Description])
 
-  private val features: Codec[FeaturesTlv] = variableSizeBytesLong(varintoverflow, bytes).xmap[Features[Feature]](Features(_), _.toByteVector).as[FeaturesTlv]
+  private val features: Codec[FeaturesTlv] = tlvField(bytes.xmap[Features[Feature]](Features(_), _.toByteVector).as[FeaturesTlv])
 
-  private val absoluteExpiry: Codec[AbsoluteExpiry] = variableSizeBytesLong(varintoverflow, tu64overflow).as[TimestampSecond].as[AbsoluteExpiry]
+  private val absoluteExpiry: Codec[AbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond].as[AbsoluteExpiry])
 
   private val blindedNodeCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
 
   private val pathCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | listOfN(uint8, blindedNodeCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
 
-  private val paths: Codec[Paths] = variableSizeBytesLong(varintoverflow, list(pathCodec)).xmap[Seq[BlindedRoute]](_.toSeq, _.toList).as[Paths]
+  private val paths: Codec[Paths] = tlvField(list(pathCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList).as[Paths])
 
-  private val issuer: Codec[Issuer] = variableSizeBytesLong(varintoverflow, utf8).as[Issuer]
+  private val issuer: Codec[Issuer] = tlvField(utf8.as[Issuer])
 
-  private val quantityMin: Codec[QuantityMin] = variableSizeBytesLong(varintoverflow, tu64overflow).as[QuantityMin]
+  private val quantityMin: Codec[QuantityMin] = tlvField(tu64overflow.as[QuantityMin])
 
-  private val quantityMax: Codec[QuantityMax] = variableSizeBytesLong(varintoverflow, tu64overflow).as[QuantityMax]
+  private val quantityMax: Codec[QuantityMax] = tlvField(tu64overflow.as[QuantityMax])
 
-  private val nodeId: Codec[NodeId] = variableSizeBytesLong(varintoverflow, publicKey).as[NodeId]
+  private val nodeId: Codec[NodeId] = tlvField(publicKey.as[NodeId])
 
-  private val sendInvoice: Codec[SendInvoice] = variableSizeBytesLong(varintoverflow, provide(SendInvoice()))
+  private val sendInvoice: Codec[SendInvoice] = tlvField(provide(SendInvoice()))
 
-  private val refundFor: Codec[RefundFor] = variableSizeBytesLong(varintoverflow, bytes32).as[RefundFor]
+  private val refundFor: Codec[RefundFor] = tlvField(bytes32.as[RefundFor])
 
-  private val signature: Codec[Signature] = variableSizeBytesLong(varintoverflow, bytes64).as[Signature]
+  private val signature: Codec[Signature] = tlvField(bytes64.as[Signature])
 
   val offerTlvCodec: Codec[TlvStream[OfferTlv]] = TlvCodecs.tlvStream[OfferTlv](discriminated[OfferTlv].by(varint)
     .typecase(UInt64(2), chains)
@@ -75,19 +75,19 @@ object OfferCodecs {
     .typecase(UInt64(54), sendInvoice)
     .typecase(UInt64(240), signature)).complete
 
-  private val chain: Codec[Chain] = variableSizeBytesLong(varintoverflow, bytes32).as[Chain]
+  private val chain: Codec[Chain] = tlvField(bytes32.as[Chain])
 
-  private val offerId: Codec[OfferId] = variableSizeBytesLong(varintoverflow, bytes32).as[OfferId]
+  private val offerId: Codec[OfferId] = tlvField(bytes32.as[OfferId])
 
-  private val quantity: Codec[Quantity] = variableSizeBytesLong(varintoverflow, tu64overflow).as[Quantity]
+  private val quantity: Codec[Quantity] = tlvField(tu64overflow.as[Quantity])
 
-  private val payerKey: Codec[PayerKey] = variableSizeBytesLong(varintoverflow, bytes32).as[PayerKey]
+  private val payerKey: Codec[PayerKey] = tlvField(bytes32.as[PayerKey])
 
-  private val payerNote: Codec[PayerNote] = variableSizeBytesLong(varintoverflow, utf8).as[PayerNote]
+  private val payerNote: Codec[PayerNote] = tlvField(utf8.as[PayerNote])
 
-  private val payerInfo: Codec[PayerInfo] = variableSizeBytesLong(varintoverflow, bytes).as[PayerInfo]
+  private val payerInfo: Codec[PayerInfo] = tlvField(bytes.as[PayerInfo])
 
-  private val replaceInvoice: Codec[ReplaceInvoice] = variableSizeBytesLong(varintoverflow, bytes32).as[ReplaceInvoice]
+  private val replaceInvoice: Codec[ReplaceInvoice] = tlvField(bytes32.as[ReplaceInvoice])
 
   val invoiceRequestTlvCodec: Codec[TlvStream[InvoiceRequestTlv]] = TlvCodecs.tlvStream[InvoiceRequestTlv](discriminated[InvoiceRequestTlv].by(varint)
     .typecase(UInt64(3), chain)
@@ -108,25 +108,23 @@ object OfferCodecs {
     ("htlc_maximum_msat" | millisatoshi) ::
     ("features" | lengthPrefixedFeaturesCodec)).as[PaymentInfo]
 
-  private val paymentPathsInfo: Codec[PaymentPathsInfo] = variableSizeBytesLong(varintoverflow, list(paymentInfo)).xmap[Seq[PaymentInfo]](_.toSeq, _.toList).as[PaymentPathsInfo]
+  private val paymentPathsInfo: Codec[PaymentPathsInfo] = tlvField(list(paymentInfo).xmap[Seq[PaymentInfo]](_.toSeq, _.toList).as[PaymentPathsInfo])
 
-  private val paymentPathsCapacities: Codec[PaymentPathsCapacities] = variableSizeBytesLong(varintoverflow, list(millisatoshi)).xmap[Seq[MilliSatoshi]](_.toSeq, _.toList).as[PaymentPathsCapacities]
+  private val paymentPathsCapacities: Codec[PaymentPathsCapacities] = tlvField(list(millisatoshi).xmap[Seq[MilliSatoshi]](_.toSeq, _.toList).as[PaymentPathsCapacities])
 
-  private val createdAt: Codec[CreatedAt] = variableSizeBytesLong(varintoverflow, tu64overflow).as[TimestampSecond].as[CreatedAt]
+  private val createdAt: Codec[CreatedAt] = tlvField(tu64overflow.as[TimestampSecond].as[CreatedAt])
 
-  private val paymentHash: Codec[PaymentHash] = variableSizeBytesLong(varintoverflow, bytes32).as[PaymentHash]
+  private val paymentHash: Codec[PaymentHash] = tlvField(bytes32.as[PaymentHash])
 
-  private val relativeExpiry: Codec[RelativeExpiry] = variableSizeBytesLong(varintoverflow, tu32).as[RelativeExpiry]
+  private val relativeExpiry: Codec[RelativeExpiry] = tlvField(tu32.as[RelativeExpiry])
 
-  private val cltv: Codec[Cltv] = variableSizeBytesLong(varintoverflow, uint16).as[CltvExpiryDelta].as[Cltv]
+  private val cltv: Codec[Cltv] = tlvField(uint16.as[CltvExpiryDelta].as[Cltv])
 
-  private val fallbackAddress: Codec[FallbackAddress] = variableSizeBytesLong(varintoverflow,
-    ("version" | byte) ::
-      ("address" | variableSizeBytes(uint16, bytes))).as[FallbackAddress]
+  private val fallbackAddress: Codec[FallbackAddress] = variableSizeBytesLong(varintoverflow, ("version" | byte) :: ("address" | variableSizeBytes(uint16, bytes))).as[FallbackAddress]
 
-  private val fallbacks: Codec[Fallbacks] = variableSizeBytesLong(varintoverflow, list(fallbackAddress)).xmap[Seq[FallbackAddress]](_.toSeq, _.toList).as[Fallbacks]
+  private val fallbacks: Codec[Fallbacks] = tlvField(list(fallbackAddress).xmap[Seq[FallbackAddress]](_.toSeq, _.toList).as[Fallbacks])
 
-  private val refundSignature: Codec[RefundSignature] = variableSizeBytesLong(varintoverflow, bytes64).as[RefundSignature]
+  private val refundSignature: Codec[RefundSignature] = tlvField(bytes64.as[RefundSignature])
 
   val invoiceTlvCodec: Codec[TlvStream[InvoiceTlv]] = TlvCodecs.tlvStream[InvoiceTlv](discriminated[InvoiceTlv].by(varint)
     .typecase(UInt64(3), chain)
@@ -156,9 +154,9 @@ object OfferCodecs {
   ).complete
 
   val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)
-    .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, tu64overflow).as[ErroneousField])
-    .typecase(UInt64(3), variableSizeBytesLong(varintoverflow, bytes).as[SuggestedValue])
-    .typecase(UInt64(5), variableSizeBytesLong(varintoverflow, utf8).as[Error])
+    .typecase(UInt64(1), tlvField(tu64overflow.as[ErroneousField]))
+    .typecase(UInt64(3), tlvField(bytes.as[SuggestedValue]))
+    .typecase(UInt64(5), tlvField(utf8.as[Error]))
   ).complete
 
 }

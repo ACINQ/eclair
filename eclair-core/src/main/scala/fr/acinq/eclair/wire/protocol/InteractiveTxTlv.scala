@@ -18,10 +18,10 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{varint, varintoverflow}
-import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvStream, tsatoshi}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tsatoshi}
 import scodec.Codec
-import scodec.codecs.{discriminated, variableSizeBytesLong}
+import scodec.codecs.discriminated
 
 /**
  * Created by t-bast on 08/04/2022.
@@ -77,7 +77,7 @@ object TxInitRbfTlv {
   import TxRbfTlv._
 
   val txInitRbfTlvCodec: Codec[TlvStream[TxInitRbfTlv]] = tlvStream(discriminated[TxInitRbfTlv].by(varint)
-    .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, tsatoshi).as[SharedOutputContributionTlv])
+    .typecase(UInt64(0), tlvField(tsatoshi.as[SharedOutputContributionTlv]))
   )
 
 }
@@ -87,7 +87,7 @@ object TxAckRbfTlv {
   import TxRbfTlv._
 
   val txAckRbfTlvCodec: Codec[TlvStream[TxAckRbfTlv]] = tlvStream(discriminated[TxAckRbfTlv].by(varint)
-    .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, tsatoshi).as[SharedOutputContributionTlv])
+    .typecase(UInt64(0), tlvField(tsatoshi.as[SharedOutputContributionTlv]))
   )
 
 }
