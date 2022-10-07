@@ -45,7 +45,7 @@ object ChannelTlv {
   /** A channel type is a set of even feature bits that represent persistent features which affect channel operations. */
   case class ChannelTypeTlv(channelType: ChannelType) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
 
-  val channelTypeCodec: Codec[ChannelTypeTlv] = tlvField(bytes.xmap(
+  val channelTypeCodec: Codec[ChannelTypeTlv] = tlvField(bytes.xmap[ChannelTypeTlv](
     b => ChannelTypeTlv(ChannelTypes.fromFeatures(Features(b).initFeatures())),
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
   ))
