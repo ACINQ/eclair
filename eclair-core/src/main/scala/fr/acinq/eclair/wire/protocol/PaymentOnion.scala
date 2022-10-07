@@ -464,7 +464,7 @@ object PaymentOnionCodecs {
 
   private val outgoingChannelId: Codec[OutgoingChannelId] = tlvField(shortchannelid)
 
-  private val paymentData: Codec[PaymentData] = tlvField((("payment_secret" | bytes32) :: ("total_msat" | tmillisatoshi)))
+  private val paymentData: Codec[PaymentData] = tlvField(("payment_secret" | bytes32) :: ("total_msat" | tmillisatoshi))
 
   private val encryptedRecipientData: Codec[EncryptedRecipientData] = tlvField(bytes)
 

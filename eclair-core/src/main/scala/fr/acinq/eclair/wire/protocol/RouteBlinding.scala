@@ -112,14 +112,14 @@ object RouteBlindingEncryptedDataCodecs {
   import scodec.codecs._
   import scodec.{Attempt, Codec, DecodeResult}
 
-  private val padding: Codec[Padding] = tlvField(bytes.as[Padding])
-  private val outgoingChannelId: Codec[OutgoingChannelId] = tlvField(shortchannelid.as[OutgoingChannelId])
-  private val outgoingNodeId: Codec[OutgoingNodeId] = fixedLengthTlvField(33, publicKey.as[OutgoingNodeId])
-  private val pathId: Codec[PathId] = tlvField(bytes.as[PathId])
-  private val nextBlinding: Codec[NextBlinding] = fixedLengthTlvField(33, publicKey.as[NextBlinding])
-  private val paymentRelay: Codec[PaymentRelay] = tlvField((("cltv_expiry_delta" | cltvExpiryDelta) :: ("fee_proportional_millionths" | uint32) :: ("fee_base_msat" | tmillisatoshi32)).as[PaymentRelay])
-  private val paymentConstraints: Codec[PaymentConstraints] = tlvField((("max_cltv_expiry" | cltvExpiry) :: ("htlc_minimum_msat" | tmillisatoshi)).as[PaymentConstraints])
-  private val allowedFeatures: Codec[AllowedFeatures] = tlvField(featuresCodec.as[AllowedFeatures])
+  private val padding: Codec[Padding] = tlvField(bytes)
+  private val outgoingChannelId: Codec[OutgoingChannelId] = tlvField(shortchannelid)
+  private val outgoingNodeId: Codec[OutgoingNodeId] = fixedLengthTlvField(33, publicKey)
+  private val pathId: Codec[PathId] = tlvField(bytes)
+  private val nextBlinding: Codec[NextBlinding] = fixedLengthTlvField(33, publicKey)
+  private val paymentRelay: Codec[PaymentRelay] = tlvField(("cltv_expiry_delta" | cltvExpiryDelta) :: ("fee_proportional_millionths" | uint32) :: ("fee_base_msat" | tmillisatoshi32))
+  private val paymentConstraints: Codec[PaymentConstraints] = tlvField(("max_cltv_expiry" | cltvExpiry) :: ("htlc_minimum_msat" | tmillisatoshi))
+  private val allowedFeatures: Codec[AllowedFeatures] = tlvField(featuresCodec)
 
   private val encryptedDataTlvCodec = discriminated[RouteBlindingEncryptedDataTlv].by(varint)
     .typecase(UInt64(1), padding)
