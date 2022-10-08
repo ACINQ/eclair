@@ -26,7 +26,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * Created by PM on 09/07/2017.
  */
-class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerKB)(implicit ec: ExecutionContext) extends FeeProvider {
+case class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerKB)(implicit ec: ExecutionContext) extends FeeProvider {
 
   implicit val formats = DefaultFormats.withBigDecimal
 

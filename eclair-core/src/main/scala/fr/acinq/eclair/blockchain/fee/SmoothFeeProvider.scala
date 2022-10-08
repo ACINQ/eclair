@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec: ExecutionContext) extends FeeProvider {
+case class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec: ExecutionContext) extends FeeProvider {
   require(windowSize > 0)
 
   var queue = List.empty[FeeratesPerKB]

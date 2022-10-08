@@ -21,13 +21,14 @@ import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import scala.concurrent.Future
 
 /**
+ * Used to fetch feerates.
  * Created by PM on 09/07/2017.
  */
 trait FeeProvider {
   def getFeerates: Future[FeeratesPerKB]
 }
 
-case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve feerates, channels may be at risk: ensure bitcoind estimatesmartfee correctly returns feerates and restart eclair")
+case object CannotRetrieveFeerates extends RuntimeException("Cannot retrieve feerates. Channels may be at risk. Ensure bitcoind estimatesmartfee correctly returns feerates and restart eclair")
 
 /** Fee rate in satoshi-per-bytes. */
 case class FeeratePerByte(feerate: Satoshi) {
@@ -52,6 +53,7 @@ case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
 object FeeratePerKB {
   // @formatter:off
   def apply(feeratePerByte: FeeratePerByte): FeeratePerKB = FeeratePerKB(feeratePerByte.feerate * 1000)
+  // feerate-per-kw should be feerate-per-kvb / 4
   def apply(feeratePerKw: FeeratePerKw): FeeratePerKB = FeeratePerKB(feeratePerKw.feerate * 4)
   // @formatter:on
 }
@@ -95,6 +97,9 @@ object FeeratePerKw {
    * hence feerate-per-kw >= 253
    *
    * See also https://github.com/ElementsProject/lightning/pull/1251
+   * Notes:
+   *  - The size of a block is limited to 4,000,000 weight units which corresponds to 1,000,000 virtual bytes.
+   *  - The transaction fee doesn't depend on the amount being transferred. It depends on the amount of data being transferred.
    */
   val MinimumFeeratePerKw = FeeratePerKw(253 sat)
 
@@ -105,9 +110,14 @@ object FeeratePerKw {
 }
 
 /**
- * Fee rates in satoshi-per-kilo-bytes (1 kb = 1000 bytes).
+ * Fee rates in satoshis-per-kilo-bytes (1 kb = 1000 bytes).
  * The mempoolMinFee is the minimal fee required for a tx to enter the mempool (and then be relayed to other nodes and eventually get confirmed).
  * If our fee provider doesn't expose this data, using its biggest block target should be a good enough estimation.
+ *
+ * The mempool contains pending transactions. Fewer pending transactions means lower fees.
+ * The block targets of 1, 2, 6, 12, 36, 72, 144, 1008 roughly correspond to
+ * time intervals of 10 minutes, 20 minutes, 1 hour, 2 hours, 6 hours, 12 hours, 1 day, 1 week respectively.
+ * These are the time intervals eclair expects the transaction to take to be included into a block.
  */
 case class FeeratesPerKB(mempoolMinFee: FeeratePerKB, block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6: FeeratePerKB, blocks_12: FeeratePerKB, blocks_36: FeeratePerKB, blocks_72: FeeratePerKB, blocks_144: FeeratePerKB, blocks_1008: FeeratePerKB) {
   require(mempoolMinFee.feerate > 0.sat && block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")

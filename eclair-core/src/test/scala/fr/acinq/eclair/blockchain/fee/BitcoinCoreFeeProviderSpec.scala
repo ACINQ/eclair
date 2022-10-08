@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain.fee
 
+import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat._
@@ -24,7 +25,6 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
 import org.scalatest.BeforeAndAfterAll
@@ -32,13 +32,8 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Random
 
 class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
-
-  implicit val formats = DefaultFormats.withBigDecimal
-
-  val walletPassword = Random.alphanumeric.take(8).mkString
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -90,7 +85,33 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       blocks_1008 = fees(1008)
     )
 
-    val mockBitcoinClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = UserPassword("", ""), host = "localhost", port = 0) {
+    val mockBitcoinClient = createMockBitcoinClient(fees, ref.mempoolMinFee)
+
+    val mockProvider = BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    mockProvider.getFeerates.pipeTo(sender.ref)
+    assert(sender.expectMsgType[FeeratesPerKB] == ref)
+  }
+
+  test("get fee rates when no fee rate is found") {
+    val sender = TestProbe()
+
+    val mockProvider = BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+
+    mockProvider.getFeerates.pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage == "estimatesmartfee failed: Insufficient data or no feerate found")
+  }
+
+  test("get mempool minimum fee") {
+    val regtestProvider = BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    val sender = TestProbe()
+    regtestProvider.mempoolMinFee().pipeTo(sender.ref)
+    val mempoolMinFee = sender.expectMsgType[FeeratePerKB]
+    // The regtest provider doesn't have any transaction in its mempool, so it defaults to the min_relay_fee.
+    assert(mempoolMinFee.feerate.toLong == FeeratePerKw.MinimumRelayFeeRate)
+  }
+
+  private def createMockBitcoinClient(fees: Map[Int, FeeratePerKB], mempoolMinFee: FeeratePerKB): BasicBitcoinJsonRPCClient = {
+    new BasicBitcoinJsonRPCClient(rpcAuthMethod = UserPassword("", ""), host = "localhost", port = 0) {
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]
@@ -99,25 +120,12 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
         case "getmempoolinfo" =>
           val mempoolInfo = List(
             "minrelaytxfee" -> JDecimal(satoshi2btc(100 sat).toBigDecimal),
-            "mempoolminfee" -> JDecimal(satoshi2btc(ref.mempoolMinFee.feerate).toBigDecimal)
+            "mempoolminfee" -> JDecimal(satoshi2btc(mempoolMinFee.feerate).toBigDecimal)
           )
           Future(JObject(mempoolInfo))(ec)
         case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
       }
     }
-
-    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
-    mockProvider.getFeerates.pipeTo(sender.ref)
-    assert(sender.expectMsgType[FeeratesPerKB] == ref)
-  }
-
-  test("get mempool minimum fee") {
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
-    val sender = TestProbe()
-    regtestProvider.mempoolMinFee().pipeTo(sender.ref)
-    val mempoolMinFee = sender.expectMsgType[FeeratePerKB]
-    // The regtest provider doesn't have any transaction in its mempool, so it defaults to the min_relay_fee.
-    assert(mempoolMinFee.feerate.toLong == FeeratePerKw.MinimumRelayFeeRate)
   }
 
 }
