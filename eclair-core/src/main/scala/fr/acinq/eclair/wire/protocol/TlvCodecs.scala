@@ -107,10 +107,10 @@ object TlvCodecs {
   }
 
   /** Codec for a tlv field that contains the field length and its value, without its tag. */
-  def tlvField[T <: Tlv](valueCodec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, valueCodec)
+  def tlvField[T <: Tlv, A](valueCodec: Codec[A])(implicit as: scodec.Transformer[A, T]): Codec[T] = variableSizeBytesLong(varintoverflow, valueCodec.as[T].complete)
 
   /** Codec for a tlv field that has a known, fixed length. */
-  def fixedLengthTlvField[T <: Tlv](length: Long, valueCodec: Codec[T]): Codec[T] = ("length" | constant(varintoverflow.encode(length).require)) ~> ("value" | valueCodec)
+  def fixedLengthTlvField[T <: Tlv, A](length: Long, valueCodec: Codec[A])(implicit as: scodec.Transformer[A, T]): Codec[T] = ("length" | constant(varintoverflow.encode(length).require)) ~> ("value" | valueCodec.as[T])
 
   val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
 

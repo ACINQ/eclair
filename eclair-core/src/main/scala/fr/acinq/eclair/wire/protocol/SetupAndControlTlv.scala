@@ -47,8 +47,8 @@ object InitTlvCodecs {
 
   import InitTlv._
 
-  private val networks: Codec[Networks] = tlvField(list(bytes32).as[Networks])
-  private val remoteAddress: Codec[RemoteAddress] = tlvField(nodeaddress.as[RemoteAddress])
+  private val networks: Codec[Networks] = tlvField(list(bytes32))
+  private val remoteAddress: Codec[RemoteAddress] = tlvField(nodeaddress)
 
   val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)

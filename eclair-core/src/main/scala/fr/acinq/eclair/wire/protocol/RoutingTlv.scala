@@ -138,7 +138,7 @@ object ReplyChannelRangeTlv {
       ("checksum2" | uint32)
     ).as[Checksums]
 
-  val encodedChecksumsCodec: Codec[EncodedChecksums] = tlvField(list(checksumsCodec).as[EncodedChecksums])
+  val encodedChecksumsCodec: Codec[EncodedChecksums] = tlvField(list(checksumsCodec))
 
   val innerCodec = discriminated[ReplyChannelRangeTlv].by(varint)
     .typecase(UInt64(1), encodedTimestampsCodec)
@@ -187,7 +187,7 @@ object QueryShortChannelIdsTlv {
 
 
   val codec: Codec[TlvStream[QueryShortChannelIdsTlv]] = TlvCodecs.tlvStream(discriminated.by(varint)
-    .typecase(UInt64(1), tlvField(encodedQueryFlagsCodec))
+    .typecase(UInt64(1), tlvField[EncodedQueryFlags, EncodedQueryFlags](encodedQueryFlagsCodec))
   )
 }
 

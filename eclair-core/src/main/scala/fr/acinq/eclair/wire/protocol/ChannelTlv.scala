@@ -40,19 +40,19 @@ object ChannelTlv {
     val isEmpty: Boolean = script.isEmpty
   }
 
-  val upfrontShutdownScriptCodec: Codec[UpfrontShutdownScriptTlv] = tlvField(bytes.as[UpfrontShutdownScriptTlv])
+  val upfrontShutdownScriptCodec: Codec[UpfrontShutdownScriptTlv] = tlvField(bytes)
 
   /** A channel type is a set of even feature bits that represent persistent features which affect channel operations. */
   case class ChannelTypeTlv(channelType: ChannelType) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
 
-  val channelTypeCodec: Codec[ChannelTypeTlv] = tlvField(bytes.xmap(
+  val channelTypeCodec: Codec[ChannelTypeTlv] = tlvField(bytes.xmap[ChannelTypeTlv](
     b => ChannelTypeTlv(ChannelTypes.fromFeatures(Features(b).initFeatures())),
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
   ))
 
   case class PushAmountTlv(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
 
-  val pushAmountCodec: Codec[PushAmountTlv] = tlvField(tmillisatoshi.as[PushAmountTlv])
+  val pushAmountCodec: Codec[PushAmountTlv] = tlvField(tmillisatoshi)
 
 }
 
@@ -119,7 +119,7 @@ object ChannelReadyTlv {
 
   case class ShortChannelIdTlv(alias: Alias) extends ChannelReadyTlv
 
-  val channelAliasTlvCodec: Codec[ShortChannelIdTlv] = variableSizeBytesLong(varintoverflow, "alias" | alias).as[ShortChannelIdTlv]
+  val channelAliasTlvCodec: Codec[ShortChannelIdTlv] = tlvField("alias" | alias)
 
   val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint)
     .typecase(UInt64(1), channelAliasTlvCodec)
@@ -150,10 +150,10 @@ object ClosingSignedTlv {
 
   case class FeeRange(min: Satoshi, max: Satoshi) extends ClosingSignedTlv
 
-  private val feeRange: Codec[FeeRange] = (("min_fee_satoshis" | satoshi) :: ("max_fee_satoshis" | satoshi)).as[FeeRange]
+  private val feeRange: Codec[FeeRange] = tlvField(("min_fee_satoshis" | satoshi) :: ("max_fee_satoshis" | satoshi))
 
   val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint)
-    .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, feeRange))
+    .typecase(UInt64(1), feeRange)
   )
 
 }

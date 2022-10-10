@@ -128,9 +128,9 @@ object MessageOnionCodecs {
 
   val blindedRouteCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | list(replyHopCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
 
-  private val replyPathCodec: Codec[ReplyPath] = tlvField(blindedRouteCodec.as[ReplyPath])
+  private val replyPathCodec: Codec[ReplyPath] = tlvField(blindedRouteCodec)
 
-  private val encryptedDataCodec: Codec[EncryptedData] = tlvField(bytes.as[EncryptedData])
+  private val encryptedDataCodec: Codec[EncryptedData] = tlvField(bytes)
 
   private val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
     .typecase(UInt64(2), replyPathCodec)
