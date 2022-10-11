@@ -136,7 +136,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       case pp: PendingTrampolinePayment =>
         val trampolineHop = NodeHop(pp.r.trampolineNodeId, pp.r.recipientNodeId, pp.r.trampolineAttempts.last._2, pp.r.trampolineAttempts.last._1)
         val decryptedFailures = pf.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f)) => f }
-        val shouldRetry = decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon)
+        val shouldRetry = decryptedFailures.contains(TrampolineFeeInsufficient()) || decryptedFailures.contains(TrampolineExpiryTooSoon())
         if (shouldRetry) {
           pp.remainingAttempts match {
             case (trampolineFees, trampolineExpiryDelta) :: remaining =>

@@ -674,11 +674,11 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_e.isInstanceOf[FinalPayload.Blinded])
 
     // nodes after the introduction node cannot send `update_fail_htlc` messages
-    val Right(fail_e: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_e.privateKey, CMD_FAIL_HTLC(add_e.id, Right(TemporaryNodeFailure)), add_e)
+    val Right(fail_e: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_e.privateKey, CMD_FAIL_HTLC(add_e.id, Right(TemporaryNodeFailure())), add_e)
     assert(fail_e.id == add_e.id)
     assert(fail_e.onionHash == Sphinx.hash(add_e.onionRoutingPacket))
     assert(fail_e.failureCode == InvalidOnionBlinding(fail_e.onionHash).code)
-    val Right(fail_d: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_d.privateKey, CMD_FAIL_HTLC(add_d.id, Right(UnknownNextPeer)), add_d)
+    val Right(fail_d: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_d.privateKey, CMD_FAIL_HTLC(add_d.id, Right(UnknownNextPeer())), add_d)
     assert(fail_d.id == add_d.id)
     assert(fail_d.onionHash == Sphinx.hash(add_d.onionRoutingPacket))
     assert(fail_d.failureCode == InvalidOnionBlinding(fail_d.onionHash).code)

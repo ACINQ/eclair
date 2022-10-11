@@ -207,7 +207,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id == add_ab.id)
-    assert(fail.reason == Right(RequiredNodeFeatureMissing))
+    assert(fail.reason == Right(RequiredNodeFeatureMissing()))
 
     register.expectNoMessage(50 millis)
   }

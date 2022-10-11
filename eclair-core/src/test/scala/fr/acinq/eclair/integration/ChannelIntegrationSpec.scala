@@ -279,7 +279,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     assert(failed.id == paymentId)
     assert(failed.paymentHash == htlc.paymentHash)
     assert(failed.failures.nonEmpty)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure()))
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(25, Some(minerAddress))
     // C should have 2 recv transactions: its main output and the htlc timeout
@@ -331,7 +331,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     assert(failed.id == paymentId)
     assert(failed.paymentHash == htlc.paymentHash)
     assert(failed.failures.nonEmpty)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure()))
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(25, Some(minerAddress))
     // C should have 2 recv transactions: its main output and the htlc timeout

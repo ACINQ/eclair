@@ -92,7 +92,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     if (success) {
       expectFwdAdd(register, lcu.channelId, outgoingAmount, outgoingExpiry)
     } else {
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
     }
   }
 
@@ -205,7 +205,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! Relay(r)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
   }
 
   test("fail to relay when register returns an error") { f =>
@@ -221,7 +221,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry)
     fwd.replyTo ! Register.ForwardFailure(fwd)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
   }
 
   test("fail to relay when the channel is advertised as unusable (down)") { f =>
@@ -236,7 +236,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelDown(d)
     channelRelayer ! Relay(r)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
   }
 
   test("fail to relay when channel is disabled") { f =>
@@ -377,7 +377,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val testCases = Seq(
       TestCase(ExpiryTooSmall(channelId1, CltvExpiry(100), CltvExpiry(0), BlockHeight(0)), u.channelUpdate, ExpiryTooSoon(u.channelUpdate)),
-      TestCase(ExpiryTooBig(channelId1, CltvExpiry(100), CltvExpiry(200), BlockHeight(0)), u.channelUpdate, ExpiryTooFar),
+      TestCase(ExpiryTooBig(channelId1, CltvExpiry(100), CltvExpiry(200), BlockHeight(0)), u.channelUpdate, ExpiryTooFar()),
       TestCase(TooManyAcceptedHtlcs(channelId1, 10), u.channelUpdate, TemporaryChannelFailure(u.channelUpdate)),
       TestCase(HtlcValueTooHighInFlight(channelId1, 250_000_000 msat, 300_000_000 msat), u.channelUpdate, TemporaryChannelFailure(u.channelUpdate)),
       TestCase(InsufficientFunds(channelId1, r.amountToForward, 100 sat, 0 sat, 0 sat), u.channelUpdate, TemporaryChannelFailure(u.channelUpdate)),
@@ -489,9 +489,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val testCases = Seq(
       TestCase(HtlcResult.RemoteFail(UpdateFailHtlc(channelId1, downstream_htlc.id, hex"deadbeef")), CMD_FAIL_HTLC(r.add.id, Left(hex"deadbeef"), commit = true)),
       TestCase(HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(channelId1, downstream_htlc.id, ByteVector32.One, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5)), CMD_FAIL_HTLC(r.add.id, Right(InvalidOnionHmac(ByteVector32.One)), commit = true)),
-      TestCase(HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId1, downstream_htlc)), CMD_FAIL_HTLC(r.add.id, Right(PermanentChannelFailure), commit = true)),
+      TestCase(HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId1, downstream_htlc)), CMD_FAIL_HTLC(r.add.id, Right(PermanentChannelFailure()), commit = true)),
       TestCase(HtlcResult.DisconnectedBeforeSigned(u_disabled.channelUpdate), CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(u_disabled.channelUpdate)), commit = true)),
-      TestCase(HtlcResult.ChannelFailureBeforeSigned, CMD_FAIL_HTLC(r.add.id, Right(PermanentChannelFailure), commit = true))
+      TestCase(HtlcResult.ChannelFailureBeforeSigned, CMD_FAIL_HTLC(r.add.id, Right(PermanentChannelFailure()), commit = true))
     )
 
     testCases.foreach { testCase =>
