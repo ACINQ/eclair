@@ -64,7 +64,9 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
         val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
         (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
       }).collect {
-        case (scid, false) => statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$scid")
+        case (scid, false) =>
+          logger.warn(s"removing channel update with scid=$scid from the network DB (update cannot be decoded)")
+          statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$scid")
       }
     }
 
