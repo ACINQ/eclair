@@ -19,48 +19,39 @@ package fr.acinq.eclair.router
 import akka.actor.ActorContext
 import akka.event.LoggingAdapter
 import fr.acinq.eclair.db.NetworkDb
-import fr.acinq.eclair.router.Router.{ChannelDesc, Data, PublicChannel, hasChannels}
+import fr.acinq.eclair.router.Router.{ChannelDesc, Data, hasChannels}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{BlockHeight, ShortChannelId, TimestampSecond, TxCoordinates}
 
-import scala.collection.mutable
 import scala.concurrent.duration._
 
 object StaleChannels {
 
   def handlePruneStaleChannels(d: Data, db: NetworkDb, currentBlockHeight: BlockHeight)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     // first we select channels that we will prune
-    val staleChannels = getStaleChannels(d.channels.values, currentBlockHeight)
+    val staleChannelsMap = d.channels.filter { case (_, pc) => pc.isStale(currentBlockHeight) }
+    val staleChannels = staleChannelsMap.values
     val staleChannelIds = staleChannels.map(_.ann.shortChannelId)
     // then we remove nodes that aren't tied to any channels anymore (and deduplicate them)
     val potentialStaleNodes = staleChannels.flatMap(c => Set(c.ann.nodeId1, c.ann.nodeId2)).toSet
     val channels1 = d.channels -- staleChannelIds
+    val prunedChannels1 = d.prunedChannels ++ staleChannelsMap
     // no need to iterate on all nodes, just on those that are affected by current pruning
     val staleNodes = potentialStaleNodes.filterNot(nodeId => hasChannels(nodeId, channels1.values))
 
-    // let's clean the db and send the events
-    db.removeChannels(staleChannelIds) // NB: this also removes channel updates
-    // we keep track of recently pruned channels so we don't revalidate them (zombie churn)
-    db.addToPruned(staleChannelIds)
     staleChannelIds.foreach { shortChannelId =>
       log.info("pruning shortChannelId={} (stale)", shortChannelId)
       ctx.system.eventStream.publish(ChannelLost(shortChannelId))
     }
 
-    val staleChannelsToRemove = new mutable.ArrayBuffer[ChannelDesc]
-    staleChannels.foreach(ca => {
-      staleChannelsToRemove += ChannelDesc(ca.ann.shortChannelId, ca.ann.nodeId1, ca.ann.nodeId2)
-      staleChannelsToRemove += ChannelDesc(ca.ann.shortChannelId, ca.ann.nodeId2, ca.ann.nodeId1)
-    })
-
+    val staleChannelsToRemove = staleChannels.flatMap(pc => Seq(ChannelDesc(pc.ann.shortChannelId, pc.ann.nodeId1, pc.ann.nodeId2), ChannelDesc(pc.ann.shortChannelId, pc.ann.nodeId2, pc.ann.nodeId1)))
     val graphWithBalances1 = d.graphWithBalances.removeEdges(staleChannelsToRemove)
-    staleNodes.foreach {
-      nodeId =>
-        log.info("pruning nodeId={} (stale)", nodeId)
-        db.removeNode(nodeId)
-        ctx.system.eventStream.publish(NodeLost(nodeId))
+    staleNodes.foreach { nodeId =>
+      log.info("pruning nodeId={} (stale)", nodeId)
+      db.removeNode(nodeId)
+      ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    d.copy(nodes = d.nodes -- staleNodes, channels = channels1, graphWithBalances = graphWithBalances1)
+    d.copy(nodes = d.nodes -- staleNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1)
   }
 
   def isStale(u: ChannelUpdate): Boolean = isStale(u.timestamp)
@@ -97,7 +88,5 @@ object StaleChannels {
     val channelUpdateIsStale = update1_opt.forall(isStale) || update2_opt.forall(isStale)
     channelIsOldEnough && channelUpdateIsStale
   }
-
-  def getStaleChannels(channels: Iterable[PublicChannel], currentBlockHeight: BlockHeight): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt, currentBlockHeight))
 
 }
