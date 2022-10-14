@@ -18,9 +18,13 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
+import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload.Partial
+import fr.acinq.eclair.wire.protocol.PaymentOnion.PerHopPayload
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, GenericTlv, OnionRoutingPacket}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -34,8 +38,6 @@ trait Invoice {
   val nodeId: PublicKey
 
   val paymentHash: ByteVector32
-
-  val paymentSecret: ByteVector32
 
   val paymentMetadata: Option[ByteVector]
 
@@ -52,6 +54,12 @@ trait Invoice {
   def isExpired(): Boolean = createdAt + relativeExpiry.toSeconds <= TimestampSecond.now()
 
   def toString: String
+
+  def singlePartFinalPayload(amount: MilliSatoshi, expiry: CltvExpiry, userCustomTlvs: Seq[GenericTlv] = Nil): PerHopPayload
+
+  def multiPartFinalPayload(totalAmount: MilliSatoshi, expiry: CltvExpiry, userCustomTlvs: Seq[GenericTlv] = Nil): Partial
+
+  def trampolinePayload(totalAmount: MilliSatoshi, expiry: CltvExpiry, trampolineSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): Partial
 }
 
 object Invoice {
@@ -59,12 +67,14 @@ object Invoice {
   sealed trait ExtraEdge {
     // @formatter:off
     def sourceNodeId: PublicKey
+    def targetNodeId: PublicKey
+    def shortChannelId: ShortChannelId
     def feeBase: MilliSatoshi
     def feeProportionalMillionths: Long
     def cltvExpiryDelta: CltvExpiryDelta
     def htlcMinimum: MilliSatoshi
     def htlcMaximum_opt: Option[MilliSatoshi]
-    def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
+    final def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
     // @formatter:on
   }
 
@@ -79,6 +89,16 @@ object Invoice {
     override val htlcMaximum_opt: Option[MilliSatoshi] = None
 
     def update(u: ChannelUpdate): BasicEdge = copy(feeBase = u.feeBaseMsat, feeProportionalMillionths = u.feeProportionalMillionths, cltvExpiryDelta = u.cltvExpiryDelta)
+  }
+
+  case class BlindedEdge(path: BlindedRoute, payInfo: PaymentInfo, targetNodeId: PublicKey) extends ExtraEdge {
+    override val sourceNodeId: PublicKey = path.introductionNodeId
+    override val shortChannelId: ShortChannelId = ShortChannelId.generateLocalAlias()
+    override val feeBase: MilliSatoshi = payInfo.feeBase
+    override val feeProportionalMillionths: Long = payInfo.feeProportionalMillionths
+    override val cltvExpiryDelta: CltvExpiryDelta = payInfo.cltvExpiryDelta
+    override val htlcMinimum: MilliSatoshi = payInfo.minHtlc
+    override val htlcMaximum_opt: Option[MilliSatoshi] = Some(payInfo.maxHtlc)
   }
 
   def fromString(input: String): Try[Invoice] = {

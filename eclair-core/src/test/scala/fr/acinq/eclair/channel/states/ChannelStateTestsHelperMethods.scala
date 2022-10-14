@@ -33,9 +33,9 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
-import fr.acinq.eclair.payment.OutgoingPaymentPacket
+import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
-import fr.acinq.eclair.router.Router.ChannelHop
+import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -357,7 +357,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   def makeCmdAdd(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, destination: PublicKey, paymentPreimage: ByteVector32, currentBlockHeight: BlockHeight, upstream: Upstream, replyTo: ActorRef = TestProbe().ref): (ByteVector32, CMD_ADD_HTLC) = {
     val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
     val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
-    val cmd = OutgoingPaymentPacket.buildCommand(replyTo, upstream, paymentHash, ChannelHop(null, null, destination, null) :: Nil, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), None)).get._1.copy(commit = false)
+    val cmd = OutgoingPaymentPacket.buildCommand(replyTo, randomKey(), upstream, paymentHash, ChannelHop(null, null, destination, ChannelRelayParams.FromHint(Invoice.BasicEdge(null, destination, null, 0 msat, 111, CltvExpiryDelta(55)))) :: Nil, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), None), amount, expiry).get._2.copy(commit = false)
     (paymentPreimage, cmd)
   }
 

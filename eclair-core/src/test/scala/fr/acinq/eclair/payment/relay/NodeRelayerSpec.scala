@@ -726,12 +726,12 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
-    assert(outgoingPayment.paymentSecret == invoice.paymentSecret) // we should use the provided secret
-    assert(outgoingPayment.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
+    assert(outgoingPayment.finalPayload.records.get[OnionPaymentPayloadTlv.PaymentData].get.secret == invoice.paymentSecret) // we should use the provided secret
+    assert(outgoingPayment.finalPayload.records.get[OnionPaymentPayloadTlv.PaymentMetadata].map(_.data) == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.totalAmount == outgoingAmount)
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.additionalTlvs == Nil)
+    assert(outgoingPayment.finalPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].isEmpty)
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
@@ -774,8 +774,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.finalPayload.isInstanceOf[FinalPayload.Standard])
-    assert(outgoingPayment.finalPayload.amount == outgoingAmount)
-    assert(outgoingPayment.finalPayload.expiry == outgoingExpiry)
+    assert(outgoingPayment.finalPayload.asInstanceOf[FinalPayload.Standard].amount == outgoingAmount)
+    assert(outgoingPayment.finalPayload.asInstanceOf[FinalPayload.Standard].expiry == outgoingExpiry)
     assert(outgoingPayment.finalPayload.asInstanceOf[FinalPayload.Standard].paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
     assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
@@ -835,11 +835,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   }
 
   def validateOutgoingPayment(outgoingPayment: SendMultiPartPayment): Unit = {
-    assert(outgoingPayment.paymentSecret !== incomingSecret) // we should generate a new outgoing secret
+    assert(outgoingPayment.finalPayload.records.get[OnionPaymentPayloadTlv.PaymentData].get.secret !== incomingSecret) // we should generate a new outgoing secret
     assert(outgoingPayment.totalAmount == outgoingAmount)
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
     assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.additionalTlvs == Seq(OnionPaymentPayloadTlv.TrampolineOnion(nextTrampolinePacket)))
+    assert(outgoingPayment.finalPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].get.packet == nextTrampolinePacket)
     assert(outgoingPayment.extraEdges == Nil)
   }
 

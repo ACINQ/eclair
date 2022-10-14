@@ -19,7 +19,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
+import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
 import scodec.bits.ByteVector
 
@@ -227,6 +227,7 @@ object HopSummary {
     val shortChannelId = h match {
       case ch: ChannelHop => Some(ch.shortChannelId)
       case _: NodeHop => None
+      case _: BlindedHop => None
     }
     HopSummary(h.nodeId, h.nextNodeId, shortChannelId)
   }

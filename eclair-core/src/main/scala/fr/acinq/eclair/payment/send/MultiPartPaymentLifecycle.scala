@@ -30,10 +30,8 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
-import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload.Partial
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
-import scodec.bits.ByteVector
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -317,16 +315,13 @@ object MultiPartPaymentLifecycle {
    * @param userCustomTlvs  when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
    */
   case class SendMultiPartPayment(replyTo: ActorRef,
-                                  paymentSecret: ByteVector32,
                                   targetNodeId: PublicKey,
+                                  finalPayload: Partial,
                                   totalAmount: MilliSatoshi,
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
-                                  paymentMetadata: Option[ByteVector],
                                   extraEdges: Seq[ExtraEdge] = Nil,
-                                  routeParams: RouteParams,
-                                  additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
-                                  userCustomTlvs: Seq[GenericTlv] = Nil) {
+                                  routeParams: RouteParams) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
   }
 
@@ -405,8 +400,7 @@ object MultiPartPaymentLifecycle {
       Some(cfg.paymentContext))
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
-    val finalPayload = FinalPayload.Standard.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.paymentMetadata, request.additionalTlvs, request.userCustomTlvs)
-    SendPaymentToRoute(replyTo, Right(route), finalPayload)
+    SendPaymentToRoute(replyTo, Right(route), request.finalPayload.withAmount(route.amount), route.amount, request.targetExpiry)
   }
 
   /** When we receive an error from the final recipient or payment gets settled on chain, we should fail the whole payment, it's useless to retry. */

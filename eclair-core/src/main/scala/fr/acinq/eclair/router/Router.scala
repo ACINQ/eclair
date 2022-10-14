@@ -28,6 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -38,6 +39,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol._
 
 import java.util.UUID
@@ -405,9 +407,8 @@ object Router {
       }
     }
   }
-  // @formatter:on
 
-  trait Hop {
+  sealed trait Hop {
     /** @return the id of the start node. */
     def nodeId: PublicKey
 
@@ -424,7 +425,10 @@ object Router {
     def cltvExpiryDelta: CltvExpiryDelta
   }
 
-  // @formatter:off
+  sealed trait ConnectedHop extends Hop {
+    def length: Int
+  }
+
   /** Channel routing parameters */
   sealed trait ChannelRelayParams {
     def cltvExpiryDelta: CltvExpiryDelta
@@ -465,11 +469,17 @@ object Router {
    * @param shortChannelId scid that will be used to build the payment onion.
    * @param params         source for the channel parameters.
    */
-  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, params: ChannelRelayParams) extends Hop {
-    // @formatter:off
-    override def cltvExpiryDelta: CltvExpiryDelta = params.cltvExpiryDelta
+  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, params: ChannelRelayParams) extends ConnectedHop {
+    override val cltvExpiryDelta: CltvExpiryDelta = params.cltvExpiryDelta
     override def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
-    // @formatter:on
+    override val length = 1
+  }
+
+  case class BlindedHop(route: BlindedRoute, paymentInfo: PaymentInfo, nextNodeId: PublicKey) extends ConnectedHop {
+    override def nodeId: PublicKey = route.introductionNodeId
+    override def cltvExpiryDelta: CltvExpiryDelta = paymentInfo.cltvExpiryDelta
+    override def length: Int = route.blindedNodes.length - 1
+    override def fee(amount: MilliSatoshi): MilliSatoshi = paymentInfo.fee(amount)
   }
 
   /**
@@ -535,10 +545,10 @@ object Router {
    */
   case class PaymentContext(id: UUID, parentId: UUID, paymentHash: ByteVector32)
 
-  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop]) {
+  case class Route(amount: MilliSatoshi, hops: Seq[ConnectedHop]) {
     require(hops.nonEmpty, "route cannot be empty")
 
-    val length = hops.length
+    val length: Int = hops.map(_.length).sum
 
     def fee(includeLocalChannelCost: Boolean): MilliSatoshi = {
       val hopsToPay = if (includeLocalChannelCost) hops else hops.drop(1)
@@ -548,7 +558,10 @@ object Router {
 
     def printNodes(): String = hops.map(_.nextNodeId).mkString("->")
 
-    def printChannels(): String = hops.map(_.shortChannelId).mkString("->")
+    def printChannels(): String = hops.map {
+      case hop: ChannelHop => hop.shortChannelId.toString
+      case _: BlindedHop => "blinded"
+    }.mkString("->")
 
     def stopAt(nodeId: PublicKey): Route = {
       val amountAtStop = hops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }

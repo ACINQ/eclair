@@ -339,8 +339,8 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(codedDecoded.description == Left(description))
     assert(codedDecoded.features == features)
     assert(codedDecoded.issuer.contains(issuer))
-    assert(codedDecoded.nodeId.value.drop(1) == nodeKey.publicKey.value.drop(1))
-    assert(codedDecoded.blindedPaths == Seq(path))
+    assert(codedDecoded.signingNodeId.value.drop(1) == nodeKey.publicKey.value.drop(1))
+    assert(codedDecoded.extraEdges.map(_.path) == Seq(path))
     assert(codedDecoded.quantity.contains(quantity))
     assert(codedDecoded.payerKey.contains(payerKey))
     assert(codedDecoded.payerNote.contains(payerNote))
@@ -376,7 +376,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val encodedInvoice = "lni1qvsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqqyyrfgrkke8dp3jww26jz8zgvhxhdhzgj062ejxecv9uqsdhh2x9lnjzqrkudsqzstd45ku6tdv9kzqarfwqg8sqj075ch7pgu0ah2cqnxchxw46mv2a66js86hxz5u3ala0mtc7syqupdypsecj08jzgq82kzfmd8ncs9mufkaea9dr305na9vccycmjmlfspqvxsr2nmet6yjwzmjtrmqspxnyt9wl9jv46ep5t49amw3xpj82hk6qqjy0yn6ww6ektzyys7qrm6zcul88r27ysuqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpdcmqqqqq83pqf8l2vtlq5w87m4vqfnvtn82adk9wadfgratnp2wg7l7ha4u0gzqwf3qrm6y88mr3y2du7fzqjpamgedldayx8nenfwwtfmy877hpvs33e8zsprzmlnns23qshlyweee7p4m365legtkdgvy6s02rdqsv38mwnmk8p88cz03dt7zuqsqzmcyqvpkh2g4088w2xu7uvu6zvsxwrh2vgvppgnmf0vyqhqwqv6w8lgeulalcq6xznps7gw9h0rtfpwxftz4l7j2nnuzj3gpy86kg34awtdq"
     val decodedInvoice = Bolt12Invoice.fromString(encodedInvoice).get
     assert(decodedInvoice.amount == invoice.amount)
-    assert(decodedInvoice.nodeId == invoice.nodeId)
+    assert(decodedInvoice.signingNodeId == invoice.signingNodeId)
     assert(decodedInvoice.paymentHash == invoice.paymentHash)
     assert(decodedInvoice.description == invoice.description)
     assert(decodedInvoice.payerKey == invoice.payerKey)
@@ -405,7 +405,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val encodedInvoice = "lni1qvsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqqyypmpsc7ww3cxguwl27ela95ykset7t8tlvyfy7a200eujcnhczws6zqyrvhqd5s2p4kkjmnfd4skcgr0venx2ussnqpufzkf0cyl8ja6av6mq242d5rjk4mjdpq6xnf9j5s40jk2vzsu4agr8f5tqgegums2pxkyxcarfk6fyzdk37akrn808xrptvzzj222gv9szqervpzvaxzejaejwul8wkjuldd0qpjxpt85vlp3mncpyx30dgrzduqr99dq04sehw2nh3kqcnmj87gn9x5fcln9njcshnjcqc4c4d9vvw98fxeqm2037p4e82jce87n6nud6gncvysuqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpktsx6gqqq83pq0zg4jt7p8euhwhtxkcz42ndqu44wunggx356fv4y9tu4jnq58902f3q86209t74drgj3upwe6zy449q58wl9f8r5z97ktd6zxelzy6tq5tjsprzmlnns23q9jcw0vzjxencw3gvx0d0d5hjc09kzv3zzvnwrsd5ntyhlht7kuszuqsqzmcyqh2ej2lvwj9chganv56tasj2a4x9expx44tr65u9cw8xyrdzvqnd09g60evuy5gqs08hxmx4rd2npqfdekmqjc4zvf5qf0v65uta9glq"
     val decodedInvoice = Bolt12Invoice.fromString(encodedInvoice).get
     assert(decodedInvoice.amount == invoice.amount)
-    assert(decodedInvoice.nodeId == invoice.nodeId)
+    assert(decodedInvoice.signingNodeId == invoice.signingNodeId)
     assert(decodedInvoice.paymentHash == invoice.paymentHash)
     assert(decodedInvoice.description == invoice.description)
     assert(decodedInvoice.payerKey == invoice.payerKey)
@@ -441,7 +441,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val encodedInvoice = "lni1qvsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqyyqcnw8ucesh0ttrka67a62qyf04tsprv4ul6uyrpctdm596q7av2zzqrdhwsqzsndanxvetjypmkjargypch2ctww35hg7gsnqpj0t74n8dryfh5vz9ed2cy9lj43064sgga830x0mxgh6vkxgsyxnczy9ysc4m9zqvmruq7clt4dfxuwjn8hmc240m0pm4yclacwtkugtaqzq75v83x5evkfwaj4amaac7e84kf9l6zcr28nyv7mx09jv87zvdvcuqr9d5ex7wdrd3g7vjxjnztctuk2tuasa5xs8klwadygqaq5dtner75zpfmptt0jv7mha7s60gft0nh8efmcysuqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqmwaqqqqq9q3v9kxjcm9gp3xjemndphhqtnrdak3uggry7hatxw6xgn0gcytj64sgtl9tzl4tqs360z7vlkv305evv3qgd8jqq2gycs8cmgrl28nvm3wlqqheha0t570rgaszg7mzvvzvwmx9s92nmyujkfgq33dleec9gs8up5r8hpz5vcfzxv706ag9yrde627yfhscttac8lw9u5u3g3udvpwqgqz9uzqt5ag0q6zkyft7jwxxcgr9etqk2psjcc44rzye2yzvx5mw7qw694lzka89xnn49qt6yh8am5xtdr5jy3mkzg49xwnz2zvx2z3a7rdajg"
     val decodedInvoice = Bolt12Invoice.fromString(encodedInvoice).get
     assert(decodedInvoice.amount == invoice.amount)
-    assert(decodedInvoice.nodeId == invoice.nodeId)
+    assert(decodedInvoice.signingNodeId == invoice.signingNodeId)
     assert(decodedInvoice.paymentHash == invoice.paymentHash)
     assert(decodedInvoice.description == invoice.description)
     assert(decodedInvoice.payerKey == invoice.payerKey)

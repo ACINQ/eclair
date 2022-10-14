@@ -44,6 +44,7 @@ import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
@@ -105,7 +106,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // pre-computed route going from A to D
     val route = Route(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil)
-    val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata))
+    val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry)
     sender.send(paymentFSM, request)
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -133,7 +134,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // pre-computed route going from A to D
     val route = PredefinedNodeRoute(Seq(a, b, c, d))
-    val request = SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata))
+    val request = SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry)
 
     sender.send(paymentFSM, request)
     routerForwarder.expectMsg(FinalizeRoute(defaultAmountMsat, route, paymentContext = Some(cfg.paymentContext)))
@@ -159,7 +160,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle(recordMetrics = false)
     import payFixture._
 
-    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedNodeRoute(Seq(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata))
+    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedNodeRoute(Seq(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry)
     sender.send(paymentFSM, brokenRoute)
     routerForwarder.expectMsgType[FinalizeRoute]
     routerForwarder.forward(routerFixture.router)
@@ -176,7 +177,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle(recordMetrics = false)
     import payFixture._
 
-    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedChannelRoute(randomKey().publicKey, Seq(ShortChannelId(1), ShortChannelId(2)))), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata))
+    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedChannelRoute(randomKey().publicKey, Seq(ShortChannelId(1), ShortChannelId(2)))), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry)
     sender.send(paymentFSM, brokenRoute)
     routerForwarder.expectMsgType[FinalizeRoute]
     routerForwarder.forward(routerFixture.router)
@@ -197,7 +198,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val recipient = randomKey().publicKey
     val route = PredefinedNodeRoute(Seq(a, b, c, recipient))
     val extraEdges = Seq(BasicEdge(c, recipient, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144)))
-    val request = SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), extraEdges)
+    val request = SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, extraEdges)
 
     sender.send(paymentFSM, request)
     routerForwarder.expectMsg(FinalizeRoute(defaultAmountMsat, route, extraEdges, paymentContext = Some(cfg.paymentContext)))
@@ -223,7 +224,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, f, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 5, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, f, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 5, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val routeRequest = routerForwarder.expectMsgType[RouteRequest]
@@ -256,7 +257,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       "my-test-experiment",
       experimentPercentage = 100
     ).getDefaultRouteParams
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 5, routeParams = routeParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 5, routeParams = routeParams)
     sender.send(paymentFSM, request)
     val routeRequest = routerForwarder.expectMsgType[RouteRequest]
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -281,7 +282,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     val paymentMetadataTooBig = ByteVector.fromValidHex("01" * 1300)
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, Some(paymentMetadataTooBig)), 5, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, Some(paymentMetadataTooBig)), defaultAmountMsat, defaultExpiry, 5, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val routeRequest = routerForwarder.expectMsgType[RouteRequest]
@@ -300,7 +301,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 2, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 2, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     routerForwarder.expectMsg(defaultRouteRequest(a, d, cfg))
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
@@ -345,7 +346,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 2, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 2, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
     routerForwarder.expectMsgType[RouteRequest]
@@ -366,7 +367,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 2, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 2, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
     routerForwarder.expectMsgType[RouteRequest]
@@ -386,7 +387,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 2, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 2, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
@@ -409,7 +410,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 2, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 2, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
@@ -432,7 +433,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 2, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 2, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
@@ -455,7 +456,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 2, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 2, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
     val WaitingForRoute(_, Nil, _) = paymentFSM.stateData
@@ -486,7 +487,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 5, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 5, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
@@ -540,7 +541,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 1, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 1, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg))
     routerForwarder.forward(routerFixture.router)
@@ -571,7 +572,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       BasicEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
     )
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 5, extraEdges = extraEdges, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 5, extraEdges = extraEdges, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
@@ -612,7 +613,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // we build an assisted route for channel cd
     val extraEdges = Seq(BasicEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta))
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 1, extraEdges = extraEdges, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 1, extraEdges = extraEdges, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
@@ -628,7 +629,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val failureOnion = Sphinx.FailurePacket.wrap(Sphinx.FailurePacket.create(sharedSecrets1(1)._1, failure), sharedSecrets1.head._1)
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))))
 
-    assert(routerForwarder.expectMsgType[RouteCouldRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, update_bc).map(_.shortChannelId))
+    assert(routerForwarder.expectMsgType[RouteCouldRelay].route.hops.map(_.asInstanceOf[ChannelHop].shortChannelId) == Seq(update_ab, update_bc).map(_.shortChannelId))
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_cd.shortChannelId, c, d), Some(nodeParams.routerConf.channelExcludeDuration)))
     routerForwarder.expectMsg(channelUpdate_cd_disabled)
   }
@@ -638,7 +639,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 2, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 2, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
@@ -676,7 +677,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 5, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 5, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     routerForwarder.expectMsgType[RouteRequest]
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -703,7 +704,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(metrics.fees == 730.msat)
     metricsListener.expectNoMessage()
 
-    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, update_bc, update_cd).map(_.shortChannelId))
+    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.asInstanceOf[ChannelHop].shortChannelId) == Seq(update_ab, update_bc, update_cd).map(_.shortChannelId))
   }
 
   test("payment succeeded to a channel with fees=0") { routerFixture =>
@@ -732,7 +733,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
 
     // we send a payment to H
-    val request = SendPaymentToNode(sender.ref, h, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 5, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, h, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 5, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     routerForwarder.expectMsgType[RouteRequest]
 
@@ -744,13 +745,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFulfill(defaultPaymentPreimage)))
     val paymentOK = sender.expectMsgType[PaymentSent]
     val PaymentSent(_, _, paymentOK.paymentPreimage, finalAmount, _, PartialPayment(_, partAmount, fee, ByteVector32.Zeroes, _, _) :: Nil) = eventListener.expectMsgType[PaymentSent]
-    assert(partAmount == request.finalPayload.amount)
+    assert(partAmount == request.finalPayload.asInstanceOf[FinalPayload.Standard].amount)
     assert(finalAmount == defaultAmountMsat)
 
     // NB: A -> B doesn't pay fees because it's our direct neighbor
     // NB: B -> H doesn't asks for fees at all
     assert(fee == 0.msat)
-    assert(paymentOK.recipientAmount == request.finalPayload.amount)
+    assert(paymentOK.recipientAmount == request.finalPayload.asInstanceOf[FinalPayload.Standard].amount)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
     assert(metrics.status == "SUCCESS")
@@ -759,7 +760,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(metrics.fees == 0.msat)
     metricsListener.expectNoMessage()
 
-    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, channelUpdate_bh).map(_.shortChannelId))
+    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.asInstanceOf[ChannelHop].shortChannelId) == Seq(update_ab, channelUpdate_bh).map(_.shortChannelId))
   }
 
   test("filter errors properly") { () =>
@@ -795,7 +796,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, update_bc))), Set.empty, Set.empty),
       // unreadable remote failures -> blacklist all nodes except our direct peer and the final recipient
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil), Set.empty, Set.empty),
-      (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: ChannelHop(ShortChannelId(5656986L), d, e, null) :: Nil), Set(c, d), Set.empty)
+      (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: ChannelHop(ShortChannelId(5656986L), d, e, ChannelRelayParams.FromHint(Invoice.BasicEdge(d, e, ShortChannelId(5656986L), 0 msat, 111, CltvExpiryDelta(55)))) :: Nil), Set(c, d), Set.empty)
     )
 
     for ((failure, expectedNodes, expectedChannels) <- testCases) {
@@ -819,7 +820,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), 3, routeParams = defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry, 3, routeParams = defaultRouteParams)
     sender.send(paymentFSM, request)
     routerForwarder.expectMsgType[RouteRequest]
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -842,7 +843,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // pre-computed route going from A to D
     val route = Route(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil)
-    val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata))
+    val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.FinalPayload.Standard.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, defaultInvoice.paymentMetadata), defaultAmountMsat, defaultExpiry)
     sender.send(paymentFSM, request)
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])

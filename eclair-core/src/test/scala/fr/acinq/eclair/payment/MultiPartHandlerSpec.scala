@@ -261,8 +261,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(privKey, offer, invoiceReq))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.amount == 25_000.msat)
-    assert(invoice.nodeId == privKey.publicKey)
-    assert(invoice.blindedPaths.nonEmpty)
+    assert(invoice.signingNodeId == privKey.publicKey)
+    assert(invoice.extraEdges.nonEmpty)
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     assert(invoice.description == Left("a blinded coffee please"))
     assert(invoice.offerId.contains(offer.offerId))

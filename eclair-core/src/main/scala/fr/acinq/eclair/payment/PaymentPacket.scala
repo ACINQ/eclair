@@ -22,15 +22,18 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractSharedSecret, Origin}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
-import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
+import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, ConnectedHop, Hop, NodeHop}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{BlindingPoint, EncryptedRecipientData}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{BlindedPerHopPayload, FinalPayload, IntermediatePayload, PerHopPayload}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
 import java.util.UUID
-import scala.util.Try
+import scala.util.{Failure, Try}
 
 /**
  * Created by t-bast on 08/10/2019.
@@ -196,7 +199,7 @@ object IncomingPaymentPacket {
         case innerPayload =>
           // We merge contents from the outer and inner payloads.
           // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-          Right(FinalPacket(add, FinalPayload.Standard.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata)))
+          Right(FinalPacket(add, FinalPayload.Standard.createMultiPartPayload(innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata).withAmount(outerPayload.amount)))
       }
     }
   }
@@ -232,6 +235,18 @@ object OutgoingPaymentPacket {
     Sphinx.create(sessionKey, packetPayloadLength, nodes, payloadsBin, Some(associatedData))
   }
 
+  def buildBlindedPayloads(hop: BlindedHop, finalPayloads: Seq[PerHopPayload]): Seq[PerHopPayload]=
+    if (hop.route.blindedNodes.length == 1) {
+      val additionalTlvs = Seq(EncryptedRecipientData(hop.route.encryptedPayloads.head), BlindingPoint(hop.route.blindingKey))
+      val blindedPayload = BlindedPerHopPayload(finalPayloads.head.records.copy(records = finalPayloads.head.records.records.toSeq ++ additionalTlvs))
+      blindedPayload +: finalPayloads.drop(1)
+    } else {
+      val firstBlinded = BlindedPerHopPayload(TlvStream(EncryptedRecipientData(hop.route.encryptedPayloads.head), BlindingPoint(hop.route.blindingKey)))
+      val intermediateBlinded = hop.route.encryptedPayloads.drop(1).dropRight(1).map(data => BlindedPerHopPayload(TlvStream(EncryptedRecipientData(data))))
+      val lastBlinded = BlindedPerHopPayload(finalPayloads.head.records.copy(records = finalPayloads.head.records.records.toSeq :+ EncryptedRecipientData(hop.route.encryptedPayloads.last)))
+      firstBlinded +: (intermediateBlinded ++ (lastBlinded +: finalPayloads.drop(1)))
+    }
+
   /**
    * Build the onion payloads for each hop.
    *
@@ -242,14 +257,22 @@ object OutgoingPaymentPacket {
    *         - firstExpiry is the cltv expiry for the first htlc in the route
    *         - a sequence of payloads that will be used to build the onion
    */
-  def buildPayloads(hops: Seq[Hop], finalPayload: FinalPayload): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) = {
-    hops.reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PerHopPayload](finalPayload))) {
-      case ((amount, expiry, payloads), hop) =>
-        val payload = hop match {
-          case hop: ChannelHop => IntermediatePayload.ChannelRelay.Standard(hop.shortChannelId, amount, expiry)
-          case hop: NodeHop => IntermediatePayload.NodeRelay.Standard(amount, expiry, hop.nextNodeId)
+  def buildPayloads(hops: Seq[Hop], finalPayload: PerHopPayload, lastAmount: MilliSatoshi, lastExpiry: CltvExpiry): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) = {
+    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((lastAmount, lastExpiry, Seq(finalPayload))) {
+      case ((amount, expiry, finalPayloads), hop) =>
+        val payloads = hop match {
+          case hop: ChannelHop => IntermediatePayload.ChannelRelay.Standard(hop.shortChannelId, amount, expiry) +: finalPayloads
+          case hop: NodeHop => IntermediatePayload.NodeRelay.Standard(amount, expiry, hop.nextNodeId) +: finalPayloads
+          case hop: BlindedHop => buildBlindedPayloads(hop, finalPayloads)
         }
-        (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads)
+        (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payloads)
+    }
+    // The first payload would be for us, so we don't need to build it.
+    // However a single blinded hop can contain many payloads, in that case we need to build the blinded payloads and drop the first one.
+    // The fees for our part of the blinded hop have already been deducted in `buildCommand`.
+    hops.head match {
+      case hop: BlindedHop => (firstAmount + hop.fee(firstAmount), firstExpiry + hop.cltvExpiryDelta, buildBlindedPayloads(hop, payloads).drop(1))
+      case _ => (firstAmount, firstExpiry, payloads)
     }
   }
 
@@ -263,18 +286,22 @@ object OutgoingPaymentPacket {
    *         - firstExpiry is the cltv expiry for the first htlc in the route
    *         - the onion to include in the HTLC
    */
-  private def buildPacket(packetPayloadLength: Int, paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
-    val (firstAmount, firstExpiry, payloads) = buildPayloads(hops.drop(1), finalPayload)
-    val nodes = hops.map(_.nextNodeId)
+  private def buildPacket(packetPayloadLength: Int, paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PerHopPayload, amount: MilliSatoshi, expiry: CltvExpiry): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
+    val (firstAmount, firstExpiry, payloads) = buildPayloads(hops, finalPayload, amount, expiry)
+    val nodes = hops.flatMap {
+      case hop: ChannelHop => Seq(hop.nextNodeId)
+      case hop: NodeHop => Seq(hop.nextNodeId)
+      case hop: BlindedHop => hop.route.blindedNodeIds.drop(1)
+    }
     // BOLT 2 requires that associatedData == paymentHash
     buildOnion(packetPayloadLength, nodes, payloads, paymentHash).map(onion => (firstAmount, firstExpiry, onion))
   }
 
-  def buildPaymentPacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
-    buildPacket(PaymentOnionCodecs.paymentOnionPayloadLength, paymentHash, hops, finalPayload)
+  def buildPaymentPacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PerHopPayload, amount: MilliSatoshi, expiry: CltvExpiry): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
+    buildPacket(PaymentOnionCodecs.paymentOnionPayloadLength, paymentHash, hops, finalPayload, amount, expiry)
 
-  def buildTrampolinePacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
-    buildPacket(PaymentOnionCodecs.trampolineOnionPayloadLength, paymentHash, hops, finalPayload)
+  def buildTrampolinePacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PerHopPayload, amount: MilliSatoshi, expiry: CltvExpiry): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
+    buildPacket(PaymentOnionCodecs.trampolineOnionPayloadLength, paymentHash, hops, finalPayload, amount, expiry)
 
   /**
    * Build an encrypted trampoline onion packet when the final recipient doesn't support trampoline.
@@ -288,15 +315,15 @@ object OutgoingPaymentPacket {
    *         - firstExpiry is the cltv expiry for the first trampoline node in the route
    *         - the trampoline onion to include in final payload of a normal onion
    */
-  def buildTrampolineToLegacyPacket(invoice: Bolt11Invoice, hops: Seq[NodeHop], finalPayload: FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
+  def buildTrampolineToLegacyPacket(invoice: Bolt11Invoice, hops: Seq[NodeHop], finalPayload: PerHopPayload, amount: MilliSatoshi, expiry: CltvExpiry): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
     // NB: the final payload will never reach the recipient, since the next-to-last node in the trampoline route will convert that to a non-trampoline payment.
     // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
-    val dummyFinalPayload = FinalPayload.Standard.createSinglePartPayload(finalPayload.amount, finalPayload.expiry, randomBytes32(), None)
-    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PerHopPayload](dummyFinalPayload))) {
+    val dummyFinalPayload = FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), None)
+    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((amount, expiry, Seq[PerHopPayload](dummyFinalPayload))) {
       case ((amount, expiry, payloads), hop) =>
         // The next-to-last node in the trampoline route must receive invoice data to indicate the conversion to a non-trampoline payment.
         val payload = if (payloads.length == 1) {
-          IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
+          IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(amount, amount, expiry, hop.nextNodeId, invoice)
         } else {
           IntermediatePayload.NodeRelay.Standard(amount, expiry, hop.nextNodeId)
         }
@@ -322,10 +349,34 @@ object OutgoingPaymentPacket {
    *
    * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
    */
-  def buildCommand(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: FinalPayload): Try[(CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)])] = {
-    buildPaymentPacket(paymentHash, hops, finalPayload).map {
+  def buildCommand(replyTo: ActorRef,
+                   privateKey: PrivateKey,
+                   upstream: Upstream,
+                   paymentHash: ByteVector32,
+                   hops: Seq[ConnectedHop],
+                   finalPayload: PerHopPayload,
+                   amount: MilliSatoshi,
+                   expiry: CltvExpiry): Try[(ShortChannelId, CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)])] = {
+    val (shortChannelId, nextBlindingKey_opt, nextHops) = hops.head match {
+      case hop: ChannelHop => (hop.shortChannelId, None, hops)
+      case hop: Router.BlindedHop =>
+        RouteBlindingEncryptedDataCodecs.decode(privateKey, hop.route.blindingKey, hop.route.encryptedPayloads.head) match {
+          case Left(e) => return Failure(e)
+          case Right(RouteBlindingDecryptedData(encryptedDataTlvs, nextBlindingKey)) =>
+            IntermediatePayload.ChannelRelay.Blinded.validate(TlvStream(EncryptedRecipientData(ByteVector.empty)), encryptedDataTlvs, nextBlindingKey) match {
+              case Left(invalidTlv) => return Failure(RouteBlindingEncryptedDataCodecs.CannotDecodeData(invalidTlv.failureMessage.message))
+              case Right(payload) =>
+                // TODO(trampoline-to-blind): Check fees and CLTV. As long as we are the sender it's fine but it is needed if we trampoline the payment for someone else.
+                val amountWithFees = amount + hop.paymentInfo.fee(amount)
+                val remainingFee = payload.amountToForward(amountWithFees) - amount
+                val tailPaymentInfo = hop.paymentInfo.copy(feeBase = remainingFee, feeProportionalMillionths = 0, cltvExpiryDelta = hop.paymentInfo.cltvExpiryDelta - payload.cltvExpiryDelta)
+                (payload.outgoingChannelId, Some(nextBlindingKey), Seq(hop.copy(paymentInfo = tailPaymentInfo)))
+            }
+        }
+    }
+    buildPaymentPacket(paymentHash, nextHops, finalPayload, amount, expiry).map {
       case (firstAmount, firstExpiry, onion) =>
-        CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, None, Origin.Hot(replyTo, upstream), commit = true) -> onion.sharedSecrets
+        (shortChannelId, CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, nextBlindingKey_opt, Origin.Hot(replyTo, upstream), commit = true), onion.sharedSecrets)
     }
   }
 

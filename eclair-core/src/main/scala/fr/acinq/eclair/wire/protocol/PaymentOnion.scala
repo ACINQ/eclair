@@ -22,7 +22,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -217,6 +217,9 @@ object PaymentOnion {
     def records: TlvStream[OnionPaymentPayloadTlv]
   }
 
+  /** An opaque blinded payload. */
+  case class BlindedPerHopPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends PerHopPayload
+
   /** Per-hop payload for an intermediate node. */
   sealed trait IntermediatePayload extends PerHopPayload
 
@@ -264,7 +267,8 @@ object PaymentOnion {
         val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
         val allowedFeatures = blindedRecords.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
         override def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi = ((incomingAmount - paymentRelay.feeBase).toLong * 1_000_000 + 1_000_000 + paymentRelay.feeProportionalMillionths - 1).msat / (1_000_000 + paymentRelay.feeProportionalMillionths)
-        override def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - paymentRelay.cltvExpiryDelta
+        val cltvExpiryDelta: CltvExpiryDelta = paymentRelay.cltvExpiryDelta
+        override def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - cltvExpiryDelta
         // @formatter:on
       }
 
@@ -350,18 +354,23 @@ object PaymentOnion {
     // @formatter:off
     def amount: MilliSatoshi
     def totalAmount: MilliSatoshi
-    def expiry: CltvExpiry
     // @formatter:on
   }
 
   object FinalPayload {
+    /** An incomplete payload missing the amount used for multipart payments before we know the size of each part. */
+    sealed trait Partial {
+      def records: TlvStream[OnionPaymentPayloadTlv]
+      def withAmount(amount: MilliSatoshi): PerHopPayload
+    }
+
     case class Standard(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload {
       override val amount = records.get[AmountToForward].get.amount
       override val totalAmount = records.get[PaymentData].map(_.totalAmount match {
         case MilliSatoshi(0) => amount
         case totalAmount => totalAmount
       }).getOrElse(amount)
-      override val expiry = records.get[OutgoingCltv].get.cltv
+      val expiry = records.get[OutgoingCltv].get.cltv
       val paymentSecret = records.get[PaymentData].get.secret
       val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
       val paymentMetadata = records.get[PaymentMetadata].map(_.data)
@@ -385,20 +394,35 @@ object PaymentOnion {
         Standard(TlvStream(tlvs, userCustomTlvs))
       }
 
-      def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): Standard = {
+      case class Partial(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload.Partial {
+        override def withAmount(amount: MilliSatoshi): Standard = Standard(records.copy(records = AmountToForward(amount) +: records.records.toSeq))
+      }
+
+      def createMultiPartPayload(totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): Partial = {
         val tlvs = Seq(
-          Some(AmountToForward(amount)),
           Some(OutgoingCltv(expiry)),
           Some(PaymentData(paymentSecret, totalAmount)),
           paymentMetadata.map(m => PaymentMetadata(m))
         ).flatten
-        Standard(TlvStream(tlvs ++ additionalTlvs, userCustomTlvs))
+        Partial(TlvStream(tlvs ++ additionalTlvs, userCustomTlvs))
       }
 
+      def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector]): Standard =
+        createMultiPartPayload(totalAmount, expiry, paymentSecret, paymentMetadata).withAmount(amount)
+
       /** Create a trampoline outer payload. */
-      def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): Standard = {
-        Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount), TrampolineOnion(trampolinePacket)))
+      def createTrampolinePayload(totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket, paymentMetadata: Option[ByteVector]): Partial = {
+        val tlvs = Seq(
+          Some(OutgoingCltv(expiry)),
+          Some(PaymentData(paymentSecret, totalAmount)),
+          paymentMetadata.map(m => PaymentMetadata(m)),
+          Some(TrampolineOnion(trampolinePacket)),
+        ).flatten
+        Partial(TlvStream(tlvs))
       }
+
+      def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): Standard =
+        createTrampolinePayload(totalAmount, expiry, paymentSecret, trampolinePacket, None).withAmount(amount)
     }
 
     /**
@@ -407,7 +431,6 @@ object PaymentOnion {
     case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends FinalPayload {
       override val amount = records.get[AmountToForward].get.amount
       override val totalAmount = records.get[TotalAmount].map(_.totalAmount).getOrElse(amount)
-      override val expiry = records.get[OutgoingCltv].get.cltv
       val pathId = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].get.data
       val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
       val allowedFeatures = blindedRecords.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
@@ -416,13 +439,11 @@ object PaymentOnion {
     object Blinded {
       def validate(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, Blinded] = {
         if (records.get[AmountToForward].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
-        if (records.get[OutgoingCltv].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
         if (records.get[EncryptedRecipientData].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
         // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data`, `current_blinding_point`, `amt_to_forward`, `outgoing_cltv_value` and `total_amount_msat`.
         if (records.unknown.nonEmpty) return Left(ForbiddenTlv(records.unknown.head.tag))
         records.records.find {
           case _: AmountToForward => false
-          case _: OutgoingCltv => false
           case _: EncryptedRecipientData => false
           case _: BlindingPoint => false
           case _: TotalAmount => false
@@ -433,9 +454,32 @@ object PaymentOnion {
         }
         BlindedRouteData.validPaymentRecipientData(blindedRecords).map(blindedRecords => Blinded(records, blindedRecords))
       }
+
+      def createSinglePartPayload(amount: MilliSatoshi, userCustomTlvs: Seq[GenericTlv] = Nil): BlindedPerHopPayload = {
+        val tlvs = Seq(
+          AmountToForward(amount),
+          TotalAmount(amount),
+        )
+        BlindedPerHopPayload(TlvStream(tlvs, userCustomTlvs))
+      }
+
+      case class Partial(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload.Partial {
+        override def withAmount(amount: MilliSatoshi): BlindedPerHopPayload = BlindedPerHopPayload(records.copy(records = AmountToForward(amount) +: records.records.toSeq))
+      }
+
+      def createMultiPartPayload(totalAmount: MilliSatoshi, userCustomTlvs: Seq[GenericTlv] = Nil): Partial = {
+        val tlvs = Seq(
+          TotalAmount(totalAmount),
+        )
+        Partial(TlvStream(tlvs, userCustomTlvs))
+      }
+
+      def createTrampolinePayload(totalAmount: MilliSatoshi, trampolinePacket: OnionRoutingPacket): Partial = {
+        // Trampoline is not compatible with blinded payloads yet.
+        Partial(TlvStream())
+      }
     }
   }
-
 }
 
 object PaymentOnionCodecs {

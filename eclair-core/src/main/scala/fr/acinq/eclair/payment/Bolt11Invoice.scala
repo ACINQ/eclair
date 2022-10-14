@@ -19,7 +19,10 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload.Partial
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, PerHopPayload}
+import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket, PaymentOnion}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -129,6 +132,15 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
     val int5s = eight2fiveCodec.decode(data).require.value
     Bech32.encode(hrp, int5s.toArray, Bech32.Encoding.Bech32)
   }
+
+  override def singlePartFinalPayload(amount: MilliSatoshi, expiry: CltvExpiry, userCustomTlvs: Seq[GenericTlv]): FinalPayload.Standard =
+    FinalPayload.Standard.createSinglePartPayload(amount, expiry, paymentSecret, paymentMetadata, userCustomTlvs)
+
+  override def multiPartFinalPayload(totalAmount: MilliSatoshi, expiry: CltvExpiry, userCustomTlvs: Seq[GenericTlv]): FinalPayload.Standard.Partial =
+    FinalPayload.Standard.createMultiPartPayload(totalAmount, expiry, paymentSecret, paymentMetadata, userCustomTlvs = userCustomTlvs)
+
+  override def trampolinePayload(totalAmount: MilliSatoshi, expiry: CltvExpiry, trampolineSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload.Standard.Partial =
+    FinalPayload.Standard.createTrampolinePayload(totalAmount, expiry, trampolineSecret, trampolinePacket, paymentMetadata)
 }
 
 object Bolt11Invoice {

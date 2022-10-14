@@ -155,7 +155,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, request)
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, Nil))
-    payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(initiator, Left(route), FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1), invoice.paymentSecret, invoice.paymentMetadata)))
+    payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(initiator, Left(route), invoice.singlePartFinalPayload(finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1)), finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1)))
 
     sender.send(initiator, GetPayment(Left(payment.paymentId)))
     sender.expectMsg(PaymentIsPending(payment.paymentId, invoice.paymentHash, PendingPaymentToRoute(sender.ref, request)))
@@ -180,7 +180,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount, c, Upstream.Local(id), Some(invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
-    payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(initiator, c, FinalPayload.Standard(TlvStream(OnionPaymentPayloadTlv.AmountToForward(finalAmount), OnionPaymentPayloadTlv.OutgoingCltv(req.finalExpiry(nodeParams.currentBlockHeight)), OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, finalAmount))), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+    payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(initiator, c, FinalPayload.Standard(TlvStream(OnionPaymentPayloadTlv.AmountToForward(finalAmount), OnionPaymentPayloadTlv.OutgoingCltv(req.finalExpiry(nodeParams.currentBlockHeight)), OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, finalAmount))), finalAmount, req.finalExpiry(nodeParams.currentBlockHeight), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
 
     sender.send(initiator, GetPayment(Left(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
@@ -203,7 +203,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount + 100.msat, c, Upstream.Local(id), Some(invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
-    multiPartPayFsm.expectMsg(SendMultiPartPayment(initiator, invoice.paymentSecret, c, finalAmount + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight), 1, invoice.paymentMetadata, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+    val finalPayload = invoice.multiPartFinalPayload(finalAmount + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight))
+    multiPartPayFsm.expectMsg(SendMultiPartPayment(initiator, c, finalPayload, finalAmount + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
 
     sender.send(initiator, GetPayment(Left(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
@@ -231,10 +232,10 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.replyTo == initiator)
     assert(msg.route == Left(route))
     assert(msg.finalPayload.isInstanceOf[FinalPayload.Standard])
-    assert(msg.finalPayload.amount == finalAmount / 2)
-    assert(msg.finalPayload.expiry == req.finalExpiry(nodeParams.currentBlockHeight))
+    assert(msg.finalPayload.asInstanceOf[FinalPayload.Standard].amount == finalAmount / 2)
+    assert(msg.finalPayload.asInstanceOf[FinalPayload.Standard].expiry == req.finalExpiry(nodeParams.currentBlockHeight))
     assert(msg.finalPayload.asInstanceOf[FinalPayload.Standard].paymentSecret == invoice.paymentSecret)
-    assert(msg.finalPayload.totalAmount == finalAmount)
+    assert(msg.finalPayload.asInstanceOf[FinalPayload.Standard].totalAmount == finalAmount)
 
     sender.send(initiator, GetPayment(Left(payment.paymentId)))
     sender.expectMsg(PaymentIsPending(payment.paymentId, invoice.paymentHash, PendingPaymentToRoute(sender.ref, req)))
@@ -266,15 +267,15 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingTrampolinePayment(sender.ref, Nil, req)))
 
     val msg = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg.paymentSecret !== invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
+    assert(msg.finalPayload.records.get[OnionPaymentPayloadTlv.PaymentData].get.secret !== invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
     assert(msg.targetNodeId == b)
     assert(msg.targetExpiry.toLong == currentBlockCount + 9 + 12 + 1)
     assert(msg.totalAmount == finalAmount + trampolineFees)
-    assert(msg.additionalTlvs.head.isInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion])
+    assert(msg.finalPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].nonEmpty)
     assert(msg.maxAttempts == nodeParams.maxPaymentAttempts)
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
-    val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion].packet
+    val trampolineOnion = msg.finalPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].get.packet
     val Right(decrypted) = Sphinx.peel(priv_b.privateKey, Some(invoice.paymentHash), trampolineOnion)
     assert(!decrypted.isLastPacket)
     val Right(trampolinePayload) = IntermediatePayload.NodeRelay.Standard.validate(PaymentOnionCodecs.perHopPayloadCodec.decode(decrypted.payload.bits).require.value)
@@ -306,14 +307,14 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     multiPartPayFsm.expectMsgType[SendPaymentConfig]
 
     val msg = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg.paymentSecret !== invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
+    assert(msg.finalPayload.records.get[OnionPaymentPayloadTlv.PaymentData].get.secret !== invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
     assert(msg.targetNodeId == b)
     assert(msg.targetExpiry.toLong == currentBlockCount + 9 + 12 + 1)
     assert(msg.totalAmount == finalAmount + trampolineFees)
-    assert(msg.additionalTlvs.head.isInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion])
+    assert(msg.finalPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].nonEmpty)
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
-    val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion].packet
+    val trampolineOnion = msg.finalPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].get.packet
     val Right(decrypted) = Sphinx.peel(priv_b.privateKey, Some(invoice.paymentHash), trampolineOnion)
     assert(!decrypted.isLastPacket)
     val Right(trampolinePayload) = IntermediatePayload.NodeRelay.Standard.validate(PaymentOnionCodecs.perHopPayloadCodec.decode(decrypted.payload.bits).require.value)
@@ -460,9 +461,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val msg = payFsm.expectMsgType[PaymentLifecycle.SendPaymentToRoute]
     assert(msg.route == Left(route))
     assert(msg.finalPayload.isInstanceOf[FinalPayload.Standard])
-    assert(msg.finalPayload.amount == finalAmount + trampolineFees)
+    assert(msg.finalPayload.asInstanceOf[FinalPayload.Standard].amount == finalAmount + trampolineFees)
     assert(msg.finalPayload.asInstanceOf[FinalPayload.Standard].paymentSecret == payment.trampolineSecret.get)
-    assert(msg.finalPayload.totalAmount == finalAmount + trampolineFees)
+    assert(msg.finalPayload.asInstanceOf[FinalPayload.Standard].totalAmount == finalAmount + trampolineFees)
     val trampolineOnion = msg.finalPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion]
     assert(trampolineOnion.nonEmpty)
 

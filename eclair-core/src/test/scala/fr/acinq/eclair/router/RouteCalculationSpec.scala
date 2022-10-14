@@ -505,12 +505,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val Success(route1 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(route2Ids(route1) == 1 :: 2 :: 3 :: 4 :: Nil)
-    assert(route1.hops(1).params.relayFees.feeBase == 10.msat)
+    assert(route1.hops(1).asInstanceOf[ChannelHop].params.relayFees.feeBase == 10.msat)
 
     val extraGraphEdges = Set(makeEdge(2L, b, c, 5 msat, 5))
     val Success(route2 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(route2Ids(route2) == 1 :: 2 :: 3 :: 4 :: Nil)
-    assert(route2.hops(1).params.relayFees.feeBase == 5.msat)
+    assert(route2.hops(1).asInstanceOf[ChannelHop].params.relayFees.feeBase == 5.msat)
   }
 
   test("compute ignored channels") {
@@ -1959,17 +1959,17 @@ object RouteCalculationSpec {
 
   def hops2Ids(hops: Seq[ChannelHop]): Seq[Long] = hops.map(hop => hop.shortChannelId.toLong)
 
-  def route2Ids(route: Route): Seq[Long] = hops2Ids(route.hops)
+  def route2Ids(route: Route): Seq[Long] = hops2Ids(route.hops.map(_.asInstanceOf[ChannelHop]))
 
   def routes2Ids(routes: Seq[Route]): Set[Seq[Long]] = routes.map(route2Ids).toSet
 
-  def route2Edges(route: Route): Seq[GraphEdge] = route.hops.map(hop => GraphEdge(ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId), hop.params, 0 sat, None))
+  def route2Edges(route: Route): Seq[GraphEdge] = route.hops.map(hop => GraphEdge(ChannelDesc(hop.asInstanceOf[ChannelHop].shortChannelId, hop.nodeId, hop.nextNodeId), hop.asInstanceOf[ChannelHop].params, 0 sat, None))
 
   def route2Nodes(route: Route): Seq[(PublicKey, PublicKey)] = route.hops.map(hop => (hop.nodeId, hop.nextNodeId))
 
   def checkIgnoredChannels(routes: Seq[Route], shortChannelIds: Long*): Unit = {
     shortChannelIds.foreach(shortChannelId => routes.foreach(route => {
-      assert(route.hops.forall(_.shortChannelId.toLong != shortChannelId), route)
+      assert(route.hops.forall(_.asInstanceOf[ChannelHop].shortChannelId.toLong != shortChannelId), route)
     }))
   }
 

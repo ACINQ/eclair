@@ -31,10 +31,11 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelRelayParams, Route}
+import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, ChannelRelayParams, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
@@ -294,9 +295,14 @@ object ColorSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams)
-private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHopJson])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))))
+private sealed trait HopJson
+private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams) extends HopJson
+private case class BlindedHopJson(nodeId: PublicKey, nextNodeId: PublicKey, paymentInfo: PaymentInfo) extends HopJson
+private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[HopJson])
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map {
+  case h: ChannelHop => ChannelHopJson(h.nodeId, h.nextNodeId, h.params)
+  case h: BlindedHop => BlindedHopJson(h.nodeId, h.nextNodeId, h.paymentInfo)
+}))
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
@@ -307,8 +313,12 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
   RouteNodeIdsJson(route.amount, nodeIds)
 })
 
-private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
-object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.shortChannelId)))
+private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[String])
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route =>
+  RouteShortChannelIdsJson(route.amount, route.hops.map {
+    case hop: ChannelHop => hop.shortChannelId.toString
+    case _: BlindedHop => "blinded"
+  }))
 // @formatter:on
 
 // @formatter:off
@@ -395,7 +405,7 @@ object InvoiceSerializer extends MinimalSerializer({
   case p: Bolt12Invoice =>
     val fieldList = List(
       JField("amount", JLong(p.amount.toLong)),
-      JField("nodeId", JString(p.nodeId.toString())),
+      JField("nodeId", JString(p.signingNodeId.toString())),
       JField("paymentHash", JString(p.paymentHash.toString())),
       p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
       JField("features", Extraction.decompose(p.features)(
@@ -404,10 +414,10 @@ object InvoiceSerializer extends MinimalSerializer({
           FeatureSupportSerializer +
           UnknownFeatureSerializer
       )),
-      JField("blindedPaths", JArray(p.blindedPaths.map(path => {
+      JField("blindedPaths", JArray(p.extraEdges.map(path => {
         JObject(List(
-          JField("introductionNodeId", JString(path.introductionNodeId.toString())),
-          JField("blindedNodeIds", JArray(path.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
+          JField("introductionNodeId", JString(path.path.introductionNodeId.toString())),
+          JField("blindedNodeIds", JArray(path.path.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
         ))
       }).toList)),
       JField("createdAt", JLong(p.createdAt.toLong)),

@@ -17,14 +17,15 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Bech32
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
+import fr.acinq.eclair.payment.Invoice.BlindedEdge
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
-import fr.acinq.eclair.wire.protocol.{OfferCodecs, OfferTypes, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64, randomBytes32}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{BlindedPerHopPayload, FinalPayload}
+import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferCodecs, OfferTypes, OnionRoutingPacket, TlvStream}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64, randomKey}
 import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
@@ -41,19 +42,20 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
   val amount: MilliSatoshi = records.get[Amount].map(_.amount).get
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
-  override val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
+  override val nodeId: Crypto.PublicKey = randomKey().publicKey
   override val paymentHash: ByteVector32 = records.get[PaymentHash].get.hash
-  override val paymentSecret: ByteVector32 = randomBytes32()
   override val paymentMetadata: Option[ByteVector] = None
   override val description: Either[String, ByteVector32] = Left(records.get[Description].get.description)
-  override val extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty // TODO: the blinded paths need to be converted to graph edges
+  override val extraEdges: Seq[BlindedEdge] = records.get[Paths].get.paths.zip(records.get[PaymentPathsInfo].get.paymentInfo).map {
+    case (path, payInfo) => BlindedEdge(path, payInfo, nodeId)
+  }
   override val createdAt: TimestampSecond = records.get[CreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[RelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
   override val minFinalCltvExpiryDelta: CltvExpiryDelta = records.get[Cltv].map(_.minFinalCltvExpiry).getOrElse(DEFAULT_MIN_FINAL_EXPIRY_DELTA)
   override val features: Features[InvoiceFeature] = records.get[FeaturesTlv].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
+  val signingNodeId: PublicKey = records.get[NodeId].get.publicKey
   val chain: ByteVector32 = records.get[Chain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
-  val blindedPaths: Seq[RouteBlinding.BlindedRoute] = records.get[Paths].get.paths
   val issuer: Option[String] = records.get[Issuer].map(_.issuer)
   val quantity: Option[Long] = records.get[Quantity].map(_.quantity)
   val refundFor: Option[ByteVector32] = records.get[RefundFor].map(_.refundedPaymentHash)
@@ -67,7 +69,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
   // It is assumed that the request is valid for this offer.
   def isValidFor(offer: Offer, request: InvoiceRequest): Boolean = {
-    nodeId == offer.nodeId &&
+    signingNodeId == offer.nodeId &&
       checkSignature() &&
       offerId.contains(request.offerId) &&
       request.chain == chain &&
@@ -91,7 +93,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   }
 
   def checkSignature(): Boolean = {
-    verifySchnorr(signatureTag("signature"), rootHash(OfferTypes.removeSignature(records), OfferCodecs.invoiceTlvCodec), signature, OfferTypes.xOnlyPublicKey(nodeId))
+    verifySchnorr(signatureTag("signature"), rootHash(OfferTypes.removeSignature(records), OfferCodecs.invoiceTlvCodec), signature, OfferTypes.xOnlyPublicKey(signingNodeId))
   }
 
   override def toString: String = {
@@ -99,6 +101,14 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
     Bech32.encodeBytes(hrp, data.toArray, Bech32.Encoding.Beck32WithoutChecksum)
   }
 
+  override def singlePartFinalPayload(amount: MilliSatoshi, expiry: CltvExpiry, userCustomTlvs: Seq[GenericTlv]): BlindedPerHopPayload =
+    FinalPayload.Blinded.createSinglePartPayload(amount, userCustomTlvs)
+
+  override def multiPartFinalPayload(totalAmount: MilliSatoshi, expiry: CltvExpiry, userCustomTlvs: Seq[GenericTlv]): FinalPayload.Blinded.Partial =
+    FinalPayload.Blinded.createMultiPartPayload(totalAmount, userCustomTlvs)
+
+  override def trampolinePayload(totalAmount: MilliSatoshi, expiry: CltvExpiry, trampolineSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload.Blinded.Partial =
+    FinalPayload.Blinded.createTrampolinePayload(totalAmount, trampolinePacket)
 }
 
 object Bolt12Invoice {

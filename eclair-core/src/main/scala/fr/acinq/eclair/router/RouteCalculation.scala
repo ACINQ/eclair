@@ -368,9 +368,11 @@ object RouteCalculation {
 
   /** Update used capacity by taking into account an HTLC sent to the given route. */
   private def updateUsedCapacity(route: Route, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Unit = {
-    route.hops.reverse.foldLeft(route.amount) { case (amount, hop) =>
-      usedCapacity.updateWith(hop.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
-      amount + hop.fee(amount)
+    route.hops.reverse.foldLeft(route.amount) {
+      case (amount, hop: ChannelHop) =>
+        usedCapacity.updateWith(hop.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
+        amount + hop.fee(amount)
+      case (amount, hop) => amount + hop.fee(amount)
     }
   }
 

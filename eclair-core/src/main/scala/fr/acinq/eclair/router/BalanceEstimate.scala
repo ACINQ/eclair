@@ -295,16 +295,18 @@ case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances:
 
   def routeCouldRelay(route: Route): GraphWithBalanceEstimates = {
     val (balances1, _) = route.hops.foldRight((balances, route.amount)) {
-      case (hop, (balances, amount)) =>
+      case (hop: ChannelHop, (balances, amount)) =>
         (balances.channelCouldSend(hop, amount), amount + hop.fee(amount))
+      case (_, x) => x
     }
     GraphWithBalanceEstimates(graph, balances1)
   }
 
   def routeDidRelay(route: Route): GraphWithBalanceEstimates = {
     val (balances1, _) = route.hops.foldRight((balances, route.amount)) {
-      case (hop, (balances, amount)) =>
+      case (hop: ChannelHop, (balances, amount)) =>
         (balances.channelDidSend(hop, amount), amount + hop.fee(amount))
+      case (_, x) => x
     }
     GraphWithBalanceEstimates(graph, balances1)
   }
