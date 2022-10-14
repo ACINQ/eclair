@@ -132,7 +132,7 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             features: Features[InvoiceFeature],
-            paths: Seq[Sphinx.RouteBlinding.BlindedRoute]): Bolt12Invoice = {
+            paths: Seq[(Sphinx.RouteBlinding.BlindedRoute, PaymentInfo)]): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
     val amount = request.amount.orElse(offer.amount.map(_ * request.quantity)).get
     val tlvs: Seq[InvoiceTlv] = Seq(
@@ -141,8 +141,8 @@ object Bolt12Invoice {
       Some(Amount(amount)),
       Some(Description(offer.description)),
       if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
-      Some(Paths(paths)),
-      Some(PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty)))),
+      Some(Paths(paths.map(_._1))),
+      Some(PaymentPathsInfo(paths.map(_._2))),
       offer.issuer.map(Issuer),
       Some(NodeId(nodeKey.publicKey)),
       request.quantity_opt.map(Quantity),
