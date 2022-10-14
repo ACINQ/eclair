@@ -218,7 +218,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val routingHints = List(List(Bolt11Invoice.ExtraHop(randomKey().publicKey, ShortChannelId(42), 10 msat, 100, CltvExpiryDelta(144))))
     val invoiceFeatures = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional)
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, Left("#reckless"), CltvExpiryDelta(18), None, None, routingHints, features = invoiceFeatures, paymentMetadata = Some(hex"010203"))
-    val Success((amount_ac, expiry_ac, trampolineOnion)) = buildTrampolineToLegacyPacket(invoice, trampolineHops, FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, invoice.paymentSecret.get, None))
+    val Success((amount_ac, expiry_ac, trampolineOnion)) = buildTrampolineToLegacyPacket(invoice, trampolineHops, FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, invoice.paymentSecret, None))
     assert(amount_ac == amount_bc)
     assert(expiry_ac == expiry_bc)
 
@@ -256,7 +256,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_d.outgoingCltv == expiry_de)
     assert(inner_d.outgoingNodeId == e)
     assert(inner_d.totalAmount == finalAmount)
-    assert(inner_d.paymentSecret == invoice.paymentSecret)
+    assert(inner_d.paymentSecret.contains(invoice.paymentSecret))
     assert(inner_d.paymentMetadata.contains(hex"010203"))
     assert(inner_d.invoiceFeatures.contains(hex"024100")) // var_onion_optin, payment_secret, basic_mpp
     assert(inner_d.invoiceRoutingInfo.contains(routingHints))
@@ -265,7 +265,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
   test("fail to build a trampoline payment when too much invoice data is provided") {
     val routingHintOverflow = List(List.fill(7)(Bolt11Invoice.ExtraHop(randomKey().publicKey, ShortChannelId(1), 10 msat, 100, CltvExpiryDelta(12))))
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, Left("#reckless"), CltvExpiryDelta(18), None, None, routingHintOverflow)
-    assert(buildTrampolineToLegacyPacket(invoice, trampolineHops, FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, invoice.paymentSecret.get, invoice.paymentMetadata)).isFailure)
+    assert(buildTrampolineToLegacyPacket(invoice, trampolineHops, FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, invoice.paymentSecret, invoice.paymentMetadata)).isFailure)
   }
 
   test("fail to decrypt when the onion is invalid") {

@@ -35,7 +35,7 @@ trait Invoice {
 
   val paymentHash: ByteVector32
 
-  val paymentSecret: Option[ByteVector32]
+  val paymentSecret: ByteVector32
 
   val paymentMetadata: Option[ByteVector]
 

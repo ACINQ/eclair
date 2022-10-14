@@ -24,7 +24,7 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.{OfferCodecs, OfferTypes, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64, randomBytes32}
 import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
@@ -43,7 +43,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
   override val nodeId: Crypto.PublicKey = records.get[NodeId].get.publicKey
   override val paymentHash: ByteVector32 = records.get[PaymentHash].get.hash
-  override val paymentSecret: Option[ByteVector32] = None
+  override val paymentSecret: ByteVector32 = randomBytes32()
   override val paymentMetadata: Option[ByteVector] = None
   override val description: Either[String, ByteVector32] = Left(records.get[Description].get.description)
   override val extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty // TODO: the blinded paths need to be converted to graph edges

@@ -46,6 +46,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   amount_opt.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: Bolt11Invoice.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case Bolt11Invoice.Description(_) | Bolt11Invoice.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
+  require(tags.collect { case _: Bolt11Invoice.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag")
 
   {
     val featuresErr = Features.validateFeatureGraph(features)
@@ -63,7 +64,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   /**
    * @return the payment secret
    */
-  lazy val paymentSecret = tags.collectFirst { case p: Bolt11Invoice.PaymentSecret => p.secret }
+  lazy val paymentSecret = tags.collectFirst { case p: Bolt11Invoice.PaymentSecret => p.secret }.get
 
   /**
    * @return the description of the payment, or its hash

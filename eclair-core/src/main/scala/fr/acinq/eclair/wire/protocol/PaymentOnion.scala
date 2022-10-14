@@ -328,7 +328,7 @@ object PaymentOnion {
           val tlvs = Seq(
             Some(AmountToForward(amount)),
             Some(OutgoingCltv(expiry)),
-            invoice.paymentSecret.map(s => PaymentData(s, totalAmount)),
+            Some(PaymentData(invoice.paymentSecret, totalAmount)),
             invoice.paymentMetadata.map(m => PaymentMetadata(m)),
             Some(OutgoingNodeId(targetNodeId)),
             Some(InvoiceFeatures(invoice.features.toByteVector)),

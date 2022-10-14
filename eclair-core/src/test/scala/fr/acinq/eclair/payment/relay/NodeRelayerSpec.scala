@@ -726,7 +726,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
-    assert(outgoingPayment.paymentSecret == invoice.paymentSecret.get) // we should use the provided secret
+    assert(outgoingPayment.paymentSecret == invoice.paymentSecret) // we should use the provided secret
     assert(outgoingPayment.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
     assert(outgoingPayment.totalAmount == outgoingAmount)
     assert(outgoingPayment.targetExpiry == outgoingExpiry)
