@@ -427,7 +427,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
       var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
       // Add some initial HTLCs to the pending list (bigger commit tx).
-      for (_ <- 0 to t.pendingHtlcs) {
+      for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
         val (_, cmdAdd) = makeCmdAdd(amount, randomKey().publicKey, f.currentBlockHeight)
         sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch) match {
@@ -435,9 +435,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
           case Left(e) => ignore(s"$t -> could not setup initial htlcs: $e")
         }
       }
-      val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
-      val result = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
-      assert(result.isRight, s"$t -> $result")
+      if (c.availableBalanceForSend > 0.msat) {
+        val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
+        val result = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
+        assert(result.isRight, s"$t -> $result")
+      }
     }
   }
 
@@ -455,7 +457,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
       var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
       // Add some initial HTLCs to the pending list (bigger commit tx).
-      for (_ <- 0 to t.pendingHtlcs) {
+      for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
         val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
         receiveAdd(c, add, feeConfNoMismatch) match {
@@ -463,10 +465,12 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
           case Left(e) => ignore(s"$t -> could not setup initial htlcs: $e")
         }
       }
-      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
-      receiveAdd(c, add, feeConfNoMismatch) match {
-        case Right(_) => ()
-        case Left(e) => fail(s"$t -> $e")
+      if (c.availableBalanceForReceive > 0.msat) {
+        val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
+        receiveAdd(c, add, feeConfNoMismatch) match {
+          case Right(_) => ()
+          case Left(e) => fail(s"$t -> $e")
+        }
       }
     }
   }
