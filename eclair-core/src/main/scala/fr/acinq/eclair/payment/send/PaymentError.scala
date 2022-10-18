@@ -26,8 +26,6 @@ object PaymentError {
   sealed trait InvalidInvoice extends PaymentError
   /** The invoice contains a feature we don't support. */
   case class UnsupportedFeatures(features: Features[InvoiceFeature]) extends InvalidInvoice { override def getMessage: String = s"unsupported invoice features: ${features.toByteVector.toHex}" }
-  /** The invoice is missing a payment secret. */
-  case object PaymentSecretMissing extends InvalidInvoice { override def getMessage: String = "invalid invoice: payment secret is missing" }
   // @formatter:on
 
   // @formatter:off

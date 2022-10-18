@@ -123,7 +123,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // with finalCltvExpiry
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
-    val invoice2 = Bolt11Invoice("lntb", Some(123 msat), TimestampSecond.now(), nodePrivKey.publicKey, List(Bolt11Invoice.MinFinalCltvExpiry(96), Bolt11Invoice.PaymentHash(ByteVector32.Zeroes), Bolt11Invoice.Description("description")), ByteVector.empty)
+    val invoice2 = Bolt11Invoice("lntb", Some(123 msat), TimestampSecond.now(), nodePrivKey.publicKey, List(Bolt11Invoice.MinFinalCltvExpiry(96), Bolt11Invoice.PaymentHash(ByteVector32.Zeroes), Bolt11Invoice.Description("description"), Bolt11Invoice.PaymentSecret(ByteVector32.One)), ByteVector.empty)
     eclair.send(Some(externalId2), 123 msat, invoice2)
     val send2 = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send2.externalId.contains(externalId2))
