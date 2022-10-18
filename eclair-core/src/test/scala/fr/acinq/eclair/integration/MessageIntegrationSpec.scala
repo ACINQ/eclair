@@ -32,8 +32,9 @@ import fr.acinq.eclair.channel.{CMD_CLOSE, RES_SUCCESS}
 import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
 import fr.acinq.eclair.wire.protocol.{GenericTlv, NodeAnnouncement}
-import fr.acinq.eclair.{EclairImpl, Features, MilliSatoshi, SendOnionMessageResponse, UInt64}
+import fr.acinq.eclair.{EclairImpl, Features, MilliSatoshi, SendOnionMessageResponse, UInt64, randomBytes}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -140,6 +141,39 @@ class MessageIntegrationSpec extends IntegrationSpec {
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.finalPayload.records.unknown.toSet == Set(GenericTlv(UInt64(113), hex"010203"), GenericTlv(UInt64(117), hex"0102")))
+  }
+
+  test("send very large message with hop") {
+    // Total message size stays below 65536 bytes, the message is relayed.
+    val bytes = randomBytes(65285)
+    val encodedBytes = genericTlv.encode(GenericTlv(UInt64(135), bytes)).require.bytes
+
+    val alice = new EclairImpl(nodes("A"))
+
+    val probe = TestProbe()
+    val eventListener = TestProbe()
+    nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
+    alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, encodedBytes).pipeTo(probe.ref)
+    assert(probe.expectMsgType[SendOnionMessageResponse].sent)
+
+    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
+    assert(r.finalPayload.records.unknown.toSet == Set(GenericTlv(UInt64(135), bytes)))
+  }
+
+  test("send too large message with hop") {
+    // Total message size goes above the 65536 bytes limit.
+    val bytes = randomBytes(65290)
+    val encodedBytes = genericTlv.encode(GenericTlv(UInt64(135), bytes)).require.bytes
+
+    val alice = new EclairImpl(nodes("A"))
+
+    val probe = TestProbe()
+    val eventListener = TestProbe()
+    nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
+    alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, encodedBytes).pipeTo(probe.ref)
+    assert(probe.expectMsgType[SendOnionMessageResponse].sent)
+
+    eventListener.expectNoMessage()
   }
 
   test("relay with channels-only and missing channel") {

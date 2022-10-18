@@ -109,7 +109,6 @@ object OnionMessages {
   case class ReceiveMessage(finalPayload: FinalPayload) extends Action
 
   sealed trait DropReason
-  case class MessageTooLarge(size: Long) extends DropReason { override def toString = s"message too large (size=$size, max=32768)" }
   case class CannotDecryptOnion(message: String) extends DropReason { override def toString = s"can't decrypt onion: $message" }
   case class CannotDecodeOnion(message: String) extends DropReason { override def toString = s"can't decode onion: $message" }
   case class CannotDecryptBlindedPayload(message: String) extends DropReason { override def toString = s"can't decrypt blinded payload: $message" }
@@ -146,21 +145,17 @@ object OnionMessages {
 
   @tailrec
   def process(privateKey: PrivateKey, msg: OnionMessage): Action = {
-    if (msg.onionRoutingPacket.payload.length > 32768) {
-      DropMessage(MessageTooLarge(msg.onionRoutingPacket.payload.length))
-    } else {
-      val blindedPrivateKey = Sphinx.RouteBlinding.derivePrivateKey(privateKey, msg.blindingKey)
-      decryptOnion(blindedPrivateKey, msg.onionRoutingPacket) match {
+    val blindedPrivateKey = Sphinx.RouteBlinding.derivePrivateKey(privateKey, msg.blindingKey)
+    decryptOnion(blindedPrivateKey, msg.onionRoutingPacket) match {
+      case Left(f) => DropMessage(f)
+      case Right(DecodedOnionPacket(payload, nextPacket_opt)) => decryptEncryptedData(privateKey, msg.blindingKey, payload) match {
         case Left(f) => DropMessage(f)
-        case Right(DecodedOnionPacket(payload, nextPacket_opt)) => decryptEncryptedData(privateKey, msg.blindingKey, payload) match {
-          case Left(f) => DropMessage(f)
-          case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
-            case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket) match {
-              case SendMessage(nextNodeId, nextMsg) if nextNodeId == privateKey.publicKey => process(privateKey, nextMsg)
-              case action => action
-            }
-            case None => validateFinalPayload(payload, blindedPayload)
+        case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
+          case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket) match {
+            case SendMessage(nextNodeId, nextMsg) if nextNodeId == privateKey.publicKey => process(privateKey, nextMsg)
+            case action => action
           }
+          case None => validateFinalPayload(payload, blindedPayload)
         }
       }
     }

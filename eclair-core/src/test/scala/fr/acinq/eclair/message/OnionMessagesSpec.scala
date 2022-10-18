@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.message.OnionMessages._
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.{randomBytes, randomKey}
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.perHopPayloadCodec
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
@@ -213,6 +213,34 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     process(destination, message) match {
       case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
+      case x => fail(x.toString)
+    }
+  }
+
+  test("very large multi-hop onion message") {
+    val alice = randomKey()
+    val bob = randomKey()
+    val carol = randomKey()
+    val sessionKey = randomKey()
+    val blindingSecret = randomKey()
+
+    val pathId = randomBytes(65000)
+
+    val (_, messageForAlice) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), Nil)
+
+    // Checking that the onion is relayed properly
+    process(alice, messageForAlice) match {
+      case SendMessage(nextNodeId, onionForBob) =>
+        assert(nextNodeId == bob.publicKey)
+        process(bob, onionForBob) match {
+          case SendMessage(nextNodeId, onionForCarol) =>
+            assert(nextNodeId == carol.publicKey)
+            process(carol, onionForCarol) match {
+                  case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
+                  case x => fail(x.toString)
+            }
+          case x => fail(x.toString)
+        }
       case x => fail(x.toString)
     }
   }
