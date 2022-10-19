@@ -44,6 +44,7 @@ import scodec.bits.ByteVector
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel
 import scala.concurrent.duration._
+import scala.util.Success
 
 class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
 
@@ -569,7 +570,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("reply to relay request") { f =>
     import f._
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
-    val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
+    val Success((_, msg)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     val messageId = randomBytes32()
     val probe = TestProbe()
     peer ! RelayOnionMessage(messageId, msg, Some(probe.ref.toTyped))
@@ -578,7 +579,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
   test("reply to relay request disconnected") { f =>
     import f._
-    val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
+    val Success((_, msg)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     val messageId = randomBytes32()
     val probe = TestProbe()
     peer ! RelayOnionMessage(messageId, msg, Some(probe.ref.toTyped))
