@@ -375,6 +375,45 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  test("initiator uses unconfirmed inputs") {
+    withFixture(100_000 sat, Seq(250_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+      import f._
+
+      // Alice's inputs are all unconfirmed.
+      val probe = TestProbe()
+      val tx = sendToAddress(getNewAddress(probe, rpcClientA), 75_000 sat, probe, rpcClientA)
+      val bitcoinClient = new BitcoinCoreClient(rpcClientA)
+      bitcoinClient.listUnspent().pipeTo(probe.ref)
+      probe.expectMsgType[Seq[Utxo]].foreach(utxo => assert(utxo.confirmations == 0))
+
+      alice ! Start(alice2bob.ref, Nil)
+      bob ! Start(bob2alice.ref, Nil)
+
+      // Alice --- tx_add_input --> Bob
+      f.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      f.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      f.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      f.forwardAlice2Bob[TxComplete]
+      // Alice <-- commit_sig --- Bob
+      f.forwardBob2Alice[CommitSig]
+      // Alice --- commit_sig --> Bob
+      f.forwardAlice2Bob[CommitSig]
+      val txB = bob2alice.expectMsgType[Succeeded].sharedTx.asInstanceOf[PartiallySignedSharedTransaction]
+      alice ! ReceiveTxSigs(txB.localSigs)
+      val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
+      txA.signedTx.txIn.foreach(txIn => assert(txIn.outPoint.txid == tx.txid))
+    }
+  }
+
   test("remove input/output") {
     withFixture(100_000 sat, Seq(150_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 330 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
       import f._
@@ -420,6 +459,28 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(txA.signedTx.txIn.map(_.outPoint) == Seq(toOutPoint(inputA)))
       assert(txA.signedTx.txOut.length == 2)
       assert(txA.tx.remoteAmountIn == 0.sat)
+    }
+  }
+
+  test("not enough funds (unconfirmed utxos not allowed)") {
+    withFixture(100_000 sat, Seq(250_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(local = true, remote = true)) { f =>
+      import f._
+
+      // Alice's inputs are all unconfirmed.
+      val probe = TestProbe()
+      val tx = sendToAddress(getNewAddress(probe, rpcClientA), 75_000 sat, probe, rpcClientA)
+      val bitcoinClient = new BitcoinCoreClient(rpcClientA)
+      bitcoinClient.listUnspent().pipeTo(probe.ref)
+      val utxos = probe.expectMsgType[Seq[Utxo]]
+      assert(utxos.length == 2)
+      utxos.foreach(utxo => assert(utxo.txid == tx.txid))
+      utxos.foreach(utxo => assert(utxo.confirmations == 0))
+
+      // Alice doesn't have enough to fund the channel since Bob requires confirmed inputs.
+      alice ! Start(alice2bob.ref, Nil)
+      assert(alice2bob.expectMsgType[LocalFailure].cause == ChannelFundingError(aliceParams.channelId))
+      // Alice's utxos shouldn't be locked after the failed funding attempt.
+      awaitCond(getLocks(probe, rpcClientA).isEmpty)
     }
   }
 
