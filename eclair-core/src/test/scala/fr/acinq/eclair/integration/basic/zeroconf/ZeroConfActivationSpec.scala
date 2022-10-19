@@ -5,17 +5,21 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.ZeroConf
 import fr.acinq.eclair.channel.ChannelTypes.AnchorOutputsZeroFeeHtlcTx
-import fr.acinq.eclair.channel.PersistentChannelData
+import fr.acinq.eclair.channel.{NORMAL, PersistentChannelData}
 import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatest.{Tag, TestData}
 import scodec.bits.HexStringSyntax
 
+import scala.concurrent.duration.DurationInt
+
 /**
  * Test the activation of zero-conf option, via features or channel type.
  */
 class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
+
+  implicit val config: PatienceConfig = PatienceConfig(5 second, 50 milliseconds)
 
   type FixtureParam = TwoNodesFixture
 
@@ -78,6 +82,25 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
 
     assert(getChannelData(alice, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
     assert(getChannelData(bob, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
+  }
+
+  test("open a channel alice-bob (zero-conf enabled on bob, not requested via channel type by alice)", Tag(ZeroConfBob)) { f =>
+    import f._
+
+    assert(!alice.nodeParams.features.activated.contains(ZeroConf))
+    assert(bob.nodeParams.features.activated.contains(ZeroConf))
+
+    connect(alice, bob)
+    val channelType = AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)
+    val channelId = openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
+
+    // Bob has activated support for 0-conf with Alice, so he doesn't wait for the funding tx to confirm regardless of
+    // the channel type and activated feature bits. Since Alice has full control over the funding tx, she accepts Bob's
+    // early channel_ready and completes the channel opening flow without waiting for confirmations.
+    eventually {
+      assert(getChannelState(alice, channelId) == NORMAL)
+      assert(getChannelState(bob, channelId) == NORMAL)
+    }
   }
 
   test("open a channel alice-bob (zero-conf enabled on alice and bob, but not requested via channel type by alice)", Tag(ZeroConfAlice), Tag(ZeroConfBob)) { f =>

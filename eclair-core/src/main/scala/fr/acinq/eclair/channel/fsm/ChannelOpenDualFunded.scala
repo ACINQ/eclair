@@ -148,7 +148,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, d.init.channelConfig)
           val totalFundingAmount = open.fundingAmount + d.init.fundingContribution_opt.getOrElse(0 sat)
-          val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, channelFeatures, totalFundingAmount)
+          val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, d.init.localParams.initFeatures, totalFundingAmount)
           val upfrontShutdownScript_opt = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) {
             Some(ChannelTlv.UpfrontShutdownScriptTlv(localParams.defaultFinalScriptPubKey))
           } else {
@@ -316,7 +316,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(fundingParams, fundingTx, commitments) =>
         d.deferred.foreach(self ! _)
-        Funding.minDepthDualFunding(nodeParams.channelConf, commitments.channelFeatures, fundingParams) match {
+        Funding.minDepthDualFunding(nodeParams.channelConf, commitments.localParams.initFeatures, fundingParams) match {
           case Some(fundingMinDepth) =>
             blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
             val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, d.localPushAmount, d.remotePushAmount, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
@@ -525,7 +525,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(fundingParams, fundingTx, commitments) =>
         // We now have more than one version of the funding tx, so we cannot use zero-conf.
-        val fundingMinDepth = Funding.minDepthDualFunding(nodeParams.channelConf, commitments.channelFeatures, fundingParams).getOrElse(nodeParams.channelConf.minDepthBlocks.toLong)
+        val fundingMinDepth = Funding.minDepthDualFunding(nodeParams.channelConf, commitments.localParams.initFeatures, fundingParams).getOrElse(nodeParams.channelConf.minDepthBlocks.toLong)
         blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
         val previousFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, d.localPushAmount, d.remotePushAmount, previousFundingTxs, d.waitingSince, d.lastChecked, RbfStatus.NoRbf, d.deferred)
