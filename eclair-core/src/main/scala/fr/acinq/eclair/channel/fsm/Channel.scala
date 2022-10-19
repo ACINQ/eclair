@@ -79,7 +79,8 @@ object Channel {
                          maxBlockProcessingDelay: FiniteDuration,
                          maxTxPublishRetryDelay: FiniteDuration,
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
-                         revocationTimeout: FiniteDuration) {
+                         revocationTimeout: FiniteDuration,
+                         requireConfirmedInputsForDualFunding: Boolean) {
     def minFundingSatoshis(announceChannel: Boolean): Satoshi = if (announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
   }
 

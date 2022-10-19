@@ -31,6 +31,8 @@ import scala.concurrent.duration.DurationInt
 
 class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
+  val aliceRequiresConfirmedInputs = "alice_requires_confirmed_inputs"
+
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, aliceListener: TestProbe, bobListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
@@ -50,8 +52,9 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
+    val requireConfirmedInputs = test.tags.contains(aliceRequiresConfirmedInputs)
     within(30 seconds) {
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, pushAmount, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, pushAmount, requireConfirmedInputs, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = true, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, aliceListener, bobListener)))
@@ -65,6 +68,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     assert(open.upfrontShutdownScript_opt.isEmpty)
     assert(open.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
     assert(open.pushAmount == 0.msat)
+    assert(!open.requireConfirmedInputs)
     assert(open.fundingFeerate == TestConstants.feeratePerKw)
     assert(open.commitmentFeerate == TestConstants.anchorOutputsFeeratePerKw)
     assert(open.lockTime == TestConstants.defaultBlockHeight)
@@ -83,6 +87,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val channelIdAssigned = bobListener.expectMsgType[ChannelIdAssigned]
     assert(channelIdAssigned.temporaryChannelId == ByteVector32.Zeroes)
     assert(channelIdAssigned.channelId == Helpers.computeChannelId(open, accept))
+    assert(!accept.requireConfirmedInputs)
 
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
   }
@@ -95,6 +100,17 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     alice2bob.forward(bob)
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     assert(accept.pushAmount == 0.msat)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
+  }
+
+  test("recv OpenDualFundedChannel (require confirmed inputs)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(aliceRequiresConfirmedInputs)) { f =>
+    import f._
+
+    val open = alice2bob.expectMsgType[OpenDualFundedChannel]
+    assert(open.requireConfirmedInputs)
+    alice2bob.forward(bob)
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    assert(!accept.requireConfirmedInputs)
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
   }
 

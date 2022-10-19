@@ -100,11 +100,6 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
 object NodeParams extends Logging {
 
-  // @formatter:off
-  sealed trait WatcherType
-  object BITCOIND extends WatcherType
-  // @formatter:on
-
   /**
    * Order of precedence for the configuration parameters:
    * 1) Java environment variables (-D...)
@@ -459,7 +454,8 @@ object NodeParams extends Logging {
         maxBlockProcessingDelay = FiniteDuration(config.getDuration("channel.max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
         maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
         unhandledExceptionStrategy = unhandledExceptionStrategy,
-        revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS)
+        revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS),
+        requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding")
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,

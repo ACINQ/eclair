@@ -50,6 +50,10 @@ object ChannelTlv {
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
   ))
 
+  case class RequireConfirmedInputsTlv() extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
+
+  val requireConfirmedInputsCodec: Codec[RequireConfirmedInputsTlv] = tlvField(provide(RequireConfirmedInputsTlv()))
+
   case class PushAmountTlv(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv
 
   val pushAmountCodec: Codec[PushAmountTlv] = tlvField(tmillisatoshi)
@@ -84,6 +88,7 @@ object OpenDualFundedChannelTlv {
   val openTlvCodec: Codec[TlvStream[OpenDualFundedChannelTlv]] = tlvStream(discriminated[OpenDualFundedChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(0x40000001), requireConfirmedInputsCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )
 
@@ -96,6 +101,7 @@ object AcceptDualFundedChannelTlv {
   val acceptTlvCodec: Codec[TlvStream[AcceptDualFundedChannelTlv]] = tlvStream(discriminated[AcceptDualFundedChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(0x40000001), requireConfirmedInputsCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )
 

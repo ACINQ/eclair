@@ -98,6 +98,8 @@ object InteractiveTxBuilder {
   case class RemoteFailure(cause: ChannelException) extends Failed
   // @formatter:on
 
+  case class RequireConfirmedInputs(forLocal: Boolean, forRemote: Boolean)
+
   case class InteractiveTxParams(channelId: ByteVector32,
                                  isInitiator: Boolean,
                                  localAmount: Satoshi,
@@ -106,7 +108,7 @@ object InteractiveTxBuilder {
                                  lockTime: Long,
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
-                                 requireConfirmedRemoteInputs: Boolean) {
+                                 requireConfirmedInputs: RequireConfirmedInputs) {
     val fundingAmount: Satoshi = localAmount + remoteAmount
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
@@ -440,17 +442,25 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private def getInputDetails(txIn: TxIn, currentInputs: Seq[TxAddInput]): Future[Either[UnusableInput, TxAddInput]] = {
     currentInputs.find(i => txIn.outPoint == toOutPoint(i)) match {
       case Some(previousInput) => Future.successful(Right(previousInput))
-      case None => wallet.getTransaction(txIn.outPoint.txid).map(previousTx => {
-        if (Transaction.write(previousTx).length > 65000) {
-          // Wallet input transaction is too big to fit inside tx_add_input.
-          Left(UnusableInput(txIn.outPoint))
-        } else if (!Script.isNativeWitnessScript(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript)) {
-          // Wallet input must be a native segwit input.
-          Left(UnusableInput(txIn.outPoint))
-        } else {
-          Right(TxAddInput(fundingParams.channelId, UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
+      case None =>
+        val inputTxDetails = for {
+          tx <- wallet.getTransaction(txIn.outPoint.txid)
+          confirmations <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
+        } yield (tx, confirmations.getOrElse(0))
+        inputTxDetails.map { case (previousTx, confirmations) =>
+          if (Transaction.write(previousTx).length > 65000) {
+            // Wallet input transaction is too big to fit inside tx_add_input.
+            Left(UnusableInput(txIn.outPoint))
+          } else if (!Script.isNativeWitnessScript(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript)) {
+            // Wallet input must be a native segwit input.
+            Left(UnusableInput(txIn.outPoint))
+          } else if (fundingParams.requireConfirmedInputs.forLocal && confirmations < 1) {
+            // Wallet input must be confirmed.
+            Left(UnusableInput(txIn.outPoint))
+          } else {
+            Right(TxAddInput(fundingParams.channelId, UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
+          }
         }
-      })
     }
   }
 
@@ -582,7 +592,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   def validateAndSign(session: InteractiveTxSession): Behavior[Command] = {
     require(session.isComplete, "interactive session was not completed")
-    if (fundingParams.requireConfirmedRemoteInputs) {
+    if (fundingParams.requireConfirmedInputs.forRemote) {
       context.pipeToSelf(checkInputsConfirmed(session.remoteInputs)) {
         case Failure(t) => WalletFailure(t)
         case Success(false) => WalletFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
