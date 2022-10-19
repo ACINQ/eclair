@@ -123,6 +123,7 @@ object TestConstants {
         minFundingPublicSatoshis = 1000 sat,
         minFundingPrivateSatoshis = 900 sat,
         maxFundingSatoshis = 16777215 sat,
+        requireConfirmedInputsForFunding = false,
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
@@ -267,6 +268,7 @@ object TestConstants {
         minFundingPublicSatoshis = 1000 sat,
         minFundingPrivateSatoshis = 900 sat,
         maxFundingSatoshis = 16777215 sat,
+        requireConfirmedInputsForFunding = false,
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),

@@ -170,6 +170,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         val channel = spawnChannel(Some(origin))
         c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
+        val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForFunding)
         val temporaryChannelId = if (dualFunded) {
           Helpers.dualFundedTemporaryChannelId(nodeParams, localParams, channelConfig)
         } else {
@@ -178,7 +179,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
         val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingAmount, None)
         log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.pushAmount_opt, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin)
+        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
@@ -522,7 +523,15 @@ object Peer {
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful
 
-  case class OpenChannel(remoteNodeId: PublicKey, fundingAmount: Satoshi, channelType_opt: Option[SupportedChannelType], pushAmount_opt: Option[MilliSatoshi], fundingTxFeerate_opt: Option[FeeratePerKw], channelFlags_opt: Option[ChannelFlags], timeout_opt: Option[Timeout], channelOrigin: ChannelOrigin = ChannelOrigin.Default) extends PossiblyHarmful {
+  case class OpenChannel(remoteNodeId: PublicKey,
+                         fundingAmount: Satoshi,
+                         channelType_opt: Option[SupportedChannelType],
+                         pushAmount_opt: Option[MilliSatoshi],
+                         fundingTxFeerate_opt: Option[FeeratePerKw],
+                         channelFlags_opt: Option[ChannelFlags],
+                         timeout_opt: Option[Timeout],
+                         requireConfirmedInputsOverride_opt: Option[Boolean] = None,
+                         channelOrigin: ChannelOrigin = ChannelOrigin.Default) extends PossiblyHarmful {
     require(!(channelType_opt.exists(_.features.contains(Features.ScidAlias)) && channelFlags_opt.exists(_.announceChannel)), "option_scid_alias is not compatible with public channels")
     require(fundingAmount > 0.sat, s"funding amount must be positive")
     pushAmount_opt.foreach(pushAmount => {

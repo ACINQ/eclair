@@ -98,6 +98,8 @@ object InteractiveTxBuilder {
   case class RemoteFailure(cause: ChannelException) extends Failed
   // @formatter:on
 
+  case class RequireConfirmedInputs(local: Boolean, remote: Boolean)
+
   case class InteractiveTxParams(channelId: ByteVector32,
                                  isInitiator: Boolean,
                                  localAmount: Satoshi,
@@ -106,7 +108,7 @@ object InteractiveTxBuilder {
                                  lockTime: Long,
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
-                                 requireConfirmedRemoteInputs: Boolean) {
+                                 requireConfirmedInputs: RequireConfirmedInputs) {
     val fundingAmount: Satoshi = localAmount + remoteAmount
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
@@ -582,7 +584,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   def validateAndSign(session: InteractiveTxSession): Behavior[Command] = {
     require(session.isComplete, "interactive session was not completed")
-    if (fundingParams.requireConfirmedRemoteInputs) {
+    if (fundingParams.requireConfirmedInputs.remote) {
       context.pipeToSelf(checkInputsConfirmed(session.remoteInputs)) {
         case Failure(t) => WalletFailure(t)
         case Success(false) => WalletFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))

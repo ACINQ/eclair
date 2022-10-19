@@ -381,7 +381,7 @@ private[channel] object ChannelCodecs3 {
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
         ("targetFeerate" | feeratePerKw) ::
-        ("requireConfirmedRemoteInputs" | bool8)).as[InteractiveTxParams]
+        ("requireConfirmedInputs" | (("local" | bool8) :: ("remote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0b_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
