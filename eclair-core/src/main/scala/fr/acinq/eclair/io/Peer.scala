@@ -170,7 +170,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         val channel = spawnChannel(Some(origin))
         c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
-        val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForFunding)
+        val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForDualFunding)
         val temporaryChannelId = if (dualFunded) {
           Helpers.dualFundedTemporaryChannelId(nodeParams, localParams, channelConfig)
         } else {

@@ -455,7 +455,7 @@ object NodeParams extends Logging {
         maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
         unhandledExceptionStrategy = unhandledExceptionStrategy,
         revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS),
-        requireConfirmedInputsForFunding = config.getBoolean("channel.require-confirmed-inputs-for-funding")
+        requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding")
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,

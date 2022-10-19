@@ -95,7 +95,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       ChannelFlags.Public, ChannelConfig.standard, channelFeatures, wallet))
   }
 
-  private def createChannelParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(local = false, remote = false)): ChannelParams = {
+  private def createChannelParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)): ChannelParams = {
     val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
     val localParamsA = Peer.makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), ByteVector.empty, None, isInitiator = true, dualFunded = true, fundingAmountA)
@@ -186,7 +186,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val utxosA = Seq(50_000 sat, 35_000 sat, 60_000 sat)
     val fundingB = 40_000 sat
     val utxosB = Seq(100_000 sat)
-    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 42, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 42, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref, Nil)
@@ -263,7 +263,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val utxosA = Seq(50_000 sat)
     val fundingB = 50_000 sat
     val utxosB = Seq(80_000 sat)
-    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(local = true, remote = true)) { f =>
+    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref, Nil)
@@ -320,7 +320,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val targetFeerate = FeeratePerKw(2500 sat)
     val fundingA = 150_000 sat
     val utxosA = Seq(80_000 sat, 120_000 sat)
-    withFixture(fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref, Nil)
@@ -376,7 +376,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("initiator uses unconfirmed inputs") {
-    withFixture(100_000 sat, Seq(250_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(100_000 sat, Seq(250_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       // Alice's inputs are all unconfirmed.
@@ -415,7 +415,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("remove input/output") {
-    withFixture(100_000 sat, Seq(150_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 330 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(100_000 sat, Seq(150_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref, Nil)
@@ -463,7 +463,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("not enough funds (unconfirmed utxos not allowed)") {
-    withFixture(100_000 sat, Seq(250_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(local = true, remote = true)) { f =>
+    withFixture(100_000 sat, Seq(250_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
 
       // Alice's inputs are all unconfirmed.
@@ -487,7 +487,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("not enough funds (unusable utxos)") {
     val fundingA = 140_000 sat
     val utxosA = Seq(75_000 sat, 60_000 sat)
-    withFixture(fundingA, utxosA, 0 sat, Nil, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(fundingA, utxosA, 0 sat, Nil, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       // Add some unusable utxos to Alice's wallet.
@@ -532,7 +532,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("skip unusable utxos") {
     val fundingA = 140_000 sat
     val utxosA = Seq(55_000 sat, 65_000 sat, 50_000 sat)
-    withFixture(fundingA, utxosA, 0 sat, Nil, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(fundingA, utxosA, 0 sat, Nil, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       // Add some unusable utxos to Alice's wallet.
@@ -601,7 +601,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val targetFeerate = FeeratePerKw(7500 sat)
     val fundingA = 85_000 sat
     val utxosA = Seq(120_000 sat)
-    withFixture(fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref, Nil)
@@ -676,7 +676,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val targetFeerate = FeeratePerKw(10_000 sat)
     val fundingA = 100_000 sat
     val utxosA = Seq(55_000 sat, 55_000 sat, 55_000 sat)
-    withFixture(fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref, Nil)
@@ -765,7 +765,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val utxosA = Seq(70_000 sat, 60_000 sat)
     val fundingB = 25_000 sat
     val utxosB = Seq(27_500 sat)
-    withFixture(fundingA, utxosA, fundingB, utxosB, initialFeerate, 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(fundingA, utxosA, fundingB, utxosB, initialFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref, Nil)
@@ -851,7 +851,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val targetFeerate = FeeratePerKw(10_000 sat)
     val fundingA = 80_000 sat
     val utxosA = Seq(85_000 sat)
-    withFixture(fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref, Nil)
@@ -883,7 +883,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("allow unconfirmed remote inputs") {
-    withFixture(120_000 sat, Seq(150_000 sat), 50_000 sat, Seq(100_000 sat), FeeratePerKw(4000 sat), 660 sat, 0, RequireConfirmedInputs(local = false, remote = false)) { f =>
+    withFixture(120_000 sat, Seq(150_000 sat), 50_000 sat, Seq(100_000 sat), FeeratePerKw(4000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       // Bob's available utxo is unconfirmed.
@@ -923,7 +923,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("reject unconfirmed remote inputs") {
-    withFixture(120_000 sat, Seq(150_000 sat), 50_000 sat, Seq(100_000 sat), FeeratePerKw(4000 sat), 660 sat, 0, RequireConfirmedInputs(local = false, remote = true)) { f =>
+    withFixture(120_000 sat, Seq(150_000 sat), 50_000 sat, Seq(100_000 sat), FeeratePerKw(4000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = true)) { f =>
       import f._
 
       // Bob's available utxo is unconfirmed.
@@ -1311,7 +1311,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val nonInitiatorInput = TxAddInput(channelId, UInt64(11), parentTx, 2, 4294967293L)
     val nonInitiatorOutput = TxAddOutput(channelId, UInt64(33), 49999900 sat, hex"001444cb0c39f93ecc372b5851725bd29d865d333b10")
 
-    val initiatorParams = InteractiveTxParams(channelId, isInitiator = true, 200_000_000 sat, 200_000_000 sat, hex"0020297b92c238163e820b82486084634b4846b86a3c658d87b9384192e6bea98ec5", 120, 330 sat, FeeratePerKw(253 sat), RequireConfirmedInputs(local = false, remote = false))
+    val initiatorParams = InteractiveTxParams(channelId, isInitiator = true, 200_000_000 sat, 200_000_000 sat, hex"0020297b92c238163e820b82486084634b4846b86a3c658d87b9384192e6bea98ec5", 120, 330 sat, FeeratePerKw(253 sat), RequireConfirmedInputs(forLocal = false, forRemote = false))
     val initiatorTx = SharedTransaction(List(initiatorInput), List(nonInitiatorInput).map(i => RemoteTxAddInput(i)), List(initiatorOutput, sharedOutput), List(nonInitiatorOutput).map(o => RemoteTxAddOutput(o)), lockTime = 120)
     assert(initiatorTx.localFees(initiatorParams) == 155.sat)
     val nonInitiatorParams = initiatorParams.copy(isInitiator = false)

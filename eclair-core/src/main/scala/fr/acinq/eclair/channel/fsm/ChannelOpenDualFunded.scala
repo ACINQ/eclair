@@ -159,7 +159,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             upfrontShutdownScript_opt,
             Some(ChannelTlv.ChannelTypeTlv(d.init.channelType)),
             d.init.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
-            if (nodeParams.channelConf.requireConfirmedInputsForFunding) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+            if (nodeParams.channelConf.requireConfirmedInputsForDualFunding) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
           ).flatten
           val accept = AcceptDualFundedChannel(
             temporaryChannelId = open.temporaryChannelId,
@@ -209,7 +209,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             open.lockTime,
             open.dustLimit.max(accept.dustLimit),
             open.fundingFeerate,
-            RequireConfirmedInputs(local = open.requireConfirmedInputs, remote = accept.requireConfirmedInputs)
+            RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs)
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
@@ -272,7 +272,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.lastSent.lockTime,
             d.lastSent.dustLimit.max(accept.dustLimit),
             d.lastSent.fundingFeerate,
-            RequireConfirmedInputs(local = accept.requireConfirmedInputs, remote = d.lastSent.requireConfirmedInputs)
+            RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,

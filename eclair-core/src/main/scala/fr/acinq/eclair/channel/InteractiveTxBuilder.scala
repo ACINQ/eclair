@@ -98,7 +98,7 @@ object InteractiveTxBuilder {
   case class RemoteFailure(cause: ChannelException) extends Failed
   // @formatter:on
 
-  case class RequireConfirmedInputs(local: Boolean, remote: Boolean)
+  case class RequireConfirmedInputs(forLocal: Boolean, forRemote: Boolean)
 
   case class InteractiveTxParams(channelId: ByteVector32,
                                  isInitiator: Boolean,
@@ -445,7 +445,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case None =>
         val inputTxDetails = for {
           tx <- wallet.getTransaction(txIn.outPoint.txid)
-          confirmations <- if (fundingParams.requireConfirmedInputs.local) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
+          confirmations <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
         } yield (tx, confirmations.getOrElse(0))
         inputTxDetails.map { case (previousTx, confirmations) =>
           if (Transaction.write(previousTx).length > 65000) {
@@ -454,7 +454,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           } else if (!Script.isNativeWitnessScript(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript)) {
             // Wallet input must be a native segwit input.
             Left(UnusableInput(txIn.outPoint))
-          } else if (fundingParams.requireConfirmedInputs.local && confirmations < 1) {
+          } else if (fundingParams.requireConfirmedInputs.forLocal && confirmations < 1) {
             // Wallet input must be confirmed.
             Left(UnusableInput(txIn.outPoint))
           } else {
@@ -592,7 +592,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   def validateAndSign(session: InteractiveTxSession): Behavior[Command] = {
     require(session.isComplete, "interactive session was not completed")
-    if (fundingParams.requireConfirmedInputs.remote) {
+    if (fundingParams.requireConfirmedInputs.forRemote) {
       context.pipeToSelf(checkInputsConfirmed(session.remoteInputs)) {
         case Failure(t) => WalletFailure(t)
         case Success(false) => WalletFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))

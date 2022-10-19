@@ -41,7 +41,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
   override def withFixture(test: OneArgTest): Outcome = {
     val bobNodeParams = if (test.tags.contains(bobRequiresConfirmedInputs)) {
       val defaultNodeParams = TestConstants.Bob.nodeParams
-      defaultNodeParams.copy(channelConf = defaultNodeParams.channelConf.copy(requireConfirmedInputsForFunding = true))
+      defaultNodeParams.copy(channelConf = defaultNodeParams.channelConf.copy(requireConfirmedInputsForDualFunding = true))
     } else {
       TestConstants.Bob.nodeParams
     }
