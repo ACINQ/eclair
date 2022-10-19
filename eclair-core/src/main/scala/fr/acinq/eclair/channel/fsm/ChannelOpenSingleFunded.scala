@@ -115,7 +115,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(d.initFundee.localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(d.initFundee.localParams, d.initFundee.channelConfig)
-          val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, channelFeatures, open.fundingSatoshis)
+          val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, d.initFundee.localParams.initFeatures, open.fundingSatoshis)
           log.info("will use fundingMinDepth={}", minimumDepth)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
@@ -291,7 +291,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               // NB: we don't send a ChannelSignatureSent for the first commit
               log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitments.fundingTxId}")
               watchFundingTx(commitments)
-              Funding.minDepthFundee(nodeParams.channelConf, commitments.channelFeatures, fundingAmount) match {
+              Funding.minDepthFundee(nodeParams.channelConf, commitments.localParams.initFeatures, fundingAmount) match {
                 case Some(fundingMinDepth) =>
                   blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
                   goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
@@ -338,7 +338,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           watchFundingTx(commitments)
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
-          Funding.minDepthFunder(commitments.channelFeatures) match {
+          Funding.minDepthFunder(commitments.localParams.initFeatures) match {
             case Some(fundingMinDepth) =>
               blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(commitments, fundingTx, fundingTxFee)

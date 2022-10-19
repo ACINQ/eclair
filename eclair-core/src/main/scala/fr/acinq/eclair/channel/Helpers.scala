@@ -354,8 +354,8 @@ object Helpers {
      * wait for one conf, except if the channel has the zero-conf feature (because presumably the peer will send an
      * alias in that case).
      */
-    def minDepthFunder(channelFeatures: ChannelFeatures): Option[Long] = {
-      if (channelFeatures.hasFeature(Features.ZeroConf)) {
+    def minDepthFunder(localFeatures: Features[InitFeature]): Option[Long] = {
+      if (localFeatures.hasFeature(Features.ZeroConf)) {
         None
       } else {
         Some(1)
@@ -369,8 +369,8 @@ object Helpers {
      * @param fundingSatoshis funding amount of the channel
      * @return number of confirmations needed, if any
      */
-    def minDepthFundee(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
-      case _ if channelFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
+    def minDepthFundee(channelConf: ChannelConf, localFeatures: Features[InitFeature], fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
+      case _ if localFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
       case funding if funding <= Channel.MAX_FUNDING => Some(channelConf.minDepthBlocks)
       case funding =>
         val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
@@ -384,15 +384,15 @@ object Helpers {
      *  - our peer may also contribute to the funding transaction
      *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
      */
-    def minDepthDualFunding(channelConf: ChannelConf, channelFeatures: ChannelFeatures, fundingParams: InteractiveTxBuilder.InteractiveTxParams): Option[Long] = {
+    def minDepthDualFunding(channelConf: ChannelConf, localFeatures: Features[InitFeature], fundingParams: InteractiveTxBuilder.InteractiveTxParams): Option[Long] = {
       if (fundingParams.isInitiator && fundingParams.remoteAmount == 0.sat) {
-        if (channelFeatures.hasFeature(Features.ZeroConf)) {
+        if (localFeatures.hasFeature(Features.ZeroConf)) {
           None
         } else {
           Some(channelConf.minDepthBlocks)
         }
       } else {
-        minDepthFundee(channelConf, channelFeatures, fundingParams.fundingAmount)
+        minDepthFundee(channelConf, localFeatures, fundingParams.fundingAmount)
       }
     }
 

@@ -1364,10 +1364,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   when(SYNCING)(handleExceptions {
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       val minDepth_opt = if (d.commitments.localParams.isInitiator) {
-        Helpers.Funding.minDepthFunder(d.commitments.channelFeatures)
+        Helpers.Funding.minDepthFunder(d.commitments.localParams.initFeatures)
       } else {
         // when we're not the channel initiator we scale the min_depth confirmations depending on the funding amount
-        Helpers.Funding.minDepthFundee(nodeParams.channelConf, d.commitments.channelFeatures, d.commitments.commitInput.txOut.amount)
+        Helpers.Funding.minDepthFundee(nodeParams.channelConf, d.commitments.localParams.initFeatures, d.commitments.commitInput.txOut.amount)
       }
       val minDepth = minDepth_opt.getOrElse {
         val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
@@ -1381,7 +1381,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      val minDepth_opt = Helpers.Funding.minDepthDualFunding(nodeParams.channelConf, d.commitments.channelFeatures, d.fundingParams)
+      val minDepth_opt = Helpers.Funding.minDepthDualFunding(nodeParams.channelConf, d.commitments.localParams.initFeatures, d.fundingParams)
       val minDepth = minDepth_opt.getOrElse {
         val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
         // If we are in state WAIT_FOR_DUAL_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
