@@ -145,7 +145,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
 
   test("send very large message with hop") {
     // Total message size stays below 65536 bytes, the message is relayed.
-    val bytes = randomBytes(65285)
+    val bytes = randomBytes(65289)
     val encodedBytes = genericTlv.encode(GenericTlv(UInt64(135), bytes)).require.bytes
 
     val alice = new EclairImpl(nodes("A"))
@@ -171,7 +171,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, encodedBytes).pipeTo(probe.ref)
-    assert(probe.expectMsgType[SendOnionMessageResponse].sent)
+    assert(!probe.expectMsgType[SendOnionMessageResponse].sent)
 
     eventListener.expectNoMessage()
   }

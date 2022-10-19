@@ -37,6 +37,7 @@ import scodec.bits._
 import java.net.{Inet4Address, InetSocketAddress}
 import scala.collection.mutable
 import scala.concurrent.duration._
+import scala.util.Success
 
 class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
 
@@ -391,7 +392,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
     val probe = TestProbe()
-    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
+    val Success((_, message)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     probe.send(peerConnection, message)
     probe watch peerConnection
     probe.expectTerminated(peerConnection, max = 1500 millis)
@@ -407,7 +408,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
     val probe = TestProbe()
-    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
+    val Success((_, message)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     probe watch peerConnection
     probe.send(peerConnection, message)
     // The connection is still open for a short while.
@@ -420,7 +421,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
     val probe = TestProbe()
-    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
+    val Success((_, message)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     probe.send(peerConnection, message)
     assert(peerConnection.stateName == PeerConnection.CONNECTED)
     probe.send(peerConnection, ChannelReady(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
@@ -433,7 +434,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("incoming rate limiting") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = true)
-    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(nodeParams.nodeId, None), Nil)
+    val Success((_, message)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(nodeParams.nodeId, None), Nil)
     for (_ <- 1 to 30) {
       transport.send(peerConnection, message)
     }
@@ -452,7 +453,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("outgoing rate limiting") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = true)
-    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
+    val Success((_, message)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     for (_ <- 1 to 30) {
       peer.send(peerConnection, message)
     }
