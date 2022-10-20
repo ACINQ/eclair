@@ -106,7 +106,7 @@ case class TxComplete(channelId: ByteVector32,
                       tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId
 
 case class TxSignatures(channelId: ByteVector32,
-                        txId: ByteVector32,
+                        txidHash: ByteVector32,
                         witnesses: Seq[ScriptWitness],
                         tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
 

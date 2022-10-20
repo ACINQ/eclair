@@ -387,7 +387,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case fundingTx: PartiallySignedSharedTransaction => InteractiveTxBuilder.addRemoteSigs(d.fundingParams, fundingTx, txSigs) match {
           case Left(cause) =>
             val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
-            log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", txSigs.txId, unsignedFundingTx.txid, cause.getMessage)
+            log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", txSigs.txidHash.reverse, unsignedFundingTx.txid, cause.getMessage)
             // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
             // so we cannot close the channel yet.
             stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx)).getMessage)
@@ -403,7 +403,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               stay()
             case _ =>
               // Signatures are retransmitted on reconnection, but we may have already received them.
-              log.info("ignoring duplicate tx_signatures for txid={}", txSigs.txId)
+              log.info("ignoring duplicate tx_signatures for txid={}", txSigs.txidHash.reverse)
               stay()
           }
       }

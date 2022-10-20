@@ -239,7 +239,7 @@ object InteractiveTxBuilder {
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.tx.buildUnsignedTx())))
     }
     val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs)
-    if (remoteSigs.txId != txWithSigs.signedTx.txid) {
+    if (remoteSigs.txidHash.reverse != txWithSigs.signedTx.txid) {
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.tx.buildUnsignedTx())))
     }
     // We allow a 5% error margin since witness size prediction could be inaccurate.
@@ -817,7 +817,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case SignTransactionResponse(signedTx, _) =>
           val localOutpoints = unsignedTx.localInputs.map(toOutPoint).toSet
           val sigs = signedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
-          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx.txid, sigs))
+          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx.txid.reverse, sigs))
       }) {
         case Failure(t) => WalletFailure(t)
         case Success(signedTx) => SignTransactionResult(signedTx, remoteSigs_opt)
