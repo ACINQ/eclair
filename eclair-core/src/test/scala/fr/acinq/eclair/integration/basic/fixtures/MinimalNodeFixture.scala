@@ -1,8 +1,6 @@
 package fr.acinq.eclair.integration.basic.fixtures
 
-import akka.actor.typed.SupervisorStrategy
-import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps, TypedActorRefOps}
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
@@ -26,7 +24,6 @@ import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.swap.{LocalSwapKeyManager, SwapRegister}
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience, PatienceConfiguration}
@@ -51,7 +48,6 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       switchboard: ActorRef,
                                       paymentInitiator: ActorRef,
                                       paymentHandler: ActorRef,
-                                      swapRegister: ActorRef,
                                       watcher: TestProbe,
                                       wallet: DummyOnChainWallet,
                                       bitcoinClient: TestBitcoinCoreClient)
@@ -64,7 +60,6 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       instanceId = UUID.randomUUID(),
       nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
       channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
-      swapKeyManager = new LocalSwapKeyManager(seed, Block.RegtestGenesisBlock.hash),
       torAddress_opt = None,
       database = TestDatabases.inMemoryDb(),
       blockHeight = new AtomicLong(400_000),
@@ -91,8 +86,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val channelFactory = Peer.SimpleChannelFactory(nodeParams, watcherTyped, relayer, wallet, txPublisherFactory)
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
-    val swapRegister = system.spawn(Behaviors.supervise(SwapRegister(nodeParams, paymentInitiator, watcherTyped, register, wallet, Set())).onFailure(SupervisorStrategy.stop), "swap-register")
-    val peerFactory = Switchboard.SimplePeerFactory(nodeParams, wallet, channelFactory, swapRegister)
+    val peerFactory = Switchboard.SimplePeerFactory(nodeParams, wallet, channelFactory)
     val switchboard = system.actorOf(Switchboard.props(nodeParams, peerFactory), "switchboard")
     readyListener.expectMsgAllOf(
       SubscriptionsComplete(classOf[Router]),
@@ -108,7 +102,6 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       switchboard = switchboard,
       paymentInitiator = paymentInitiator,
       paymentHandler = paymentHandler,
-      swapRegister = swapRegister.toClassic,
       watcher = watcher,
       wallet = wallet,
       bitcoinClient = bitcoinClient

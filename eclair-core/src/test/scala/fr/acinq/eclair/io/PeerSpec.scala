@@ -34,14 +34,12 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
-import fr.acinq.eclair.swap.SwapRegister
-import fr.acinq.eclair.swap.SwapRegister.MessageReceived
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel
@@ -53,7 +51,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
   val fakeIPAddress: NodeAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
 
-  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe, swapRegister: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe)
 
   case class FakeChannelFactory(channel: TestProbe) extends ChannelFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
@@ -68,7 +66,6 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val peerConnection = TestProbe()
     val channel = TestProbe()
     val switchboard = TestProbe()
-    val swapRegister = TestProbe()
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
@@ -86,11 +83,11 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, swapRegister.ref.toTyped[SwapRegister.Command]))
-    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, peer, peerConnection, channel, switchboard, swapRegister)))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref))
+    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, peer, peerConnection, channel, switchboard)))
   }
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, swapRegister: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures())): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures())): Unit = {
     // let's simulate a connection
     switchboard.send(peer, Peer.Init(channels))
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
@@ -106,7 +103,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("restore existing channels") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     probe.send(peer, Peer.GetPeerInfo(None))
     probe.expectMsg(PeerInfo(peer, remoteNodeId, Peer.CONNECTED, Some(fakeIPAddress), 1))
   }
@@ -182,7 +179,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
     probe.send(peer, Peer.Connect(remoteNodeId, None, probe.ref, isPersistent = true))
     probe.expectMsgType[PeerConnection.ConnectionResult.AlreadyConnected]
@@ -193,7 +190,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[UnknownMessageReceived])
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
     peerConnection.send(peer, UnknownMessage(tag = TestConstants.pluginParams.messageTags.head, data = ByteVector.empty))
     listener.expectMsgType[UnknownMessageReceived]
@@ -205,7 +202,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.CONNECTED)
@@ -236,7 +233,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val peerConnection2 = TestProbe()
     val peerConnection3 = TestProbe()
 
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     channel.expectMsg(INPUT_RESTORED(ChannelCodecsSpec.normal))
     val (localInit, remoteInit) = {
       val inputReconnected = channel.expectMsgType[INPUT_RECONNECTED]
@@ -289,7 +286,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
     assert(peer.stateData.channels.isEmpty)
 
     val open = createOpenChannelMessage()
@@ -311,7 +308,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
@@ -325,7 +322,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister) // Bob doesn't support wumbo, Alice does
+    connect(remoteNodeId, peer, peerConnection, switchboard) // Bob doesn't support wumbo, Alice does
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
@@ -339,7 +336,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val fundingAmountBig = Btc(1).toSatoshi
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
@@ -350,7 +347,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("don't spawn a channel if we don't support their channel type") { f =>
     import f._
 
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
     assert(peer.stateData.channels.isEmpty)
 
     // They only support anchor outputs and we don't.
@@ -383,7 +380,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val remoteInit = protocol.Init(Features(ChannelType -> Optional))
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = remoteInit)
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = remoteInit)
     assert(peer.stateData.channels.isEmpty)
     val open = createOpenChannelMessage()
     peerConnection.send(peer, open)
@@ -393,7 +390,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("don't spawn a dual funded channel if not supported") { f =>
     import f._
 
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
     val open = createOpenDualFundedChannelMessage()
     peerConnection.send(peer, open)
     peerConnection.expectMsg(Error(open.temporaryChannelId, "dual funding is not supported"))
@@ -404,7 +401,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     // Both peers support option_dual_fund, so it is automatically used.
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 25000 sat, None, None, None, None, None))
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].dualFunded)
@@ -414,7 +411,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     // Both peers support option_dual_fund, so it is automatically used.
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
     assert(peer.stateData.channels.isEmpty)
     val open = createOpenDualFundedChannelMessage()
     peerConnection.send(peer, open)
@@ -427,7 +424,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     // We both support option_static_remotekey but they want to open a standard channel.
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
     assert(peer.stateData.channels.isEmpty)
     val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard)))
     peerConnection.send(peer, open)
@@ -442,7 +439,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
     assert(peer.stateData.channels.isEmpty)
 
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
@@ -461,7 +458,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)))
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
@@ -480,7 +477,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional)))
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
@@ -499,7 +496,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.StaticRemoteKey)
@@ -526,9 +523,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
         channel.ref
       }
     }
-    val swapRegister = TestProbe()
-    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref, swapRegister.ref.toTyped[SwapRegister.Command]))
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister)
+    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref))
+    connect(remoteNodeId, peer, peerConnection, switchboard)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, Some(100 msat), None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.fundingAmount == 15000.sat)
@@ -538,7 +534,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("handle final channelId assigned in state DISCONNECTED") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     peer ! ConnectionDown(peerConnection.ref)
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo1 = probe.expectMsgType[Peer.PeerInfo]
@@ -555,7 +551,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     probe.send(channel.ref, PoisonPill)
     probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
   }
@@ -564,7 +560,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     peer ! ConnectionDown(peerConnection.ref)
     probe.send(channel.ref, PoisonPill)
     probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
@@ -572,7 +568,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
   test("reply to relay request") { f =>
     import f._
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), Nil)
     val messageId = randomBytes32()
     val probe = TestProbe()
@@ -587,22 +583,6 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     peer ! RelayOnionMessage(messageId, msg, Some(probe.ref.toTyped))
     probe.expectMsg(MessageRelay.Disconnected(messageId))
-  }
-
-  test("forward messages with a swapId defined to the SwapRegister") { f =>
-    import f._
-    connect(remoteNodeId, peer, peerConnection, switchboard, swapRegister, channels = Set(ChannelCodecsSpec.normal))
-
-    val protocolVersion = 2
-    val swapId = hex"dd650741ee45fbad5df209bfb5aea9537e2e6d946cc7ece3b4492bbae0732634"
-    val premium = 10
-    val responderPubkey = randomKey().publicKey
-
-    val swapInAgreement = SwapInAgreement(protocolVersion, swapId.toHex, responderPubkey.toString, premium)
-
-    peerConnection.send(peer, swapInAgreement)
-    val messageReceived = swapRegister.expectMsgType[MessageReceived]
-    assert(messageReceived.message === swapInAgreement)
   }
 }
 

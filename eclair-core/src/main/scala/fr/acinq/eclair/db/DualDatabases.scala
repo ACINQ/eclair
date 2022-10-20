@@ -9,8 +9,6 @@ import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.swap.SwapData
-import fr.acinq.eclair.swap.SwapEvents.SwapEvent
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
@@ -40,8 +38,6 @@ case class DualDatabases(primary: Databases, secondary: Databases) extends Datab
   override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
 
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
-
-  override val swaps: SwapsDb = DualSwapsDb(primary.swaps, secondary.swaps)
 
   /** if one of the database supports file backup, we use it */
   override def backup(backupFile: File): Unit = (primary, secondary) match {
@@ -390,35 +386,5 @@ case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingC
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = {
     runAsync(secondary.listSettlementCommands())
     primary.listSettlementCommands()
-  }
-}
-
-case class DualSwapsDb(primary: SwapsDb, secondary: SwapsDb) extends SwapsDb {
-
-  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-pending-commands").build()))
-
-  override def add(swapData: SwapData): Unit = {
-    runAsync(secondary.add(swapData))
-    primary.add(swapData)
-  }
-
-  override def addResult(swapEvent: SwapEvent): Unit = {
-    runAsync(secondary.addResult(swapEvent))
-    primary.addResult(swapEvent)
-  }
-
-  override def remove(swapId: String): Unit = {
-    runAsync(secondary.remove(swapId))
-    primary.remove(swapId)
-  }
-
-  override def restore(): Seq[SwapData] = {
-    runAsync(secondary.restore())
-    primary.restore()
-  }
-
-  override def list(): Seq[SwapData] = {
-    runAsync(secondary.list())
-    primary.list()
   }
 }

@@ -22,11 +22,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, ScriptWitness, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
-import fr.acinq.eclair.json.PeerSwapJsonSerializers
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, isAsciiPrintable}
-import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
@@ -51,7 +49,6 @@ sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChann
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32 } // <- not in the spec
 sealed trait HasSerialId extends LightningMessage { def serialId: UInt64 } // <- not in the spec
-sealed trait HasSwapId extends LightningMessage { def swapId: String } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 // @formatter:on
@@ -491,50 +488,6 @@ object ReplyChannelRange {
 case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: TimestampSecond, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
 
 case class OnionMessage(blindingKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
-
-sealed trait PeerSwapMessage extends LightningMessage
-
-sealed abstract class JSonBlobMessage() extends PeerSwapMessage {
-  def json: String = {
-    Serialization.write(this)(PeerSwapJsonSerializers.formats)
-  }
-}
-
-sealed trait HasSwapVersion { def protocolVersion: Long}
-
-sealed trait SwapRequest extends JSonBlobMessage with HasSwapId with HasSwapVersion {
-  def asset: String
-  def network: String
-  def scid: String
-  def amount: Long
-  def pubkey: String
-}
-
-case class SwapInRequest(protocolVersion: Long, swapId: String, asset: String, network: String, scid: String, amount: Long, pubkey: String) extends SwapRequest
-
-case class SwapOutRequest(protocolVersion: Long, swapId: String, asset: String, network: String, scid: String, amount: Long, pubkey: String) extends SwapRequest
-
-sealed trait SwapAgreement extends JSonBlobMessage with HasSwapId with HasSwapVersion {
-  def pubkey: String
-  def premium: Long
-  def payreq: String
-}
-
-case class SwapInAgreement(protocolVersion: Long, swapId: String, pubkey: String, premium: Long) extends SwapAgreement {
-  override def payreq: String = ""
-}
-
-case class SwapOutAgreement(protocolVersion: Long, swapId: String, pubkey: String, payreq: String) extends SwapAgreement {
-  override def premium: Long = 0
-}
-
-case class OpeningTxBroadcasted(swapId: String, payreq: String, txId: String, scriptOut: Long, blindingKey: String) extends JSonBlobMessage with HasSwapId
-
-case class CancelSwap(swapId: String, message: String) extends JSonBlobMessage with HasSwapId
-
-case class CoopClose(swapId: String, message: String, privkey: String) extends JSonBlobMessage with HasSwapId
-
-case class UnknownPeerSwapMessage(tag: Int, data: ByteVector) extends PeerSwapMessage
 
 // NB: blank lines to minimize merge conflicts
 

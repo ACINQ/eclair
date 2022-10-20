@@ -1642,7 +1642,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       log.warning(s"processing local commit spent in catch-all handler")
       spendLocalCurrent(d)
 
-    case Event(msg: HasSwapId, _) => send(msg)
+    // forward unknown messages that originate from loaded plugins
+    case Event(unknownMsg: UnknownMessage, _) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
+      send(unknownMsg)
       stay()
   }
 
