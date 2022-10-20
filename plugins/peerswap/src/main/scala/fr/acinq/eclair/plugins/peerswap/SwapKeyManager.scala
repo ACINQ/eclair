@@ -1,0 +1,57 @@
+/*
+ * Copyright 2022 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package fr.acinq.eclair.plugins.peerswap
+
+import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, ExtendedPublicKey}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, Protocol}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
+import scodec.bits.ByteVector
+
+import java.io.ByteArrayInputStream
+import java.nio.ByteOrder
+
+trait SwapKeyManager {
+  def openingPublicKey(keyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
+  def openingPrivateKey(keyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey
+
+  /**
+   * @param tx               input transaction
+   * @param publicKey        extended public key
+   * @param txOwner          owner of the transaction (local/remote)
+   * @param commitmentFormat format of the commitment tx
+   * @return a signature generated with the private key that matches the input extended public key
+   */
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+}
+
+object SwapKeyManager {
+  /**
+   * Create a BIP32 path from a public key. This path will be used to derive swap keys.
+   * TODO: rethink the workflow for key derivation for swaps
+   *
+   * @param swapId ID of the swap
+   * @return a BIP32 path
+   */
+  def keyPath(swapId: String): DeterministicWallet.KeyPath = {
+    val bis = new ByteArrayInputStream(ByteVector.fromValidHex(swapId).toArray)
+
+    def next(): Long = Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)
+
+    DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next()))
+  }
+}
+
