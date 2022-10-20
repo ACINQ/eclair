@@ -115,25 +115,16 @@ case class DualNetworkDb(primary: NetworkDb, secondary: NetworkDb) extends Netwo
     primary.removeChannels(shortChannelIds)
   }
 
+  override def getChannel(shortChannelId: RealShortChannelId): Option[Router.PublicChannel] = {
+    runAsync(secondary.getChannel(shortChannelId))
+    primary.getChannel(shortChannelId)
+  }
+
   override def listChannels(): SortedMap[RealShortChannelId, Router.PublicChannel] = {
     runAsync(secondary.listChannels())
     primary.listChannels()
   }
 
-  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = {
-    runAsync(secondary.addToPruned(shortChannelIds))
-    primary.addToPruned(shortChannelIds)
-  }
-
-  override def removeFromPruned(shortChannelId: RealShortChannelId): Unit = {
-    runAsync(secondary.removeFromPruned(shortChannelId))
-    primary.removeFromPruned(shortChannelId)
-  }
-
-  override def isPruned(shortChannelId: ShortChannelId): Boolean = {
-    runAsync(secondary.isPruned(shortChannelId))
-    primary.isPruned(shortChannelId)
-  }
 }
 
 case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {

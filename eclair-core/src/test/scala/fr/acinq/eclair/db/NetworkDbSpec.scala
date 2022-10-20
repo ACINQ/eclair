@@ -92,12 +92,12 @@ class NetworkDbSpec extends AnyFunSuite {
     }
   }
 
-  def simpleTest(dbs: TestDatabases) = {
+  def simpleTest(dbs: TestDatabases): Unit = {
     val db = dbs.network
 
-    def sig = Crypto.sign(randomBytes32(), randomKey())
+    def sig: ByteVector64 = Crypto.sign(randomBytes32(), randomKey())
 
-    def generatePubkeyHigherThan(priv: PrivateKey) = {
+    def generatePubkeyHigherThan(priv: PrivateKey): PrivateKey = {
       var res = priv
       while (!Announcements.isNode1(priv.publicKey, res.publicKey)) res = randomKey()
       res
@@ -118,19 +118,24 @@ class NetworkDbSpec extends AnyFunSuite {
     val capacity = 10000 sat
 
     assert(db.listChannels().toSet == Set.empty)
+    assert(db.getChannel(channel_1.shortChannelId).isEmpty)
     db.addChannel(channel_1, txid_1, capacity)
     db.addChannel(channel_1, txid_1, capacity) // duplicate is ignored
     assert(db.listChannels().size == 1)
+    assert(db.getChannel(channel_1.shortChannelId).contains(PublicChannel(channel_1, txid_1, capacity, None, None, None)))
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
     assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
       channel_2.shortChannelId -> PublicChannel(channel_2, txid_2, capacity, None, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
+      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None))
+    )
     db.removeChannel(channel_2.shortChannelId)
+    assert(db.getChannel(channel_2.shortChannelId).isEmpty)
     assert(db.listChannels() == SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
+      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None))
+    )
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
@@ -219,17 +224,6 @@ class NetworkDbSpec extends AnyFunSuite {
       val toDelete = channels.map(_.shortChannelId).take(1 + Random.nextInt(2500))
       db.removeChannels(toDelete)
       assert(db.listChannels().keySet == (channels.map(_.shortChannelId).toSet -- toDelete))
-    }
-  }
-
-  test("prune many channels") {
-    forAllDbs { dbs =>
-      val db = dbs.network
-
-      db.addToPruned(shortChannelIds)
-      shortChannelIds.foreach { id => assert(db.isPruned(id)) }
-      db.removeFromPruned(RealShortChannelId(5))
-      assert(!db.isPruned(ShortChannelId(5)))
     }
   }
 

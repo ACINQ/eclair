@@ -26,7 +26,7 @@ import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAn
 import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
 import grizzled.slf4j.Logging
 
-import java.sql.{Connection, Statement}
+import java.sql.{Connection, ResultSet, Statement}
 import scala.collection.immutable.SortedMap
 
 object SqliteNetworkDb {
@@ -56,7 +56,6 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
       case None =>
         statement.executeUpdate("CREATE TABLE nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
-        statement.executeUpdate("CREATE TABLE pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
       case Some(v@1) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)
@@ -68,7 +67,9 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
           val validChannelUpdate2 = rs.getBitVectorOpt("channel_update_2").forall(channelUpdateCodec.decode(_).isSuccessful)
           (shortChannelId, validChannelUpdate1 && validChannelUpdate2)
         }).collect {
-          case (scid, false) => statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$scid")
+          case (scid, false) =>
+            logger.warn(s"removing channel update with scid=$scid from the network DB (update cannot be decoded)")
+            statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$scid")
         }
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -133,16 +134,28 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
+  private def parseChannel(rs: ResultSet): PublicChannel = {
+    val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
+    val txId = ByteVector32.fromValidHex(rs.getString("txid"))
+    val capacity = rs.getLong("capacity_sat")
+    val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
+    val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
+    PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None)
+  }
+
+  override def getChannel(shortChannelId: RealShortChannelId): Option[PublicChannel] = withMetrics("network/get-channel", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM channels WHERE short_channel_id=?")) { statement =>
+      statement.setLong(1, shortChannelId.toLong)
+      statement.executeQuery().map(parseChannel).headOption
+    }
+  }
+
   override def listChannels(): SortedMap[RealShortChannelId, PublicChannel] = withMetrics("network/list-channels", DbBackends.Sqlite) {
     using(sqlite.createStatement()) { statement =>
       statement.executeQuery("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM channels")
         .foldLeft(SortedMap.empty[RealShortChannelId, PublicChannel]) { (m, rs) =>
-          val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
-          val txId = ByteVector32.fromValidHex(rs.getString("txid"))
-          val capacity = rs.getLong("capacity_sat")
-          val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
-          val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
-          m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
+          val channel = parseChannel(rs)
+          m + (channel.shortChannelId -> channel)
         }
     }
   }
@@ -163,27 +176,4 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def addToPruned(shortChannelIds: Iterable[RealShortChannelId]): Unit = withMetrics("network/add-to-pruned", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), inTransaction = true) { statement =>
-      shortChannelIds.foreach(shortChannelId => {
-        statement.setLong(1, shortChannelId.toLong)
-        statement.addBatch()
-      })
-      statement.executeBatch()
-    }
-  }
-
-  override def removeFromPruned(shortChannelId: RealShortChannelId): Unit = withMetrics("network/remove-from-pruned", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("DELETE FROM pruned WHERE short_channel_id=?")) { statement =>
-      statement.setLong(1, shortChannelId.toLong)
-      statement.executeUpdate()
-    }
-  }
-
-  override def isPruned(shortChannelId: ShortChannelId): Boolean = withMetrics("network/is-pruned", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
-      statement.setLong(1, shortChannelId.toLong)
-      statement.executeQuery().nonEmpty
-    }
-  }
 }

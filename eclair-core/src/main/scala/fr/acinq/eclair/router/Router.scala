@@ -71,25 +71,24 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
   {
     log.info("loading network announcements from db...")
-    val channels = db.listChannels()
-    val nodes = db.listNodes()
+    val (pruned, channels) = db.listChannels().partition { case (_, pc) => pc.isStale(nodeParams.currentBlockHeight) }
+    val nodes = db.listNodes().map(n => n.nodeId -> n).toMap
     Metrics.Nodes.withoutTags().update(nodes.size)
     Metrics.Channels.withoutTags().update(channels.size)
     log.info("loaded from db: channels={} nodes={}", channels.size, nodes.size)
-    val initChannels = channels
+    log.info("{} pruned channels at blockHeight={}", pruned.size, nodeParams.currentBlockHeight)
     // this will be used to calculate routes
-    val graph = DirectedGraph.makeGraph(initChannels)
-    val initNodes = nodes.map(n => n.nodeId -> n).toMap
+    val graph = DirectedGraph.makeGraph(channels)
     // send events for remaining channels/nodes
-    context.system.eventStream.publish(ChannelsDiscovered(initChannels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))))
-    context.system.eventStream.publish(ChannelUpdatesReceived(initChannels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
-    context.system.eventStream.publish(NodesDiscovered(initNodes.values))
+    context.system.eventStream.publish(ChannelsDiscovered(channels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))))
+    context.system.eventStream.publish(ChannelUpdatesReceived(channels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
+    context.system.eventStream.publish(NodesDiscovered(nodes.values))
 
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
-    initChannels.values.foreach { pc =>
+    (channels.values ++ pruned.values).foreach { pc =>
       val txid = pc.fundingTxid
-      val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
+      val outputIndex = ShortChannelId.coordinates(pc.ann.shortChannelId).outputIndex
       // avoid herd effect at startup because watch-spent are intensive in terms of rpc calls to bitcoind
       context.system.scheduler.scheduleOnce(Random.nextLong(nodeParams.routerConf.watchSpentWindow.toSeconds).seconds) {
         watcher ! WatchExternalChannelSpent(self, txid, outputIndex, pc.ann.shortChannelId)
@@ -104,7 +103,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
     val data = Data(
-      initNodes, initChannels,
+      nodes, channels, pruned,
       Stash(Map.empty, Map.empty),
       rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty),
       awaiting = Map.empty,
@@ -214,12 +213,12 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, c: ChannelAnnouncement), d) =>
-      stay() using Validation.handleChannelAnnouncement(d, nodeParams.db.network, watcher, RemoteGossip(peerConnection, remoteNodeId), c)
+      stay() using Validation.handleChannelAnnouncement(d, watcher, RemoteGossip(peerConnection, remoteNodeId), c)
 
     case Event(r: ValidateResult, d) =>
       stay() using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
-    case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) =>
+    case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
       stay() using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
 
     case Event(n: NodeAnnouncement, d: Data) =>
@@ -232,10 +231,10 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Validation.handleShortChannelIdAssigned(d, nodeParams.nodeId, scia)
 
     case Event(u: ChannelUpdate, d: Data) => // from payment lifecycle
-      stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
+      stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.currentBlockHeight, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) => // from network (gossip or peer)
-      stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
+      stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.currentBlockHeight, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
     case Event(lcu: LocalChannelUpdate, d: Data) => // from local channel
       stay() using Validation.handleLocalChannelUpdate(d, nodeParams, watcher, lcu)
@@ -358,7 +357,9 @@ object Router {
 
     val nodeId1: PublicKey = ann.nodeId1
     val nodeId2: PublicKey = ann.nodeId2
-    def shortChannelId: RealShortChannelId = ann.shortChannelId
+    val shortChannelId: RealShortChannelId = ann.shortChannelId
+
+    def isStale(currentBlockHeight: BlockHeight): Boolean = StaleChannels.isStale(ann, update_1_opt, update_2_opt, currentBlockHeight)
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (u.channelFlags.isNode1) update_1_opt else update_2_opt
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (u.channelFlags.isNode1) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
@@ -636,6 +637,7 @@ object Router {
 
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: SortedMap[RealShortChannelId, PublicChannel],
+                  prunedChannels: SortedMap[RealShortChannelId, PublicChannel],
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[GossipOrigin]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
