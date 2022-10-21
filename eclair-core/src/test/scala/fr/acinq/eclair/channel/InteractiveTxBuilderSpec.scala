@@ -960,6 +960,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val previousOutputs = Seq(
       TxOut(2500 sat, Script.pay2wpkh(randomKey().publicKey)),
       TxOut(2500 sat, Script.pay2pkh(randomKey().publicKey)),
+      TxOut(2500 sat, Script.pay2wpkh(randomKey().publicKey)),
     )
     val previousTx = Transaction(2, Nil, previousOutputs, 0)
     val wallet = new SingleKeyOnChainWallet()
@@ -968,8 +969,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       TxAddInput(params.channelId, UInt64(0), previousTx, 0, 0) -> InvalidSerialId(params.channelId, UInt64(0)),
       TxAddInput(params.channelId, UInt64(1), previousTx, 0, 0) -> DuplicateSerialId(params.channelId, UInt64(1)),
       TxAddInput(params.channelId, UInt64(3), previousTx, 0, 0) -> DuplicateInput(params.channelId, UInt64(3), previousTx.txid, 0),
-      TxAddInput(params.channelId, UInt64(5), previousTx, 2, 0) -> InputOutOfBounds(params.channelId, UInt64(5), previousTx.txid, 2),
+      TxAddInput(params.channelId, UInt64(5), previousTx, 3, 0) -> InputOutOfBounds(params.channelId, UInt64(5), previousTx.txid, 3),
       TxAddInput(params.channelId, UInt64(7), previousTx, 1, 0) -> NonSegwitInput(params.channelId, UInt64(7), previousTx.txid, 1),
+      TxAddInput(params.channelId, UInt64(9), previousTx, 2, 0xfffffffeL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xfffffffeL),
+      TxAddInput(params.channelId, UInt64(9), previousTx, 2, 0xffffffffL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xffffffffL),
     )
     testCases.foreach {
       case (input, expected) =>
@@ -1322,8 +1325,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     assert(initiatorTx.buildUnsignedTx().txid == unsignedTx.txid)
     assert(nonInitiatorTx.buildUnsignedTx().txid == unsignedTx.txid)
 
-    val initiatorSigs = TxSignatures(channelId, unsignedTx.txid, Seq(ScriptWitness(Seq(hex"68656c6c6f2074686572652c2074686973206973206120626974636f6e212121", hex"82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87"))))
-    val nonInitiatorSigs = TxSignatures(channelId, unsignedTx.txid, Seq(ScriptWitness(Seq(hex"304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01", hex"034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484"))))
+    val initiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"68656c6c6f2074686572652c2074686973206973206120626974636f6e212121", hex"82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87"))))
+    val nonInitiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01", hex"034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484"))))
     val initiatorSignedTx = FullySignedSharedTransaction(initiatorTx, initiatorSigs, nonInitiatorSigs)
     assert(initiatorSignedTx.feerate == FeeratePerKw(262 sat))
     val nonInitiatorSignedTx = FullySignedSharedTransaction(nonInitiatorTx, nonInitiatorSigs, initiatorSigs)

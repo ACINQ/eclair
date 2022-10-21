@@ -205,7 +205,7 @@ object LightningMessageCodecs {
 
   val txSignaturesCodec: Codec[TxSignatures] = (
     ("channelId" | bytes32) ::
-      ("txId" | sha256) ::
+      ("txHash" | sha256) ::
       ("witnesses" | witnessesCodec) ::
       ("tlvStream" | TxSignaturesTlv.txSignaturesTlvCodec)).as[TxSignatures]
 

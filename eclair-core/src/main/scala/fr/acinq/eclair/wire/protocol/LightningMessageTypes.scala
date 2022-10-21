@@ -106,9 +106,15 @@ case class TxComplete(channelId: ByteVector32,
                       tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId
 
 case class TxSignatures(channelId: ByteVector32,
-                        txId: ByteVector32,
+                        txHash: ByteVector32,
                         witnesses: Seq[ScriptWitness],
-                        tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                        tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
+  val txId: ByteVector32 = txHash.reverse
+}
+
+object TxSignatures {
+  def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness]): TxSignatures = TxSignatures(channelId, tx.hash, witnesses)
+}
 
 case class TxInitRbf(channelId: ByteVector32,
                      lockTime: Long,

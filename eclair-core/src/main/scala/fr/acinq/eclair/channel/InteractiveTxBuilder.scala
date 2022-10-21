@@ -515,6 +515,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           } else if (session.localInputs.exists(i => toOutPoint(i) == toOutPoint(addInput)) || session.remoteInputs.exists(i => toOutPoint(i) == toOutPoint(addInput))) {
             replyTo ! RemoteFailure(DuplicateInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput))
             unlockAndStop(session)
+          } else if (addInput.sequence > 0xfffffffdL) {
+            replyTo ! RemoteFailure(NonReplaceableInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput, addInput.sequence))
+            unlockAndStop(session)
           } else if (!Script.isNativeWitnessScript(addInput.previousTx.txOut(addInput.previousTxOutput.toInt).publicKeyScript)) {
             replyTo ! RemoteFailure(NonSegwitInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput))
             unlockAndStop(session)
@@ -811,13 +814,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private def signTx(unsignedTx: SharedTransaction, remoteSigs_opt: Option[TxSignatures]): Unit = {
     val tx = unsignedTx.buildUnsignedTx()
     if (unsignedTx.localInputs.isEmpty) {
-      context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx.txid, Nil)), remoteSigs_opt)
+      context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil)), remoteSigs_opt)
     } else {
       context.pipeToSelf(wallet.signTransaction(tx, allowIncomplete = true).map {
         case SignTransactionResponse(signedTx, _) =>
           val localOutpoints = unsignedTx.localInputs.map(toOutPoint).toSet
           val sigs = signedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
-          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx.txid, sigs))
+          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, sigs))
       }) {
         case Failure(t) => WalletFailure(t)
         case Success(signedTx) => SignTransactionResult(signedTx, remoteSigs_opt)
