@@ -296,7 +296,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     val bobSigs = bob2alice.expectMsgType[TxSignatures]
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    bob2alice.forward(alice, bobSigs.copy(txId = randomBytes32(), witnesses = Nil))
+    bob2alice.forward(alice, bobSigs.copy(txHash = randomBytes32(), witnesses = Nil))
     alice2bob.expectMsgType[TxAbort]
     awaitCond(wallet.rolledback.size == 1)
     awaitCond(alice.stateName == CLOSED)
