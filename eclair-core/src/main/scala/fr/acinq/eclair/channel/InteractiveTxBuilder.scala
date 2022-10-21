@@ -515,6 +515,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           } else if (session.localInputs.exists(i => toOutPoint(i) == toOutPoint(addInput)) || session.remoteInputs.exists(i => toOutPoint(i) == toOutPoint(addInput))) {
             replyTo ! RemoteFailure(DuplicateInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput))
             unlockAndStop(session)
+          } else if (addInput.sequence > 0xfffffffdL) {
+            replyTo ! RemoteFailure(NonReplaceableInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput, addInput.sequence))
+            unlockAndStop(session)
           } else if (!Script.isNativeWitnessScript(addInput.previousTx.txOut(addInput.previousTxOutput.toInt).publicKeyScript)) {
             replyTo ! RemoteFailure(NonSegwitInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput))
             unlockAndStop(session)

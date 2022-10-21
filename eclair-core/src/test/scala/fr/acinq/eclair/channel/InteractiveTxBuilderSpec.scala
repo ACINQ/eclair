@@ -960,6 +960,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val previousOutputs = Seq(
       TxOut(2500 sat, Script.pay2wpkh(randomKey().publicKey)),
       TxOut(2500 sat, Script.pay2pkh(randomKey().publicKey)),
+      TxOut(2500 sat, Script.pay2wpkh(randomKey().publicKey)),
     )
     val previousTx = Transaction(2, Nil, previousOutputs, 0)
     val wallet = new SingleKeyOnChainWallet()
@@ -968,8 +969,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       TxAddInput(params.channelId, UInt64(0), previousTx, 0, 0) -> InvalidSerialId(params.channelId, UInt64(0)),
       TxAddInput(params.channelId, UInt64(1), previousTx, 0, 0) -> DuplicateSerialId(params.channelId, UInt64(1)),
       TxAddInput(params.channelId, UInt64(3), previousTx, 0, 0) -> DuplicateInput(params.channelId, UInt64(3), previousTx.txid, 0),
-      TxAddInput(params.channelId, UInt64(5), previousTx, 2, 0) -> InputOutOfBounds(params.channelId, UInt64(5), previousTx.txid, 2),
+      TxAddInput(params.channelId, UInt64(5), previousTx, 3, 0) -> InputOutOfBounds(params.channelId, UInt64(5), previousTx.txid, 3),
       TxAddInput(params.channelId, UInt64(7), previousTx, 1, 0) -> NonSegwitInput(params.channelId, UInt64(7), previousTx.txid, 1),
+      TxAddInput(params.channelId, UInt64(9), previousTx, 2, 0xfffffffeL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xfffffffeL),
+      TxAddInput(params.channelId, UInt64(9), previousTx, 2, 0xffffffffL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xffffffffL),
     )
     testCases.foreach {
       case (input, expected) =>
