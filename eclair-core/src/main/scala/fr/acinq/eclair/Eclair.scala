@@ -232,8 +232,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
     val futureResponse = toRemoteNode_opt match {
-      case Some(pk) => (appKit.register ? Symbol("channelsTo")).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
-      case None => (appKit.register ? Symbol("channels")).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
+      case Some(pk) => (appKit.register ? Register.GetChannelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
+      case None => (appKit.register ? Register.GetChannels).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
     }
 
     for {
@@ -478,7 +478,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   /** Send a request to multiple channels using node ids */
   private def sendToNodes[C <: Command, R <: CommandResponse[C]](nodeids: List[PublicKey], request: C)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, R]]] = {
     for {
-      channelIds <- (appKit.register ? Symbol("channelsTo")).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(kv => nodeids.contains(kv._2)).keys)
+      channelIds <- (appKit.register ? Register.GetChannelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(kv => nodeids.contains(kv._2)).keys)
       res <- sendToChannels[C, R](channelIds.map(Left(_)).toList, request)
     } yield res
   }

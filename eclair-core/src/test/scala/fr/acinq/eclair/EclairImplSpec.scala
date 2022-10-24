@@ -432,7 +432,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.channelsInfo(toRemoteNode_opt = None).pipeTo(sender.ref)
 
-    register.expectMsg(Symbol("channels"))
+    register.expectMsg(Register.GetChannels)
     register.reply(map)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
@@ -463,7 +463,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.channelsInfo(toRemoteNode_opt = Some(a)).pipeTo(sender.ref)
 
-    register.expectMsg(Symbol("channelsTo"))
+    register.expectMsg(Register.GetChannelsTo)
     register.reply(channels2Nodes)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
@@ -595,7 +595,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.updateRelayFee(List(a, b), 999 msat, 1234).pipeTo(sender.ref)
 
-    register.expectMsg(Symbol("channelsTo"))
+    register.expectMsg(Register.GetChannelsTo)
     register.reply(map)
 
     val u1 = register.expectMsgType[Register.Forward[CMD_UPDATE_RELAY_FEE]]

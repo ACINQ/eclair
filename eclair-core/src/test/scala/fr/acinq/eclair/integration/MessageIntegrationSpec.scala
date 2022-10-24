@@ -28,7 +28,7 @@ import fr.acinq.eclair.TestUtils.waitEventStreamSynced
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.{CMD_CLOSE, RES_SUCCESS}
+import fr.acinq.eclair.channel.{CMD_CLOSE, RES_SUCCESS, Register}
 import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.router.Router
@@ -299,10 +299,10 @@ class MessageIntegrationSpec extends IntegrationSpec {
     // We close the channels A -> B -> C but we keep channels with D
     // This ensures nodes still have an unrelated channel so we keep them in the network DB.
     val probe = TestProbe()
-    probe.send(nodes("B").register, Symbol("channels"))
+    probe.send(nodes("B").register, Register.GetChannels)
     val channelsB = probe.expectMsgType[Map[ByteVector32, ActorRef]]
     assert(channelsB.size == 3)
-    probe.send(nodes("D").register, Symbol("channels"))
+    probe.send(nodes("D").register, Register.GetChannels)
     val channelsD = probe.expectMsgType[Map[ByteVector32, ActorRef]]
     assert(channelsD.size == 3)
     channelsB.foreach {

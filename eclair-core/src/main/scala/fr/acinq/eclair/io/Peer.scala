@@ -59,6 +59,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   import Peer._
 
+  context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
+
   startWith(INSTANTIATING, Nothing)
 
   when(INSTANTIATING) {
