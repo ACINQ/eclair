@@ -106,8 +106,8 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
   }
 
   test("PeerInfo serialization") {
-    val peerInfo = PeerInfo(ActorRef.noSender, PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), Peer.CONNECTED, None, 5)
-    val expected = """{"nodeId":"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","state":"CONNECTED","channels":5}"""
+    val peerInfo = PeerInfo(ActorRef.noSender, PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), Peer.CONNECTED, None, Set(ActorRef.noSender))
+    val expected = """{"nodeId":"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","state":"CONNECTED","channels":1}"""
     JsonSerializers.serialization.write(peerInfo)(JsonSerializers.formats) shouldBe expected
   }
 

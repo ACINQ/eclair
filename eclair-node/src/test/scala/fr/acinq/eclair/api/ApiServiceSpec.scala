@@ -170,13 +170,13 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         nodeId = aliceNodeId,
         state = Peer.CONNECTED,
         address = Some(NodeAddress.fromParts("127.0.0.1", 9731).get),
-        channels = 1),
+        channels = Set(ActorRef.noSender)),
       PeerInfo(
         ActorRef.noSender,
         nodeId = bobNodeId,
         state = Peer.DISCONNECTED,
         address = None,
-        channels = 1)))
+        channels = Set(ActorRef.noSender))))
 
     val mockService = mockApi(eclair)
     Post("/peers") ~>
