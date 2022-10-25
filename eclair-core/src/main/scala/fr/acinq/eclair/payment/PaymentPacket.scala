@@ -170,8 +170,8 @@ object IncomingPaymentPacket {
 
   private def validateFinalPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, FinalPacket] = {
     FinalPayload.Standard.validate(payload).left.map(_.failureMessage).flatMap {
-      case payload if add.amountMsat != payload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
-      case payload if add.cltvExpiry != payload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
+      case payload if add.amountMsat < payload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
+      case payload if add.cltvExpiry < payload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
       case payload => Right(FinalPacket(add, payload))
     }
   }
@@ -189,14 +189,14 @@ object IncomingPaymentPacket {
     // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
     FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
       FinalPayload.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
-        case _ if add.amountMsat != outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
-        case _ if add.cltvExpiry != outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
-        case innerPayload if outerPayload.expiry != innerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry)) // previous trampoline didn't forward the right expiry
-        case innerPayload if outerPayload.totalAmount != innerPayload.amount => Left(FinalIncorrectHtlcAmount(outerPayload.totalAmount)) // previous trampoline didn't forward the right amount
+        case _ if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
+        case _ if add.cltvExpiry < outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
+        case innerPayload if outerPayload.expiry < innerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry)) // previous trampoline didn't forward the right expiry
+        case innerPayload if outerPayload.totalAmount < innerPayload.amount => Left(FinalIncorrectHtlcAmount(outerPayload.totalAmount)) // previous trampoline didn't forward the right amount
         case innerPayload =>
           // We merge contents from the outer and inner payloads.
           // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-          Right(FinalPacket(add, FinalPayload.Standard.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata)))
+          Right(FinalPacket(add, FinalPayload.Standard.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata)))
       }
     }
   }

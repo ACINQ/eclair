@@ -148,6 +148,19 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_b.asInstanceOf[FinalPayload.Standard].paymentMetadata.contains(paymentMetadata))
   }
 
+  test("build a command with greater amount and expiry") {
+    val Success((add, _)) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID), paymentHash, hops.take(1), FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, None))
+
+    // let's peel the onion
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, finalAmount + 100.msat, paymentHash, finalExpiry + CltvExpiryDelta(6), add.onion, None)
+    val Right(FinalPacket(_, payload_b)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    assert(payload_b.isInstanceOf[FinalPayload.Standard])
+    assert(payload_b.amount == finalAmount)
+    assert(payload_b.totalAmount == finalAmount)
+    assert(payload_b.expiry == finalExpiry)
+    assert(payload_b.asInstanceOf[FinalPayload.Standard].paymentSecret == paymentSecret)
+  }
+
   test("build a trampoline payment") {
     // simple trampoline route to e:
     //             .--.   .--.
@@ -306,7 +319,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(failure == FinalIncorrectCltvExpiry(firstExpiry - CltvExpiryDelta(12)))
   }
 
-  test("fail to decrypt at the final trampoline node when amount has been modified by next-to-last trampoline") {
+  test("fail to decrypt at the final trampoline node when amount has been decreased by next-to-last trampoline") {
     val Success((amount_ac, expiry_ac, trampolineOnion)) = buildTrampolinePacket(paymentHash, trampolineHops, FinalPayload.Standard.createMultiPartPayload(finalAmount, finalAmount, finalExpiry, paymentSecret, None))
     val Success((firstAmount, firstExpiry, onion)) = buildPaymentPacket(paymentHash, trampolineChannelHops, FinalPayload.Standard.createTrampolinePayload(amount_ac, amount_ac, expiry_ac, randomBytes32(), trampolineOnion.packet))
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet, None), priv_b.privateKey, Features.empty)
@@ -315,7 +328,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, channelHopFromUpdate(c, d, channelUpdate_cd) :: Nil, FinalPayload.Standard.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
     val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32(), 3, amount_d, paymentHash, expiry_d, onion_d.packet, None), priv_d.privateKey, Features.empty)
     // d forwards an invalid amount to e (the outer total amount doesn't match the inner amount).
-    val invalidTotalAmount = amount_de + 100.msat
+    val invalidTotalAmount = amount_de - 1.msat
     val Success((amount_e, expiry_e, onion_e)) = buildPaymentPacket(paymentHash, channelHopFromUpdate(d, e, channelUpdate_de) :: Nil, FinalPayload.Standard.createTrampolinePayload(amount_de, invalidTotalAmount, expiry_de, randomBytes32(), packet_e))
     val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32(), 4, amount_e, paymentHash, expiry_e, onion_e.packet, None), priv_e.privateKey, Features.empty)
     assert(failure == FinalIncorrectHtlcAmount(invalidTotalAmount))
