@@ -307,7 +307,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("not enough funds to increase commit tx feerate") {
-    withFixture(Seq(10.5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+    withFixture(Seq(10.4 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
       // close channel and wait for the commit tx to be published, anchor will not be published because we don't have enough funds
@@ -388,9 +388,9 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // channel funding
       10 millibtc,
       // bumping utxos
-      25000 sat,
-      22000 sat,
-      15000 sat
+      15000 sat,
+      12000 sat,
+      10000 sat
     )
     withFixture(utxos, ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
@@ -481,7 +481,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("commit tx not confirming, adding other wallet inputs") {
-    withFixture(Seq(10.5 millibtc, 5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+    withFixture(Seq(10.4 millibtc, 5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -650,7 +650,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // our parent will stop us when receiving the TxRejected message.
       publisher2 ! Stop
-      awaitCond(getLocks(probe, walletRpcClient).isEmpty)
+      awaitCond(!getLocks(probe, walletRpcClient).exists(_.txid != commitTx.tx.txid))
 
       // the first publishing attempt succeeds
       generateBlocks(5)
@@ -794,7 +794,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
     val htlcSuccessTx = getMempoolTxs(1).head
     val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx.weight.toInt)
-    assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
+    assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.2, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
 
     generateBlocks(4)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -823,7 +823,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
     val htlcTimeoutTx = getMempoolTxs(1).head
     val htlcTimeoutTargetFee = Transactions.weight2fee(targetFeerate, htlcTimeoutTx.weight.toInt)
-    assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.4, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
+    assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.2, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
 
     generateBlocks(4)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -961,15 +961,15 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcSuccessTx1.fees < htlcSuccessTx2.fees)
       assert(htlcSuccessInputs1 == htlcSuccessInputs2)
       val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx2.weight.toInt)
-      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx2.fees && htlcSuccessTx2.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx2.fees} targetFee=$htlcSuccessTargetFee")
+      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx2.fees && htlcSuccessTx2.fees <= htlcSuccessTargetFee * 1.1, s"actualFee=${htlcSuccessTx2.fees} targetFee=$htlcSuccessTargetFee")
     }
   }
 
   test("htlc success tx not confirming, adding other wallet inputs") {
-    withFixture(Seq(10.2 millibtc, 2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+    withFixture(Seq(1_010_000 sat, 10_000 sat), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val initialFeerate = FeeratePerKw(15_000 sat)
+      val initialFeerate = FeeratePerKw(3_000 sat)
       setFeerate(initialFeerate)
       val (commitTx, htlcSuccess, _) = closeChannelWithHtlcs(f, aliceBlockHeight() + 15)
 
@@ -986,7 +986,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcSuccessTx1.txid == htlcSuccessTxId1)
 
       // New blocks are found, which makes us aim for a more aggressive block target, so we bump the fees.
-      val targetFeerate = FeeratePerKw(75_000 sat)
+      val targetFeerate = FeeratePerKw(10_000 sat)
       setFeerate(targetFeerate, blockTarget = 2)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 10))
       val htlcSuccessTxId2 = listener.expectMsgType[TransactionPublished].tx.txid
@@ -995,9 +995,9 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val htlcSuccessInputs2 = getMempool().head.txIn.map(_.outPoint).toSet
       assert(htlcSuccessTx2.txid == htlcSuccessTxId2)
       assert(htlcSuccessTx1.fees < htlcSuccessTx2.fees)
-      assert(htlcSuccessInputs1 !== htlcSuccessInputs2)
+      assert(htlcSuccessInputs1 != htlcSuccessInputs2)
       val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx2.weight.toInt)
-      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx2.fees && htlcSuccessTx2.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx2.fees} targetFee=$htlcSuccessTargetFee")
+      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx2.fees && htlcSuccessTx2.fees <= htlcSuccessTargetFee * 1.1, s"actualFee=${htlcSuccessTx2.fees} targetFee=$htlcSuccessTargetFee")
     }
   }
 
@@ -1089,7 +1089,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, commitTx)
       val htlcSuccessTx = getMempoolTxs(1).head
       val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx.weight.toInt)
-      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
+      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.1, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
     }
   }
 
@@ -1118,7 +1118,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // our parent will stop us when receiving the TxRejected message.
       publisher2 ! Stop
-      awaitCond(getLocks(probe, walletRpcClient).isEmpty)
+      awaitCond(!getLocks(probe, walletRpcClient).exists(_.txid != commitTx.txid))
 
       // the first publishing attempt succeeds
       generateBlocks(5)

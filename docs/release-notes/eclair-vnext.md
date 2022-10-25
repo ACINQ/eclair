@@ -4,6 +4,11 @@
 
 ## Major changes
 
+### Bitcoin Core 23 or higher required
+
+This release adds support for Bitcoin Core 23.x and removes support for previous Bitcoin Core versions.
+Please make sure you have updated your Bitcoin Core node before updating eclair, as eclair won't start when connected to older versions of `bitcoind`.
+
 ### Add support for channel aliases and zeroconf channels
 
 #### Channel aliases
@@ -145,7 +150,7 @@ Expired incoming invoices that are unpaid will be searched for and purged from t
 Thereafter searches for expired unpaid invoices to purge will run once every 24 hours. You can disable this feature, or
 change the search interval with two new settings:
 
-- `eclair.purge-expired-invoices.enabled = true
+- `eclair.purge-expired-invoices.enabled = true`
 - `eclair.purge-expired-invoices.interval = 24 hours`
 
 #### Skip anchor CPFP for empty commitment
@@ -163,7 +168,8 @@ If the mempool becomes congested and the feerate is too low, the commitment tran
 
 #### Public IP addresses can be DNS host names
 
-You can now specify a DNS host name as one of your `server.public-ips` addresses (see PR [#911](https://github.com/lightning/bolts/pull/911)). Note: you can not specify more than one DNS host name.
+You can now specify a DNS host name as one of your `server.public-ips` addresses (see PR [#911](https://github.com/lightning/bolts/pull/911)).
+Note: you can not specify more than one DNS host name.
 
 #### Support for testing on the signet network
 

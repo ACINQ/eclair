@@ -53,39 +53,6 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     (CommitTx(commitInput, commitTx), anchorTx)
   }
 
-  test("adjust anchor tx change amount", Tag("fuzzy")) {
-    val (commitTx, anchorTx) = createAnchorTx()
-    val dustLimit = 600 sat
-    val commitFeerate = FeeratePerKw(2500 sat)
-    val targetFeerate = FeeratePerKw(10000 sat)
-    for (_ <- 1 to 100) {
-      val walletInputsCount = 1 + Random.nextInt(5)
-      val walletInputs = (1 to walletInputsCount).map(_ => TxIn(OutPoint(randomBytes32(), 0), Nil, 0))
-      val amountIn = dustLimit * walletInputsCount + Random.nextInt(25_000_000).sat
-      val amountOut = dustLimit + Random.nextLong(amountIn.toLong).sat
-      val unsignedTx = ClaimLocalAnchorWithWitnessData(anchorTx.copy(tx = anchorTx.tx.copy(
-        txIn = anchorTx.tx.txIn ++ walletInputs,
-        txOut = TxOut(amountOut, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil,
-      )))
-      val adjustedTx = adjustAnchorOutputChange(unsignedTx, commitTx.tx, amountIn, commitFeerate, targetFeerate, dustLimit)
-      assert(adjustedTx.txInfo.tx.txIn.size == unsignedTx.txInfo.tx.txIn.size)
-      assert(adjustedTx.txInfo.tx.txOut.size == 1)
-      assert(adjustedTx.txInfo.tx.txOut.head.amount >= dustLimit)
-      if (adjustedTx.txInfo.tx.txOut.head.amount > dustLimit) {
-        // Simulate tx signing to check final feerate.
-        val signedTx = {
-          val anchorSigned = addSigs(adjustedTx.txInfo, PlaceHolderSig)
-          val signedWalletInputs = anchorSigned.tx.txIn.tail.map(txIn => txIn.copy(witness = Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)))
-          anchorSigned.tx.copy(txIn = anchorSigned.tx.txIn.head +: signedWalletInputs)
-        }
-        // We want the package anchor tx + commit tx to reach our target feerate, but the commit tx already pays a (smaller) fee
-        val targetFee = weight2fee(targetFeerate, signedTx.weight() + commitTx.tx.weight()) - weight2fee(commitFeerate, commitTx.tx.weight())
-        val actualFee = amountIn - signedTx.txOut.map(_.amount).sum
-        assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee amountIn=$amountIn tx=$signedTx")
-      }
-    }
-  }
-
   private def createHtlcTxs(): (HtlcSuccessWithWitnessData, HtlcTimeoutWithWitnessData) = {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
@@ -111,46 +78,6 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       BlockHeight(0)
     ), PlaceHolderSig)
     (htlcSuccess, htlcTimeout)
-  }
-
-  test("adjust htlc tx change amount", Tag("fuzzy")) {
-    val dustLimit = 600 sat
-    val targetFeerate = FeeratePerKw(10000 sat)
-    val (htlcSuccess, htlcTimeout) = createHtlcTxs()
-    for (_ <- 1 to 100) {
-      val walletInputsCount = 1 + Random.nextInt(5)
-      val walletInputs = (1 to walletInputsCount).map(_ => TxIn(OutPoint(randomBytes32(), 0), Nil, 0))
-      val walletAmountIn = dustLimit * walletInputsCount + Random.nextInt(25_000_000).sat
-      val changeOutput = TxOut(Random.nextLong(walletAmountIn.toLong).sat, Script.pay2wpkh(PlaceHolderPubKey))
-      val unsignedHtlcSuccessTx = htlcSuccess.updateTx(htlcSuccess.txInfo.tx.copy(
-        txIn = htlcSuccess.txInfo.tx.txIn ++ walletInputs,
-        txOut = htlcSuccess.txInfo.tx.txOut ++ Seq(changeOutput)
-      ))
-      val unsignedHtlcTimeoutTx = htlcTimeout.updateTx(htlcTimeout.txInfo.tx.copy(
-        txIn = htlcTimeout.txInfo.tx.txIn ++ walletInputs,
-        txOut = htlcTimeout.txInfo.tx.txOut ++ Seq(changeOutput)
-      ))
-      for (unsignedTx <- Seq(unsignedHtlcSuccessTx, unsignedHtlcTimeoutTx)) {
-        val totalAmountIn = unsignedTx.txInfo.input.txOut.amount + walletAmountIn
-        val adjustedTx = adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, dustLimit, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
-        assert(adjustedTx.txInfo.tx.txIn.size == unsignedTx.txInfo.tx.txIn.size)
-        assert(adjustedTx.txInfo.tx.txOut.size == 1 || adjustedTx.txInfo.tx.txOut.size == 2)
-        if (adjustedTx.txInfo.tx.txOut.size == 2) {
-          // Simulate tx signing to check final feerate.
-          val signedTx = {
-            val htlcSigned = adjustedTx.txInfo match {
-              case tx: HtlcSuccessTx => addSigs(tx, PlaceHolderSig, PlaceHolderSig, ByteVector32.Zeroes, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
-              case tx: HtlcTimeoutTx => addSigs(tx, PlaceHolderSig, PlaceHolderSig, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
-            }
-            val signedWalletInputs = htlcSigned.tx.txIn.tail.map(txIn => txIn.copy(witness = Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)))
-            htlcSigned.tx.copy(txIn = htlcSigned.tx.txIn.head +: signedWalletInputs)
-          }
-          val targetFee = weight2fee(targetFeerate, signedTx.weight())
-          val actualFee = totalAmountIn - signedTx.txOut.map(_.amount).sum
-          assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee amountIn=$walletAmountIn tx=$signedTx")
-        }
-      }
-    }
   }
 
   private def createClaimHtlcTx(): (ClaimHtlcSuccessWithWitnessData, ClaimHtlcTimeoutWithWitnessData) = {

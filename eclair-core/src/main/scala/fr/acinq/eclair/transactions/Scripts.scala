@@ -16,12 +16,12 @@
 
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.Script.LOCKTIME_THRESHOLD
+import fr.acinq.bitcoin.SigHash._
+import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.SigHash._
-import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_TYPE_FLAG, SEQUENCE_LOCKTIME_MASK}
-import fr.acinq.bitcoin.Script.LockTimeThreshold
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
@@ -85,7 +85,7 @@ object Scripts {
    * @return the block height before which this tx cannot be published.
    */
   def cltvTimeout(tx: Transaction): BlockHeight =
-    if (tx.lockTime <= LockTimeThreshold) {
+    if (tx.lockTime <= LOCKTIME_THRESHOLD) {
       // locktime is a number of blocks
       BlockHeight(tx.lockTime)
     }

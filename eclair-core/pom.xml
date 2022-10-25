@@ -88,9 +88,9 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-0.21.1/bitcoin-0.21.1-x86_64-linux-gnu.tar.gz</bitcoind.url>
-                <bitcoind.md5>e283a98b5e9f0b58e625e1dde661201d</bitcoind.md5>
-                <bitcoind.sha1>5101e29b39c33cc8e40d5f3b46dda37991b037a0</bitcoind.sha1>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-23.0/bitcoin-23.0-x86_64-linux-gnu.tar.gz</bitcoind.url>
+                <bitcoind.md5>fc4427b26a72fcc1556a9b07f3444013</bitcoind.md5>
+                <bitcoind.sha1>0fe0028a996909a46fbdde7e43aa842e419d29ce</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
@@ -101,9 +101,9 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-0.21.1/bitcoin-0.21.1-osx64.tar.gz</bitcoind.url>
-                <bitcoind.md5>dfd1f323678eede14ae2cf6afb26ff6a</bitcoind.md5>
-                <bitcoind.sha1>4273696f90a2648f90142438221f5d1ade16afa2</bitcoind.sha1>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-23.0/bitcoin-23.0-x86_64-apple-darwin.tar.gz</bitcoind.url>
+                <bitcoind.md5>64f1ee12dd5da0607bfadabfa62ec8f1</bitcoind.md5>
+                <bitcoind.sha1>a0d14de1363df370dca1d31b4adecdf12a40e384</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
@@ -114,9 +114,9 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-0.21.1/bitcoin-0.21.1-win64.zip</bitcoind.url>
-                <bitcoind.md5>1c6f5081ea68dcec7eddb9e6cdfc508d</bitcoind.md5>
-                <bitcoind.sha1>a782cd413fc736f05fad3831d6a9f59dde779520</bitcoind.sha1>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-23.0/bitcoin-23.0-win64.zip</bitcoind.url>
+                <bitcoind.md5>000e6536eaca6c76bc518bed34cba599</bitcoind.md5>
+                <bitcoind.sha1>1f14bb55f43ffc91185853e0240c5ef78da191be</bitcoind.sha1>
             </properties>
         </profile>
     </profiles>
