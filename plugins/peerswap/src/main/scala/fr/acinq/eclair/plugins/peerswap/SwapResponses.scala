@@ -27,12 +27,16 @@ object SwapResponses {
 
   sealed trait Success extends Response
 
+  case class SwapOpened(swapId: String) extends Success {
+    override def toString: String = s"swap $swapId opened successfully."
+  }
+
   sealed trait Fail extends Response
 
   sealed trait Error extends Fail
 
-  case class SwapOpened(swapId: String) extends Success {
-    override def toString: String = s"swap $swapId opened successfully."
+  case class SwapNotFound(swapId: String) extends Fail {
+    override def toString: String = s"swap $swapId not found."
   }
 
   case class UserCanceled(swapId: String) extends Fail {
@@ -51,12 +55,8 @@ object SwapResponses {
     override def toString: String = s"swap $swapId canceled due to invalid message during $behavior: $message."
   }
 
-  case class LocalError(swapId: String, t: Throwable) extends Error {
-    override def toString: String = s"swap $swapId local error: $t."
-  }
-
   case class SwapError(swapId: String, reason: String) extends Error {
-    override def toString: String = s"swap $swapId swap error: $reason."
+    override def toString: String = s"swap $swapId error: $reason."
   }
 
   case class InternalError(swapId: String, reason: String) extends Error {

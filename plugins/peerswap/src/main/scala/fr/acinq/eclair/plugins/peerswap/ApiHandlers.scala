@@ -25,7 +25,7 @@ import fr.acinq.eclair.api.serde.FormParamExtractors._
 object ApiHandlers {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{marshaller, serialization}
-  import fr.acinq.eclair.plugins.peerswap.json.PeerSwapJsonSerializers.formats
+  import fr.acinq.eclair.plugins.peerswap.ApiSerializers.formats
 
   def registerRoutes(kit: PeerSwapKit, eclairDirectives: EclairDirectives): Route = {
     import eclairDirectives._

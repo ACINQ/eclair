@@ -19,7 +19,6 @@ package fr.acinq.eclair.plugins.peerswap
 import akka.actor
 import akka.actor.typed
 import akka.actor.typed.ActorRef.ActorRefOps
-import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
@@ -29,15 +28,13 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.io.UnknownMessageReceived
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapRegister.Command
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Response, Status, SwapOpened}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Response, Status, SwapNotFound, SwapOpened}
 import fr.acinq.eclair.plugins.peerswap.db.SwapsDb
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodec
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.{HasSwapId, SwapInRequest, SwapOutRequest}
 import fr.acinq.eclair.{NodeParams, ShortChannelId, randomBytes32}
 import scodec.Attempt
 
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.{Await, Future}
 import scala.reflect.ClassTag
 
 object SwapRegister {
@@ -155,16 +152,20 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
       case SwapTerminated(swapId) => registering(swaps - swapId)
 
       case ListPendingSwaps(replyTo: ActorRef[Iterable[Status]]) =>
-        // TODO: is this the best way to do this?!
-        val statuses: Iterable[Future[Status]] = swaps.values.map(swap => swap.ask(ref => GetStatus(ref))(1000 milliseconds, context.system.scheduler))
-        replyTo ! statuses.map(v => Await.result(v, 1000 milliseconds))
+        if (swaps.nonEmpty) {
+          val aggregator = context.spawn(StatusAggregator(swaps.size, replyTo), s"status-aggregator")
+          swaps.values.foreach(swap => swap ! GetStatus(aggregator))
+        } else {
+          replyTo ! Seq[Status]()
+        }
         Behaviors.same
 
       case CancelSwapRequested(replyTo: ActorRef[Response], swapId: String) =>
         swaps.get(swapId) match {
           case Some(swap) => swap ! CancelRequested(replyTo)
             Behaviors.same
-          case None => context.log.error(s"could not cancel swap $swapId: does not exist")
+          case None => context.log.info(s"could not cancel swap $swapId: not found")
+            replyTo ! SwapNotFound(swapId)
             Behaviors.same
         }
     }
