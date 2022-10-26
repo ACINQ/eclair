@@ -28,10 +28,10 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.io.UnknownMessageReceived
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapRegister.Command
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Response, Status, SwapNotFound, SwapOpened}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses._
 import fr.acinq.eclair.plugins.peerswap.db.SwapsDb
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodec
-import fr.acinq.eclair.plugins.peerswap.wire.protocol.{HasSwapId, SwapInRequest, SwapOutRequest}
+import fr.acinq.eclair.plugins.peerswap.wire.protocol.{HasSwapId, SwapInRequest, SwapOutRequest, SwapRequest}
 import fr.acinq.eclair.{NodeParams, ShortChannelId, randomBytes32}
 import scodec.Attempt
 
@@ -44,11 +44,16 @@ object SwapRegister {
     def replyTo: ActorRef[Response]
   }
 
+  sealed trait SwapRequested extends ReplyToMessages {
+    def replyTo: ActorRef[Response]
+    def amount: Satoshi
+    def shortChannelId: ShortChannelId
+  }
+
   sealed trait RegisteringMessages extends Command
-  case class PluginMessageReceived(message: UnknownMessageReceived) extends RegisteringMessages
-  case class SwapInRequested(replyTo: ActorRef[Response], amount: Satoshi, shortChannelId: ShortChannelId) extends RegisteringMessages with ReplyToMessages
-  case class SwapOutRequested(replyTo: ActorRef[Response], amount: Satoshi, shortChannelId: ShortChannelId) extends RegisteringMessages with ReplyToMessages
-  case class MessageReceived(message: HasSwapId) extends RegisteringMessages
+  case class WrappedUnknownMessageReceived(message: UnknownMessageReceived) extends RegisteringMessages
+  case class SwapInRequested(replyTo: ActorRef[Response], amount: Satoshi, shortChannelId: ShortChannelId) extends RegisteringMessages with SwapRequested
+  case class SwapOutRequested(replyTo: ActorRef[Response], amount: Satoshi, shortChannelId: ShortChannelId) extends RegisteringMessages with SwapRequested
   case class SwapTerminated(swapId: String) extends RegisteringMessages
   case class ListPendingSwaps(replyTo: ActorRef[Iterable[Status]]) extends RegisteringMessages
   case class CancelSwapRequested(replyTo: ActorRef[Response], swapId: String) extends RegisteringMessages with ReplyToMessages
@@ -62,6 +67,8 @@ object SwapRegister {
 private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParams, paymentInitiator: actor.ActorRef, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, keyManager: SwapKeyManager, db: SwapsDb, data: Set[SwapData]) {
   import SwapRegister._
 
+  case class SwapEntry(shortChannelId: String, swap: ActorRef[SwapCommands.SwapCommand])
+
   private def myReceive[B <: Command : ClassTag](stateName: String)(f: B => Behavior[Command]): Behavior[Command] =
     Behaviors.receiveMessage[Command] {
       case m: B => f(m)
@@ -70,6 +77,12 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
         context.log.error(s"received unhandled message while in state $stateName of ${m.getClass.getSimpleName}")
         Behaviors.same
     }
+  private def watchForUnknownMessage(watch: Boolean)(implicit context: ActorContext[Command]): Unit =
+    if (watch) context.system.classicSystem.eventStream.subscribe(unknownMessageReceivedAdapter(context).toClassic, classOf[UnknownMessageReceived])
+    else context.system.classicSystem.eventStream.unsubscribe(unknownMessageReceivedAdapter(context).toClassic, classOf[UnknownMessageReceived])
+  private def unknownMessageReceivedAdapter(context: ActorContext[Command]): ActorRef[UnknownMessageReceived] = {
+    context.messageAdapter[UnknownMessageReceived](WrappedUnknownMessageReceived)
+  }
 
   private def initializing: Behavior[Command] = {
     val swaps = data.map { state =>
@@ -83,24 +96,18 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
       }
       context.watchWith(swap, SwapTerminated(state.request.swapId))
       swap ! RestoreSwap(state)
-      state.request.swapId -> swap.unsafeUpcast
+      state.request.swapId -> SwapEntry(state.request.scid, swap.unsafeUpcast)
     }.toMap
     registering(swaps)
   }
 
-  def watchForUnknownMessage(watch: Boolean)(implicit context: ActorContext[Command]): Unit =
-    if (watch) context.system.classicSystem.eventStream.subscribe(unknownMessageAdapter(context).toClassic, classOf[UnknownMessageReceived])
-    else context.system.classicSystem.eventStream.unsubscribe(unknownMessageAdapter(context).toClassic, classOf[UnknownMessageReceived])
-
-  def unknownMessageAdapter(context: ActorContext[Command]): ActorRef[UnknownMessageReceived] = {
-    context.messageAdapter[UnknownMessageReceived](PluginMessageReceived)
-  }
-
-  private def registering(swaps: Map[String, ActorRef[SwapCommands.SwapCommand]]): Behavior[Command] = {
-    // TODO: fail requests for swaps on a channel if one already exists for the channel; keep a list of channels with active swaps
-    // TODO: check currently registered swaps, and swap db, to prevent reuse of a swapId
+  private def registering(swaps: Map[String, SwapEntry]): Behavior[Command] = {
     watchForUnknownMessage(watch = true)(context)
     myReceive[RegisteringMessages]("registering") {
+      case swapRequested: SwapRequested if swaps.exists( p => p._2.shortChannelId == swapRequested.shortChannelId.toCoordinatesString ) =>
+        // ignore swap requests for channels with ongoing swaps
+        swapRequested.replyTo ! SwapExistsForChannel("", swapRequested.shortChannelId.toCoordinatesString)
+        Behaviors.same
       case SwapInRequested(replyTo, amount, shortChannelId) =>
         val swapId = randomBytes32().toHex
         val swap = context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet, keyManager, db))
@@ -108,8 +115,7 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
         context.watchWith(swap, SwapTerminated(swapId))
         swap ! StartSwapInSender(amount, swapId, shortChannelId)
         replyTo ! SwapOpened(swapId)
-        registering(swaps + (swapId -> swap))
-
+        registering(swaps + (swapId -> SwapEntry(shortChannelId.toCoordinatesString, swap)))
       case SwapOutRequested(replyTo, amount, shortChannelId) =>
         val swapId = randomBytes32().toHex
         val swap = context.spawn(Behaviors.supervise(SwapTaker(nodeParams, paymentInitiator, watcher, register, wallet, keyManager, db))
@@ -117,56 +123,52 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
         context.watchWith(swap, SwapTerminated(swapId))
         swap ! StartSwapOutSender(amount, swapId, shortChannelId)
         replyTo ! SwapOpened(swapId)
-        registering(swaps + (swapId -> swap))
-
-      case MessageReceived(request: SwapInRequest) =>
-        val swap = context.spawn(Behaviors.supervise(SwapTaker(nodeParams, paymentInitiator, watcher, register, wallet, keyManager, db))
-          .onFailure(SupervisorStrategy.restart), "Swap-"+ request.scid)
-        context.watchWith(swap, SwapTerminated(request.swapId))
-        swap ! StartSwapInReceiver(request)
-        registering(swaps + (request.swapId -> swap))
-
-      case MessageReceived(request: SwapOutRequest) =>
-        val swap = context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet, keyManager, db))
-          .onFailure(SupervisorStrategy.restart), "Swap-" + request.scid)
-        context.watchWith(swap, SwapTerminated(request.swapId))
-        swap ! StartSwapOutReceiver(request)
-        registering(swaps + (request.swapId -> swap))
-
-      case PluginMessageReceived(unknownMessageReceived) =>
-        if (PeerSwapPlugin.peerSwapTags.contains(unknownMessageReceived.message.tag)) {
-          peerSwapMessageCodec.decode(unknownMessageReceived.message.data.toBitVector) match {
-            case Attempt.Successful(m) => context.self ! MessageReceived(m.value)
-            case _ => context.log.error(s"could not decode peerswap message $unknownMessageReceived")
-          }
-        }
-        Behaviors.same
-
-      case MessageReceived(msg) => swaps.get(msg.swapId) match {
-        case Some(swap) => swap ! SwapMessageReceived(msg)
-          Behaviors.same
-        case None => context.log.error(s"received unhandled message for swap ${msg.swapId}: $msg")
-          Behaviors.same
-      }
-
-      case SwapTerminated(swapId) => registering(swaps - swapId)
-
+        registering(swaps + (swapId -> SwapEntry(shortChannelId.toCoordinatesString, swap)))
       case ListPendingSwaps(replyTo: ActorRef[Iterable[Status]]) =>
-        if (swaps.nonEmpty) {
-          val aggregator = context.spawn(StatusAggregator(swaps.size, replyTo), s"status-aggregator")
-          swaps.values.foreach(swap => swap ! GetStatus(aggregator))
-        } else {
-          replyTo ! Seq[Status]()
-        }
+        val aggregator = context.spawn(StatusAggregator(swaps.size, replyTo), s"status-aggregator")
+        swaps.values.foreach(e => e.swap ! GetStatus(aggregator))
         Behaviors.same
-
       case CancelSwapRequested(replyTo: ActorRef[Response], swapId: String) =>
         swaps.get(swapId) match {
-          case Some(swap) => swap ! CancelRequested(replyTo)
-            Behaviors.same
-          case None => context.log.info(s"could not cancel swap $swapId: not found")
-            replyTo ! SwapNotFound(swapId)
-            Behaviors.same
+          case Some(e) => e.swap ! CancelRequested(replyTo)
+          case None => replyTo ! SwapNotFound(swapId)
+        }
+        Behaviors.same
+      case SwapTerminated(swapId) =>
+        registering(swaps - swapId)
+      case WrappedUnknownMessageReceived(unknownMessageReceived) =>
+        if (PeerSwapPlugin.peerSwapTags.contains(unknownMessageReceived.message.tag)) {
+          peerSwapMessageCodec.decode(unknownMessageReceived.message.data.toBitVector) match {
+            case Attempt.Successful(decodedMessage) => decodedMessage.value match {
+              case swapRequest: SwapRequest if swaps.exists(s => s._2.shortChannelId == swapRequest.scid) =>
+                // ignore swap requests for channels with active swaps
+                Behaviors.same
+              case request: SwapInRequest =>
+                val swap = context.spawn(Behaviors.supervise(SwapTaker(nodeParams, paymentInitiator, watcher, register, wallet, keyManager, db))
+                  .onFailure(SupervisorStrategy.restart), "Swap-" + request.scid)
+                context.watchWith(swap, SwapTerminated(request.swapId))
+                swap ! StartSwapInReceiver(request)
+                registering(swaps + (request.swapId -> SwapEntry(request.scid, swap)))
+              case request: SwapOutRequest =>
+                val swap = context.spawn(Behaviors.supervise(SwapMaker(nodeParams, watcher, register, wallet, keyManager, db))
+                  .onFailure(SupervisorStrategy.restart), "Swap-" + request.scid)
+                context.watchWith(swap, SwapTerminated(request.swapId))
+                swap ! StartSwapOutReceiver(request)
+                registering(swaps + (request.swapId -> SwapEntry(request.scid, swap)))
+              case msg: HasSwapId => swaps.get(msg.swapId) match {
+                // handle all other swap messages
+                case Some(e) => e.swap ! SwapMessageReceived(msg)
+                  Behaviors.same
+                case None => context.log.error(s"received unhandled swap message: $msg")
+                  Behaviors.same
+              }
+            }
+            case _ => context.log.error(s"could not decode unknown message received: $unknownMessageReceived")
+              Behaviors.same
+          }
+        } else {
+          // unknown message received without a peerswap message tag
+          Behaviors.same
         }
     }
   }

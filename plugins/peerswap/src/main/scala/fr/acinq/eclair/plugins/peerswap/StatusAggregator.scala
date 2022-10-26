@@ -22,7 +22,12 @@ import fr.acinq.eclair.plugins.peerswap.SwapResponses.Status
 
 object StatusAggregator {
   def apply(swapsCount: Int, replyTo: ActorRef[Iterable[Status]]): Behavior[Status] = Behaviors.setup { context =>
-    new StatusAggregator(context, swapsCount, replyTo).waiting(Set())
+    if (swapsCount == 0) {
+      replyTo ! Seq()
+      Behaviors.stopped
+    } else {
+      new StatusAggregator(context, swapsCount, replyTo).waiting(Set())
+    }
   }
 }
 

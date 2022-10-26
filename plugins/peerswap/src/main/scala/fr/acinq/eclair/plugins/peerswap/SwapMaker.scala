@@ -217,7 +217,6 @@ private class SwapMaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
     receiveSwapMessage[CreateOpeningTxMessages](context, "createOpeningTx") {
       case InvoiceResponse(invoice: Bolt11Invoice) => fundOpening(wallet, feeRatePerKw)((request.amount + agreement.premium).sat, makerPubkey(request.swapId), takerPubkey(request, agreement, isInitiator), invoice)
         Behaviors.same
-      // TODO: checkpoint PersistentSwapData for this swap to a database before committing the opening tx
       case OpeningTxFunded(invoice, fundingResponse) =>
         commitOpening(wallet)(request.swapId, invoice, fundingResponse, "swap-in-sender-opening")
         Behaviors.same

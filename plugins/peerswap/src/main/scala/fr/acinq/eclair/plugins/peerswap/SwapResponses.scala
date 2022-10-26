@@ -35,6 +35,10 @@ object SwapResponses {
 
   sealed trait Error extends Fail
 
+  case class SwapExistsForChannel(swapId: String, shortChannelId: String) extends Fail {
+    override def toString: String = s"swap $swapId already exists for channel $shortChannelId"
+  }
+
   case class SwapNotFound(swapId: String) extends Fail {
     override def toString: String = s"swap $swapId not found."
   }

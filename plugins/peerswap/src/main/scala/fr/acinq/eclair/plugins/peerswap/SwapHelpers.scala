@@ -89,20 +89,19 @@ object SwapHelpers {
 
   def paymentEventAdapter(context: ActorContext[SwapCommand]): ActorRef[PaymentEvent] = context.messageAdapter[PaymentEvent](PaymentEventReceived)
 
-  def sendShortId(register: actor.ActorRef, shortChannelId: ShortChannelId)(message: HasSwapId)(implicit context: ActorContext[SwapCommand]): Unit = {
+  def makeUnknownMessage(message: HasSwapId): UnknownMessage = {
     val encoded = peerSwapMessageCodecWithFallback.encode(message).require
-    val unknownMessage = UnknownMessage(encoded.sliceToInt(0, 16, signed = false), encoded.toByteVector)
-    register ! Register.ForwardShortId(forwardShortIdAdapter(context), shortChannelId, unknownMessage)
+    UnknownMessage(encoded.sliceToInt(0, 16, signed = false), encoded.toByteVector)
   }
+
+  def sendShortId(register: actor.ActorRef, shortChannelId: ShortChannelId)(message: HasSwapId)(implicit context: ActorContext[SwapCommand]): Unit =
+    register ! Register.ForwardShortId(forwardShortIdAdapter(context), shortChannelId, makeUnknownMessage(message))
 
   def forwardShortIdAdapter(context: ActorContext[SwapCommand]): ActorRef[Register.ForwardShortIdFailure[UnknownMessage]] =
     context.messageAdapter[Register.ForwardShortIdFailure[UnknownMessage]](ForwardShortIdFailureAdapter)
 
-  def send(register: actor.ActorRef, channelId: ByteVector32)(message: HasSwapId)(implicit context: ActorContext[SwapCommand]): Unit = {
-    val encoded = peerSwapMessageCodecWithFallback.encode(message).require
-    val unknownMessage = UnknownMessage(encoded.sliceToInt(0, 16, signed = false), encoded.toByteVector)
-    register ! Register.Forward(forwardAdapter(context), channelId, unknownMessage)
-  }
+  def send(register: actor.ActorRef, channelId: ByteVector32)(message: HasSwapId)(implicit context: ActorContext[SwapCommand]): Unit =
+    register ! Register.Forward(forwardAdapter(context), channelId, makeUnknownMessage(message))
 
   def forwardAdapter(context: ActorContext[SwapCommand]): ActorRef[Register.ForwardFailure[UnknownMessage]] =
     context.messageAdapter[Register.ForwardFailure[UnknownMessage]](ForwardFailureAdapter)
