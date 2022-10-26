@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, TxOwner}
-import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
@@ -409,6 +409,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
       case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 6)
       case _: Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 8)
     }
+    val outgoingHtlcExpiry = localCommitF.spec.htlcs.collect { case OutgoingHtlc(add) => add.cltvExpiry }.max
     val htlcTimeoutTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcTimeoutTx, _) => h }
     val htlcSuccessTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcSuccessTx, _) => h }
     assert(htlcTimeoutTxs.size == 2)
@@ -431,7 +432,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent]
     // we then generate blocks to make htlcs timeout (nothing will happen in the channel because all of them have already been fulfilled)
-    generateBlocks(40)
+    generateBlocks(outgoingHtlcExpiry.toLong.toInt - getBlockHeight().toInt + 1)
     // we retrieve C's default final address
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], commitmentsF.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey)

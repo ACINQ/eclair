@@ -37,7 +37,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, KeySend, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -50,6 +50,11 @@ import scala.concurrent.duration._
  */
 
 class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
+
+  object Tags {
+    val DisableMPP = "mpp_disabled"
+    val RandomizeFinalExpiry = "random_final_expiry"
+  }
 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
@@ -85,8 +90,13 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   }
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val features = if (test.tags.contains("mpp_disabled")) featuresWithoutMpp else featuresWithMpp
-    val nodeParams = TestConstants.Alice.nodeParams.copy(features = features.unscoped())
+    val features = if (test.tags.contains(Tags.DisableMPP)) featuresWithoutMpp else featuresWithMpp
+    val paymentFinalExpiry = if (test.tags.contains(Tags.RandomizeFinalExpiry)) {
+      PaymentFinalExpiryConf(CltvExpiryDelta(50), CltvExpiryDelta(200))
+    } else {
+      PaymentFinalExpiryConf(CltvExpiryDelta(1), CltvExpiryDelta(1))
+    }
+    val nodeParams = TestConstants.Alice.nodeParams.copy(features = features.unscoped(), paymentFinalExpiry = paymentFinalExpiry)
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
@@ -171,16 +181,16 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(NoPendingPayment(Right(invoice.paymentHash)))
   }
 
-  test("forward single-part payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
+  test("forward single-part payment when multi-part deactivated", Tag(Tags.DisableMPP)) { f =>
     import f._
     val finalExpiryDelta = CltvExpiryDelta(24)
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some MPP invoice"), finalExpiryDelta, features = featuresWithMpp)
     val req = SendPaymentToNode(finalAmount, invoice, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
-    assert(req.finalExpiry(nodeParams.currentBlockHeight) == (finalExpiryDelta + 1).toCltvExpiry(nodeParams.currentBlockHeight))
+    assert(req.finalExpiry(nodeParams) == (finalExpiryDelta + 1).toCltvExpiry(nodeParams.currentBlockHeight))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount, c, Upstream.Local(id), Some(invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
-    payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(initiator, c, FinalPayload.Standard(TlvStream(OnionPaymentPayloadTlv.AmountToForward(finalAmount), OnionPaymentPayloadTlv.OutgoingCltv(req.finalExpiry(nodeParams.currentBlockHeight)), OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, finalAmount))), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+    payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(initiator, c, FinalPayload.Standard(TlvStream(OnionPaymentPayloadTlv.AmountToForward(finalAmount), OnionPaymentPayloadTlv.OutgoingCltv(req.finalExpiry(nodeParams)), OnionPaymentPayloadTlv.PaymentData(invoice.paymentSecret, finalAmount))), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
 
     sender.send(initiator, GetPayment(Left(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
@@ -203,7 +213,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount + 100.msat, c, Upstream.Local(id), Some(invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
-    multiPartPayFsm.expectMsg(SendMultiPartPayment(initiator, invoice.paymentSecret, c, finalAmount + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight), 1, invoice.paymentMetadata, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+    multiPartPayFsm.expectMsg(SendMultiPartPayment(initiator, invoice.paymentSecret, c, finalAmount + 100.msat, req.finalExpiry(nodeParams), 1, invoice.paymentMetadata, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
 
     sender.send(initiator, GetPayment(Left(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
@@ -219,6 +229,19 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(NoPendingPayment(Left(id)))
   }
 
+  test("forward multi-part payment with randomized final expiry", Tag(Tags.RandomizeFinalExpiry)) { f =>
+    import f._
+    val invoiceFinalExpiryDelta = CltvExpiryDelta(6)
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), invoiceFinalExpiryDelta, features = featuresWithMpp)
+    val req = SendPaymentToNode(finalAmount, invoice, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount, c, Upstream.Local(id), Some(invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
+    val payment = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
+    assert(nodeParams.currentBlockHeight + invoiceFinalExpiryDelta.toInt + 50 <= payment.targetExpiry.blockHeight)
+    assert(payment.targetExpiry.blockHeight <= nodeParams.currentBlockHeight + invoiceFinalExpiryDelta.toInt + 200)
+  }
+
   test("forward multi-part payment with pre-defined route") { f =>
     import f._
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18), features = featuresWithMpp)
@@ -232,7 +255,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.route == Left(route))
     assert(msg.finalPayload.isInstanceOf[FinalPayload.Standard])
     assert(msg.finalPayload.amount == finalAmount / 2)
-    assert(msg.finalPayload.expiry == req.finalExpiry(nodeParams.currentBlockHeight))
+    assert(msg.finalPayload.expiry == req.finalExpiry(nodeParams))
     assert(msg.finalPayload.asInstanceOf[FinalPayload.Standard].paymentSecret == invoice.paymentSecret)
     assert(msg.finalPayload.totalAmount == finalAmount)
 

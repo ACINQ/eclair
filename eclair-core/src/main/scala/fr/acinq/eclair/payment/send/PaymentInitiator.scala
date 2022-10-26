@@ -19,7 +19,6 @@ package fr.acinq.eclair.payment.send
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
-import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
@@ -29,7 +28,7 @@ import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, randomBytes32}
 
 import java.util.UUID
 import scala.util.{Failure, Success, Try}
@@ -51,7 +50,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         sender() ! paymentId
       }
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil)
-      val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
+      val finalExpiry = r.finalExpiry(nodeParams)
       if (!nodeParams.features.invoiceFeatures().areSupported(r.invoice.features)) {
         sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil)
       } else if (Features.canUseFeature(nodeParams.features.invoiceFeatures(), r.invoice.features, Features.BasicMultiPartPayment)) {
@@ -69,7 +68,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentId = UUID.randomUUID()
       sender() ! paymentId
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics, Nil)
-      val finalExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1)
+      val finalExpiry = nodeParams.paymentFinalExpiry.computeFinalExpiry(nodeParams.currentBlockHeight, Channel.MIN_CLTV_EXPIRY_DELTA)
       val finalPayload = FinalPayload.Standard(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(r.recipientAmount), OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry), OnionPaymentPayloadTlv.PaymentData(randomBytes32(), r.recipientAmount), OnionPaymentPayloadTlv.KeySend(r.paymentPreimage)), r.userCustomTlvs))
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
       fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, finalPayload, r.maxAttempts, routeParams = r.routeParams)
@@ -97,7 +96,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     case r: SendPaymentToRoute =>
       val paymentId = UUID.randomUUID()
       val parentPaymentId = r.parentId.getOrElse(UUID.randomUUID())
-      val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
+      val finalExpiry = r.finalExpiry(nodeParams)
       val additionalHops = r.trampolineNodes.sliding(2).map(hop => NodeHop(hop.head, hop(1), CltvExpiryDelta(0), 0 msat)).toSeq
       val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, additionalHops)
       r.trampolineNodes match {
@@ -192,9 +191,9 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       NodeHop(trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
     )
     val finalPayload = if (r.invoice.features.hasFeature(Features.BasicMultiPartPayment)) {
-      FinalPayload.Standard.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.invoice.paymentSecret, r.invoice.paymentMetadata)
+      FinalPayload.Standard.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams), r.invoice.paymentSecret, r.invoice.paymentMetadata)
     } else {
-      FinalPayload.Standard.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.invoice.paymentSecret, r.invoice.paymentMetadata)
+      FinalPayload.Standard.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams), r.invoice.paymentSecret, r.invoice.paymentMetadata)
     }
     // We assume that the trampoline node supports multi-part payments (it should).
     val trampolinePacket_opt = if (r.invoice.features.hasFeature(Features.TrampolinePaymentPrototype)) {
@@ -269,8 +268,7 @@ object PaymentInitiator {
     def invoice: Invoice
     def recipientNodeId: PublicKey = invoice.nodeId
     def paymentHash: ByteVector32 = invoice.paymentHash
-    // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: BlockHeight): CltvExpiry = invoice.minFinalCltvExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
+    def finalExpiry(nodeParams: NodeParams): CltvExpiry = nodeParams.paymentFinalExpiry.computeFinalExpiry(nodeParams.currentBlockHeight, invoice.minFinalCltvExpiryDelta)
     // @formatter:on
   }
 

@@ -78,6 +78,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
+                      paymentFinalExpiry: PaymentFinalExpiryConf,
                       enableTrampolinePayment: Boolean,
                       balanceCheckInterval: FiniteDuration,
                       blockchainWatchdogThreshold: Int,
@@ -96,6 +97,25 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
+}
+
+case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
+  require(min.toInt >= 0, "cltv-expiry-delta must be positive")
+  require(min <= max, "maximum cltv-expiry-delta cannot be smaller than minimum-cltv-expiry-delta")
+
+  /**
+   * When sending a payment, if the cltv expiry used for the final node is very close to the current block height, it
+   * lets intermediate nodes figure out their position in the route. To protect against this, a random delta is added
+   * to the current block height, which makes it look like there are more hops after the final node.
+   */
+  def computeFinalExpiry(currentBlockHeight: BlockHeight, minFinalExpiryDelta: CltvExpiryDelta): CltvExpiry = {
+    val additionalDelta = if (min < max) {
+      min + (randomLong() % (max - min).toInt).toInt.abs
+    } else {
+      max
+    }
+    (minFinalExpiryDelta + additionalDelta).toCltvExpiry(currentBlockHeight)
+  }
 }
 
 object NodeParams extends Logging {
@@ -524,6 +544,7 @@ object NodeParams extends Logging {
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
+      paymentFinalExpiry = PaymentFinalExpiryConf(CltvExpiryDelta(config.getInt("payment.recipient-final-expiry.min-delta")), CltvExpiryDelta(config.getInt("payment.recipient-final-expiry.max-delta"))),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
       balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
       blockchainWatchdogThreshold = config.getInt("blockchain-watchdog.missing-blocks-threshold"),
