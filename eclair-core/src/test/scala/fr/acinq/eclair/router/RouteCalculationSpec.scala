@@ -1957,9 +1957,9 @@ object RouteCalculationSpec {
       htlcMaximumMsat = maxHtlc.getOrElse(500_000_000 msat)
     )
 
-  def hops2Ids(hops: Seq[ChannelHop]): Seq[Long] = hops.map(hop => hop.shortChannelId.toLong)
+  def hops2Ids(hops: Seq[ConnectedHop]): Seq[Long] = hops.map(hop => hop.asInstanceOf[ChannelHop].shortChannelId.toLong)
 
-  def route2Ids(route: Route): Seq[Long] = hops2Ids(route.hops.map(_.asInstanceOf[ChannelHop]))
+  def route2Ids(route: Route): Seq[Long] = hops2Ids(route.hops)
 
   def routes2Ids(routes: Seq[Route]): Set[Seq[Long]] = routes.map(route2Ids).toSet
 

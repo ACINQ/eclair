@@ -453,6 +453,13 @@ object Router {
       override def htlcMinimum: MilliSatoshi = extraHop.htlcMinimum
       override def htlcMaximum_opt: Option[MilliSatoshi] = extraHop.htlcMaximum_opt
     }
+    /** It's a blinded route we learnt about from an invoice */
+    case class FromBlindedPath(path: BlindedRoute, paymentInfo: PaymentInfo) extends ChannelRelayParams {
+      override def cltvExpiryDelta: CltvExpiryDelta = paymentInfo.cltvExpiryDelta
+      override def relayFees: Relayer.RelayFees = Relayer.RelayFees(paymentInfo.feeBase, paymentInfo.feeProportionalMillionths)
+      override def htlcMinimum: MilliSatoshi = paymentInfo.minHtlc
+      override def htlcMaximum_opt: Option[MilliSatoshi] = Some(paymentInfo.maxHtlc)
+    }
 
     def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&

@@ -298,6 +298,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             // we remove this edge for our next payment attempt
             data.c.extraEdges.filterNot(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
           }
+        case _: ChannelRelayParams.FromBlindedPath =>
+          // Should not be reachable
+          log.error("received an update for a blinded route (shortChannelId={} nodeId={} enabled={} update={})", failure.update.shortChannelId, nodeId, failure.update.channelFlags.isEnabled, failure.update)
+          data.c.extraEdges
       }
       case Some(_: BlindedHop) =>
         log.error(s"received update for blinded route, this should never happen")

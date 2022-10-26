@@ -463,7 +463,10 @@ object Graph {
         val maxBtc = 21e6.btc
         GraphEdge(
           desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
-          params = ChannelRelayParams.FromHint(e),
+          params = e match {
+            case e: Invoice.BasicEdge => ChannelRelayParams.FromHint(e)
+            case e: Invoice.BlindedEdge => ChannelRelayParams.FromBlindedPath(e.path, e.payInfo)
+          },
           // Bolt 11 routing hints don't include the channel's capacity, so we assume it's big enough
           capacity = maxBtc.toSatoshi,
           // we assume channels provided as hints have enough balance to handle the payment
@@ -640,7 +643,11 @@ object Graph {
         new DirectedGraph(mutableMap.toMap)
       }
 
-      def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)
+      def graphEdgeToHop(graphEdge: GraphEdge): ConnectedHop =
+        graphEdge.params match {
+          case blind: ChannelRelayParams.FromBlindedPath => BlindedHop(blind.path, blind.paymentInfo, blind.path.blindedNodeIds.last)
+          case params => ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, params)
+        }
     }
 
   }

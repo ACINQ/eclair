@@ -22,6 +22,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
@@ -48,7 +49,11 @@ object RouteCalculation {
       fr.route match {
         case PredefinedNodeRoute(hops) =>
           // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
-          hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
+          hops.sliding(2).map {
+            case List(v1, v2) if v1 == localNodeId && v2 == localNodeId =>
+              Seq(GraphEdge(Invoice.BasicEdge(localNodeId, localNodeId, ShortChannelId.toSelf, 0 msat, 0, CltvExpiryDelta(0))))
+            case List(v1, v2) => g.getEdgesBetween(v1, v2)
+          }.toList match {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
@@ -98,7 +103,10 @@ object RouteCalculation {
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val extraEdges = r.extraEdges.map(GraphEdge(_)).filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
+      val extraEdges = r.extraEdges.filter {
+        case edge: Invoice.BasicEdge => edge.sourceNodeId != r.source // we ignore routing hints for our own channels, we have more accurate information
+        case _: Invoice.BlindedEdge => true
+      }.map(GraphEdge(_)).toSet
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
