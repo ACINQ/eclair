@@ -58,4 +58,14 @@ class PeerSwapSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applica
     NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), nodeKeyManager, channelKeyManager, None, db, blockCount, feeEstimator)
   }
 
+  test("load swap key from file") {
+    // TODO
+  }
+
+  test( "create swap key if none exists") {
+    // TODO
+  }
+
+  // TODO: test that a plugin exception does not crash the node ? restarts the plugin?
+
 }

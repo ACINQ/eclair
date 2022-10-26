@@ -152,6 +152,7 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
   }
 
   private def awaitAgreement(request: SwapOutRequest): Behavior[SwapCommand] = {
+    // TODO: why do we not get a ForwardFailure message when channel is not connected?
     sendShortId(register, shortChannelId)(request)
 
     receiveSwapMessage[AwaitAgreementMessages](context, "awaitAgreement") {
@@ -296,7 +297,7 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
 
     watchForTxConfirmation(watcher)(claimByInvoiceConfirmedAdapter, claimByInvoiceTx.txid, nodeParams.channelConf.minDepthBlocks)
     watchForPayment(watch = false) // unsubscribe from payment event notifications
-    commitClaim(wallet)(request.swapId, SwapClaimByCoopTx(inputInfo, claimByInvoiceTx), "swap-in-receiver-claimbyinvoice")
+    commitClaim(wallet)(request.swapId, SwapClaimByInvoiceTx(inputInfo, claimByInvoiceTx), "swap-in-receiver-claimbyinvoice")
 
     receiveSwapMessage[ClaimSwapMessages](context, "claimSwap") {
       case ClaimTxCommitted => Behaviors.same
