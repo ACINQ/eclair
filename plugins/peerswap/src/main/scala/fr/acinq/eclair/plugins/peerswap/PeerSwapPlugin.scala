@@ -29,7 +29,7 @@ import fr.acinq.eclair.db.sqlite.SqliteUtils
 import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Response, Status}
 import fr.acinq.eclair.plugins.peerswap.db.SwapsDb
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
-import fr.acinq.eclair.{CustomFeaturePlugin, Feature, InitFeature, Kit, NodeFeature, NodeParams, Plugin, PluginParams, RouteProvider, Setup, ShortChannelId}
+import fr.acinq.eclair.{CustomFeaturePlugin, Feature, InitFeature, Kit, NodeFeature, NodeParams, Plugin, PluginParams, RouteProvider, Setup, ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -69,10 +69,17 @@ class PeerSwapPlugin extends Plugin with RouteProvider with Logging {
     val chainDir = new File(setup.datadir, chain)
     db = new SqliteSwapsDb(SqliteUtils.openSqliteFile(chainDir, "peer-swap.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "normal"))
 
-    // load seed
-    val seedFilename: String = "swap_seed.dat"
-    val seedPath: File = new File(setup.datadir, seedFilename)
-    val swapSeed: ByteVector = ByteVector(Files.readAllBytes(seedPath.toPath))
+    // load or generate seed
+    val seedPath: File = new File(setup.datadir, "swap_seed.dat")
+    val swapSeed: ByteVector = if (seedPath.exists()) {
+      logger.info(s"use seed file: ${seedPath.getCanonicalPath}")
+      ByteVector(Files.readAllBytes(seedPath.toPath))
+    } else {
+      val randomSeed = randomBytes32()
+      Files.write(seedPath.toPath, randomSeed.toArray)
+      logger.info(s"create new seed file: ${seedPath.getCanonicalPath}")
+      randomSeed.bytes
+    }
     swapKeyManager = new LocalSwapKeyManager(swapSeed, NodeParams.hashFromChain(chain))
   }
 
