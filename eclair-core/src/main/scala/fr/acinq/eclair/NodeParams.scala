@@ -110,7 +110,7 @@ case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
    */
   def computeFinalExpiry(currentBlockHeight: BlockHeight, minFinalExpiryDelta: CltvExpiryDelta): CltvExpiry = {
     val additionalDelta = if (min < max) {
-      min + (randomLong() % (max - min).toInt).toInt.abs
+      min + (randomLong() % (max - min + 1).toInt).toInt.abs
     } else {
       max
     }
