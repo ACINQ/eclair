@@ -27,6 +27,7 @@
         <module>eclair-core</module>
         <module>eclair-front</module>
         <module>eclair-node</module>
+        <module>plugins/peerswap</module>
     </modules>
 
     <description>A scala implementation of the Lightning Network</description>
