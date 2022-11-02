@@ -214,6 +214,13 @@ trait JdbcUtils {
     implicit def conv(rs: ResultSet): ExtendedResultSet = ExtendedResultSet(rs)
   }
 
+  def limited(sql: String, count_opt: Option[Int], skip_opt: Option[Int], countRequired: Boolean): String = {
+    if (countRequired && skip_opt.isDefined && count_opt.isEmpty) throw new IllegalArgumentException("Item count is required")
+    val sqlWithLimit = count_opt.map(count => s"$sql LIMIT $count").getOrElse(sql)
+    val sqlWithOffset = skip_opt.map(skip => s"$sqlWithLimit OFFSET $skip").getOrElse(sqlWithLimit)
+    sqlWithOffset
+  }
+
 }
 
 object JdbcUtils extends JdbcUtils

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.api.directives
 
-import akka.http.scaladsl.common.{NameDefaultUnmarshallerReceptacle, NameReceptacle, NameUnmarshallerReceptacle}
+import akka.http.scaladsl.common.{NameDefaultUnmarshallerReceptacle, NameOptionReceptacle, NameReceptacle, NameUnmarshallerReceptacle}
 import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.StatusCodes.NotFound
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
@@ -52,6 +52,8 @@ trait ExtraDirectives extends Directives {
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
+  val countFormParam: NameOptionReceptacle[Int] = "count".as[Int].?
+  val skipFormParam: NameOptionReceptacle[Int] = "skip".as[Int].?
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {

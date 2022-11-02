@@ -326,9 +326,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Postgres) {
+  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, count_opt: Option[Int], skip_opt: Option[Int]): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT * FROM payments.received WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
+      using(pg.prepareStatement(limited("SELECT * FROM payments.received WHERE created_at > ? AND created_at < ? ORDER BY created_at", count_opt, skip_opt, false))) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery().flatMap(parseIncomingPayment).toSeq

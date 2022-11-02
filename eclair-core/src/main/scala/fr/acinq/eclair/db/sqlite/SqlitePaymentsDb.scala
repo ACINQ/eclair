@@ -328,8 +328,8 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
+  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, count_opt: Option[Int], skip_opt: Option[Int]): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement(limited("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at", count_opt, skip_opt, true))) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
       statement.executeQuery().flatMap(parseIncomingPayment).toSeq

@@ -52,7 +52,7 @@ trait IncomingPaymentsDb {
   def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit]
 
   /** List all incoming payments (pending, expired and succeeded) in the given time range (milli-seconds). */
-  def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
+  def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, count_opt: Option[Int], skip_opt: Option[Int]): Seq[IncomingPayment]
 
   /** List all pending (not paid, not expired) incoming payments in the given time range (milli-seconds). */
   def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]

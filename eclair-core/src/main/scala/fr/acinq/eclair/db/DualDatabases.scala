@@ -306,9 +306,9 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
     primary.removeIncomingPayment(paymentHash)
   }
 
-  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
-    runAsync(secondary.listIncomingPayments(from, to))
-    primary.listIncomingPayments(from, to)
+  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, count_opt: Option[Int], skip_opt: Option[Int]): Seq[IncomingPayment] = {
+    runAsync(secondary.listIncomingPayments(from, to, count_opt, skip_opt))
+    primary.listIncomingPayments(from, to, count_opt, skip_opt)
   }
 
   override def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
