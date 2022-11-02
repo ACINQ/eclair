@@ -53,6 +53,12 @@ You will also find detailed [guides](./docs/Guides.md) and [frequently asked que
 
 ### Prerequisite: Bitcoin Core
 
+We chose to rely as much as possible on bitcoin core, to interface with and monitor the blockchain and also to manage onchain funds (eclair does not include an onchain wallet, channel opening transactions are funded by your bitcoin core node, and channel closing transactions return funds to your bitcoin core node).
+
+This means that we have strong requirements on how your bitcoin node is configured (see below), and that you must backup your bitcoin core wallet as well as your eclair node (see https://github.com/ACINQ/eclair/edit/master/README.md#configure-bitcoin-core-wallet)
+
+But is also means that instead of re-implemeting them, we benefit from all the verifications and optimisations (including fee management with RBF/CPFP, ...) that are provided by bitcoin core, which is much better from a security point of view. We did have to implement some of the bitcoin protocol, but in the context of verifying data provided by bitcoin core.
+
 :warning: Eclair requires Bitcoin Core 0.20.1 or 0.21.1. (other versions of Bitcoin Core are *not* actively tested - use at your own risk).  If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
