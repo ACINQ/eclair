@@ -57,7 +57,7 @@ object LocalKeyManager {
   * @param seed seed from which keys will be derived
   */
 class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyManager {
-  private val master = DeterministicWallet.generate(seed)
+  val master: ExtendedPrivateKey = DeterministicWallet.generate(seed)
 
   override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath(chainHash))
   override val nodeId = nodeKey.publicKey
