@@ -407,6 +407,7 @@ object Router {
       }
     }
   }
+  // @formatter:on
 
   sealed trait Hop {
     /** @return the id of the start node. */
@@ -429,6 +430,7 @@ object Router {
     def length: Int
   }
 
+  // @formatter:off
   /** Channel routing parameters */
   sealed trait ChannelRelayParams {
     def cltvExpiryDelta: CltvExpiryDelta

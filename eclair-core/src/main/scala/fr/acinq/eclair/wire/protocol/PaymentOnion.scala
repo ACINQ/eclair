@@ -480,6 +480,7 @@ object PaymentOnion {
       }
     }
   }
+
 }
 
 object PaymentOnionCodecs {

@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload.Partial
+import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
 
 import java.util.UUID
@@ -302,21 +302,18 @@ object MultiPartPaymentLifecycle {
    * Send a payment to a given node. The payment may be split into multiple child payments, for which a path-finding
    * algorithm will run to find suitable payment routes.
    *
-   * @param paymentSecret   payment secret to protect against probing (usually from a Bolt 11 invoice).
-   * @param targetNodeId    target node (may be the final recipient when using source-routing, or the first trampoline
-   *                        node when using trampoline).
-   * @param totalAmount     total amount to send to the target node.
-   * @param targetExpiry    expiry at the target node (CLTV for the target node's received HTLCs).
-   * @param maxAttempts     maximum number of retries.
-   * @param paymentMetadata payment metadata (usually from the Bolt 11 invoice).
-   * @param extraEdges      routing hints (usually from a Bolt 11 invoice).
-   * @param routeParams     parameters to fine-tune the routing algorithm.
-   * @param additionalTlvs  when provided, additional tlvs that will be added to the onion sent to the target node.
-   * @param userCustomTlvs  when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
+   * @param targetNodeId target node (may be the final recipient when using source-routing, or the first trampoline
+   *                     node when using trampoline).
+   * @param finalPayload payload for the recipient (with the amount missing, it will be added later)
+   * @param totalAmount  total amount to send to the target node.
+   * @param targetExpiry expiry at the target node (CLTV for the target node's received HTLCs).
+   * @param maxAttempts  maximum number of retries.
+   * @param extraEdges   routing hints (usually from a Bolt 11 invoice).
+   * @param routeParams  parameters to fine-tune the routing algorithm.
    */
   case class SendMultiPartPayment(replyTo: ActorRef,
                                   targetNodeId: PublicKey,
-                                  finalPayload: Partial,
+                                  finalPayload: FinalPayload.Partial,
                                   totalAmount: MilliSatoshi,
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,

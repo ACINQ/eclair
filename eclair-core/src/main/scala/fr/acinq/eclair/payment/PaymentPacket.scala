@@ -252,6 +252,8 @@ object OutgoingPaymentPacket {
    *
    * @param hops         the hops as computed by the router + extra routes from the invoice
    * @param finalPayload payload data for the final node (amount, expiry, etc)
+   * @param lastAmount   amount for the final node
+   * @param lastExpiry   expiry for the final node
    * @return a (firstAmount, firstExpiry, payloads) tuple where:
    *         - firstAmount is the amount for the first htlc in the route
    *         - firstExpiry is the cltv expiry for the first htlc in the route
@@ -281,6 +283,8 @@ object OutgoingPaymentPacket {
    *
    * @param hops         the hops as computed by the router + extra routes from the invoice, including ourselves in the first hop
    * @param finalPayload payload data for the final node (amount, expiry, etc)
+   * @param amount       amount for the final node
+   * @param expiry       expiry for the final node
    * @return a (firstAmount, firstExpiry, onion) tuple where:
    *         - firstAmount is the amount for the first htlc in the route
    *         - firstExpiry is the cltv expiry for the first htlc in the route
@@ -310,6 +314,8 @@ object OutgoingPaymentPacket {
    * @param invoice      Bolt 11 invoice (features and routing hints will be provided to the next-to-last node).
    * @param hops         the trampoline hops (including ourselves in the first hop, and the non-trampoline final recipient in the last hop).
    * @param finalPayload payload data for the final node (amount, expiry, etc)
+   * @param amount       amount for the final node
+   * @param expiry       expiry for the final node
    * @return a (firstAmount, firstExpiry, onion) tuple where:
    *         - firstAmount is the amount for the trampoline node in the route
    *         - firstExpiry is the cltv expiry for the first trampoline node in the route
@@ -347,7 +353,7 @@ object OutgoingPaymentPacket {
   /**
    * Build the command to add an HTLC with the given final payload and using the provided hops.
    *
-   * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
+   * @return the channel id to send the command to, the command and the onion shared secrets (used to decrypt the error in case of payment failure)
    */
   def buildCommand(replyTo: ActorRef,
                    privateKey: PrivateKey,

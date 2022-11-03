@@ -411,6 +411,8 @@ object PaymentLifecycle {
    *
    * @param route        payment route to use.
    * @param finalPayload onion payload for the target node.
+   * @param amount       amount for the target node.
+   * @param expiry       expiry for the target node.
    */
   case class SendPaymentToRoute(replyTo: ActorRef,
                                 route: Either[PredefinedRoute, Route],
@@ -437,6 +439,8 @@ object PaymentLifecycle {
    * @param targetNodeId target node (may be the final recipient when using source-routing, or the first trampoline
    *                     node when using trampoline).
    * @param finalPayload onion payload for the target node.
+   * @param amount       amount for the target node.
+   * @param expiry       expiry for the target node.
    * @param maxAttempts  maximum number of retries.
    * @param extraEdges   routing hints (usually from a Bolt 11 invoice).
    * @param routeParams  parameters to fine-tune the routing algorithm.
