@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams, NodeHop}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, TlvStream, UnknownNextPeer}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, Paginated, ShortChannelId, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
@@ -88,7 +88,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         db.addIncomingPayment(i1, preimage1)
         db.receiveIncomingPayment(i1.paymentHash, 550 msat, 1100 unixms)
 
-        assert(db.listIncomingPayments(1 unixms, 1500 unixms, None, None) == Seq(pr1))
+        assert(db.listIncomingPayments(1 unixms, 1500 unixms, None) == Seq(pr1))
         assert(db.listOutgoingPayments(1 unixms, 1500 unixms) == Seq(ps1))
       }
     )
@@ -204,7 +204,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         db.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1300 unixms))
 
         assert(db.listOutgoingPayments(1 unixms, 2000 unixms) == Seq(ps1, ps2, ps3, ps4, ps5, ps6))
-        assert(db.listIncomingPayments(1 unixms, TimestampMilli.now(), None, None) == Seq(pr1, pr2, pr3))
+        assert(db.listIncomingPayments(1 unixms, TimestampMilli.now(), None) == Seq(pr1, pr2, pr3))
         assert(db.listExpiredIncomingPayments(1 unixms, 2000 unixms) == Seq(pr2))
       })
   }
@@ -436,9 +436,9 @@ class PaymentsDbSpec extends AnyFunSuite {
 
         assert(db.getIncomingPayment(i1.paymentHash).contains(pr1))
         assert(db.getIncomingPayment(i2.paymentHash).contains(pr2))
-        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli), None, None) == Seq(pr2, pr1))
-        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli), None, None) == Seq(pr2))
-        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli), None, None) == Seq.empty)
+        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli), None) == Seq(pr2, pr1))
+        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli), None) == Seq(pr2))
+        assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli), None) == Seq.empty)
         assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli)) == Seq(pr2))
         assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli)) == Seq(pr2))
         assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli)) == Seq.empty)
@@ -556,7 +556,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.getIncomingPayment(paidInvoice3.paymentHash).contains(payment3.copy(status = IncomingPaymentStatus.Pending)))
 
       val now = TimestampMilli.now()
-      assert(db.listIncomingPayments(0 unixms, now, None, None) == Seq(expiredPayment1, expiredPayment2, expiredPayment3, pendingPayment1, pendingPayment2, pendingPayment3, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending), payment3.copy(status = IncomingPaymentStatus.Pending)))
+      assert(db.listIncomingPayments(0 unixms, now, None) == Seq(expiredPayment1, expiredPayment2, expiredPayment3, pendingPayment1, pendingPayment2, pendingPayment3, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending), payment3.copy(status = IncomingPaymentStatus.Pending)))
       assert(db.listExpiredIncomingPayments(0 unixms, now) == Seq(expiredPayment1, expiredPayment2, expiredPayment3))
       assert(db.listReceivedIncomingPayments(0 unixms, now) == Nil)
       assert(db.listPendingIncomingPayments(0 unixms, now) == Seq(pendingPayment1, pendingPayment2, pendingPayment3, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending), payment3.copy(status = IncomingPaymentStatus.Pending)))
@@ -570,15 +570,12 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.getIncomingPayment(paidInvoice1.paymentHash).contains(payment1))
       assert(db.getIncomingPayment(paidInvoice3.paymentHash).contains(payment3))
 
-      assert(db.listIncomingPayments(0 unixms, now, None, None) == Seq(expiredPayment1, expiredPayment2, expiredPayment3, pendingPayment1, pendingPayment2, pendingPayment3, payment1, payment2, payment3))
-      assert(db.listIncomingPayments(now - 60.seconds, now, None, None) == Seq(pendingPayment1, pendingPayment2, pendingPayment3, payment1, payment2, payment3))
-      assert(db.listIncomingPayments(0 unixms, now, Some(3), None) == Seq(expiredPayment1, expiredPayment2, expiredPayment3))
-      if (db.getClass.getSimpleName.toLowerCase.contains("sqlite"))
-        assertThrows[IllegalArgumentException](db.listIncomingPayments(0 unixms, now, None, Some(3)))
-      else
-        assert(db.listIncomingPayments(0 unixms, now, None, Some(3)) == Seq(pendingPayment1, pendingPayment2, pendingPayment3, payment1, payment2, payment3))
-
-      assert(db.listIncomingPayments(0 unixms, now, Some(3), Some(3)) == Seq(pendingPayment1, pendingPayment2, pendingPayment3))
+      assert(db.listIncomingPayments(0 unixms, now, None) == Seq(expiredPayment1, expiredPayment2, expiredPayment3, pendingPayment1, pendingPayment2, pendingPayment3, payment1, payment2, payment3))
+      assert(db.listIncomingPayments(now - 60.seconds, now, None) == Seq(pendingPayment1, pendingPayment2, pendingPayment3, payment1, payment2, payment3))
+      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(0,0))) == Seq())
+      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(0,3))) == Seq())
+      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(3,0))) == Seq(expiredPayment1, expiredPayment2, expiredPayment3))
+      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(3,3))) == Seq(pendingPayment1, pendingPayment2, pendingPayment3))
       assert(db.listPendingIncomingPayments(0 unixms, now) == Seq(pendingPayment1, pendingPayment2, pendingPayment3))
       assert(db.listReceivedIncomingPayments(0 unixms, now) == Seq(payment1, payment2, payment3))
 

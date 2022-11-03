@@ -11,7 +11,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -306,9 +306,9 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
     primary.removeIncomingPayment(paymentHash)
   }
 
-  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, count_opt: Option[Int], skip_opt: Option[Int]): Seq[IncomingPayment] = {
-    runAsync(secondary.listIncomingPayments(from, to, count_opt, skip_opt))
-    primary.listIncomingPayments(from, to, count_opt, skip_opt)
+  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment] = {
+    runAsync(secondary.listIncomingPayments(from, to, paginated_opt))
+    primary.listIncomingPayments(from, to, paginated_opt)
   }
 
   override def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {

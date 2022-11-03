@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.jdbc
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.{MilliSatoshi, Paginated}
 import grizzled.slf4j.Logger
 import org.sqlite.SQLiteConnection
 import scodec.Decoder
@@ -214,11 +214,9 @@ trait JdbcUtils {
     implicit def conv(rs: ResultSet): ExtendedResultSet = ExtendedResultSet(rs)
   }
 
-  def limited(sql: String, count_opt: Option[Int], skip_opt: Option[Int], countRequired: Boolean): String = {
-    if (countRequired && skip_opt.isDefined && count_opt.isEmpty) throw new IllegalArgumentException("Item count is required")
-    val sqlWithLimit = count_opt.map(count => s"$sql LIMIT $count").getOrElse(sql)
-    val sqlWithOffset = skip_opt.map(skip => s"$sqlWithLimit OFFSET $skip").getOrElse(sqlWithLimit)
-    sqlWithOffset
+  def limited(sql: String, paginated_opt: Option[Paginated]): String = paginated_opt match {
+    case Some(paginated) => s"$sql LIMIT ${paginated.count} OFFSET ${paginated.skip}"
+    case None => sql
   }
 
 }
