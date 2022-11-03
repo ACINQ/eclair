@@ -31,7 +31,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelRelayParams, Route}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
@@ -294,11 +294,16 @@ object ColorSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams)
-private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHopJson])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))))
-
+private sealed trait HopJson
+private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams) extends HopJson
+private case class BlindedHopJson(nodeId: PublicKey, nextNodeId: PublicKey, paymentInfo: OfferTypes.PaymentInfo) extends HopJson
+private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[HopJson])
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map {
+  case h: ChannelHop => ChannelHopJson(h.nodeId, h.nextNodeId, h.params)
+  case h: BlindedHop => BlindedHopJson(h.nodeId, h.nextNodeId, h.paymentInfo)
+}))
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
+
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
   val nodeIds = route.hops match {
     case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
@@ -307,8 +312,11 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
   RouteNodeIdsJson(route.amount, nodeIds)
 })
 
-private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
-object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.shortChannelId)))
+private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[String])
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map {
+  case hop: ChannelHop => hop.shortChannelId.toString
+  case _: BlindedHop => "blinded"
+}))
 // @formatter:on
 
 // @formatter:off
@@ -511,8 +519,9 @@ object CustomTypeHints {
   ))
 
   val channelSources: CustomTypeHints = CustomTypeHints(Map(
-    classOf[ChannelRelayParams.FromAnnouncement] -> "announcement",
-    classOf[ChannelRelayParams.FromHint] -> "hint"
+    classOf[HopRelayParams.FromAnnouncement] -> "announcement",
+    classOf[HopRelayParams.FromHint] -> "hint",
+    classOf[HopRelayParams.FromBlindedRoute] -> "blinded",
   ))
 
   val channelStates: ShortTypeHints = ShortTypeHints(

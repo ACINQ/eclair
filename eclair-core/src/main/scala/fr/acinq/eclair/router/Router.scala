@@ -28,6 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -428,7 +429,7 @@ object Router {
   }
   // @formatter:on
 
-  trait Hop {
+  sealed trait Hop {
     /** @return the id of the start node. */
     def nodeId: PublicKey
 
@@ -445,51 +446,86 @@ object Router {
     def cltvExpiryDelta: CltvExpiryDelta
   }
 
-  // @formatter:off
-  /** Channel routing parameters */
-  sealed trait ChannelRelayParams {
+  sealed trait ConnectedHop extends Hop {
+    def length: Int
+  }
+
+  /** Routing parameters for relaying payments over a given hop. */
+  sealed trait HopRelayParams {
+    // @formatter:off
     def cltvExpiryDelta: CltvExpiryDelta
     def relayFees: Relayer.RelayFees
     final def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees, amount)
     def htlcMinimum: MilliSatoshi
     def htlcMaximum_opt: Option[MilliSatoshi]
+    // @formatter:on
   }
 
-  object ChannelRelayParams {
+  sealed trait ChannelRelayParams extends HopRelayParams
+
+  object HopRelayParams {
     /** We learnt about this channel from a channel_update */
     case class FromAnnouncement(channelUpdate: ChannelUpdate) extends ChannelRelayParams {
-      override def cltvExpiryDelta: CltvExpiryDelta = channelUpdate.cltvExpiryDelta
-      override def relayFees: Relayer.RelayFees = channelUpdate.relayFees
-      override def htlcMinimum: MilliSatoshi = channelUpdate.htlcMinimumMsat
-      override def htlcMaximum_opt: Option[MilliSatoshi] = Some(channelUpdate.htlcMaximumMsat)
-    }
-    /** We learnt about this channel from hints in an invoice */
-    case class FromHint(extraHop: Invoice.ExtraEdge) extends ChannelRelayParams {
-      override def cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
-      override def relayFees: Relayer.RelayFees = extraHop.relayFees
-      override def htlcMinimum: MilliSatoshi = extraHop.htlcMinimum
-      override def htlcMaximum_opt: Option[MilliSatoshi] = extraHop.htlcMaximum_opt
+      override val cltvExpiryDelta = channelUpdate.cltvExpiryDelta
+      override val relayFees = channelUpdate.relayFees
+      override val htlcMinimum = channelUpdate.htlcMinimumMsat
+      override val htlcMaximum_opt = Some(channelUpdate.htlcMaximumMsat)
     }
 
-    def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
+    /** We learnt about this channel from hints in a Bolt 11 invoice */
+    case class FromHint(extraHop: Invoice.ChannelEdge) extends ChannelRelayParams {
+      override val cltvExpiryDelta = extraHop.cltvExpiryDelta
+      override val relayFees = extraHop.relayFees
+      override val htlcMinimum = extraHop.htlcMinimum
+      override val htlcMaximum_opt = extraHop.htlcMaximum_opt
+    }
+
+    /** We learnt about this channel from a blinding route. */
+    case class FromBlindedRoute(dummyId: Alias, route: BlindedRoute, paymentInfo: OfferTypes.PaymentInfo) extends HopRelayParams {
+      override val cltvExpiryDelta = paymentInfo.cltvExpiryDelta
+      override val relayFees = Relayer.RelayFees(paymentInfo.feeBase, paymentInfo.feeProportionalMillionths)
+      override val htlcMinimum = paymentInfo.minHtlc
+      override val htlcMaximum_opt = Some(paymentInfo.maxHtlc)
+    }
+
+    def areSame(a: HopRelayParams, b: HopRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&
         a.relayFees == b.relayFees &&
         (ignoreHtlcSize || (a.htlcMinimum == b.htlcMinimum && a.htlcMaximum_opt == b.htlcMaximum_opt))
   }
-  // @formatter:on
 
   /**
-   * A directed hop between two connected nodes using a specific channel.
+   * A directed hop between two nodes connected by a channel.
    *
+   * @param shortChannelId scid of the channel.
    * @param nodeId         id of the start node.
    * @param nextNodeId     id of the end node.
-   * @param shortChannelId scid that will be used to build the payment onion.
    * @param params         source for the channel parameters.
    */
-  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, params: ChannelRelayParams) extends Hop {
+  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, params: ChannelRelayParams) extends ConnectedHop {
     // @formatter:off
-    override def cltvExpiryDelta: CltvExpiryDelta = params.cltvExpiryDelta
+    override val cltvExpiryDelta = params.cltvExpiryDelta
+    override val length = 1
     override def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
+    // @formatter:on
+  }
+
+  /**
+   * A directed hop over a blinded route composed of multiple (blinded) channels.
+   * Since a blinded route has to be used from start to end, we model it as a single virtual hop.
+   *
+   * @param dummyId     dummy identifier to allow indexing [[ConnectedHop]]s in maps: unlike normal scid aliases, this
+   *                    one doesn't exist in our routing tables and should be used carefully.
+   * @param route       blinded route covered by that hop.
+   * @param paymentInfo payment information about the blinded route.
+   */
+  case class BlindedHop(dummyId: Alias, route: BlindedRoute, paymentInfo: OfferTypes.PaymentInfo) extends ConnectedHop {
+    // @formatter:off
+    override val nodeId = route.introductionNodeId
+    override val nextNodeId = route.blindedNodes.last.blindedPublicKey
+    override val cltvExpiryDelta = paymentInfo.cltvExpiryDelta
+    override val length = route.blindedNodes.length - 1
+    override def fee(amount: MilliSatoshi): MilliSatoshi = paymentInfo.fee(amount)
     // @formatter:on
   }
 
@@ -556,12 +592,15 @@ object Router {
    */
   case class PaymentContext(id: UUID, parentId: UUID, paymentHash: ByteVector32)
 
-  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop]) {
+  case class Route(amount: MilliSatoshi, hops: Seq[ConnectedHop]) {
     require(hops.nonEmpty, "route cannot be empty")
 
-    val length = hops.length
+    val length = hops.map(_.length).sum
 
     def fee(includeLocalChannelCost: Boolean): MilliSatoshi = {
+      // Note that when we are the introduction of a blinded path, this is incorrect, we cannot simply ignore the fees
+      // of the whole blinded path when not including local channel cost. This will make us exceed our fee budget when
+      // making such payments, which isn't ideal and should eventually be fixed.
       val hopsToPay = if (includeLocalChannelCost) hops else hops.drop(1)
       val amountToSend = hopsToPay.reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
       amountToSend - amount
@@ -569,7 +608,10 @@ object Router {
 
     def printNodes(): String = hops.map(_.nextNodeId).mkString("->")
 
-    def printChannels(): String = hops.map(_.shortChannelId).mkString("->")
+    def printChannels(): String = hops.map {
+      case hop: ChannelHop => hop.shortChannelId.toString
+      case _: BlindedHop => "blinded"
+    }.mkString("->")
 
     def stopAt(nodeId: PublicKey): Route = {
       val amountAtStop = hops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
@@ -616,7 +658,6 @@ object Router {
   case object RoutingStateStreamingUpToDate extends RemoteTypes
   case object GetRouterData
   case object GetNodes
-  case object GetLocalChannels
   case object GetChannels
   case object GetChannelsMap
   case object GetChannelUpdates

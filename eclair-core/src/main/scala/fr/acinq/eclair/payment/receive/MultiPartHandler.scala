@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.BlindedRouteCreation.{aggregatePaymentInfo, createBlindedRouteFromHops, createBlindedRouteWithoutHops}
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams}
+import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
@@ -339,8 +339,8 @@ object MultiPartHandler {
                 Future.sequence(r.routes.map(route => {
                   val pathId = randomBytes32()
                   val dummyHops = route.dummyHops.map(h => {
-                    val edge = Invoice.BasicEdge(nodeParams.nodeId, nodeParams.nodeId, ShortChannelId.toSelf, h.feeBase, h.feeProportionalMillionths, h.cltvExpiryDelta)
-                    ChannelHop(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId, ChannelRelayParams.FromHint(edge))
+                    val edge = Invoice.ChannelEdge(nodeParams.nodeId, nodeParams.nodeId, ShortChannelId.toSelf, h.feeBase, h.feeProportionalMillionths, h.cltvExpiryDelta)
+                    ChannelHop(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId, HopRelayParams.FromHint(edge))
                   })
                   if (route.nodes.length == 1) {
                     val blindedRoute = if (dummyHops.isEmpty) {
@@ -353,9 +353,9 @@ object MultiPartHandler {
                   } else {
                     implicit val timeout: Timeout = 10.seconds
                     r.router.ask(Router.FinalizeRoute(r.amount, Router.PredefinedNodeRoute(route.nodes))).mapTo[Router.RouteResponse].map(routeResponse => {
-                      val clearRoute = routeResponse.routes.head
-                      val blindedRoute = createBlindedRouteFromHops(clearRoute.hops ++ dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
-                      val paymentInfo = aggregatePaymentInfo(r.amount, clearRoute.hops ++ dummyHops)
+                      val clearHops = routeResponse.routes.head.hops.collect { case h: ChannelHop => h }
+                      val blindedRoute = createBlindedRouteFromHops(clearHops ++ dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
+                      val paymentInfo = aggregatePaymentInfo(r.amount, clearHops ++ dummyHops)
                       (blindedRoute, paymentInfo, pathId)
                     })
                   }

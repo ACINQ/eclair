@@ -39,9 +39,8 @@ object OfferCodecs {
   private val absoluteExpiry: Codec[AbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond].as[AbsoluteExpiry])
 
   private val blindedNodeCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
-
-  private val pathCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | listOfN(uint8, blindedNodeCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
-
+  private val blindedNodesCodec: Codec[Seq[BlindedNode]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
+  private val pathCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | blindedNodesCodec)).as[BlindedRoute]
   private val paths: Codec[Paths] = tlvField(list(pathCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList).as[Paths])
 
   private val issuer: Codec[Issuer] = tlvField(utf8.as[Issuer])

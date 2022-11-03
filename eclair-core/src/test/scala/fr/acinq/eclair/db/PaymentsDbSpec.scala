@@ -25,7 +25,7 @@ import fr.acinq.eclair.db.jdbc.JdbcUtils.{setVersion, using}
 import fr.acinq.eclair.db.pg.PgPaymentsDb
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams, NodeHop}
+import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, NodeHop}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, TlvStream, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, Paginated, ShortChannelId, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes32, randomBytes64, randomKey}
@@ -655,7 +655,7 @@ class PaymentsDbSpec extends AnyFunSuite {
 object PaymentsDbSpec {
   val (alicePriv, bobPriv, carolPriv, davePriv) = (randomKey(), randomKey(), randomKey(), randomKey())
   val (alice, bob, carol, dave) = (alicePriv.publicKey, bobPriv.publicKey, carolPriv.publicKey, davePriv.publicKey)
-  val hop_ab = ChannelHop(ShortChannelId(42), alice, bob, ChannelRelayParams.FromAnnouncement(ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 1 msat, 1, 500_000_000 msat)))
+  val hop_ab = ChannelHop(ShortChannelId(42), alice, bob, HopRelayParams.FromAnnouncement(ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 1 msat, 1, 500_000_000 msat)))
   val hop_bc = NodeHop(bob, carol, CltvExpiryDelta(14), 1 msat)
   val (preimage1, preimage2, preimage3, preimage4) = (randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32())
   val (paymentHash1, paymentHash2, paymentHash3, paymentHash4) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3), Crypto.sha256(preimage4))

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
-import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams}
+import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
 import fr.acinq.eclair.wire.protocol.{BlindedRouteData, RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
@@ -44,8 +44,8 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
     val pathId = randomBytes32()
     val (scid1, scid2) = (ShortChannelId(1), ShortChannelId(2))
     val hops = Seq(
-      ChannelHop(scid1, a.publicKey, b.publicKey, ChannelRelayParams.FromAnnouncement(makeUpdateShort(scid1, a.publicKey, b.publicKey, 10 msat, 300, cltvDelta = CltvExpiryDelta(200)))),
-      ChannelHop(scid2, b.publicKey, c.publicKey, ChannelRelayParams.FromAnnouncement(makeUpdateShort(scid2, b.publicKey, c.publicKey, 20 msat, 150, cltvDelta = CltvExpiryDelta(600)))),
+      ChannelHop(scid1, a.publicKey, b.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid1, a.publicKey, b.publicKey, 10 msat, 300, cltvDelta = CltvExpiryDelta(200)))),
+      ChannelHop(scid2, b.publicKey, c.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid2, b.publicKey, c.publicKey, 20 msat, 150, cltvDelta = CltvExpiryDelta(600)))),
     )
     val route = createBlindedRouteFromHops(hops, pathId, 1 msat, CltvExpiry(500))
     assert(route.route.introductionNodeId == a.publicKey)
@@ -77,7 +77,7 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
         val feeBase = rand.nextInt(10_000).msat
         val feeProp = rand.nextInt(5000)
         val cltvExpiryDelta = CltvExpiryDelta(rand.nextInt(500))
-        val params = ChannelRelayParams.FromAnnouncement(makeUpdateShort(scid, nodeId, nodeId, feeBase, feeProp, cltvDelta = cltvExpiryDelta))
+        val params = HopRelayParams.FromAnnouncement(makeUpdateShort(scid, nodeId, nodeId, feeBase, feeProp, cltvDelta = cltvExpiryDelta))
         ChannelHop(scid, nodeId, nodeId, params)
       })
       for (_ <- 0 to 100) {

@@ -24,7 +24,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{ChannelUnavailable, HtlcsTimedoutDownstream, RemoteCannotAffordFeesForNewHtlc}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{FailureSummary, FailureType, OutgoingPaymentStatus}
-import fr.acinq.eclair.payment.Invoice.BasicEdge
+import fr.acinq.eclair.payment.Invoice.ChannelEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
@@ -326,7 +326,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val extraEdge = Invoice.BasicEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
+    val extraEdge = Invoice.ChannelEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
     val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge))
     val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
     sender.send(payFsm, payment)
@@ -337,19 +337,19 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectNoMessage(100 millis)
 
     // B changed his fees and expiry after the invoice was issued.
-    val channelUpdate = hop_be.params.asInstanceOf[ChannelRelayParams.FromAnnouncement].channelUpdate.copy(feeBaseMsat = 250 msat, feeProportionalMillionths = 150, cltvExpiryDelta = CltvExpiryDelta(24))
+    val channelUpdate = hop_be.params.asInstanceOf[HopRelayParams.FromAnnouncement].channelUpdate.copy(feeBaseMsat = 250 msat, feeProportionalMillionths = 150, cltvExpiryDelta = CltvExpiryDelta(24))
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(finalAmount, channelUpdate))))))
     // We update the routing hints accordingly before requesting a new route.
     val updatedExtraEdge = router.expectMsgType[RouteRequest].extraEdges.head
-    assert(updatedExtraEdge == BasicEdge(b, e, hop_be.shortChannelId, channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, channelUpdate.cltvExpiryDelta))
+    assert(updatedExtraEdge == ChannelEdge(b, e, hop_be.shortChannelId, channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, channelUpdate.cltvExpiryDelta))
   }
 
   test("retry with ignored routing hints (temporary channel failure)") { f =>
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val extraEdge = Invoice.BasicEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
+    val extraEdge = Invoice.ChannelEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta)
     val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge))
     val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
     sender.send(payFsm, payment)
@@ -361,7 +361,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // B doesn't have enough liquidity on this channel.
     // NB: we need a channel update with a valid signature, otherwise we'll ignore the node instead of this specific channel.
-    val channelUpdateBE = hop_be.params.asInstanceOf[ChannelRelayParams.FromAnnouncement].channelUpdate
+    val channelUpdateBE = hop_be.params.asInstanceOf[HopRelayParams.FromAnnouncement].channelUpdate
     val channelUpdateBE1 = Announcements.makeChannelUpdate(channelUpdateBE.chainHash, priv_b, e, channelUpdateBE.shortChannelId, channelUpdateBE.cltvExpiryDelta, channelUpdateBE.htlcMinimumMsat, channelUpdateBE.feeBaseMsat, channelUpdateBE.feeProportionalMillionths, channelUpdateBE.htlcMaximumMsat)
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, TemporaryChannelFailure(channelUpdateBE1))))))
@@ -373,8 +373,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
   test("update routing hints") { () =>
     val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(
-      BasicEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), BasicEdge(b, c, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24)),
-      BasicEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144))
+      ChannelEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ChannelEdge(b, c, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24)),
+      ChannelEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144))
     ))
 
     def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelUpdate = {
@@ -388,8 +388,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
         UnreadableRemoteFailure(finalAmount, Nil)
       )
       val extraEdges1 = Seq(
-        BasicEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), BasicEdge(b, c, ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48)),
-        BasicEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144))
+        ChannelEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ChannelEdge(b, c, ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48)),
+        ChannelEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144))
       )
       assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, recipient).extraEdges).forall { case (e1, e2) => e1 == e2 })
     }
@@ -401,8 +401,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
         RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23))))),
       )
       val extraEdges1 = Seq(
-        BasicEdge(a, b, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23)), BasicEdge(b, c, ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21)),
-        BasicEdge(a, c, ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22))
+        ChannelEdge(a, b, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23)), ChannelEdge(b, c, ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21)),
+        ChannelEdge(a, c, ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22))
       )
       assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, recipient).extraEdges).forall { case (e1, e2) => e1 == e2 })
     }

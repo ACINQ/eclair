@@ -11,7 +11,7 @@ import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.RouteNotFound
-import fr.acinq.eclair.router.Router.{FinalizeRoute, PredefinedNodeRoute, RouteResponse}
+import fr.acinq.eclair.router.Router.{ChannelHop, FinalizeRoute, PredefinedNodeRoute, RouteResponse}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.protocol.{FailureMessage, UnknownNextPeer, Update}
 import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId, ShortChannelId}
@@ -105,7 +105,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     assert(route.length == 2)
     assert(route.hops.map(_.nodeId) == Seq(alice.nodeId, bob.nodeId))
     assert(route.hops.map(_.nextNodeId) == Seq(bob.nodeId, carol.nodeId))
-    assert(route.hops.map(_.shortChannelId) == Seq(scid_ab, scid_bc))
+    assert(route.hops.collect { case h: ChannelHop => h.shortChannelId } == Seq(scid_ab, scid_bc))
   }
 
   private def internalTest(f: FixtureParam,

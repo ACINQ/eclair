@@ -22,6 +22,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
@@ -65,14 +66,17 @@ object RouteCalculation {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
-              val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
+              val hops = selectedEdges.map(e => e.params match {
+                case params: ChannelRelayParams => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, params)
+                case params: HopRelayParams.FromBlindedRoute => BlindedHop(params.dummyId, params.route, params.paymentInfo)
+              })
               ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
               ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
         case PredefinedChannelRoute(targetNodeId, shortChannelIds) =>
-          val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
+          val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ConnectedHop])) {
             case ((currentNode, previousHops), shortChannelId) =>
               val channelDesc_opt = d.resolve(shortChannelId) match {
                 case Some(c: PublicChannel) => currentNode match {
@@ -88,7 +92,12 @@ object RouteCalculation {
                 case None => fr.extraEdges.map(GraphEdge(_)).find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)
               }
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
-                case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(getEdgeRelayScid(d, localNodeId, edge), edge.desc.a, edge.desc.b, edge.params))
+                case Some(edge) =>
+                  val hop = edge.params match {
+                    case params: ChannelRelayParams => ChannelHop(getEdgeRelayScid(d, localNodeId, edge), edge.desc.a, edge.desc.b, params)
+                    case params: HopRelayParams.FromBlindedRoute => BlindedHop(params.dummyId, params.route, params.paymentInfo)
+                  }
+                  (edge.desc.b, previousHops :+ hop)
                 case None => (currentNode, previousHops)
               }
           }
@@ -111,7 +120,10 @@ object RouteCalculation {
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val extraEdges = r.extraEdges.map(GraphEdge(_)).filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
+      val extraEdges = r.extraEdges.filter {
+        case edge: Invoice.ChannelEdge => edge.sourceNodeId != r.source // we ignore routing hints for our own channels, we have more accurate information
+        case _: Invoice.BlindedEdge => true
+      }.map(GraphEdge(_)).toSet
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels.keySet
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
@@ -382,7 +394,11 @@ object RouteCalculation {
   /** Update used capacity by taking into account an HTLC sent to the given route. */
   private def updateUsedCapacity(route: Route, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Unit = {
     route.hops.reverse.foldLeft(route.amount) { case (amount, hop) =>
-      usedCapacity.updateWith(hop.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
+      val id = hop match {
+        case hop: ChannelHop => hop.shortChannelId
+        case hop: BlindedHop => hop.dummyId
+      }
+      usedCapacity.updateWith(id)(previous => Some(amount + previous.getOrElse(0 msat)))
       amount + hop.fee(amount)
     }
   }

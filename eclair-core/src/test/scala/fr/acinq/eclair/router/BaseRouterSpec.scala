@@ -23,8 +23,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
-import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate, RealScidStatus, ShortChannelIdAssigned, ShortIds}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -33,7 +34,6 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -88,7 +88,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val alias_ga_private = ShortChannelId.generateLocalAlias()
 
   val scids_ab = ShortIds(RealScidStatus.Final(scid_ab), alias_ab, Some(alias_ba))
-  val scids_ag_private = ShortIds(RealScidStatus.Final(scid_ag_private),  alias_ag_private, Some(alias_ga_private))
+  val scids_ag_private = ShortIds(RealScidStatus.Final(scid_ag_private), alias_ag_private, Some(alias_ga_private))
 
   val chan_ab = channelAnnouncement(scid_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
   val chan_bc = channelAnnouncement(scid_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
@@ -238,5 +238,5 @@ object BaseRouterSpec {
   }
 
   def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: ChannelUpdate): ChannelHop =
-    ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, ChannelRelayParams.FromAnnouncement(channelUpdate))
+    ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, HopRelayParams.FromAnnouncement(channelUpdate))
 }

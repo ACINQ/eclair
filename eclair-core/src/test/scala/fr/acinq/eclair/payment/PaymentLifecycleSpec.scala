@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.Invoice.BasicEdge
+import fr.acinq.eclair.payment.Invoice.ChannelEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
@@ -41,6 +41,7 @@ import fr.acinq.eclair.payment.send.{ClearRecipient, PaymentLifecycle}
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.BaseRouterSpec.{channelAnnouncement, channelHopFromUpdate}
 import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.RouteCalculationSpec.route2Ids
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
@@ -196,7 +197,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val recipientNodeId = randomKey().publicKey
     val route = PredefinedNodeRoute(Seq(a, b, c, recipientNodeId))
-    val extraEdges = Seq(BasicEdge(c, recipientNodeId, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144)))
+    val extraEdges = Seq(ChannelEdge(c, recipientNodeId, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144)))
     val recipient = ClearRecipient(recipientNodeId, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, extraEdges)
     val request = SendPaymentToRoute(sender.ref, Left(route), defaultAmountMsat, recipient)
 
@@ -568,8 +569,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // we build an assisted route for channel bc and cd
     val recipient = ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, Seq(
-      BasicEdge(b, c, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, update_bc.cltvExpiryDelta),
-      BasicEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
+      ChannelEdge(b, c, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, update_bc.cltvExpiryDelta),
+      ChannelEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
     ))
     val request = SendPaymentToNode(sender.ref, defaultAmountMsat, recipient, 5, defaultRouteParams)
     sender.send(paymentFSM, request)
@@ -612,7 +613,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // we build an assisted route for channel cd
     val recipient = ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, Seq(
-      BasicEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
+      ChannelEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)
     ))
     val request = SendPaymentToNode(sender.ref, defaultAmountMsat, recipient, 1, defaultRouteParams)
     sender.send(paymentFSM, request)
@@ -630,7 +631,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val failureOnion = Sphinx.FailurePacket.wrap(Sphinx.FailurePacket.create(sharedSecrets1(1)._1, failure), sharedSecrets1.head._1)
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))))
 
-    assert(routerForwarder.expectMsgType[RouteCouldRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, update_bc).map(_.shortChannelId))
+    assert(route2Ids(routerForwarder.expectMsgType[RouteCouldRelay].route) == Seq(update_ab, update_bc).map(_.shortChannelId.toLong))
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_cd.shortChannelId, c, d), Some(nodeParams.routerConf.channelExcludeDuration)))
     routerForwarder.expectMsg(channelUpdate_cd_disabled)
   }
@@ -705,7 +706,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(metrics.fees == 730.msat)
     metricsListener.expectNoMessage()
 
-    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, update_bc, update_cd).map(_.shortChannelId))
+    assert(route2Ids(routerForwarder.expectMsgType[RouteDidRelay].route) == Seq(update_ab, update_bc, update_cd).map(_.shortChannelId.toLong))
   }
 
   test("payment succeeded to a channel with fees=0") { routerFixture =>
@@ -761,7 +762,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(metrics.fees == 0.msat)
     metricsListener.expectNoMessage()
 
-    assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, channelUpdate_bh).map(_.shortChannelId))
+    assert(route2Ids(routerForwarder.expectMsgType[RouteDidRelay].route) == Seq(update_ab, channelUpdate_bh).map(_.shortChannelId.toLong))
   }
 
   test("filter errors properly") { () =>
@@ -797,7 +798,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, update_bc))), Set.empty, Set.empty),
       // unreadable remote failures -> blacklist all nodes except our direct peer and the final recipient
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil), Set.empty, Set.empty),
-      (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: ChannelHop(ShortChannelId(5656986L), d, e, null) :: Nil), Set(c, d), Set.empty)
+      (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: NodeHop(d, e, CltvExpiryDelta(24), 0 msat) :: Nil), Set(c, d), Set.empty)
     )
 
     for ((failure, expectedNodes, expectedChannels) <- testCases) {

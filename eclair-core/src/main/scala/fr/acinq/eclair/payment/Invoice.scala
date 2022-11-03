@@ -18,9 +18,10 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, OfferTypes}
+import fr.acinq.eclair.{Alias, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
@@ -55,17 +56,27 @@ object Invoice {
     // @formatter:on
   }
 
-  /** A normal graph edge, that should be handled exactly like public graph edges. */
-  case class BasicEdge(sourceNodeId: PublicKey,
-                       targetNodeId: PublicKey,
-                       shortChannelId: ShortChannelId,
-                       feeBase: MilliSatoshi,
-                       feeProportionalMillionths: Long,
-                       cltvExpiryDelta: CltvExpiryDelta) extends ExtraEdge {
+  /** A graph edge that should be handled exactly like public channel edges. */
+  case class ChannelEdge(sourceNodeId: PublicKey,
+                         targetNodeId: PublicKey,
+                         shortChannelId: ShortChannelId,
+                         feeBase: MilliSatoshi,
+                         feeProportionalMillionths: Long,
+                         cltvExpiryDelta: CltvExpiryDelta) extends ExtraEdge {
     override val htlcMinimum: MilliSatoshi = 0 msat
     override val htlcMaximum_opt: Option[MilliSatoshi] = None
 
-    def update(u: ChannelUpdate): BasicEdge = copy(feeBase = u.feeBaseMsat, feeProportionalMillionths = u.feeProportionalMillionths, cltvExpiryDelta = u.cltvExpiryDelta)
+    def update(u: ChannelUpdate): ChannelEdge = copy(feeBase = u.feeBaseMsat, feeProportionalMillionths = u.feeProportionalMillionths, cltvExpiryDelta = u.cltvExpiryDelta)
+  }
+
+  /** Since a blinded route has to be used from start to end, we model it as a single edge. */
+  case class BlindedEdge(dummyId: Alias, targetNodeId: PublicKey, route: BlindedRoute, paymentInfo: OfferTypes.PaymentInfo) extends ExtraEdge {
+    override val sourceNodeId = route.introductionNodeId
+    override val feeBase = paymentInfo.feeBase
+    override val feeProportionalMillionths = paymentInfo.feeProportionalMillionths
+    override val cltvExpiryDelta = paymentInfo.cltvExpiryDelta
+    override val htlcMinimum = paymentInfo.minHtlc
+    override val htlcMaximum_opt = Some(paymentInfo.maxHtlc)
   }
 
   def fromString(input: String): Try[Invoice] = {
