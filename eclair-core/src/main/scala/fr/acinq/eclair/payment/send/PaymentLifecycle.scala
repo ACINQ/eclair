@@ -25,7 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
-import fr.acinq.eclair.payment.Invoice.{BasicEdge, ExtraEdge}
+import fr.acinq.eclair.payment.Invoice.{ChannelEdge, ExtraEdge}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
@@ -183,8 +183,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         }
         failureMessage match {
           case TemporaryChannelFailure(update) =>
-            d.route.hops.find(_.nodeId == nodeId) match {
-              case Some(failingHop) if ChannelRelayParams.areSame(failingHop.params, ChannelRelayParams.FromAnnouncement(update), ignoreHtlcSize = true) =>
+            d.route.hops.collectFirst { case hop: ChannelHop if hop.nodeId == nodeId => hop } match {
+              case Some(failingHop) if HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true) =>
                 router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
               case _ => // otherwise the relay parameters may have changed, so it's not necessarily a liquidity issue
             }
@@ -261,9 +261,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
    * @return updated routing hints if applicable.
    */
   private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[ExtraEdge] = {
-    val extraEdges1 = data.route.hops.find(_.nodeId == nodeId) match {
+    val extraEdges1 = data.route.hops.collectFirst { case hop: ChannelHop if hop.nodeId == nodeId => hop } match {
       case Some(hop) => hop.params match {
-        case ann: ChannelRelayParams.FromAnnouncement =>
+        case ann: HopRelayParams.FromAnnouncement =>
           if (ann.channelUpdate.shortChannelId != failure.update.shortChannelId) {
             // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
             log.info("received an update for a different channel than the one we asked: requested={} actual={} update={}", ann.channelUpdate.shortChannelId, failure.update.shortChannelId, failure.update)
@@ -280,22 +280,23 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             log.info("got a new update for shortChannelId={}: old={} new={}", ann.channelUpdate.shortChannelId, ann.channelUpdate, failure.update)
           }
           data.c.recipient.extraEdges
-        case _: ChannelRelayParams.FromHint =>
+        case _: HopRelayParams.FromHint =>
           log.info("received an update for a routing hint (shortChannelId={} nodeId={} enabled={} update={})", failure.update.shortChannelId, nodeId, failure.update.channelFlags.isEnabled, failure.update)
           if (failure.update.channelFlags.isEnabled) {
             data.c.recipient.extraEdges.map {
-              case edge: BasicEdge if edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId => edge.update(failure.update)
-              case edge: BasicEdge => edge
+              case edge: ChannelEdge if edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId => edge.update(failure.update)
+              case edge => edge
             }
           } else {
             // if the channel is disabled, we temporarily exclude it: this is necessary because the routing hint doesn't
             // contain channel flags to indicate that it's disabled
             // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
-            data.c.recipient.extraEdges
-              .find { case edge: BasicEdge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId }
-              .foreach { case edge: BasicEdge => router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId), Some(nodeParams.routerConf.channelExcludeDuration)) }
+            data.c.recipient.extraEdges.collect {
+              case edge: ChannelEdge if edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId =>
+                router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
+            }
             // we remove this edge for our next payment attempt
-            data.c.recipient.extraEdges.filterNot { case edge: BasicEdge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId }
+            data.c.recipient.extraEdges.filter(edge => edge.sourceNodeId != nodeId || edge.targetNodeId != hop.nextNodeId)
           }
       }
       case None =>

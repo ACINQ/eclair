@@ -18,8 +18,8 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.Invoice
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
@@ -433,7 +433,7 @@ object Graph {
      * @param capacity    channel capacity
      * @param balance_opt (optional) available balance that can be sent through this edge
      */
-    case class GraphEdge private(desc: ChannelDesc, params: ChannelRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
+    case class GraphEdge private(desc: ChannelDesc, params: HopRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
 
       def maxHtlcAmount(reservedCapacity: MilliSatoshi): MilliSatoshi = Seq(
         balance_opt.map(balance => balance - reservedCapacity),
@@ -447,29 +447,36 @@ object Graph {
     object GraphEdge {
       def apply(u: ChannelUpdate, pc: PublicChannel): GraphEdge = GraphEdge(
         desc = ChannelDesc(u, pc.ann),
-        params = ChannelRelayParams.FromAnnouncement(u),
+        params = HopRelayParams.FromAnnouncement(u),
         capacity = pc.capacity,
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
       def apply(u: ChannelUpdate, pc: PrivateChannel): GraphEdge = GraphEdge(
         desc = ChannelDesc(u, pc),
-        params = ChannelRelayParams.FromAnnouncement(u),
+        params = HopRelayParams.FromAnnouncement(u),
         capacity = pc.capacity,
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
-      def apply(e: Invoice.ExtraEdge): GraphEdge = e match {
-        case e@Invoice.BasicEdge(sourceNodeId, targetNodeId, shortChannelId, _, _, _) =>
-          val maxBtc = 21e6.btc
-          GraphEdge(
-            desc = ChannelDesc(shortChannelId, sourceNodeId, targetNodeId),
-            params = ChannelRelayParams.FromHint(e),
+      def apply(e: Invoice.ExtraEdge): GraphEdge = {
+        val maxBtc = 21e6.btc
+        e match {
+          case e: Invoice.ChannelEdge => GraphEdge(
+            desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
+            params = HopRelayParams.FromHint(e),
             // Bolt 11 routing hints don't include the channel's capacity, so we assume it's big enough
             capacity = maxBtc.toSatoshi,
             // we assume channels provided as hints have enough balance to handle the payment
             balance_opt = Some(maxBtc.toMilliSatoshi)
           )
+          case e: Invoice.BlindedEdge => GraphEdge(
+            desc = ChannelDesc(e.dummyId, e.sourceNodeId, e.targetNodeId),
+            params = HopRelayParams.FromBlindedRoute(e.dummyId, e.route, e.paymentInfo),
+            capacity = maxBtc.toSatoshi,
+            balance_opt = Some(e.paymentInfo.maxHtlc)
+          )
+        }
       }
     }
 
@@ -641,7 +648,10 @@ object Graph {
         new DirectedGraph(mutableMap.toMap)
       }
 
-      def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)
+      def graphEdgeToHop(graphEdge: GraphEdge): ConnectedHop = graphEdge.params match {
+        case params: ChannelRelayParams => ChannelHop(graphEdge.desc.a, graphEdge.desc.b, params)
+        case params: HopRelayParams.FromBlindedRoute => BlindedHop(params.dummyId, params.route, params.paymentInfo)
+      }
     }
 
   }

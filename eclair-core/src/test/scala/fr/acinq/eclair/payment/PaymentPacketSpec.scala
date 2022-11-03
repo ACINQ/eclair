@@ -23,16 +23,18 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.payment.send.{ClearRecipient, ClearTrampolineRecipient}
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
-import fr.acinq.eclair.router.Router.{NodeHop, Route}
+import fr.acinq.eclair.router.Router.{BlindedHop, NodeHop, Route}
 import fr.acinq.eclair.transactions.Transactions.InputInfo
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecondLong, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecondLong, nodeFee, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -284,6 +286,13 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("Much payment very metadata"), CltvExpiryDelta(9), features = invoiceFeatures, paymentMetadata = Some(paymentMetadata))
     val recipient = ClearTrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHops, randomBytes32())
     assert(buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient).isFailure)
+  }
+
+  test("fail to build outgoing payment with invalid route") {
+    val dummyKey = randomKey().publicKey
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret)
+    val route = Route(finalAmount, hops ++ Seq(BlindedHop(Alias(0), BlindedRoute(dummyKey, dummyKey, Seq(BlindedNode(dummyKey, hex"deadbeef"), BlindedNode(dummyKey, hex"deadbeef"))), PaymentInfo(0 msat, 0, CltvExpiryDelta(24), 1 msat, 100 msat, Features.empty))))
+    assert(buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient).isFailure)
   }
 
   test("fail to decrypt when the onion is invalid") {

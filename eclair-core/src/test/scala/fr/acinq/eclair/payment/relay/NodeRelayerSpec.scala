@@ -32,7 +32,7 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.IncomingPaymentPacket.NodeRelayPacket
-import fr.acinq.eclair.payment.Invoice.BasicEdge
+import fr.acinq.eclair.payment.Invoice.ChannelEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
@@ -735,7 +735,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(recipient.paymentSecret == invoice.paymentSecret) // we should use the provided secret
     assert(recipient.paymentMetadata_opt == invoice.paymentMetadata) // we should use the provided metadata
     assert(recipient.expiry == outgoingExpiry)
-    assert(recipient.extraEdges.head == BasicEdge(hints.head.nodeId, outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12)))
+    assert(recipient.extraEdges.head == ChannelEdge(hints.head.nodeId, outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12)))
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
@@ -778,7 +778,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(recipient.nextTrampolineOnion_opt.isEmpty)
     assert(recipient.expiry == outgoingExpiry)
     assert(recipient.paymentMetadata_opt == invoice.paymentMetadata) // we should use the provided metadata
-    assert(recipient.extraEdges.head == BasicEdge(hints.head.nodeId, outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12)))
+    assert(recipient.extraEdges.head == ChannelEdge(hints.head.nodeId, outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12)))
 
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo

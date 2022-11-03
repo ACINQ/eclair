@@ -23,8 +23,8 @@ import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.lengthPrefixedFeatur
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64}
-import scodec.Codec
 import scodec.codecs._
+import scodec.{Attempt, Codec, Err}
 
 object OfferCodecs {
   private val chains: Codec[Chains] = tlvField(list(bytes32).xmap[Seq[ByteVector32]](_.toSeq, _.toList).as[Chains])
@@ -40,9 +40,11 @@ object OfferCodecs {
   private val absoluteExpiry: Codec[AbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond].as[AbsoluteExpiry])
 
   private val blindedNodeCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
-
-  private val pathCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | listOfN(uint8, blindedNodeCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
-
+  private val blindedNodesCodec: Codec[Seq[BlindedNode]] = listOfN(uint8, blindedNodeCodec).exmap(
+    nodes => if (nodes.length <= 1) Attempt.Failure(Err("blinded route must contain at least two nodes")) else Attempt.Successful(nodes.toSeq),
+    nodes => if (nodes.length <= 1) Attempt.Failure(Err("blinded route must contain at least two nodes")) else Attempt.Successful(nodes.toList),
+  )
+  private val pathCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | blindedNodesCodec)).as[BlindedRoute]
   private val paths: Codec[Paths] = tlvField(list(pathCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList).as[Paths])
 
   private val issuer: Codec[Issuer] = tlvField(utf8.as[Issuer])

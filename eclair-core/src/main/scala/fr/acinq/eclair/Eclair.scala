@@ -559,7 +559,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           randomKey(),
           randomKey(),
           intermediateNodes.map(OnionMessages.IntermediateNode(_)),
-          destination match { case Left(key) => OnionMessages.Recipient(key, None) case Right(route) => OnionMessages.BlindedPath(route) },
+          destination match {
+            case Left(key) => OnionMessages.Recipient(key, None)
+            case Right(route) => OnionMessages.BlindedPath(route)
+          },
           replyRoute.map(OnionMessagePayloadTlv.ReplyPath(_) :: Nil).getOrElse(Nil),
           userCustomTlvs) match {
           case Success((nextNodeId, message)) =>

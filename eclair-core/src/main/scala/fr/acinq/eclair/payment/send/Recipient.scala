@@ -21,13 +21,13 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.{NodePayload, PaymentPayloads}
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, OutgoingPaymentPacket}
-import fr.acinq.eclair.router.Router.{NodeHop, Route}
+import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket, PaymentOnionCodecs}
 import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId}
 import scodec.bits.ByteVector
 
-import scala.util.{Success, Try}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 28/10/2022.
@@ -53,22 +53,35 @@ sealed trait Recipient {
   def buildPayloads(paymentHash: ByteVector32, route: Route): Try[PaymentPayloads]
 }
 
+object Recipient {
+  def verifyChannelHopsOnly(route: Route): Try[Seq[ChannelHop]] = {
+    val channelHops = route.hops.collect { case hop: ChannelHop => hop }
+    if (channelHops.length != route.hops.length) {
+      Failure(new IllegalArgumentException(s"cannot send payment: route contains non-channel hops (${route.printChannels()})"))
+    } else {
+      Success(channelHops)
+    }
+  }
+}
+
 /** A payment recipient that can directly be found in the routing graph. */
 case class ClearRecipient(nodeId: PublicKey,
                           features: Features[InvoiceFeature],
                           totalAmount: MilliSatoshi,
                           expiry: CltvExpiry,
                           paymentSecret: ByteVector32,
-                          extraEdges: Seq[Invoice.BasicEdge] = Nil,
+                          extraEdges: Seq[Invoice.ChannelEdge] = Nil,
                           paymentMetadata_opt: Option[ByteVector] = None,
                           nextTrampolineOnion_opt: Option[OnionRoutingPacket] = None,
                           customTlvs: Seq[GenericTlv] = Nil) extends Recipient {
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Try[PaymentPayloads] = {
-    val finalPayload = nextTrampolineOnion_opt match {
-      case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket))
-      case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, customTlvs))
-    }
-    Success(OutgoingPaymentPacket.buildPayloads(route.amount, expiry, finalPayload, route.hops))
+    Recipient.verifyChannelHopsOnly(route).map(hops => {
+      val finalPayload = nextTrampolineOnion_opt match {
+        case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket))
+        case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, customTlvs))
+      }
+      OutgoingPaymentPacket.buildPayloads(route.amount, expiry, finalPayload, hops)
+    })
   }
 }
 
@@ -89,8 +102,10 @@ case class SpontaneousRecipient(nodeId: PublicKey,
   override val extraEdges = Nil
 
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Try[PaymentPayloads] = {
-    val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createKeySendPayload(route.amount, amount, expiry, preimage, customTlvs))
-    Success(OutgoingPaymentPacket.buildPayloads(amount, expiry, finalPayload, route.hops))
+    Recipient.verifyChannelHopsOnly(route).map(hops => {
+      val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createKeySendPayload(route.amount, amount, expiry, preimage, customTlvs))
+      OutgoingPaymentPacket.buildPayloads(amount, expiry, finalPayload, hops)
+    })
   }
 }
 
@@ -127,10 +142,12 @@ case class ClearTrampolineRecipient(invoice: Bolt11Invoice,
 
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Try[PaymentPayloads] = {
     require(route.hops.last.nextNodeId == trampolineNodeId, "route must reach the desired trampoline node")
-    createTrampolinePacket(paymentHash).map { case Sphinx.PacketAndSecrets(trampolinePacket, _) =>
-      val trampolinePayload = NodePayload(trampolineNodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolinePacket))
-      OutgoingPaymentPacket.buildPayloads(trampolineAmount, trampolineExpiry, trampolinePayload, route.hops)
-    }
+    Recipient.verifyChannelHopsOnly(route).flatMap(hops => {
+      createTrampolinePacket(paymentHash).map { case Sphinx.PacketAndSecrets(trampolinePacket, _) =>
+        val trampolinePayload = NodePayload(trampolineNodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolinePacket))
+        OutgoingPaymentPacket.buildPayloads(trampolineAmount, trampolineExpiry, trampolinePayload, hops)
+      }
+    })
   }
 
   def createTrampolinePacket(paymentHash: ByteVector32): Try[Sphinx.PacketAndSecrets] = {

@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractSharedSecret, Origin}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
-import fr.acinq.eclair.router.Router.{ChannelHop, Route}
+import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomKey}
@@ -264,7 +264,10 @@ object OutgoingPaymentPacket {
 
   /** Build the command to add an HTLC for the given recipient using the provided route. */
   def buildOutgoingPayment(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, route: Route, recipient: Recipient): Try[OutgoingPaymentPacket] = {
-    val outgoingChannel = route.hops.head.shortChannelId
+    val outgoingChannel = route.hops.head match {
+      case hop: ChannelHop => hop.shortChannelId
+      case _: BlindedHop => ???
+    }
     for {
       payment <- recipient.buildPayloads(paymentHash, route)
       onion <- buildOnion(PaymentOnionCodecs.paymentOnionPayloadLength, payment.payloads, paymentHash) // BOLT 2 requires that associatedData == paymentHash

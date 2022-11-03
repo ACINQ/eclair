@@ -36,7 +36,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFacto
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
-import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams, Route}
+import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -364,8 +364,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   }
 
   def makeSingleHopRoute(amount: MilliSatoshi, destination: PublicKey): Route = {
-    val dummyParams = ChannelRelayParams.FromHint(Invoice.BasicEdge(randomKey().publicKey, destination, ShortChannelId(0), 0 msat, 0, CltvExpiryDelta(0)))
-    Route(amount, Seq(ChannelHop(ShortChannelId(0), dummyParams.extraHop.sourceNodeId, dummyParams.extraHop.targetNodeId, dummyParams)))
+    val dummyParams = HopRelayParams.FromHint(Invoice.ChannelEdge(randomKey().publicKey, destination, ShortChannelId(0), 0 msat, 0, CltvExpiryDelta(0)))
+    Route(amount, Seq(ChannelHop(dummyParams.extraHop.sourceNodeId, dummyParams.extraHop.targetNodeId, dummyParams)))
   }
 
   def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {

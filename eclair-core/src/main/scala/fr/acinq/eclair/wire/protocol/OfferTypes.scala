@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, 
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64, nodeFee}
 import fr.acinq.secp256k1.Secp256k1JvmKt
 import scodec.Codec
 import scodec.bits.ByteVector
@@ -65,7 +65,9 @@ object OfferTypes {
                          cltvExpiryDelta: CltvExpiryDelta,
                          minHtlc: MilliSatoshi,
                          maxHtlc: MilliSatoshi,
-                         allowedFeatures: Features[Feature])
+                         allowedFeatures: Features[Feature]) {
+    def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(feeBase, feeProportionalMillionths, amount)
+  }
 
   case class PaymentPathsInfo(paymentInfo: Seq[PaymentInfo]) extends InvoiceTlv
 
