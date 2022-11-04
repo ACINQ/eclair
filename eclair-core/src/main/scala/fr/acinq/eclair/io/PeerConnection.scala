@@ -277,7 +277,6 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay()
 
       case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
-
         val thisRemote = RemoteGossip(self, d.remoteNodeId)
 
         /**
@@ -289,6 +288,9 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             count
           case (count, (msg, origins)) if !timestampInRange(msg, origins, d.gossipTimestampFilter) =>
             // the peer has set up a filter on timestamp and this message is out of range
+            count
+          case (count, (u: ChannelUpdate, _)) if u.dontForward =>
+            log.error("private channel update for scid={} was incorrectly added to staggered broadcast", u.shortChannelId)
             count
           case (count, (msg, _)) =>
             d.transport ! msg

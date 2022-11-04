@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
-import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelFlagsCodec, channelUpdateCodec, meteredLightningMessageCodec}
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelFlagsCodec, channelUpdateCodec, messageFlagsCodec, meteredLightningMessageCodec}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, UInt64}
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -58,7 +58,7 @@ case object UnknownNextPeer extends Perm { def message = "processing node does n
 case class AmountBelowMinimum(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment amount was below the minimum required by the channel" }
 case class FeeInsufficient(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment fee was below the minimum required by the channel" }
 case object TrampolineFeeInsufficient extends Node { def message = "payment fee was below the minimum required by the trampoline node" }
-case class ChannelDisabled(messageFlags: Byte, channelFlags: ChannelUpdate.ChannelFlags, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
+case class ChannelDisabled(messageFlags: ChannelUpdate.MessageFlags, channelFlags: ChannelUpdate.ChannelFlags, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
 case class IncorrectCltvExpiry(expiry: CltvExpiry, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
 case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi, height: BlockHeight) extends Perm { def message = "incorrect payment details or unknown payment hash" }
 case class ExpiryTooSoon(update: ChannelUpdate) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
@@ -113,7 +113,7 @@ object FailureMessageCodecs {
       .typecase(UPDATE | 12, (("amountMsat" | millisatoshi) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
       .typecase(UPDATE | 13, (("expiry" | cltvExpiry) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
       .typecase(UPDATE | 14, ("channelUpdate" | channelUpdateWithLengthCodec).as[ExpiryTooSoon])
-      .typecase(UPDATE | 20, (("messageFlags" | byte) :: channelFlagsCodec :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
+      .typecase(UPDATE | 20, (messageFlagsCodec :: channelFlagsCodec :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
       .typecase(PERM | 15, (("amountMsat" | withDefaultValue(optional(bitsRemaining, millisatoshi), 0 msat)) :: ("height" | withDefaultValue(optional(bitsRemaining, blockHeight), BlockHeight(0)))).as[IncorrectOrUnknownPaymentDetails])
       // PERM | 16 (incorrect_payment_amount) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.
       // PERM | 17 (final_expiry_too_soon) has been deprecated because it allowed probing attacks: IncorrectOrUnknownPaymentDetails should be used instead.

@@ -147,6 +147,9 @@
       "iso" : "2021-07-08T12:09:56Z",
       "unix" : 1625746196
     },
+    "messageFlags" : {
+      "dontForward" : false
+    },
     "channelFlags" : {
       "isEnabled" : true,
       "isNode1" : false

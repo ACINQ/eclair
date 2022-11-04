@@ -1004,6 +1004,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       chainHash = ByteVector32.fromValidHex("024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2"),
       shortChannelId = RealShortChannelId(BlockHeight(1), 2, 3),
       timestamp = 0 unixsec,
+      messageFlags = ChannelUpdate.MessageFlags(dontForward = false),
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(0),
       htlcMinimumMsat = 1 msat,
