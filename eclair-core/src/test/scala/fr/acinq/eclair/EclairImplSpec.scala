@@ -101,10 +101,10 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(open.fundingTxFeerate_opt.contains(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey), fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), announceChannel_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey()), fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), announceChannel_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeerate_opt.contains(FeeratePerKw.MinimumFeeratePerKw))
-    assert(open1.channelType_opt.contains(ChannelTypes.StaticRemoteKey))
+    assert(open1.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
   }
 
   test("call send with passing correct arguments") { f =>
@@ -232,10 +232,10 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
   }
 

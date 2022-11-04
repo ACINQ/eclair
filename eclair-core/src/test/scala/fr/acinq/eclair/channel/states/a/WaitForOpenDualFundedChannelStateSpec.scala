@@ -66,7 +66,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
 
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
     assert(open.upfrontShutdownScript_opt.isEmpty)
-    assert(open.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
+    assert(open.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     assert(open.pushAmount == 0.msat)
     assert(!open.requireConfirmedInputs)
     assert(open.fundingFeerate == TestConstants.feeratePerKw)

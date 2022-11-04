@@ -33,12 +33,21 @@ trait Channel {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val supportedChannelTypes = Set(
-    ChannelTypes.Standard,
-    ChannelTypes.StaticRemoteKey,
-    ChannelTypes.AnchorOutputs,
-    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false),
-    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true),
-    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false),
+    ChannelTypes.Standard(),
+    ChannelTypes.Standard(zeroConf = true),
+    ChannelTypes.Standard(scidAlias = true),
+    ChannelTypes.Standard(scidAlias = true, zeroConf = true),
+    ChannelTypes.StaticRemoteKey(),
+    ChannelTypes.StaticRemoteKey(zeroConf = true),
+    ChannelTypes.StaticRemoteKey(scidAlias = true),
+    ChannelTypes.StaticRemoteKey(scidAlias = true, zeroConf = true),
+    ChannelTypes.AnchorOutputs(),
+    ChannelTypes.AnchorOutputs(zeroConf = true),
+    ChannelTypes.AnchorOutputs(scidAlias = true),
+    ChannelTypes.AnchorOutputs(scidAlias = true, zeroConf = true),
+    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(),
+    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
+    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)
   ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
 

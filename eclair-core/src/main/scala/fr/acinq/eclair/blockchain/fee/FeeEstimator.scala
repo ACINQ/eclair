@@ -47,9 +47,9 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
    */
   def isFeeDiffTooHigh(channelType: SupportedChannelType, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
     channelType match {
-      case ChannelTypes.Standard | ChannelTypes.StaticRemoteKey =>
+      case _: ChannelTypes.Standard | _: ChannelTypes.StaticRemoteKey =>
         proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
-      case ChannelTypes.AnchorOutputs | _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
+      case _: ChannelTypes.AnchorOutputs | _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
         // when using anchor outputs, we allow any feerate: fees will be set with CPFP and RBF at broadcast time
         false
     }

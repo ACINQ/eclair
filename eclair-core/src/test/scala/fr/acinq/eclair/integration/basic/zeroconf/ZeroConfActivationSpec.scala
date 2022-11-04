@@ -63,7 +63,7 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(!bob.nodeParams.features.activated.contains(ZeroConf))
 
     connect(alice, bob)
-    val channelType = AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)
+    val channelType = AnchorOutputsZeroFeeHtlcTx(zeroConf = true)
     // bob rejects the channel
     intercept[AssertionError] {
       openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
@@ -77,7 +77,7 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(bob.nodeParams.features.activated.contains(ZeroConf))
 
     connect(alice, bob)
-    val channelType = AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)
+    val channelType = AnchorOutputsZeroFeeHtlcTx(zeroConf = true)
     val channelId = openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
 
     assert(getChannelData(alice, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
@@ -91,7 +91,7 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(bob.nodeParams.features.activated.contains(ZeroConf))
 
     connect(alice, bob)
-    val channelType = AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)
+    val channelType = AnchorOutputsZeroFeeHtlcTx()
     val channelId = openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
 
     // Bob has activated support for 0-conf with Alice, so he doesn't wait for the funding tx to confirm regardless of
@@ -110,7 +110,7 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(bob.nodeParams.features.activated.contains(ZeroConf))
 
     connect(alice, bob)
-    val channelType = AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)
+    val channelType = AnchorOutputsZeroFeeHtlcTx()
     val channelId = openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
 
     assert(getChannelData(alice, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
