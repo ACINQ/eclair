@@ -41,7 +41,7 @@ case class Hmac256(key: ByteVector) extends Mac32 {
 
   override def mac(message: ByteVector): ByteVector32 = Mac32.hmac256(key, message)
 
-  override def verify(mac: ByteVector32, message: ByteVector): Boolean = this.mac(message) === mac
+  override def verify(mac: ByteVector32, message: ByteVector): Boolean = this.mac(message) == mac
 
 }
 

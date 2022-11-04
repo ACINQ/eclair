@@ -18,7 +18,6 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
-import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
@@ -272,9 +271,6 @@ object Sphinx extends Logging {
 
   object FailurePacket {
 
-    val MaxPayloadLength = 256
-    val PacketLength = MacLength + MaxPayloadLength + 2 + 2
-
     /**
      * Create a failure packet that will be returned to the sender.
      * Each intermediate hop will add a layer of encryption and forward to the previous hop.
@@ -301,16 +297,11 @@ object Sphinx extends Logging {
      * @return an encrypted failure packet that can be sent to the destination node.
      */
     def wrap(packet: ByteVector, sharedSecret: ByteVector32): ByteVector = {
-      if (packet.length != PacketLength) {
-        logger.warn(s"invalid error packet length ${packet.length}, must be $PacketLength (malicious or buggy downstream node)")
-      }
       val key = generateKey("ammag", sharedSecret)
-      val stream = generateStream(key, PacketLength)
+      val stream = generateStream(key, packet.length.toInt)
       logger.debug(s"ammag key: $key")
       logger.debug(s"error stream: $stream")
-      // If we received a packet with an invalid length, we trim and pad to forward a packet with a normal length upstream.
-      // This is a poor man's attempt at increasing the likelihood of the sender receiving the error.
-      packet.take(PacketLength).padLeft(PacketLength) xor stream
+      packet xor stream
     }
 
     /**
@@ -324,8 +315,6 @@ object Sphinx extends Logging {
      *         decrypted, Failure otherwise.
      */
     def decrypt(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Try[DecryptedFailurePacket] = Try {
-      require(packet.length == PacketLength, s"invalid error packet length ${packet.length}, must be $PacketLength")
-
       @tailrec
       def loop(packet: ByteVector, secrets: Seq[(ByteVector32, PublicKey)]): DecryptedFailurePacket = secrets match {
         case Nil => throw new RuntimeException(s"couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
@@ -381,7 +370,7 @@ object Sphinx extends Logging {
     }
 
     /**
-     * @param route blinded route.
+     * @param route        blinded route.
      * @param lastBlinding blinding point for the last node, which can be used to derive the blinded private key.
      */
     case class BlindedRouteDetails(route: BlindedRoute, lastBlinding: PublicKey)
