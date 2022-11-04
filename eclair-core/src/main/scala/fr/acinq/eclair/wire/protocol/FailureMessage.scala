@@ -141,7 +141,6 @@ object FailureMessageCodecs {
   )
 
   private def failureOnionPayload(payloadAndPadLength: Int): Codec[FailureMessage] = Codec(
-    // We create payloads of the requested size: by always using the same size we ensure error messages are indistinguishable.
     encoder = f => variableSizeBytes(uint16, failureMessageCodec).encode(f).flatMap(bits => {
       val payloadLength = bits.bytes.length - 2
       val padLen = payloadAndPadLength - payloadLength
@@ -159,7 +158,8 @@ object FailureMessageCodecs {
    * +----------------+----------------------------------+-----------------+----------------------+-----+
    * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
    * +----------------+----------------------------------+-----------------+----------------------+-----+
-   * Bolt 4: SHOULD set pad such that the failure_len plus pad_len is equal to 256
+   * Bolt 4: SHOULD set pad such that the failure_len plus pad_len is equal to 256: by always using the same size we
+   * ensure error messages are indistinguishable.
    */
   def failureOnionCodec(mac: Mac32, payloadAndPadLength: Int = 256): Codec[FailureMessage] = CommonCodecs.prependmac(failureOnionPayload(payloadAndPadLength).complete, mac)
 
