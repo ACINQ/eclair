@@ -214,7 +214,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       // non-empty upfront_shutdown_script + unknown odd tlv records
       defaultEncoded ++ hex"0002 1234 0303010203" -> defaultOpen.copy(tlvStream = TlvStream(Seq(ChannelTlv.UpfrontShutdownScriptTlv(hex"1234")), Seq(GenericTlv(UInt64(3), hex"010203")))),
       // empty upfront_shutdown_script + default channel type
-      defaultEncoded ++ hex"0000" ++ hex"0100" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard(scidAlias = false, zeroConf = false)))),
+      defaultEncoded ++ hex"0000" ++ hex"0100" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard()))),
       // empty upfront_shutdown_script + unsupported channel type
       defaultEncoded ++ hex"0000" ++ hex"0103501000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.UnsupportedChannelType(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory, Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Mandatory))))),
       // empty upfront_shutdown_script + channel type
@@ -223,12 +223,12 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultEncoded ++ hex"0004 01abcdef" ++ hex"0103101000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"01abcdef"), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)))),
       defaultEncoded ++ hex"0002 abcd" ++ hex"0103401000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"abcd"), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))),
       // empty upfront_shutdown_script + channel type (scid-alias)
-      defaultEncoded ++ hex"0000" ++ hex"0106 400000000000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard(scidAlias = true, zeroConf = false)))),
+      defaultEncoded ++ hex"0000" ++ hex"0106 400000000000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard(scidAlias = true)))),
       defaultEncoded ++ hex"0000" ++ hex"0106 400000001000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.StaticRemoteKey(scidAlias = true, zeroConf = false)))),
       defaultEncoded ++ hex"0000" ++ hex"0106 400000101000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs(scidAlias = true, zeroConf = false)))),
       defaultEncoded ++ hex"0000" ++ hex"0106 400000401000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false)))),
       // empty upfront_shutdown_script + channel type (zeroconf)
-      defaultEncoded ++ hex"0000" ++ hex"0107 04000000000000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard(scidAlias = false, zeroConf = true)))),
+      defaultEncoded ++ hex"0000" ++ hex"0107 04000000000000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard(zeroConf = true)))),
       defaultEncoded ++ hex"0000" ++ hex"0107 04000000001000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = true)))),
       defaultEncoded ++ hex"0000" ++ hex"0107 04000000101000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = true)))),
       defaultEncoded ++ hex"0000" ++ hex"0107 04000000401000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true)))),
@@ -307,7 +307,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val testCases = Map(
       defaultEncoded -> defaultAccept, // legacy encoding without upfront_shutdown_script
       defaultEncoded ++ hex"0000" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))), // empty upfront_shutdown_script
-      defaultEncoded ++ hex"0000" ++ hex"0100" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard(scidAlias = false, zeroConf = false)))), // empty upfront_shutdown_script with channel type
+      defaultEncoded ++ hex"0000" ++ hex"0100" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard()))), // empty upfront_shutdown_script with channel type
       defaultEncoded ++ hex"0004 01abcdef" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"01abcdef"))), // non-empty upfront_shutdown_script
       defaultEncoded ++ hex"0004 01abcdef" ++ hex"01021000" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"01abcdef"), ChannelTlv.ChannelTypeTlv(ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = false)))), // non-empty upfront_shutdown_script with channel type
       defaultEncoded ++ hex"0000 0302002a 050102" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty) :: Nil, GenericTlv(UInt64(3), hex"002a") :: GenericTlv(UInt64(5), hex"02") :: Nil)), // empty upfront_shutdown_script + unknown odd tlv records

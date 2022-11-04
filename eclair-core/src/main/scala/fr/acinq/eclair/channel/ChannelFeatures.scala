@@ -94,7 +94,7 @@ sealed trait SupportedChannelType extends ChannelType {
 object ChannelTypes {
 
   // @formatter:off
-  case class Standard(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
+  case class Standard(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,

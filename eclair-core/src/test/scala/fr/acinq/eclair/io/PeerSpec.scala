@@ -427,11 +427,11 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     // We both support option_static_remotekey but they want to open a standard channel.
     connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
     assert(peer.stateData.channels.isEmpty)
-    val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard(scidAlias = false, zeroConf = false))))
+    val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard())))
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-    assert(init.channelType == ChannelTypes.Standard(scidAlias = false, zeroConf = false))
+    assert(init.channelType == ChannelTypes.Standard())
     assert(!init.dualFunded)
     channel.expectMsg(open)
   }
@@ -447,8 +447,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = false))
 
     // We can create channels that don't use the features we have enabled.
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.Standard(scidAlias = false, zeroConf = false)), None, None, None, None))
-    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.Standard(scidAlias = false, zeroConf = false))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.Standard()), None, None, None, None))
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.Standard())
 
     // We can create channels that use features that we haven't enabled.
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)), None, None, None, None))

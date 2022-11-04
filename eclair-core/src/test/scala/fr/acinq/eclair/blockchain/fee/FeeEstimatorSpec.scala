@@ -37,7 +37,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("get commitment feerate") {
     val feeEstimator = new TestFeeEstimator()
-    val channelType = ChannelTypes.Standard(scidAlias = false, zeroConf = false)
+    val channelType = ChannelTypes.Standard()
     val feeConf = OnChainFeeConf(FeeTargets(1, 2, 6, 1, 1, 1), feeEstimator, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(5000 sat)))
@@ -89,7 +89,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("fee difference too high") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), DustTolerance(25000 sat, closeOnUpdateFeeOverflow = false))
-    val channelType = ChannelTypes.Standard(scidAlias = false, zeroConf = false)
+    val channelType = ChannelTypes.Standard()
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(250 sat), false),

@@ -1317,7 +1317,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("claim htlc tx feerate too low, lowering output amount (standard commitment format)") {
-    withFixture(Seq(11 millibtc), ChannelTypes.Standard(scidAlias = false, zeroConf = false)) { f =>
+    withFixture(Seq(11 millibtc), ChannelTypes.Standard()) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
@@ -1386,7 +1386,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("claim htlc tx not confirming, lowering output amount again (standard commitment format)") {
-    withFixture(Seq(11 millibtc), ChannelTypes.Standard(scidAlias = false, zeroConf = false)) { f =>
+    withFixture(Seq(11 millibtc), ChannelTypes.Standard()) { f =>
       import f._
 
       val initialFeerate = FeeratePerKw(15_000 sat)
