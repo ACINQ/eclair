@@ -17,9 +17,12 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
+import akka.actor.testkit.typed.scaladsl.{LoggingTestKit, ScalaTestWithActorTestKit}
+import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.{ActorContext, ActorRef, FSM, PoisonPill, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
@@ -38,7 +41,7 @@ import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{Outcome, ParallelTestExecution, Tag}
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -46,7 +49,11 @@ import java.nio.channels.ServerSocketChannel
 import scala.concurrent.duration._
 import scala.util.Success
 
-class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
+class PeerSpec extends ScalaTestWithActorTestKit(ConfigFactory.parseString("akka.actor.debug.event-stream=on").withFallback(ConfigFactory.load("application"))) with FixtureAnyFunSuiteLike {
+
+  import akka.actor.typed.scaladsl.adapter._
+
+  implicit def classicSystem = system.toClassic
 
   import PeerSpec._
 
@@ -121,8 +128,17 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("successfully connect to peer at user request") { f =>
     import f._
 
-    // this actor listens to connection requests and creates connections
-    system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
+    // make sure that the actor has registered to system.eventStream to prevent race conditions
+    LoggingTestKit
+      
+      .debug("to channel class fr.acinq.eclair.io.ClientSpawner$ConnectionRequest")
+      .expect {
+        // this actor listens to connection requests and creates connections
+        testKit.spawn(Behaviors.setup[Any] { context =>
+          context.toClassic.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
+          Behaviors.ignore[Any]
+        })
+      }(testKit.system)
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val (mockServer, serverAddress) = createMockServer()
@@ -134,15 +150,24 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     probe.send(peer, Peer.Connect(remoteNodeId, mockAddress_opt, probe.ref, isPersistent = true))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
+    val patienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
+    eventually(patienceConfig.timeout, patienceConfig.interval, mockServer.accept() != null)
     mockServer.close()
   }
 
   test("return connection failure for a peer with an invalid dns host name") { f =>
     import f._
 
-    // this actor listens to connection requests and creates connections
-    system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
+    // make sure that the actor has registered to system.eventStream to prevent race conditions
+    LoggingTestKit
+      .debug("to channel class fr.acinq.eclair.io.ClientSpawner$ConnectionRequest")
+      .expect {
+        // this actor listens to connection requests and creates connections
+        testKit.spawn(Behaviors.setup[Any] { context =>
+          context.toClassic.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
+          Behaviors.ignore[Any]
+        })
+      }(testKit.system)
 
     val invalidDnsHostname_opt = NodeAddress.fromParts("eclair.invalid", 9735).toOption
     assert(invalidDnsHostname_opt.nonEmpty)
@@ -157,8 +182,16 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("successfully reconnect to peer at startup when there are existing channels", Tag("auto_reconnect")) { f =>
     import f._
 
-    // this actor listens to connection requests and creates connections
-    system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
+    // make sure that the actor has registered to system.eventStream to prevent race conditions
+    LoggingTestKit
+      .debug("to channel class fr.acinq.eclair.io.ClientSpawner$ConnectionRequest")
+      .expect {
+        // this actor listens to connection requests and creates connections
+        testKit.spawn(Behaviors.setup[Any] { context =>
+          context.toClassic.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
+          Behaviors.ignore[Any]
+        })
+      }(testKit.system)
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val (mockServer, serverAddress) = createMockServer()
@@ -172,7 +205,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal)))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
+    val patienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
+    eventually(patienceConfig.timeout, patienceConfig.interval, mockServer.accept() != null)
     mockServer.close()
   }
 
@@ -190,7 +224,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[UnknownMessageReceived])
+    classicSystem.eventStream.subscribe(listener.ref, classOf[UnknownMessageReceived])
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
     peerConnection.send(peer, UnknownMessage(tag = TestConstants.pluginParams.messageTags.head, data = ByteVector.empty))
@@ -218,7 +252,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     switchboard.send(peer, Peer.Init(Set.empty))
 
-    awaitCond {
+    eventually {
       probe.send(peer, Peer.GetPeerInfo(None))
       probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED
     }
@@ -247,14 +281,14 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     channel.expectMsg(INPUT_DISCONNECTED)
     channel.expectMsg(INPUT_RECONNECTED(peerConnection2.ref, localInit, remoteInit))
-    awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection == peerConnection2.ref)
+    eventually(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection == peerConnection2.ref)
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     channel.expectMsg(INPUT_DISCONNECTED)
     channel.expectMsg(INPUT_RECONNECTED(peerConnection3.ref, localInit, remoteInit))
-    awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection == peerConnection3.ref)
+    eventually(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection == peerConnection3.ref)
   }
 
   test("send state transitions to child reconnection actor", Tag("auto_reconnect"), Tag("with_node_announcement")) { f =>
@@ -286,13 +320,13 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    system.eventStream ! EventStream.Subscribe(probe.ref.toTyped[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection, switchboard)
     assert(peer.stateData.channels.isEmpty)
 
     val open = createOpenChannelMessage()
     peerConnection.send(peer, open)
-    awaitCond(peer.stateData.channels.nonEmpty)
+    eventually(peer.stateData.channels.nonEmpty)
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].temporaryChannelId == open.temporaryChannelId)
     channel.expectMsg(open)
 
@@ -308,7 +342,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    classicSystem.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection, switchboard)
 
     assert(peer.stateData.channels.isEmpty)
@@ -322,7 +356,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    classicSystem.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection, switchboard) // Bob doesn't support wumbo, Alice does
 
     assert(peer.stateData.channels.isEmpty)
@@ -336,7 +370,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     val fundingAmountBig = Btc(1).toSatoshi
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    classicSystem.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
@@ -416,7 +450,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(peer.stateData.channels.isEmpty)
     val open = createOpenDualFundedChannelMessage()
     peerConnection.send(peer, open)
-    awaitCond(peer.stateData.channels.nonEmpty)
+    eventually(peer.stateData.channels.nonEmpty)
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].dualFunded)
     channel.expectMsg(open)
   }
@@ -429,7 +463,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(peer.stateData.channels.isEmpty)
     val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard)))
     peerConnection.send(peer, open)
-    awaitCond(peer.stateData.channels.nonEmpty)
+    eventually(peer.stateData.channels.nonEmpty)
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     assert(init.channelType == ChannelTypes.Standard)
     assert(!init.dualFunded)
@@ -551,7 +585,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("notify when last channel is closed") { f =>
     import f._
     val probe = TestProbe()
-    system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
+    classicSystem.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     probe.send(channel.ref, PoisonPill)
     probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
@@ -560,7 +594,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("notify when last channel is closed in state DISCONNECTED") { f =>
     import f._
     val probe = TestProbe()
-    system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
+    classicSystem.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     peer ! ConnectionDown(peerConnection.ref)
     probe.send(channel.ref, PoisonPill)

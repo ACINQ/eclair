@@ -62,6 +62,8 @@
     <!--<logger name="fr.acinq.eclair.payment.relay" level="DEBUG" />-->
     <!--<logger name="fr.acinq.eclair.channel" level="DEBUG" />-->
 
+    <logger name="akka.event.EventStream" level="DEBUG" />
+
     <root level="INFO">
         <appender-ref ref="MyCapturingAppender"/>
         <!--appender-ref ref="CONSOLE"/-->
