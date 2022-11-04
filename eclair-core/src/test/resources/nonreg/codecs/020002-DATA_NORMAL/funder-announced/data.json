@@ -148,7 +148,7 @@
       "unix" : 1625746196
     },
     "messageFlags" : {
-      "isPrivate" : false
+      "dontForward" : false
     },
     "channelFlags" : {
       "isEnabled" : true,

@@ -430,7 +430,7 @@ case class ChannelUpdate(signature: ByteVector64,
                          feeProportionalMillionths: Long,
                          htlcMaximumMsat: MilliSatoshi,
                          tlvStream: TlvStream[ChannelUpdateTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
-  val isPrivate: Boolean = messageFlags.isPrivate
+  val dontForward: Boolean = messageFlags.dontForward
 
   def toStringShort: String = s"cltvExpiryDelta=$cltvExpiryDelta,feeBase=$feeBaseMsat,feeProportionalMillionths=$feeProportionalMillionths"
 
@@ -438,7 +438,7 @@ case class ChannelUpdate(signature: ByteVector64,
 }
 
 object ChannelUpdate {
-  case class MessageFlags(isPrivate: Boolean)
+  case class MessageFlags(dontForward: Boolean)
 
   case class ChannelFlags(isEnabled: Boolean, isNode1: Boolean)
 

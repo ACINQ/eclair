@@ -365,7 +365,7 @@ object RoutingSyncSpec {
     makeChannelUpdate(channelUpdate.chainHash, priv, remote, channelUpdate.shortChannelId,
       channelUpdate.cltvExpiryDelta, channelUpdate.htlcMinimumMsat,
       channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths,
-      channelUpdate.htlcMinimumMsat, channelUpdate.messageFlags.isPrivate, channelUpdate.channelFlags.isEnabled, channelUpdate.timestamp + 5000)
+      channelUpdate.htlcMinimumMsat, channelUpdate.messageFlags.dontForward, channelUpdate.channelFlags.isEnabled, channelUpdate.timestamp + 5000)
   }
 
   def makeFakeNodeAnnouncement(pub2priv: mutable.Map[PublicKey, PrivateKey])(nodeId: PublicKey): NodeAnnouncement = {

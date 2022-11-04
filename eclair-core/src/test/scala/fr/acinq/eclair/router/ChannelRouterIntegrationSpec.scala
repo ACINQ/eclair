@@ -116,9 +116,9 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       val bobAnn = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get
       assert(aliceAnn == bobAnn)
       assert(aliceChannelUpdate2.shortChannelId == aliceAnn.shortChannelId)
-      assert(!aliceChannelUpdate2.isPrivate)
+      assert(!aliceChannelUpdate2.dontForward)
       assert(bobChannelUpdate2.shortChannelId == bobAnn.shortChannelId)
-      assert(!bobChannelUpdate2.isPrivate)
+      assert(!bobChannelUpdate2.dontForward)
 
       // the router has already processed the new local channel update from alice which uses the real scid, and keeps bob's previous channel update
       assert(publicChannel.update_1_opt.contains(aliceChannelUpdate2) && publicChannel.update_2_opt.contains(bobChannelUpdate1))
@@ -161,8 +161,8 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       // alice and bob won't send their channel_update directly to each other because they haven't changed
       channels.alice2bob.expectNoMessage(100 millis)
       channels.bob2alice.expectNoMessage(100 millis)
-      assert(privateChannel.update_1_opt.get.isPrivate)
-      assert(privateChannel.update_2_opt.get.isPrivate)
+      assert(privateChannel.update_1_opt.get.dontForward)
+      assert(privateChannel.update_2_opt.get.dontForward)
 
       // router graph contains a single channel
       assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
