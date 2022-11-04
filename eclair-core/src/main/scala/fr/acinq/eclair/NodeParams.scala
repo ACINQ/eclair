@@ -544,7 +544,7 @@ object NodeParams extends Logging {
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
-      paymentFinalExpiry = PaymentFinalExpiryConf(CltvExpiryDelta(config.getInt("payment.recipient-final-expiry.min-delta")), CltvExpiryDelta(config.getInt("payment.recipient-final-expiry.max-delta"))),
+      paymentFinalExpiry = PaymentFinalExpiryConf(CltvExpiryDelta(config.getInt("send.recipient-final-expiry.min-delta")), CltvExpiryDelta(config.getInt("send.recipient-final-expiry.max-delta"))),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
       balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
       blockchainWatchdogThreshold = config.getInt("blockchain-watchdog.missing-blocks-threshold"),
