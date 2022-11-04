@@ -103,7 +103,7 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
     override def toString: String = s"standard${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case class StaticRemoteKey(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
+  case class StaticRemoteKey(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,
@@ -113,7 +113,7 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
     override def toString: String = s"static_remotekey${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case class AnchorOutputs(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
+  case class AnchorOutputs(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,
@@ -124,7 +124,7 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = UnsafeLegacyAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case class AnchorOutputsZeroFeeHtlcTx(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
+  case class AnchorOutputsZeroFeeHtlcTx(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,
@@ -142,21 +142,21 @@ object ChannelTypes {
   // @formatter:on
 
   private val features2ChannelType: Map[Features[_ <: InitFeature], SupportedChannelType] = Set(
-    Standard(scidAlias = false, zeroConf = false),
-    Standard(scidAlias = false, zeroConf = true),
-    Standard(scidAlias = true, zeroConf = false),
+    Standard(),
+    Standard(zeroConf = true),
+    Standard(scidAlias = true),
     Standard(scidAlias = true, zeroConf = true),
-    StaticRemoteKey(scidAlias = false, zeroConf = false),
-    StaticRemoteKey(scidAlias = false, zeroConf = true),
-    StaticRemoteKey(scidAlias = true, zeroConf = false),
+    StaticRemoteKey(),
+    StaticRemoteKey(zeroConf = true),
+    StaticRemoteKey(scidAlias = true),
     StaticRemoteKey(scidAlias = true, zeroConf = true),
-    AnchorOutputs(scidAlias = false, zeroConf = false),
-    AnchorOutputs(scidAlias = false, zeroConf = true),
-    AnchorOutputs(scidAlias = true, zeroConf = false),
+    AnchorOutputs(),
+    AnchorOutputs(zeroConf = true),
+    AnchorOutputs(scidAlias = true),
     AnchorOutputs(scidAlias = true, zeroConf = true),
-    AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false),
-    AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true),
-    AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false),
+    AnchorOutputsZeroFeeHtlcTx(),
+    AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
+    AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true))
     .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
     .toMap

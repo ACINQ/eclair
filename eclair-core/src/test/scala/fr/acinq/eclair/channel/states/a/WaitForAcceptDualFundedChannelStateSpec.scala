@@ -70,7 +70,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
 
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     assert(accept.upfrontShutdownScript_opt.isEmpty)
-    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
+    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     assert(accept.fundingAmount == 0.sat)
     assert(accept.pushAmount == 0.msat)
     assert(!accept.requireConfirmedInputs)
@@ -89,7 +89,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
 
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     assert(accept.upfrontShutdownScript_opt.isEmpty)
-    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
+    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     assert(accept.fundingAmount == TestConstants.nonInitiatorFundingSatoshis)
     assert(accept.pushAmount == 0.msat)
     bob2alice.forward(alice, accept)
@@ -101,7 +101,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
 
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     assert(accept.upfrontShutdownScript_opt.isEmpty)
-    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
+    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     assert(accept.fundingAmount == TestConstants.nonInitiatorFundingSatoshis)
     assert(accept.pushAmount == TestConstants.nonInitiatorPushAmount)
     bob2alice.forward(alice, accept)
@@ -112,7 +112,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     import f._
 
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)))
+    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     assert(accept.fundingAmount == TestConstants.nonInitiatorFundingSatoshis)
     assert(accept.requireConfirmedInputs)
     bob2alice.forward(alice, accept)

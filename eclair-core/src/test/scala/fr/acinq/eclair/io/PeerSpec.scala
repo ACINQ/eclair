@@ -353,13 +353,13 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     // They only support anchor outputs and we don't.
     {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false))))
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
     }
     // They only support anchor outputs with zero fee htlc txs and we don't.
     {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false))))
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())))
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
     }
@@ -444,15 +444,15 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(peer.stateData.channels.isEmpty)
 
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
-    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = false))
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.StaticRemoteKey())
 
     // We can create channels that don't use the features we have enabled.
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.Standard()), None, None, None, None))
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.Standard())
 
     // We can create channels that use features that we haven't enabled.
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)), None, None, None, None))
-    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.AnchorOutputs()), None, None, None, None))
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.AnchorOutputs())
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
@@ -467,7 +467,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(mempoolMinFee = FeeratePerKw(250 sat)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-    assert(init.channelType == ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false))
+    assert(init.channelType == ChannelTypes.AnchorOutputs())
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
@@ -486,7 +486,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(mempoolMinFee = FeeratePerKw(250 sat)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-    assert(init.channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false))
+    assert(init.channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
@@ -500,7 +500,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-    assert(init.channelType == ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = false))
+    assert(init.channelType == ChannelTypes.StaticRemoteKey())
     assert(!init.dualFunded)
     assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
     assert(init.localParams.defaultFinalScriptPubKey == Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get)))

@@ -56,35 +56,35 @@ class FeeEstimatorSpec extends AnyFunSuite {
     val feeConf = OnChainFeeConf(FeeTargets(1, 2, 6, 1, 1, 1), feeEstimator, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2, mempoolMinFee = FeeratePerKw(250 sat)))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, None) == defaultMaxCommitFeerate / 2)
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, None) == defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, None) == defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, None) == defaultMaxCommitFeerate / 2)
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate * 2, mempoolMinFee = FeeratePerKw(250 sat)))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, None) == defaultMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, None) == defaultMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, None) == overrideMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, None) == overrideMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, None) == defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, None) == defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, None) == overrideMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, None) == overrideMaxCommitFeerate)
 
     val currentFeerates1 = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2, mempoolMinFee = FeeratePerKw(250 sat)))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, Some(currentFeerates1)) == defaultMaxCommitFeerate / 2)
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, Some(currentFeerates1)) == defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, Some(currentFeerates1)) == defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, Some(currentFeerates1)) == defaultMaxCommitFeerate / 2)
 
     val currentFeerates2 = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate * 1.5, mempoolMinFee = FeeratePerKw(250 sat)))
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2, mempoolMinFee = FeeratePerKw(250 sat)))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, Some(currentFeerates2)) == defaultMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, Some(currentFeerates2)) == defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, Some(currentFeerates2)) == defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, Some(currentFeerates2)) == defaultMaxCommitFeerate)
 
     val highFeerates = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(25000 sat)).copy(mempoolMinFee = FeeratePerKw(10000 sat)))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, Some(highFeerates)) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, Some(highFeerates)) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, Some(highFeerates)) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, Some(highFeerates)) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, Some(highFeerates)) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, Some(highFeerates)) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, Some(highFeerates)) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, Some(highFeerates)) == FeeratePerKw(10000 sat) * 1.25)
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(25000 sat)).copy(mempoolMinFee = FeeratePerKw(10000 sat)))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, None) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, None) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), 100000 sat, None) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), 100000 sat, None) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, None) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, None) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputs(), 100000 sat, None) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(overrideNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat, None) == FeeratePerKw(10000 sat) * 1.25)
   }
 
   test("fee difference too high") {
@@ -122,8 +122,8 @@ class FeeEstimatorSpec extends AnyFunSuite {
       (FeeratePerKw(1000 sat), FeeratePerKw(499 sat)),
     )
     testCases.foreach { case (networkFeerate, proposedFeerate) =>
-      assert(!tolerance.isFeeDiffTooHigh(ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false), networkFeerate, proposedFeerate))
-      assert(!tolerance.isFeeDiffTooHigh(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false), networkFeerate, proposedFeerate))
+      assert(!tolerance.isFeeDiffTooHigh(ChannelTypes.AnchorOutputs(), networkFeerate, proposedFeerate))
+      assert(!tolerance.isFeeDiffTooHigh(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), networkFeerate, proposedFeerate))
     }
   }
 

@@ -344,7 +344,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.StaticRemoteKey(scidAlias = false, zeroConf = false)), None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.StaticRemoteKey()), None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -364,7 +364,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputs(scidAlias = false, zeroConf = false)), None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputs()), None, None, None)(any[Timeout]).wasCalled(once)
       }
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "anchor_outputs_zero_fee_htlc_tx").toEntity) ~>
@@ -375,7 +375,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false)), None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
