@@ -305,7 +305,7 @@ trait ErrorHandlers extends CommonHandlers {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.commitInput, tx, d.commitments.localParams.isInitiator), "revoked-commit"))
-        val exc = FundingTxSpent(d.channelId, tx)
+        val exc = FundingTxSpent(d.channelId, tx.txid)
         val error = Error(d.channelId, exc.getMessage)
 
         val nextData = d match {
@@ -344,7 +344,7 @@ trait ErrorHandlers extends CommonHandlers {
     // this is never supposed to happen !!
     log.error(s"our funding tx ${d.commitments.fundingTxId} was spent by txid=${tx.txid}!!")
     context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${d.commitments.fundingTxId} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
-    val exc = FundingTxSpent(d.channelId, tx)
+    val exc = FundingTxSpent(d.channelId, tx.txid)
     val error = Error(d.channelId, exc.getMessage)
 
     // let's try to spend our current local tx
