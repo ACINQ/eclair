@@ -34,11 +34,11 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.WeakEntropyPool
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnchainKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
-import fr.acinq.eclair.io.{ClientSpawner, Peer, PendingChannelsRateLimiter, Server, Switchboard}
+import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{AsyncPaymentTriggerer, PostRestartHtlcCleaner, Relayer}
@@ -94,7 +94,7 @@ class Setup(val datadir: File,
 
   datadir.mkdirs()
   val config = system.settings.config.getConfig("eclair")
-  val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
+  val Seeds(nodeSeed, channelSeed, onchainSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
 
   if (chain != "regtest") {
@@ -106,6 +106,10 @@ class Setup(val datadir: File,
   chaindir.mkdirs()
   val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
   val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
+  val onchainKeyManager = {
+    val passphrase = if (config.hasPath("bitcoind.external-signer-passphrase")) config.getString("bitcoind.external-signer-passphrase") else ""
+    new LocalOnchainKeyManager(onchainSeed, NodeParams.hashFromChain(chain), passphrase)
+  }
   val instanceId = UUID.randomUUID()
 
   logger.info(s"instanceid=$instanceId")
@@ -139,7 +143,7 @@ class Setup(val datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, onchainKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
@@ -265,7 +269,8 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin) with OnchainPubkeyCache {
+      useExternalSigner = if (config.hasPath("bitcoind.use-external-signer")) config.getBoolean("bitcoind.use-external-signer") else false
+      bitcoinClient = new BitcoinCoreClient(bitcoin, if (useExternalSigner) Some(onchainKeyManager) else None) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -439,7 +444,7 @@ class Setup(val datadir: File,
 
 object Setup {
 
-  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector)
+  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector, onchainSeed: ByteVector)
 
 }
 

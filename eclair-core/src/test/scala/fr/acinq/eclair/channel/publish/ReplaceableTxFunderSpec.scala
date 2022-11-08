@@ -70,13 +70,13 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       paymentHash,
       17,
       BlockHeight(0)
-    ), PlaceHolderSig, preimage)
+    ), PlaceHolderSig, preimage, Nil, Nil)
     val htlcTimeout = HtlcTimeoutWithWitnessData(HtlcTimeoutTx(
       InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(4000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       12,
       BlockHeight(0)
-    ), PlaceHolderSig)
+    ), PlaceHolderSig, Nil, Nil)
     (htlcSuccess, htlcTimeout)
   }
 
@@ -129,7 +129,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("adjust previous anchor transaction outputs") {
     val (commitTx, initialAnchorTx) = createAnchorTx()
-    val previousAnchorTx = ClaimLocalAnchorWithWitnessData(initialAnchorTx).updateTx(initialAnchorTx.tx.copy(
+    val previousAnchorTx = ClaimLocalAnchorWithWitnessData(initialAnchorTx, Nil, Nil).updateTx(initialAnchorTx.tx.copy(
       txIn = Seq(
         initialAnchorTx.tx.txIn.head,
         // The previous funding attempt added two wallet inputs:

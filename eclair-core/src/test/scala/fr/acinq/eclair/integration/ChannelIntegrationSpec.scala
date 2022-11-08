@@ -37,7 +37,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, TxOwner}
 import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TestUtils, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
 
 import java.util.UUID
@@ -455,9 +455,17 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
   test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
-    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29742, "eclair.api.port" -> 28092).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
+    var mapA = Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
+    var mapB = Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
+    var mapC = Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
+    if (useExternalSigner) {
+      mapA = mapA + ("eclair.bitcoind.use-external-signer" -> true)
+      mapB = mapB + ("eclair.bitcoind.use-external-signer" -> true)
+      mapC = mapC + ("eclair.bitcoind.use-external-signer" -> true)
+    }
+    instantiateEclairNode("A", ConfigFactory.parseMap(mapA.asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(mapB.asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(mapC.asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
   }
 
   test("connect nodes") {
@@ -626,6 +634,10 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     awaitAnnouncements(1)
   }
 
+}
+
+class StandardChannelIntegrationWithExternalSignerSpec extends StandardChannelIntegrationSpec {
+  override val useExternalSigner: Boolean = true
 }
 
 abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {

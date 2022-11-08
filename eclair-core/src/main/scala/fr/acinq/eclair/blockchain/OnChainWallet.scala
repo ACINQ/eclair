@@ -16,8 +16,10 @@
 
 package fr.acinq.eclair.blockchain
 
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.ProcessPsbtResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -35,8 +37,10 @@ trait OnChainChannelFunder {
   /** Fund the provided transaction by adding inputs (and a change output if necessary). */
   def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty)(implicit ec: ExecutionContext): Future[FundTransactionResponse]
 
-  /** Sign the wallet inputs of the provided transaction. */
-  def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse]
+  /**
+   * sign a PSBT. Result may be partially signed: only inputs known to our bitcoin core wallet will be signed
+   */
+  def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse]
 
   /**
    * Publish a transaction on the bitcoin network.

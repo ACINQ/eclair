@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat._
@@ -34,6 +33,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
 
 class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
+
+  override val useExternalSigner = false
 
   override def beforeAll(): Unit = {
     startBitcoind()

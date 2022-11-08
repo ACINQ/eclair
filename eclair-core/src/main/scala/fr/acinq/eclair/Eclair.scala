@@ -24,7 +24,7 @@ import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, Script}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
@@ -169,6 +169,12 @@ trait Eclair {
 
   def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[PaymentEvent]
 
+  def getOnchainMasterPubKey(account: Long): String
+
+  def getOnchainMasterMasterFingerprintHex: String
+
+  def getDescriptors(fingerprint: Int, chain_opt: Option[String], account: Long): (List[String], List[String])
+
   def stop(): Future[Unit]
 }
 
@@ -304,8 +310,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32] = {
+    val feeRate = appKit.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(confirmationTarget.toInt)
     appKit.wallet match {
-      case w: BitcoinCoreClient => w.sendToAddress(address, amount, confirmationTarget)
+      case w: BitcoinCoreClient => w.sendToPubkeyScript(Script.write(addressToPublicKeyScript(address, appKit.nodeParams.chainHash)), amount, feeRate)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
@@ -637,6 +644,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = true).mapTo[PaymentEvent]
   }
 
+  override def getDescriptors(fingerprint: Int, chain_opt: Option[String], account: Long): (List[String], List[String]) = this.appKit.nodeParams.onchainKeyManager.getDescriptors(fingerprint, chain_opt, account)
+
+  override def getOnchainMasterPubKey(account: Long): String = this.appKit.nodeParams.onchainKeyManager.getOnchainMasterPubKey(account)
+
   override def stop(): Future[Unit] = {
     // README: do not make this smarter or more complex !
     // eclair can simply and cleanly be stopped by killing its process without fear of losing data, payments, ... and it should remain this way.
@@ -644,4 +655,6 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     sys.exit(0)
     Future.successful(())
   }
+
+  override def getOnchainMasterMasterFingerprintHex: String = this.appKit.nodeParams.onchainKeyManager.getOnchainMasterMasterFingerprintHex
 }
