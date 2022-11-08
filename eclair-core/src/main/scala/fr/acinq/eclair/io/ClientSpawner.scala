@@ -21,6 +21,7 @@ import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator.Put
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.SubscriptionsComplete
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.tor.Socks5ProxyParams
@@ -29,6 +30,7 @@ import fr.acinq.eclair.wire.protocol.NodeAddress
 class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef) extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[ClientSpawner.ConnectionRequest])
+  context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
   if (context.system.hasExtension(Cluster)) {
     val roles = context.system.extension(Cluster).selfRoles

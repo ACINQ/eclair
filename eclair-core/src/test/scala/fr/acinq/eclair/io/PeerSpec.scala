@@ -17,10 +17,10 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
-import akka.actor.testkit.typed.scaladsl.{LoggingTestKit, ScalaTestWithActorTestKit}
+import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.{ActorContext, ActorRef, FSM, PoisonPill, Status}
+import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -49,11 +49,13 @@ import java.nio.channels.ServerSocketChannel
 import scala.concurrent.duration._
 import scala.util.Success
 
-class PeerSpec extends ScalaTestWithActorTestKit(ConfigFactory.parseString("akka.actor.debug.event-stream=on").withFallback(ConfigFactory.load("application"))) with FixtureAnyFunSuiteLike {
+class PeerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load()) with FixtureAnyFunSuiteLike {
 
   import akka.actor.typed.scaladsl.adapter._
 
-  implicit def classicSystem = system.toClassic
+  implicit def classicSystem: ActorSystem = system.toClassic
+
+  override val patienceConfig: PatienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
 
   import PeerSpec._
 
@@ -125,20 +127,25 @@ class PeerSpec extends ScalaTestWithActorTestKit(ConfigFactory.parseString("akka
     probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
+  /** We need to be careful to avoir race conditions due to event stream asynchronous nature */
+  def spawnClientSpawner(f: FixtureParam): Unit = {
+    import f._
+    val readyListener = TestProbe("ready-listener")
+    classicSystem.eventStream.subscribe(readyListener.ref, classOf[SubscriptionsComplete])
+    TestUtils.waitEventStreamSynced(classicSystem.eventStream)
+    // this actor listens to connection requests and creates connections
+    testKit.spawn(Behaviors.setup[Any] { context =>
+      context.toClassic.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
+      Behaviors.ignore[Any]
+    })
+    // make sure that the actor has registered to system.eventStream to prevent race conditions
+    readyListener.expectMsg(SubscriptionsComplete(classOf[ClientSpawner]))
+  }
+
   test("successfully connect to peer at user request") { f =>
     import f._
 
-    // make sure that the actor has registered to system.eventStream to prevent race conditions
-    LoggingTestKit
-      
-      .debug("to channel class fr.acinq.eclair.io.ClientSpawner$ConnectionRequest")
-      .expect {
-        // this actor listens to connection requests and creates connections
-        testKit.spawn(Behaviors.setup[Any] { context =>
-          context.toClassic.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
-          Behaviors.ignore[Any]
-        })
-      }(testKit.system)
+    spawnClientSpawner(f)
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val (mockServer, serverAddress) = createMockServer()
@@ -150,24 +157,14 @@ class PeerSpec extends ScalaTestWithActorTestKit(ConfigFactory.parseString("akka
     probe.send(peer, Peer.Connect(remoteNodeId, mockAddress_opt, probe.ref, isPersistent = true))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    val patienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
-    eventually(patienceConfig.timeout, patienceConfig.interval, mockServer.accept() != null)
+    eventually(mockServer.accept() != null)
     mockServer.close()
   }
 
   test("return connection failure for a peer with an invalid dns host name") { f =>
     import f._
 
-    // make sure that the actor has registered to system.eventStream to prevent race conditions
-    LoggingTestKit
-      .debug("to channel class fr.acinq.eclair.io.ClientSpawner$ConnectionRequest")
-      .expect {
-        // this actor listens to connection requests and creates connections
-        testKit.spawn(Behaviors.setup[Any] { context =>
-          context.toClassic.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
-          Behaviors.ignore[Any]
-        })
-      }(testKit.system)
+    spawnClientSpawner(f)
 
     val invalidDnsHostname_opt = NodeAddress.fromParts("eclair.invalid", 9735).toOption
     assert(invalidDnsHostname_opt.nonEmpty)
@@ -182,16 +179,7 @@ class PeerSpec extends ScalaTestWithActorTestKit(ConfigFactory.parseString("akka
   test("successfully reconnect to peer at startup when there are existing channels", Tag("auto_reconnect")) { f =>
     import f._
 
-    // make sure that the actor has registered to system.eventStream to prevent race conditions
-    LoggingTestKit
-      .debug("to channel class fr.acinq.eclair.io.ClientSpawner$ConnectionRequest")
-      .expect {
-        // this actor listens to connection requests and creates connections
-        testKit.spawn(Behaviors.setup[Any] { context =>
-          context.toClassic.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
-          Behaviors.ignore[Any]
-        })
-      }(testKit.system)
+    spawnClientSpawner(f)
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val (mockServer, serverAddress) = createMockServer()
@@ -205,8 +193,7 @@ class PeerSpec extends ScalaTestWithActorTestKit(ConfigFactory.parseString("akka
     probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal)))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    val patienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
-    eventually(patienceConfig.timeout, patienceConfig.interval, mockServer.accept() != null)
+    eventually(mockServer.accept() != null)
     mockServer.close()
   }
 
