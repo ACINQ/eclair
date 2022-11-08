@@ -241,7 +241,7 @@ class PeerSpec extends FixtureSpec {
 
     eventually {
       probe.send(peer, Peer.GetPeerInfo(None))
-      probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED
+      assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)
     }
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
