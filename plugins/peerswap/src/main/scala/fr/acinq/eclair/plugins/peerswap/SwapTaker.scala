@@ -144,7 +144,7 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
   implicit val timeout: Timeout = 30 seconds
 
   private val feeRatePerKw: FeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
-  private val premium = (feeRatePerKw * claimByInvoiceTxWeight / 1000).toLong.sat // TODO: how should swap receiver calculate an acceptable premium?
+  private val premium = 0 // (feeRatePerKw * claimByInvoiceTxWeight / 1000).toLong.sat // TODO: how should swap receiver calculate an acceptable premium?
   private val maxOpeningFee = (feeRatePerKw * openingTxWeight / 1000).toLong.sat // TODO: how should swap out initiator calculate an acceptable swap opening tx fee?
   private def takerPrivkey(swapId: String): PrivateKey = keyManager.openingPrivateKey(SwapKeyManager.keyPath(swapId)).privateKey
   private def takerPubkey(swapId: String): PublicKey = takerPrivkey(swapId).publicKey
@@ -249,6 +249,8 @@ private class SwapTaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
 
     receiveSwapMessage[AwaitOpeningTxConfirmedMessages](context, "awaitOpeningTxConfirmed") {
       case OpeningTxConfirmed(opening) => validateOpeningTx(request, agreement, openingTxBroadcasted, opening.tx, isInitiator)
+      case SwapMessageReceived(resend: OpeningTxBroadcasted) if resend == openingTxBroadcasted =>
+        Behaviors.same
       case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
       case SwapMessageReceived(m) => sendCoopClose(request, s"Invalid message received during awaitOpeningTxConfirmed: $m")
       case InvoiceExpired => sendCoopClose(request, "Timeout waiting for opening tx to confirm.")
