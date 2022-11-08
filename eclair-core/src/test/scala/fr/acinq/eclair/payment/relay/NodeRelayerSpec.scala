@@ -862,17 +862,17 @@ object NodeRelayerSpec {
   // It should be forwarded to the next trampoline node.
   val nextTrampolinePacket = OnionRoutingPacket(0, hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619", randomBytes(PaymentOnionCodecs.trampolineOnionPayloadLength), randomBytes32())
 
-  val outgoingAmount = 4000000 msat
+  val outgoingAmount = 40_000_000 msat
   val outgoingExpiry = CltvExpiry(490000)
   val outgoingNodeKey = randomKey()
   val outgoingNodeId = outgoingNodeKey.publicKey
 
-  val incomingAmount = 5000000 msat
+  val incomingAmount = 41_000_000 msat
   val incomingSecret = randomBytes32()
-  val incomingMultiPart: Seq[NodeRelayPacket] = Seq(
-    createValidIncomingPacket(2000000 msat, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
-    createValidIncomingPacket(2000000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry),
-    createValidIncomingPacket(1000000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry)
+  val incomingMultiPart = Seq(
+    createValidIncomingPacket(15_000_000 msat, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
+    createValidIncomingPacket(15_000_000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry),
+    createValidIncomingPacket(11_000_000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry)
   )
   val incomingSinglePart = createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry)
   val incomingAsyncPayment: Seq[NodeRelayPacket] = incomingMultiPart.map(p => p.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(p.innerPayload.amountToForward, p.innerPayload.outgoingCltv, outgoingNodeId)))
