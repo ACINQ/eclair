@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrategy}
 import fr.acinq.eclair.crypto.Noise.KeyPair
-import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnchainKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
@@ -54,6 +54,7 @@ import scala.jdk.CollectionConverters._
  */
 case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
+                      onchainKeyManager: OnchainKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
                       alias: String,
@@ -157,6 +158,7 @@ object NodeParams extends Logging {
     val oldSeedPath = new File(datadir, "seed.dat")
     val nodeSeedFilename: String = "node_seed.dat"
     val channelSeedFilename: String = "channel_seed.dat"
+    val onchainSeedFilename: String = "onchain_seed.dat"
 
     def getSeed(filename: String): ByteVector = {
       val seedPath = new File(datadir, filename)
@@ -174,7 +176,8 @@ object NodeParams extends Logging {
 
     val nodeSeed = getSeed(nodeSeedFilename)
     val channelSeed = getSeed(channelSeedFilename)
-    Seeds(nodeSeed, channelSeed)
+    val onchainSeed = getSeed(onchainSeedFilename)
+    Seeds(nodeSeed, channelSeed, onchainSeed)
   }
 
   private val chain2Hash: Map[String, ByteVector32] = Map(
@@ -205,7 +208,7 @@ object NodeParams extends Logging {
     }
   }
 
-  def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
+  def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager, onchainKeyManager: OnchainKeyManager,
                      torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator,
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
@@ -454,6 +457,7 @@ object NodeParams extends Logging {
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
+      onchainKeyManager = onchainKeyManager,
       instanceId = instanceId,
       blockHeight = blockHeight,
       alias = nodeAlias,

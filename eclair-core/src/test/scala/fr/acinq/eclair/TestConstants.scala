@@ -22,7 +22,7 @@ import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnchainKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
@@ -76,11 +76,13 @@ object TestConstants {
     val seed: ByteVector32 = ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3") // 02aaaa...
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val onchainKeyManager = new LocalOnchainKeyManager(ByteVector.fromValidHex("01" * 32), Block.RegtestGenesisBlock.hash)
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
+      onchainKeyManager,
       blockHeight = new AtomicLong(defaultBlockHeight),
       alias = "alice",
       color = Color(1, 2, 3),
@@ -235,10 +237,12 @@ object TestConstants {
     val seed: ByteVector32 = ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492") // 02bbbb...
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val onchainKeyManager = new LocalOnchainKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
+      onchainKeyManager,
       blockHeight = new AtomicLong(defaultBlockHeight),
       alias = "bob",
       color = Color(4, 5, 6),
