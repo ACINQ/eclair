@@ -70,7 +70,7 @@ abstract class FixtureSpec extends FixtureAnyFunSuite
 
   def cleanupFixture(fixture: FixtureParam): Unit
 
-  override def withFixture(test: OneArgTest): Outcome = {
+  final override def withFixture(test: OneArgTest): Outcome = {
     var doLog = true
     try {
       val fixture = createFixture(test)
@@ -86,7 +86,7 @@ abstract class FixtureSpec extends FixtureAnyFunSuite
     }
   }
 
-  def maybeLog(testName: String, doLog: Boolean): Unit = {
+  final def maybeLog(testName: String, doLog: Boolean): Unit = {
     val loggerFactory = MyContextSelector.Singleton.getLoggerContext(testName)
     val root = loggerFactory.getLogger("ROOT")
     val capturingAppender = root.getAppender("MyCapturingAppender").asInstanceOf[MyCapturingAppender]
