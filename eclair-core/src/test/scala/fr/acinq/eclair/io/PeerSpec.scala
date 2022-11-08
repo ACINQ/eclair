@@ -153,7 +153,9 @@ class PeerSpec extends FixtureSpec {
     probe.send(peer, Peer.Connect(remoteNodeId, mockAddress_opt, probe.ref, isPersistent = true))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    eventually(mockServer.accept() != null)
+    eventually {
+      assert(mockServer.accept() != null)
+    }
     mockServer.close()
   }
 
@@ -189,7 +191,9 @@ class PeerSpec extends FixtureSpec {
     probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal)))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    eventually(mockServer.accept() != null)
+    eventually {
+      assert(mockServer.accept() != null)
+    }
     mockServer.close()
   }
 
@@ -264,14 +268,18 @@ class PeerSpec extends FixtureSpec {
     peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     channel.expectMsg(INPUT_DISCONNECTED)
     channel.expectMsg(INPUT_RECONNECTED(peerConnection2.ref, localInit, remoteInit))
-    eventually(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection == peerConnection2.ref)
+    eventually {
+      assert(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection == peerConnection2.ref)
+    }
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     channel.expectMsg(INPUT_DISCONNECTED)
     channel.expectMsg(INPUT_RECONNECTED(peerConnection3.ref, localInit, remoteInit))
-    eventually(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection == peerConnection3.ref)
+    eventually {
+      assert(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection == peerConnection3.ref)
+    }
   }
 
   test("send state transitions to child reconnection actor", Tag("auto_reconnect"), Tag("with_node_announcement")) { f =>
@@ -309,7 +317,9 @@ class PeerSpec extends FixtureSpec {
 
     val open = createOpenChannelMessage()
     peerConnection.send(peer, open)
-    eventually(peer.stateData.channels.nonEmpty)
+    eventually {
+      assert(peer.stateData.channels.nonEmpty)
+    }
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].temporaryChannelId == open.temporaryChannelId)
     channel.expectMsg(open)
 
@@ -433,7 +443,9 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.isEmpty)
     val open = createOpenDualFundedChannelMessage()
     peerConnection.send(peer, open)
-    eventually(peer.stateData.channels.nonEmpty)
+    eventually {
+      assert(peer.stateData.channels.nonEmpty)
+    }
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].dualFunded)
     channel.expectMsg(open)
   }
@@ -446,7 +458,9 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.isEmpty)
     val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard)))
     peerConnection.send(peer, open)
-    eventually(peer.stateData.channels.nonEmpty)
+    eventually {
+      assert(peer.stateData.channels.nonEmpty)
+    }
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     assert(init.channelType == ChannelTypes.Standard)
     assert(!init.dualFunded)
