@@ -417,7 +417,7 @@ object LightningMessageCodecs {
 
   val unknownMessageCodec: Codec[UnknownMessage] = (
     ("tag" | uint16) ::
-      ("message" | varsizebinarydata)
+      ("message" | bytes)
     ).as[UnknownMessage]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
