@@ -375,24 +375,24 @@ object PaymentOnion {
         Right(Standard(records))
       }
 
-      def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], userCustomTlvs: Seq[GenericTlv] = Nil): Standard = {
-        val tlvs = Seq(
-          Some(AmountToForward(amount)),
-          Some(OutgoingCltv(expiry)),
-          Some(PaymentData(paymentSecret, amount)),
-          paymentMetadata.map(m => PaymentMetadata(m))
-        ).flatten
-        Standard(TlvStream(tlvs, userCustomTlvs))
-      }
-
-      def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): Standard = {
+      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, customTlvs: Seq[GenericTlv] = Nil): Standard = {
         val tlvs = Seq(
           Some(AmountToForward(amount)),
           Some(OutgoingCltv(expiry)),
           Some(PaymentData(paymentSecret, totalAmount)),
           paymentMetadata.map(m => PaymentMetadata(m))
         ).flatten
-        Standard(TlvStream(tlvs ++ additionalTlvs, userCustomTlvs))
+        Standard(TlvStream(tlvs, customTlvs))
+      }
+
+      def createKeySendPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, preimage: ByteVector32, customTlvs: Seq[GenericTlv] = Nil): Standard = {
+        val tlvs = Seq(
+          AmountToForward(amount),
+          OutgoingCltv(expiry),
+          PaymentData(preimage, totalAmount),
+          KeySend(preimage)
+        )
+        Standard(TlvStream(tlvs, customTlvs))
       }
 
       /** Create a trampoline outer payload. */

@@ -21,37 +21,23 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 
 trait Invoice {
-  val amount_opt: Option[MilliSatoshi]
-
-  val createdAt: TimestampSecond
-
-  val nodeId: PublicKey
-
-  val paymentHash: ByteVector32
-
-  val paymentSecret: ByteVector32
-
-  val paymentMetadata: Option[ByteVector]
-
-  val description: Either[String, ByteVector32]
-
-  val extraEdges: Seq[Invoice.ExtraEdge]
-
-  val relativeExpiry: FiniteDuration
-
-  val minFinalCltvExpiryDelta: CltvExpiryDelta
-
-  val features: Features[InvoiceFeature]
-
-  def isExpired(): Boolean = createdAt + relativeExpiry.toSeconds <= TimestampSecond.now()
-
+  // @formatter:off
+  def nodeId: PublicKey
+  def amount_opt: Option[MilliSatoshi]
+  def createdAt: TimestampSecond
+  def paymentHash: ByteVector32
+  def description: Either[String, ByteVector32]
+  def relativeExpiry: FiniteDuration
+  def minFinalCltvExpiryDelta: CltvExpiryDelta
+  def features: Features[InvoiceFeature]
+  def isExpired(now: TimestampSecond = TimestampSecond.now()): Boolean = createdAt + relativeExpiry.toSeconds <= now
   def toString: String
+  // @formatter:on
 }
 
 object Invoice {
@@ -59,6 +45,7 @@ object Invoice {
   sealed trait ExtraEdge {
     // @formatter:off
     def sourceNodeId: PublicKey
+    def targetNodeId: PublicKey
     def feeBase: MilliSatoshi
     def feeProportionalMillionths: Long
     def cltvExpiryDelta: CltvExpiryDelta

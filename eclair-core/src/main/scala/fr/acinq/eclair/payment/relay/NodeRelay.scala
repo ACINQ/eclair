@@ -35,10 +35,10 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
-import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
+import fr.acinq.eclair.payment.send.{ClearRecipient, MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
-import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
 
@@ -232,7 +232,7 @@ class NodeRelay private(nodeParams: NodeParams,
         context.log.warn(s"rejecting async payment at block $blockHeight; was not triggered after waiting ${nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks} blocks")
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
         stopping()
-      case WrappedCurrentBlockHeight(blockHeight) =>
+      case WrappedCurrentBlockHeight(_) =>
         Behaviors.same
       case CancelAsyncPayment =>
         context.log.warn(s"payment sender canceled a waiting async payment")
@@ -309,25 +309,26 @@ class NodeRelay private(nodeParams: NodeParams,
       case Some(features) =>
         val extraEdges = payloadOut.invoiceRoutingInfo.getOrElse(Nil).flatMap(Bolt11Invoice.toExtraEdges(_, payloadOut.outgoingNodeId))
         val paymentSecret = payloadOut.paymentSecret.get // NB: we've verified that there was a payment secret in validateRelay
-        if (Features(features).hasFeature(Features.BasicMultiPartPayment)) {
+        val recipient = ClearRecipient(payloadOut.outgoingNodeId, Features(features).invoiceFeatures(), payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, extraEdges, payloadOut.paymentMetadata)
+        if (recipient.features.hasFeature(Features.BasicMultiPartPayment)) {
           context.log.debug("sending the payment to non-trampoline recipient using MPP")
-          val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, payloadOut.paymentMetadata, extraEdges, routeParams)
+          val payment = SendMultiPartPayment(payFsmAdapters, recipient, nodeParams.maxPaymentAttempts, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
           payFSM ! payment
           payFSM
         } else {
           context.log.debug("sending the payment to non-trampoline recipient without MPP")
-          val finalPayload = FinalPayload.Standard.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, payloadOut.paymentMetadata)
-          val payment = SendPaymentToNode(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, extraEdges, routeParams)
+          val payment = SendPaymentToNode(payFsmAdapters, payloadOut.amountToForward, recipient, nodeParams.maxPaymentAttempts, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
           payFSM ! payment
           payFSM
         }
       case None =>
         context.log.debug("sending the payment to the next trampoline node")
-        val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
         val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
-        val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, None, routeParams = routeParams, additionalTlvs = Seq(OnionPaymentPayloadTlv.TrampolineOnion(packetOut)))
+        val recipient = ClearRecipient(payloadOut.outgoingNodeId, Features.empty, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, nextTrampolineOnion_opt = Some(packetOut))
+        val payment = SendMultiPartPayment(payFsmAdapters, recipient, nodeParams.maxPaymentAttempts, routeParams)
+        val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
         payFSM ! payment
         payFSM
     }
