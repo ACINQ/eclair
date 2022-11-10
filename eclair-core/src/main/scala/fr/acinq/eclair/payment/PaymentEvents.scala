@@ -22,10 +22,10 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
-import fr.acinq.eclair.payment.send.{ClearRecipient, Recipient}
+import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, Recipient}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
-import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
+import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
 import scodec.bits.ByteVector
 
@@ -183,11 +183,12 @@ object PaymentFailure {
       .isDefined
 
   /** Ignore the channel outgoing from the given nodeId in the given route. */
-  private def ignoreNodeOutgoingChannel(nodeId: PublicKey, hops: Seq[Hop], ignore: Ignore): Ignore = {
+  private def ignoreNodeOutgoingEdge(nodeId: PublicKey, hops: Seq[Hop], ignore: Ignore): Ignore = {
     hops.collectFirst {
       case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId)
+      case hop: BlindedHop if hop.nodeId == nodeId => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
     } match {
-      case Some(faultyChannel) => ignore + faultyChannel
+      case Some(faultyEdge) => ignore + faultyEdge
       case None => ignore
     }
   }
@@ -207,7 +208,7 @@ object PaymentFailure {
           case _ => false
         }
         if (shouldIgnore) {
-          ignoreNodeOutgoingChannel(nodeId, hops, ignore)
+          ignoreNodeOutgoingEdge(nodeId, hops, ignore)
         } else {
           // We were using an outdated channel update, we should retry with the new one and nobody should be penalized.
           ignore
@@ -217,7 +218,7 @@ object PaymentFailure {
         ignore + nodeId
       }
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
-      ignoreNodeOutgoingChannel(nodeId, hops, ignore)
+      ignoreNodeOutgoingEdge(nodeId, hops, ignore)
     case UnreadableRemoteFailure(_, hops) =>
       // We don't know which node is sending garbage, let's blacklist all nodes except the one we are directly connected to and the final recipient.
       val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1).toSet
@@ -237,19 +238,26 @@ object PaymentFailure {
 
   /** Update the recipient routing hints based on more recent data received. */
   def updateExtraEdges(failures: Seq[PaymentFailure], recipient: Recipient): Recipient = {
-    // We're only interested in the last channel update received per channel.
-    val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
-      case (current, failure) => failure match {
-        case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => current.updated(f.update.shortChannelId, f.update)
-        case _ => current
-      }
-    }
     recipient match {
       case r: ClearRecipient =>
+        // We're only interested in the last channel update received per channel.
+        val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
+          case (current, failure) => failure match {
+            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => current.updated(f.update.shortChannelId, f.update)
+            case _ => current
+          }
+        }
         val extraEdges1 = r.extraEdges.map(edge => updates.get(edge.shortChannelId) match {
           case Some(u) => edge.update(u)
           case None => edge
         })
+        r.copy(extraEdges = extraEdges1)
+      case r: BlindedRecipient =>
+        val failedBlindedRoutes = failures.flatMap {
+          case RemoteFailure(_, route, Sphinx.DecryptedFailurePacket(_, _: InvalidOnionBlinding)) => route.collect { case hop: BlindedHop => hop.dummyId }
+          case _ => Nil
+        }.toSet
+        val extraEdges1 = r.extraEdges.filterNot(e => failedBlindedRoutes.contains(e.dummyId))
         r.copy(extraEdges = extraEdges1)
       case r => r
     }

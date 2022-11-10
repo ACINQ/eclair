@@ -634,8 +634,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
         else if (htlcId == 1L) Some(nonRelayedHtlc2In.add)
         else None
       }
-      def localNodeId: PublicKey = randomExtendedPrivateKey.publicKey
-      def remoteNodeId: PublicKey = randomExtendedPrivateKey.publicKey
+      def localNodeId: PublicKey = randomExtendedPrivateKey().publicKey
+      def remoteNodeId: PublicKey = randomExtendedPrivateKey().publicKey
       def capacity: Satoshi = Long.MaxValue.sat
       def availableBalanceForReceive: MilliSatoshi = Long.MaxValue.msat
       def availableBalanceForSend: MilliSatoshi = 0.msat
@@ -722,7 +722,7 @@ object PostRestartHtlcCleanerSpec {
   val (paymentHash1, paymentHash2, paymentHash3) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3))
 
   def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): UpdateAddHtlc = {
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops), SpontaneousRecipient(e, finalAmount, finalExpiry, randomBytes32()))
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops), SpontaneousRecipient(e, finalAmount, finalExpiry, randomBytes32()))
     UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
   }
 
@@ -731,7 +731,7 @@ object PostRestartHtlcCleanerSpec {
   def buildHtlcOut(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = OutgoingHtlc(buildHtlc(htlcId, channelId, paymentHash))
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(a, b, channelUpdate_ab))), SpontaneousRecipient(b, finalAmount, finalExpiry, randomBytes32()))
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(a, b, channelUpdate_ab))), SpontaneousRecipient(b, finalAmount, finalExpiry, randomBytes32()))
     IncomingHtlc(UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None))
   }
 

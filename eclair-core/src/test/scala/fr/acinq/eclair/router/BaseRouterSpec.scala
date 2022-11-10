@@ -22,21 +22,26 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
+import fr.acinq.eclair.Features.{BasicMultiPartPayment, RouteBlinding, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
-import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate, RealScidStatus, ShortChannelIdAssigned, ShortIds}
-import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.payment.send.BlindedRecipient
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 
@@ -86,7 +91,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val alias_ag_private = ShortChannelId.generateLocalAlias()
 
   val scids_ab = ShortIds(RealScidStatus.Final(scid_ab), alias_ab, None)
-  val scids_ag_private = ShortIds(RealScidStatus.Final(scid_ag_private),  alias_ag_private, None)
+  val scids_ag_private = ShortIds(RealScidStatus.Final(scid_ag_private), alias_ag_private, None)
 
   val chan_ab = channelAnnouncement(scid_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
   val chan_bc = channelAnnouncement(scid_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
@@ -219,6 +224,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, watcher)))
     }
   }
+
 }
 
 object BaseRouterSpec {
@@ -233,4 +239,29 @@ object BaseRouterSpec {
 
   def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: ChannelUpdate): ChannelHop =
     ChannelHop(nodeId, nextNodeId, HopRelayParams.FromAnnouncement(channelUpdate))
+
+  def createBlindedRoute(source: PublicKey, target: PublicKey, amount: MilliSatoshi, expiry: CltvExpiry, update: ChannelUpdate, preimage: ByteVector32): (Bolt12Invoice, BlindedHop, BlindedRecipient) = {
+    val recipientKey = randomKey()
+    val features = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional, RouteBlinding -> Mandatory)
+    val offer = Offer(None, "Bolt12 r0cks", recipientKey.publicKey, features, Block.RegtestGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, amount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
+    val blindedPayloads = {
+      import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
+      val constraints = PaymentConstraints(expiry, 0 msat)
+      val allowedFeatures = AllowedFeatures(Features.empty)
+      val relay = PaymentRelay(update.cltvExpiryDelta, update.feeProportionalMillionths, update.feeBaseMsat)
+      Seq(
+        TlvStream[RouteBlindingEncryptedDataTlv](OutgoingChannelId(update.shortChannelId), relay, allowedFeatures, constraints),
+        TlvStream[RouteBlindingEncryptedDataTlv](PathId(hex"2a"), allowedFeatures, constraints),
+      ).map {
+        tlvs => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(tlvs).require.bytes
+      }
+    }
+    val blindedRoute = Sphinx.RouteBlinding.create(randomKey(), Seq(source, target), blindedPayloads).route
+    val paymentInfo = OfferTypes.PaymentInfo(update.feeBaseMsat, update.feeProportionalMillionths, update.cltvExpiryDelta, 0 msat, amount, Features.empty)
+    val invoice = Bolt12Invoice(offer, invoiceRequest, preimage, recipientKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+    val recipient = BlindedRecipient(invoice, amount, expiry, Nil)
+    val hop = BlindedHop(recipient.extraEdges.head.dummyId, blindedRoute, paymentInfo)
+    (invoice, hop, recipient)
+  }
 }

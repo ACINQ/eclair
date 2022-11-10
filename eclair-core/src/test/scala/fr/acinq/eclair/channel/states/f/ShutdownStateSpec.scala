@@ -59,7 +59,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       // alice sends an HTLC to bob
       val h1 = Crypto.sha256(r1)
       val recipient1 = SpontaneousRecipient(TestConstants.Bob.nodeParams.nodeId, 300_000_000 msat, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), r1)
-      val cmd1 = OutgoingPaymentPacket.buildOutgoingPayment(sender.ref, Upstream.Local(UUID.randomUUID), h1, makeSingleHopRoute(recipient1.amount, recipient1.nodeId), recipient1).get.cmd.copy(commit = false)
+      val cmd1 = OutgoingPaymentPacket.buildOutgoingPayment(sender.ref, TestConstants.Alice.nodeParams.privateKey, Upstream.Local(UUID.randomUUID), h1, makeSingleHopRoute(recipient1.amount, recipient1.nodeId), recipient1).get.cmd.copy(commit = false)
       alice ! cmd1
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -68,7 +68,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       // alice sends another HTLC to bob
       val h2 = Crypto.sha256(r2)
       val recipient2 = SpontaneousRecipient(TestConstants.Bob.nodeParams.nodeId, 200_000_000 msat, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), r2)
-      val cmd2 = OutgoingPaymentPacket.buildOutgoingPayment(sender.ref, Upstream.Local(UUID.randomUUID), h2, makeSingleHopRoute(recipient2.amount, recipient2.nodeId), recipient2).get.cmd.copy(commit = false)
+      val cmd2 = OutgoingPaymentPacket.buildOutgoingPayment(sender.ref, TestConstants.Alice.nodeParams.privateKey, Upstream.Local(UUID.randomUUID), h2, makeSingleHopRoute(recipient2.amount, recipient2.nodeId), recipient2).get.cmd.copy(commit = false)
       alice ! cmd2
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]

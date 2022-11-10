@@ -507,7 +507,7 @@ object Router {
     override val nodeId = route.introductionNodeId
     override val nextNodeId = route.blindedNodes.last.blindedPublicKey
     override val cltvExpiryDelta = paymentInfo.cltvExpiryDelta
-    override val length = route.blindedNodes.length - 1
+    override val length = route.length
     override def fee(amount: MilliSatoshi): MilliSatoshi = paymentInfo.fee(amount)
     // @formatter:on
   }

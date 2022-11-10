@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.payment.send._
-import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
+import fr.acinq.eclair.router.BaseRouterSpec.{channelHopFromUpdate, createBlindedRoute}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Announcements, RouteNotFound}
@@ -175,6 +175,33 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 1200.msat)
     metricsListener.expectNoMessage()
+  }
+
+  test("successful first attempt (blinded)") { f =>
+    import f._
+
+    assert(payFsm.stateName == WAIT_FOR_PAYMENT_REQUEST)
+    val (_, hop_be, recipient) = createBlindedRoute(b, e, finalAmount, expiry, channelUpdate_be, paymentPreimage)
+    val payment = SendMultiPartPayment(sender.ref, recipient, 1, routeParams)
+    sender.send(payFsm, payment)
+
+    router.expectMsg(RouteRequest(nodeParams.nodeId, recipient.nodeId, finalAmount, maxFee, extraEdges = recipient.extraEdges, routeParams = routeParams.copy(randomize = false), allowMultiPart = true, paymentContext = Some(cfg.paymentContext)))
+    assert(payFsm.stateName == WAIT_FOR_ROUTES)
+
+    val routes = Seq(
+      Route(600_000 msat, hop_ab_1 :: hop_be :: Nil),
+      Route(400_000 msat, hop_ab_2 :: hop_be :: Nil),
+    )
+    router.send(payFsm, RouteResponse(routes))
+    val childPayments = childPayFsm.expectMsgType[SendPaymentToRoute] :: childPayFsm.expectMsgType[SendPaymentToRoute] :: Nil
+    assert(childPayments.map(_.route).toSet == routes.map(r => Right(r)).toSet)
+    childPayments.foreach(childPayment => assert(childPayment.recipient == recipient))
+    assert(childPayments.map(_.amount).toSet == Set(400_000 msat, 600_000 msat))
+    assert(payFsm.stateName == PAYMENT_IN_PROGRESS)
+
+    val result = fulfillPendingPayments(f, 2)
+    assert(result.amountWithFees == 1_000_200.msat)
+    assert(result.nonTrampolineFees == 200.msat)
   }
 
   test("successful retry") { f =>
@@ -366,6 +393,27 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val routeRequest = router.expectMsgType[RouteRequest]
     assert(routeRequest.extraEdges.head == extraEdge)
     assert(routeRequest.ignore.channels.map(_.shortChannelId) == Set(channelUpdateBE1.shortChannelId))
+  }
+
+  test("retry with ignored blinded route") { f =>
+    import f._
+
+    val (_, hop_be, recipient) = createBlindedRoute(b, e, finalAmount, expiry, channelUpdate_be, paymentPreimage)
+    val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
+    sender.send(payFsm, payment)
+    assert(router.expectMsgType[RouteRequest].extraEdges == recipient.extraEdges)
+    val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil)
+    router.send(payFsm, RouteResponse(Seq(route)))
+    childPayFsm.expectMsgType[SendPaymentToRoute]
+    childPayFsm.expectNoMessage(100 millis)
+
+    // The blinded route fails to relay the payment.
+    val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
+    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.hops, Sphinx.DecryptedFailurePacket(b, InvalidOnionBlinding(randomBytes32()))))))
+    // We retry and ignore that blinded route.
+    val routeRequest = router.expectMsgType[RouteRequest]
+    assert(routeRequest.extraEdges.isEmpty)
+    assert(routeRequest.ignore.channels.map(_.shortChannelId) == Set(hop_be.dummyId))
   }
 
   test("update routing hints") { () =>

@@ -31,10 +31,10 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Success, Try}
@@ -308,8 +308,9 @@ object MultiPartHandler {
                     (nodeParams.nodeId, RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(dummyConstraints, pathId)).require.bytes),
                   )
                   val blindedRoute = Sphinx.RouteBlinding.create(randomKey(), dummyPath.map(_._1), dummyPath.map(_._2))
+                  val paymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 0 msat, Features.empty)
                   val invoiceFeatures = featuresTrampolineOpt.remove(Features.RouteBlinding).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-                  val invoice = Bolt12Invoice(r.offer, r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.channelConf.minFinalExpiryDelta, invoiceFeatures, Seq(blindedRoute.route))
+                  val invoice = Bolt12Invoice(r.offer, r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.channelConf.minFinalExpiryDelta, invoiceFeatures, Seq(PaymentBlindedRoute(blindedRoute.route, paymentInfo)))
                   context.log.debug("generated invoice={} for offerId={}", invoice.toString, r.offer.offerId)
                   nodeParams.db.payments.addIncomingBlindedPayment(invoice, paymentPreimage, Map(blindedRoute.lastBlinding -> pathId.data), r.paymentType)
                   invoice

@@ -50,10 +50,12 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     signedInvoice
   }
 
-  def createBlindedPath(sessionKey: PrivateKey, introductionNodeId: PublicKey, recipientNodeId: PublicKey, pathId: ByteVector): BlindedRoute = {
+  def createBlindedPath(sessionKey: PrivateKey, introductionNodeId: PublicKey, recipientNodeId: PublicKey, pathId: ByteVector): PaymentBlindedRoute = {
+    val paymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 0 msat, Features.empty)
     val introductionPayload = blindedRouteDataCodec.encode(TlvStream(Seq(PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty)))).require.bytes
     val recipientPayload = blindedRouteDataCodec.encode(TlvStream(Seq(PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty)))).require.bytes
-    Sphinx.RouteBlinding.create(sessionKey, Seq(introductionNodeId, recipientNodeId), Seq(introductionPayload, recipientPayload)).route
+    val route = Sphinx.RouteBlinding.create(sessionKey, Seq(introductionNodeId, recipientNodeId), Seq(introductionPayload, recipientPayload)).route
+    PaymentBlindedRoute(route, paymentInfo)
   }
 
   test("check invoice signature") {
@@ -178,7 +180,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerBtc.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()))),
+        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()).route)),
         PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
         Amount(amount),
         Description(offerBtc.description),
@@ -195,7 +197,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerBtc.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()))),
+        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()).route)),
         PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
         Amount(amount),
         Description(offerBtc.description),
@@ -212,7 +214,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerBtc.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()))),
+        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()).route)),
         PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
         Amount(amount),
         Description(offerBtc.description),
@@ -231,7 +233,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerOtherChains.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()))),
+        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()).route)),
         PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
         Amount(amount),
         Description(offerOtherChains.description),
@@ -248,7 +250,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerOtherChains.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()))),
+        Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, nodeKey.publicKey, randomBytes32()).route)),
         PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
         Amount(amount),
         Description(offerOtherChains.description),
@@ -268,7 +270,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
       Amount(765432 msat),
       Description("minimal invoice"),
       NodeId(nodeKey.publicKey),
-      Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, randomKey().publicKey, randomBytes32()))),
+      Paths(Seq(createBlindedPath(randomKey(), randomKey().publicKey, randomKey().publicKey, randomBytes32()).route)),
       PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 765432 msat, Features.empty))),
       CreatedAt(TimestampSecond(123456789L)),
       PaymentHash(randomBytes32()),
@@ -324,7 +326,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
       FeaturesTlv(features),
       Issuer(issuer),
       NodeId(nodeKey.publicKey),
-      Paths(Seq(path)),
+      Paths(Seq(path.route)),
       PaymentPathsInfo(Seq(payInfo)),
       Quantity(quantity),
       PayerKey(payerKey),
@@ -348,7 +350,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(codedDecoded.features == features)
     assert(codedDecoded.issuer.contains(issuer))
     assert(codedDecoded.nodeId.value.drop(1) == nodeKey.publicKey.value.drop(1))
-    assert(codedDecoded.blindedPaths == Seq(path))
+    assert(codedDecoded.blindedPaths == Seq(path.route))
     assert(codedDecoded.quantity.contains(quantity))
     assert(codedDecoded.payerKey.contains(payerKey))
     assert(codedDecoded.payerNote.contains(payerNote))

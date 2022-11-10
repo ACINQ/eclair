@@ -23,18 +23,19 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
-import fr.acinq.eclair.payment.send.{ClearRecipient, ClearTrampolineRecipient}
+import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, ClearTrampolineRecipient}
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Router.{BlindedHop, NodeHop, Route}
 import fr.acinq.eclair.transactions.Transactions.InputInfo
-import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecondLong, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecondLong, UInt64, nodeFee, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -64,7 +65,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
   def testBuildOutgoingPayment(): Unit = {
     val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret)
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops), recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops), recipient)
     assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
     assert(payment.cmd.amount == amount_ab)
     assert(payment.cmd.cltvExpiry == expiry_ab)
@@ -122,7 +123,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
   test("build outgoing payment for direct peer") {
     val recipient = ClearRecipient(b, Features.empty, finalAmount, finalExpiry, paymentSecret, paymentMetadata_opt = Some(paymentMetadata))
     val route = Route(finalAmount, hops.take(1))
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
     assert(payment.cmd.amount == finalAmount)
     assert(payment.cmd.cltvExpiry == finalExpiry)
     assert(payment.cmd.paymentHash == paymentHash)
@@ -143,7 +144,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
   test("build outgoing payment with greater amount and expiry") {
     val recipient = ClearRecipient(b, Features.empty, finalAmount, finalExpiry, paymentSecret, paymentMetadata_opt = Some(paymentMetadata))
     val route = Route(finalAmount, hops.take(1))
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
 
     // let's peel the onion
     val add_b = UpdateAddHtlc(randomBytes32(), 0, finalAmount + 100.msat, paymentHash, finalExpiry + CltvExpiryDelta(6), payment.cmd.onion, None)
@@ -153,6 +154,89 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_b.totalAmount == finalAmount)
     assert(payload_b.expiry == finalExpiry)
     assert(payload_b.asInstanceOf[FinalPayload.Standard].paymentSecret == paymentSecret)
+  }
+
+  test("build outgoing blinded payment") {
+    val (_, route, recipient) = longBlindedHops(hex"deadbeef")
+    assert(recipient.extraEdges.length == 1)
+    assert(recipient.extraEdges.head.sourceNodeId == c)
+    assert(recipient.extraEdges.head.targetNodeId == e)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
+    assert(payment.cmd.amount >= amount_ab)
+    assert(payment.cmd.cltvExpiry == expiry_ab)
+    assert(payment.cmd.nextBlindingKey_opt.isEmpty)
+
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Right(relay_b@ChannelRelayPacket(_, payload_b, packet_c)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    assert(packet_c.payload.length == PaymentOnionCodecs.paymentOnionPayloadLength)
+    assert(relay_b.amountToForward >= amount_bc)
+    assert(relay_b.outgoingCltv == expiry_bc)
+    assert(payload_b.outgoingChannelId == channelUpdate_bc.shortChannelId)
+    assert(relay_b.relayFeeMsat == fee_b)
+    assert(relay_b.expiryDelta == channelUpdate_bc.cltvExpiryDelta)
+    assert(payload_b.isInstanceOf[IntermediatePayload.ChannelRelay.Standard])
+
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None)
+    val Right(relay_c@ChannelRelayPacket(_, payload_c, packet_d)) = decrypt(add_c, priv_c.privateKey, Features(RouteBlinding -> Optional))
+    assert(packet_d.payload.length == PaymentOnionCodecs.paymentOnionPayloadLength)
+    assert(relay_c.amountToForward == amount_cd)
+    assert(relay_c.outgoingCltv == expiry_cd)
+    assert(payload_c.outgoingChannelId == channelUpdate_cd.shortChannelId)
+    assert(relay_c.relayFeeMsat == fee_c)
+    assert(relay_c.expiryDelta == channelUpdate_cd.cltvExpiryDelta)
+    assert(payload_c.isInstanceOf[IntermediatePayload.ChannelRelay.Blinded])
+    val blinding_d = payload_c.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextBlinding
+
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, Some(blinding_d))
+    val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features(RouteBlinding -> Optional))
+    assert(packet_e.payload.length == PaymentOnionCodecs.paymentOnionPayloadLength)
+    assert(relay_d.amountToForward == amount_de)
+    assert(relay_d.outgoingCltv == expiry_de)
+    assert(payload_d.outgoingChannelId == channelUpdate_de.shortChannelId)
+    assert(relay_d.relayFeeMsat == fee_d)
+    assert(relay_d.expiryDelta == channelUpdate_de.cltvExpiryDelta)
+    assert(payload_d.isInstanceOf[IntermediatePayload.ChannelRelay.Blinded])
+    val blinding_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextBlinding
+
+    val add_e = UpdateAddHtlc(randomBytes32(), 2, amount_de, paymentHash, expiry_de, packet_e, Some(blinding_e))
+    val Right(FinalPacket(_, payload_e)) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
+    assert(payload_e.amount == finalAmount)
+    assert(payload_e.totalAmount == finalAmount)
+    assert(payload_e.expiry == finalExpiry)
+    assert(payload_e.isInstanceOf[FinalPayload.Blinded])
+    assert(payload_e.asInstanceOf[FinalPayload.Blinded].pathId == hex"deadbeef")
+  }
+
+  test("build outgoing blinded payment starting at our node") {
+    val (route, recipient) = singleBlindedHop(hex"123456")
+    assert(recipient.extraEdges.length == 1)
+    assert(recipient.extraEdges.head.sourceNodeId == a)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
+    assert(payment.cmd.amount == finalAmount)
+    assert(payment.cmd.cltvExpiry == finalExpiry)
+    assert(payment.cmd.nextBlindingKey_opt.nonEmpty)
+
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Right(FinalPacket(_, payload_b)) = decrypt(add_b, priv_b.privateKey, Features(RouteBlinding -> Optional))
+    assert(payload_b.amount == finalAmount)
+    assert(payload_b.totalAmount == finalAmount)
+    assert(payload_b.expiry == finalExpiry)
+    assert(payload_b.isInstanceOf[FinalPayload.Blinded])
+    assert(payload_b.asInstanceOf[FinalPayload.Blinded].pathId == hex"123456")
+  }
+
+  test("build outgoing blinded payment with greater amount and expiry") {
+    val (route, recipient) = singleBlindedHop(hex"123456")
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
+
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount + 100.msat, payment.cmd.paymentHash, payment.cmd.cltvExpiry + CltvExpiryDelta(6), payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Right(FinalPacket(_, payload_b)) = decrypt(add_b, priv_b.privateKey, Features(RouteBlinding -> Optional))
+    assert(payload_b.amount == finalAmount)
+    assert(payload_b.totalAmount == finalAmount)
+    assert(payload_b.expiry == finalExpiry)
   }
 
   test("build outgoing trampoline payment") {
@@ -165,7 +249,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val recipient = ClearTrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHops, randomBytes32())
     assert(recipient.trampolineAmount == amount_bc)
     assert(recipient.trampolineExpiry == expiry_bc)
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient)
     assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
     assert(payment.cmd.amount == amount_ab)
     assert(payment.cmd.cltvExpiry == expiry_ab)
@@ -192,7 +276,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards the trampoline payment to d.
     val recipient_d = ClearRecipient(d, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(packet_d))
-    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
+    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
     assert(payment_d.cmd.amount == amount_cd)
     assert(payment_d.cmd.cltvExpiry == expiry_cd)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_d.cmd.amount, paymentHash, payment_d.cmd.cltvExpiry, payment_d.cmd.onion, None)
@@ -211,7 +295,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // d forwards the trampoline payment to e.
     val recipient_e = ClearRecipient(e, Features.empty, inner_d.amountToForward, inner_d.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(packet_e))
-    val Success(payment_e) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_d)), paymentHash, Route(inner_d.amountToForward, Seq(channelHopFromUpdate(d, e, channelUpdate_de))), recipient_e)
+    val Success(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_d.privateKey, Upstream.Trampoline(Seq(add_d)), paymentHash, Route(inner_d.amountToForward, Seq(channelHopFromUpdate(d, e, channelUpdate_de))), recipient_e)
     assert(payment_e.cmd.amount == amount_de)
     assert(payment_e.cmd.cltvExpiry == expiry_de)
     val add_e = UpdateAddHtlc(randomBytes32(), 4, payment_e.cmd.amount, paymentHash, payment_e.cmd.cltvExpiry, payment_e.cmd.onion, None)
@@ -231,7 +315,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val recipient = ClearTrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHops, randomBytes32())
     assert(recipient.trampolineAmount == amount_bc)
     assert(recipient.trampolineExpiry == expiry_bc)
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient)
     assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
     assert(payment.cmd.amount == amount_ab)
     assert(payment.cmd.cltvExpiry == expiry_ab)
@@ -254,7 +338,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards the trampoline payment to d.
     val recipient_d = ClearRecipient(d, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(packet_d))
-    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
+    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
     assert(payment_d.cmd.amount == amount_cd)
     assert(payment_d.cmd.cltvExpiry == expiry_cd)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_d.cmd.amount, paymentHash, payment_d.cmd.cltvExpiry, payment_d.cmd.onion, None)
@@ -277,7 +361,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val routingHintOverflow = List(List.fill(7)(Bolt11Invoice.ExtraHop(randomKey().publicKey, ShortChannelId(1), 10 msat, 100, CltvExpiryDelta(12))))
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("#reckless"), CltvExpiryDelta(18), None, None, routingHintOverflow)
     val recipient = ClearTrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHops, randomBytes32())
-    assert(buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient).isFailure)
+    assert(buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient).isFailure)
   }
 
   test("fail to build outgoing trampoline payment when too much payment metadata is provided") {
@@ -285,19 +369,28 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val invoiceFeatures = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, TrampolinePaymentPrototype -> Optional)
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("Much payment very metadata"), CltvExpiryDelta(9), features = invoiceFeatures, paymentMetadata = Some(paymentMetadata))
     val recipient = ClearTrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHops, randomBytes32())
-    assert(buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient).isFailure)
+    assert(buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient).isFailure)
   }
 
   test("fail to build outgoing payment with invalid route") {
     val dummyKey = randomKey().publicKey
     val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret)
     val route = Route(finalAmount, hops ++ Seq(BlindedHop(Alias(0), BlindedRoute(dummyKey, dummyKey, Seq(BlindedNode(dummyKey, hex"deadbeef"), BlindedNode(dummyKey, hex"deadbeef"))), PaymentInfo(0 msat, 0, CltvExpiryDelta(24), 1 msat, 100 msat, Features.empty))))
-    assert(buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient).isFailure)
+    assert(buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient).isFailure)
+  }
+
+  test("fail to build outgoing blinded payment with invalid route") {
+    val (_, route, recipient) = longBlindedHops(hex"deadbeef")
+    assert(buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient).isSuccess)
+    val routeMissingBlindedHop = route.copy(hops = route.hops.dropRight(1))
+    assert(buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, routeMissingBlindedHop, recipient).isFailure)
+    val routeNotEndingWithBlindedHop = route.copy(hops = route.hops :+ channelHopFromUpdate(d, e, channelUpdate_de))
+    assert(buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, routeNotEndingWithBlindedHop, recipient).isFailure)
   }
 
   test("fail to decrypt when the onion is invalid") {
     val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret)
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops), recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops), recipient)
     val add = UpdateAddHtlc(randomBytes32(), 1, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion.copy(payload = payment.cmd.onion.payload.reverse), None)
     val Left(failure) = decrypt(add, priv_b.privateKey, Features.empty)
     assert(failure.isInstanceOf[InvalidOnionHmac])
@@ -307,7 +400,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val invoiceFeatures = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, TrampolinePaymentPrototype -> Optional)
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_e.privateKey, Left("invoice"), CltvExpiryDelta(6), paymentSecret = paymentSecret, features = invoiceFeatures, paymentMetadata = Some(hex"010203"))
     val recipient = ClearTrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHops, randomBytes32())
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient)
 
     val add_b = UpdateAddHtlc(randomBytes32(), 1, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(add_b, priv_b.privateKey, Features.empty)
@@ -317,7 +410,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards an invalid trampoline onion to d.
     val recipient_d = ClearRecipient(d, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(packet_d.copy(payload = packet_d.payload.reverse)))
-    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
+    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_d.cmd.amount, paymentHash, payment_d.cmd.cltvExpiry, payment_d.cmd.onion, None)
     val Left(failure) = decrypt(add_d, priv_d.privateKey, Features.empty)
     assert(failure.isInstanceOf[InvalidOnionHmac])
@@ -325,16 +418,54 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
   test("fail to decrypt when payment hash doesn't match associated data") {
     val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret)
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash.reverse, Route(finalAmount, hops), recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash.reverse, Route(finalAmount, hops), recipient)
     val add = UpdateAddHtlc(randomBytes32(), 1, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
     val Left(failure) = decrypt(add, priv_b.privateKey, Features.empty)
     assert(failure.isInstanceOf[InvalidOnionHmac])
   }
 
+  test("fail to decrypt when blinded route data is invalid") {
+    val (route, recipient) = {
+      val features = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional, RouteBlinding -> Mandatory)
+      val offer = Offer(None, "Bolt12 r0cks", c, features, Block.RegtestGenesisBlock.hash)
+      val invoiceRequest = InvoiceRequest(offer, amount_bc, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
+      val blindedPayloads = encodeBlindedPayloads(Seq(
+        intermediateBlindedPayloadFromUpdate(channelUpdate_bc, CltvExpiry(501_000)),
+        finalBlindedPayload(hex"deadbeef", CltvExpiry(500_000))
+      ))
+      // We send the wrong blinded payload to the introduction node.
+      val tmpBlindedRoute = Sphinx.RouteBlinding.create(randomKey(), Seq(b, c), blindedPayloads).route
+      val blindedRoute = tmpBlindedRoute.copy(blindedNodes = tmpBlindedRoute.blindedNodes.reverse)
+      val paymentInfo = OfferTypes.PaymentInfo(fee_b, 0, channelUpdate_bc.cltvExpiryDelta, 0 msat, amount_bc, Features.empty)
+      val invoice = Bolt12Invoice(offer, invoiceRequest, paymentPreimage, priv_c.privateKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+      val recipient = BlindedRecipient(invoice, amount_bc, expiry_bc, Nil)
+      val route = Route(amount_bc, Seq(
+        channelHopFromUpdate(a, b, channelUpdate_ab),
+        BlindedHop(recipient.extraEdges.head.dummyId, blindedRoute, paymentInfo)
+      ))
+      (route, recipient)
+    }
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
+    assert(payment.cmd.amount == amount_bc + fee_b)
+
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Left(failure) = decrypt(add_b, priv_b.privateKey, Features(RouteBlinding -> Optional))
+    assert(failure.isInstanceOf[InvalidOnionBlinding])
+  }
+
+  test("fail to decrypt blinded payment when route blinding is disabled") {
+    val (route, recipient) = singleBlindedHop(hex"00000000")
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Left(failure) = decrypt(add_b, priv_b.privateKey, Features.empty) // b doesn't support route blinding
+    assert(failure == InvalidOnionPayload(UInt64(10), 0))
+  }
+
   test("fail to decrypt at the final node when amount has been modified by next-to-last node") {
     val recipient = ClearRecipient(b, Features.empty, finalAmount, finalExpiry, paymentSecret)
     val route = Route(finalAmount, hops.take(1))
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
     val add = UpdateAddHtlc(randomBytes32(), 1, payment.cmd.amount - 100.msat, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
     val Left(failure) = decrypt(add, priv_b.privateKey, Features.empty)
     assert(failure == FinalIncorrectHtlcAmount(payment.cmd.amount - 100.msat))
@@ -343,10 +474,62 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
   test("fail to decrypt at the final node when expiry has been modified by next-to-last node") {
     val recipient = ClearRecipient(b, Features.empty, finalAmount, finalExpiry, paymentSecret)
     val route = Route(finalAmount, hops.take(1))
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
     val add = UpdateAddHtlc(randomBytes32(), 1, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry - CltvExpiryDelta(12), payment.cmd.onion, None)
     val Left(failure) = decrypt(add, priv_b.privateKey, Features.empty)
     assert(failure == FinalIncorrectCltvExpiry(payment.cmd.cltvExpiry - CltvExpiryDelta(12)))
+  }
+
+  test("fail to decrypt blinded payment at the final node when amount is too low") {
+    val (route, recipient) = shortBlindedHops()
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    assert(payment.outgoingChannel == channelUpdate_cd.shortChannelId)
+    assert(payment.cmd.amount == amount_cd)
+
+    // A smaller amount is sent to d, who doesn't know that it's invalid.
+    val add_d = UpdateAddHtlc(randomBytes32(), 0, amount_de, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features(RouteBlinding -> Optional))
+    assert(payload_d.outgoingChannelId == channelUpdate_de.shortChannelId)
+    assert(relay_d.amountToForward < amount_de)
+    assert(payload_d.isInstanceOf[IntermediatePayload.ChannelRelay.Blinded])
+    val blinding_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextBlinding
+
+    // When e receives a smaller amount than expected, it rejects the payment.
+    val add_e = UpdateAddHtlc(randomBytes32(), 0, relay_d.amountToForward, paymentHash, relay_d.outgoingCltv, packet_e, Some(blinding_e))
+    val Left(failure) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
+    assert(failure.isInstanceOf[InvalidOnionBlinding])
+  }
+
+  test("fail to decrypt blinded payment at the final node when expiry is too low") {
+    val (route, recipient) = shortBlindedHops()
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    assert(payment.outgoingChannel == channelUpdate_cd.shortChannelId)
+    assert(payment.cmd.cltvExpiry == expiry_cd)
+
+    // A smaller expiry is sent to d, who doesn't know that it's invalid.
+    val add_d = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, paymentHash, expiry_de, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features(RouteBlinding -> Optional))
+    assert(payload_d.outgoingChannelId == channelUpdate_de.shortChannelId)
+    assert(relay_d.outgoingCltv < expiry_de)
+    assert(payload_d.isInstanceOf[IntermediatePayload.ChannelRelay.Blinded])
+    val blinding_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextBlinding
+
+    // When e receives a smaller expiry than expected, it rejects the payment.
+    val add_e = UpdateAddHtlc(randomBytes32(), 0, relay_d.amountToForward, paymentHash, relay_d.outgoingCltv, packet_e, Some(blinding_e))
+    val Left(failure) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
+    assert(failure.isInstanceOf[InvalidOnionBlinding])
+  }
+
+  test("fail to decrypt blinded payment at intermediate node when expiry is too high") {
+    val routeExpiry = expiry_de
+    val (route, recipient) = shortBlindedHops(routeExpiry)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    assert(payment.outgoingChannel == channelUpdate_cd.shortChannelId)
+    assert(payment.cmd.cltvExpiry > routeExpiry)
+
+    val add_d = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Left(failure) = decrypt(add_d, priv_d.privateKey, Features(RouteBlinding -> Optional))
+    assert(failure.isInstanceOf[InvalidOnionBlinding])
   }
 
   /**
@@ -362,7 +545,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val invoiceFeatures = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, TrampolinePaymentPrototype -> Optional)
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_e.privateKey, Left("invoice"), CltvExpiryDelta(6), paymentSecret = paymentSecret, features = invoiceFeatures)
     val recipient = ClearTrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHops, randomBytes32())
-    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, trampolineChannelHops), recipient)
 
     val add_b = UpdateAddHtlc(randomBytes32(), 1, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(add_b, priv_b.privateKey, Features.empty)
@@ -376,14 +559,14 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards the trampoline payment to d.
     val recipient_d = ClearRecipient(d, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(packet_d))
-    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
+    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_d.cmd.amount, paymentHash, payment_d.cmd.cltvExpiry, payment_d.cmd.onion, None)
     val Right(NodeRelayPacket(_, _, inner_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
 
     // d forwards an invalid amount to e (the outer total amount doesn't match the inner amount).
     val invalidTotalAmount = inner_d.amountToForward - 1.msat
     val recipient_e = ClearRecipient(e, Features.empty, invalidTotalAmount, inner_d.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(packet_e))
-    val Success(payment_e) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_d)), paymentHash, Route(inner_d.amountToForward, Seq(channelHopFromUpdate(d, e, channelUpdate_de))), recipient_e)
+    val Success(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_d.privateKey, Upstream.Trampoline(Seq(add_d)), paymentHash, Route(inner_d.amountToForward, Seq(channelHopFromUpdate(d, e, channelUpdate_de))), recipient_e)
     val add_e = UpdateAddHtlc(randomBytes32(), 4, payment_e.cmd.amount, paymentHash, payment_e.cmd.cltvExpiry, payment_e.cmd.onion, None)
     val Left(failure) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(failure == FinalIncorrectHtlcAmount(invalidTotalAmount))
@@ -395,14 +578,14 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards the trampoline payment to d.
     val recipient_d = ClearRecipient(d, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(packet_d))
-    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
+    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_d.cmd.amount, paymentHash, payment_d.cmd.cltvExpiry, payment_d.cmd.onion, None)
     val Right(NodeRelayPacket(_, _, inner_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
 
     // d forwards an invalid amount to e (the outer total amount doesn't match the inner amount).
     val invalidExpiry = inner_d.outgoingCltv - CltvExpiryDelta(12)
     val recipient_e = ClearRecipient(e, Features.empty, inner_d.amountToForward, invalidExpiry, randomBytes32(), nextTrampolineOnion_opt = Some(packet_e))
-    val Success(payment_e) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_d)), paymentHash, Route(inner_d.amountToForward, Seq(channelHopFromUpdate(d, e, channelUpdate_de))), recipient_e)
+    val Success(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_d.privateKey, Upstream.Trampoline(Seq(add_d)), paymentHash, Route(inner_d.amountToForward, Seq(channelHopFromUpdate(d, e, channelUpdate_de))), recipient_e)
     val add_e = UpdateAddHtlc(randomBytes32(), 4, payment_e.cmd.amount, paymentHash, payment_e.cmd.cltvExpiry, payment_e.cmd.onion, None)
     val Left(failure) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(failure == FinalIncorrectCltvExpiry(invalidExpiry))
@@ -414,7 +597,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards the payment to d.
     val recipient_d = ClearRecipient(d, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(packet_d))
-    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
+    val Success(payment_d) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, Seq(channelHopFromUpdate(c, d, channelUpdate_cd))), recipient_d)
     // A trampoline relay is very similar to a final node: it can validate that the HTLC amount matches the onion outer amount.
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_d.cmd.amount - 100.msat, paymentHash, payment_d.cmd.cltvExpiry, payment_d.cmd.onion, None)
     val Left(failure) = decrypt(add_d, priv_d.privateKey, Features.empty)
@@ -427,6 +610,56 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     // A trampoline relay is very similar to a final node: it validates that the HTLC expiry matches the onion outer expiry.
     val Left(failure) = decrypt(invalidAdd, priv_c.privateKey, Features.empty)
     assert(failure == FinalIncorrectCltvExpiry(expiry_bc - CltvExpiryDelta(12)))
+  }
+
+  test("build htlc failure onion") {
+    // a -> b -> c -> d -> e
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret)
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops), recipient)
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, amount_ab, paymentHash, expiry_ab, payment.cmd.onion, None)
+    val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None)
+    val Right(ChannelRelayPacket(_, _, packet_d)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, None)
+    val Right(ChannelRelayPacket(_, _, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, None)
+    val Right(FinalPacket(_, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+
+    // e returns a failure
+    val failure = IncorrectOrUnknownPaymentDetails(finalAmount, BlockHeight(currentBlockCount))
+    val Right(fail_e) = buildHtlcFailure(priv_e.privateKey, CMD_FAIL_HTLC(add_e.id, Right(failure)), add_e)
+    assert(fail_e.id == add_e.id)
+    val Right(fail_d) = buildHtlcFailure(priv_d.privateKey, CMD_FAIL_HTLC(add_d.id, Left(fail_e.reason)), add_d)
+    assert(fail_d.id == add_d.id)
+    val Right(fail_c) = buildHtlcFailure(priv_c.privateKey, CMD_FAIL_HTLC(add_c.id, Left(fail_d.reason)), add_c)
+    assert(fail_c.id == add_c.id)
+    val Right(fail_b) = buildHtlcFailure(priv_b.privateKey, CMD_FAIL_HTLC(add_b.id, Left(fail_c.reason)), add_b)
+    assert(fail_b.id == add_b.id)
+    val Success(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, payment.sharedSecrets)
+    assert(failingNode == e)
+    assert(decryptedFailure == failure)
+  }
+
+  test("build htlc failure onion (blinded payment)") {
+    // a -> b -> c -> d -> e, blinded after c
+    val (_, route, recipient) = longBlindedHops(hex"0451")
+    val Success(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None)
+    val Right(ChannelRelayPacket(_, payload_c, packet_d)) = decrypt(add_c, priv_c.privateKey, Features(RouteBlinding -> Optional))
+
+    // only the introduction node is allowed to send an `update_fail_htlc` message: downstream nodes must send
+    // `update_fail_malformed_htlc` which doesn't use onion encryption
+    val failure = InvalidOnionBlinding(Sphinx.hash(add_c.onionRoutingPacket))
+    val Right(fail_c) = buildHtlcFailure(priv_c.privateKey, CMD_FAIL_HTLC(add_c.id, Right(failure)), add_c)
+    assert(fail_c.id == add_c.id)
+    val Right(fail_b) = buildHtlcFailure(priv_b.privateKey, CMD_FAIL_HTLC(add_b.id, Left(fail_c.reason)), add_b)
+    assert(fail_b.id == add_b.id)
+    val Success(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, payment.sharedSecrets)
+    assert(failingNode == c)
+    assert(decryptedFailure == failure)
   }
 
 }
@@ -445,9 +678,30 @@ object PaymentPacketSpec {
     }
   }
 
-  def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes32())
+  def randomExtendedPrivateKey(): ExtendedPrivateKey = DeterministicWallet.generate(randomBytes32())
 
-  val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.nodeKeyManager.nodeKey, TestConstants.Bob.nodeKeyManager.nodeKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
+  def intermediateBlindedPayloadFromUpdate(update: ChannelUpdate, maxCltvExpiry: CltvExpiry): TlvStream[RouteBlindingEncryptedDataTlv] = {
+    TlvStream(
+      RouteBlindingEncryptedDataTlv.OutgoingChannelId(update.shortChannelId),
+      RouteBlindingEncryptedDataTlv.PaymentRelay(update.cltvExpiryDelta, update.feeProportionalMillionths, update.feeBaseMsat),
+      RouteBlindingEncryptedDataTlv.AllowedFeatures(Features.empty),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(maxCltvExpiry, 0 msat)
+    )
+  }
+
+  def finalBlindedPayload(pathId: ByteVector, maxCltvExpiry: CltvExpiry): TlvStream[RouteBlindingEncryptedDataTlv] = {
+    TlvStream(
+      RouteBlindingEncryptedDataTlv.PathId(pathId),
+      RouteBlindingEncryptedDataTlv.AllowedFeatures(Features.empty),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(maxCltvExpiry, 0 msat)
+    )
+  }
+
+  def encodeBlindedPayloads(payloads: Seq[TlvStream[RouteBlindingEncryptedDataTlv]]): Seq[ByteVector] = {
+    payloads.map(tlvs => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(tlvs).require.bytes)
+  }
+
+  val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.nodeKeyManager.nodeKey, TestConstants.Bob.nodeKeyManager.nodeKey, randomExtendedPrivateKey(), randomExtendedPrivateKey(), randomExtendedPrivateKey())
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
   val sig = Crypto.sign(Crypto.sha256(ByteVector.empty), priv_a.privateKey)
   val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(0), 42000 msat, 0 msat, 0, 500_000_000 msat)
@@ -486,6 +740,70 @@ object PaymentPacketSpec {
 
   val expiry_ab = expiry_bc + channelUpdate_bc.cltvExpiryDelta
   val amount_ab = amount_bc + fee_b
+
+  // fully blinded route a -> b
+  def singleBlindedHop(pathId: ByteVector = hex"deadbeef", routeExpiry: CltvExpiry = CltvExpiry(500_000)): (Route, BlindedRecipient) = {
+    // The recipient generates a different key for each payment to hide its real nodeId.
+    val recipientKey = randomKey()
+    val features = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional, RouteBlinding -> Mandatory)
+    val offer = Offer(None, "Bolt12 r0cks", recipientKey.publicKey, features, Block.RegtestGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
+    val blindedPayloads = encodeBlindedPayloads(Seq(
+      intermediateBlindedPayloadFromUpdate(channelUpdate_ab, routeExpiry),
+      finalBlindedPayload(pathId, routeExpiry)
+    ))
+    val blindedRoute = Sphinx.RouteBlinding.create(randomKey(), Seq(a, b), blindedPayloads).route
+    val paymentInfo = OfferTypes.PaymentInfo(channelUpdate_ab.feeBaseMsat, channelUpdate_ab.feeProportionalMillionths, channelUpdate_ab.cltvExpiryDelta, 0 msat, finalAmount, Features.empty)
+    val invoice = Bolt12Invoice(offer, invoiceRequest, paymentPreimage, recipientKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+    val recipient = BlindedRecipient(invoice, finalAmount, finalExpiry, Nil)
+    val hops = Seq(BlindedHop(recipient.extraEdges.head.dummyId, blindedRoute, paymentInfo))
+    (Route(finalAmount, hops), recipient)
+  }
+
+  // route c -> d -> e, blinded after d
+  def shortBlindedHops(routeExpiry: CltvExpiry = CltvExpiry(500_000)): (Route, BlindedRecipient) = {
+    // The recipient generates a different key for each payment to hide its real nodeId.
+    val recipientKey = randomKey()
+    val features = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional, RouteBlinding -> Mandatory)
+    val offer = Offer(None, "Bolt12 r0cks", recipientKey.publicKey, features, Block.RegtestGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
+    val blindedPayloads = encodeBlindedPayloads(Seq(
+      intermediateBlindedPayloadFromUpdate(channelUpdate_de, routeExpiry),
+      finalBlindedPayload(hex"deadbeef", routeExpiry)
+    ))
+    val blindedRoute = Sphinx.RouteBlinding.create(randomKey(), Seq(d, e), blindedPayloads).route
+    val paymentInfo = OfferTypes.PaymentInfo(fee_d, 0, channelUpdate_de.cltvExpiryDelta, 0 msat, finalAmount, Features.empty)
+    val invoice = Bolt12Invoice(offer, invoiceRequest, paymentPreimage, recipientKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+    val recipient = BlindedRecipient(invoice, finalAmount, finalExpiry, Nil)
+    val hops = Seq(
+      channelHopFromUpdate(c, d, channelUpdate_cd),
+      BlindedHop(recipient.extraEdges.head.dummyId, blindedRoute, paymentInfo)
+    )
+    (Route(finalAmount, hops), recipient)
+  }
+
+  // route a -> b -> c -> d -> e, blinded after c
+  def longBlindedHops(pathId: ByteVector): (Bolt12Invoice, Route, BlindedRecipient) = {
+    val features = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional, RouteBlinding -> Mandatory)
+    val offer = Offer(None, "Bolt12 r0cks", e, features, Block.RegtestGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
+    val routeExpiry = CltvExpiry(500_000)
+    val blindedPayloads = encodeBlindedPayloads(Seq(
+      intermediateBlindedPayloadFromUpdate(channelUpdate_cd, routeExpiry),
+      intermediateBlindedPayloadFromUpdate(channelUpdate_de, routeExpiry),
+      finalBlindedPayload(pathId, routeExpiry)
+    ))
+    val blindedRoute = Sphinx.RouteBlinding.create(randomKey(), Seq(c, d, e), blindedPayloads).route
+    val paymentInfo = OfferTypes.PaymentInfo(826_001 msat, 12, channelUpdate_cd.cltvExpiryDelta + channelUpdate_de.cltvExpiryDelta, 0 msat, finalAmount, Features.empty)
+    val invoice = Bolt12Invoice(offer, invoiceRequest, paymentPreimage, priv_e.privateKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+    val recipient = BlindedRecipient(invoice, finalAmount, finalExpiry, Nil)
+    val hops = Seq(
+      channelHopFromUpdate(a, b, channelUpdate_ab),
+      channelHopFromUpdate(b, c, channelUpdate_bc),
+      BlindedHop(recipient.extraEdges.head.dummyId, blindedRoute, paymentInfo)
+    )
+    (invoice, Route(finalAmount, hops), recipient)
+  }
 
   // simple trampoline route to e:
   //             .--.   .--.

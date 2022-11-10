@@ -39,7 +39,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.payment.send.{ClearRecipient, PaymentLifecycle}
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
-import fr.acinq.eclair.router.BaseRouterSpec.{channelAnnouncement, channelHopFromUpdate}
+import fr.acinq.eclair.router.BaseRouterSpec.{channelAnnouncement, channelHopFromUpdate, createBlindedRoute}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculationSpec.route2Ids
 import fr.acinq.eclair.router.Router._
@@ -79,10 +79,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
                             eventListener: TestProbe,
                             metricsListener: TestProbe)
 
-  def createPaymentLifecycle(storeInDb: Boolean = true, publishEvent: Boolean = true, recordMetrics: Boolean = true): PaymentFixture = {
+  def createPaymentLifecycle(invoice: Invoice, storeInDb: Boolean = true, publishEvent: Boolean = true, recordMetrics: Boolean = true): PaymentFixture = {
     val (id, parentId) = (UUID.randomUUID(), UUID.randomUUID())
     val nodeParams = TestConstants.Alice.nodeParams.copy(nodeKeyManager = testNodeKeyManager, channelKeyManager = testChannelKeyManager)
-    val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, defaultAmountMsat, d, Upstream.Local(id), Some(defaultInvoice), storeInDb, publishEvent, recordMetrics, Nil)
+    val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, defaultAmountMsat, invoice.nodeId, Upstream.Local(id), Some(invoice), storeInDb, publishEvent, recordMetrics, Nil)
     val (routerForwarder, register, sender, monitor, eventListener, metricsListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, cfg, routerForwarder.ref, register.ref))
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
@@ -100,7 +100,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("send to route") { () =>
-    val payFixture = createPaymentLifecycle(recordMetrics = false)
+    val payFixture = createPaymentLifecycle(defaultInvoice, recordMetrics = false)
     import payFixture._
     import cfg._
 
@@ -128,7 +128,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("send to route (node_id only)") { routerFixture =>
-    val payFixture = createPaymentLifecycle(recordMetrics = false)
+    val payFixture = createPaymentLifecycle(defaultInvoice, recordMetrics = false)
     import payFixture._
     import cfg._
 
@@ -157,7 +157,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("send to route (nodes not found in the graph)") { routerFixture =>
-    val payFixture = createPaymentLifecycle(recordMetrics = false)
+    val payFixture = createPaymentLifecycle(defaultInvoice, recordMetrics = false)
     import payFixture._
 
     val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedNodeRoute(Seq(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))), defaultAmountMsat, ClearRecipient(defaultInvoice, defaultAmountMsat, defaultExpiry, Nil))
@@ -174,7 +174,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("send to route (channels not found in the graph)") { routerFixture =>
-    val payFixture = createPaymentLifecycle(recordMetrics = false)
+    val payFixture = createPaymentLifecycle(defaultInvoice, recordMetrics = false)
     import payFixture._
 
     val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedChannelRoute(randomKey().publicKey, Seq(ShortChannelId(1), ShortChannelId(2)))), defaultAmountMsat, ClearRecipient(defaultInvoice, defaultAmountMsat, defaultExpiry, Nil))
@@ -191,7 +191,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("send to route (routing hints)") { routerFixture =>
-    val payFixture = createPaymentLifecycle(recordMetrics = false)
+    val payFixture = createPaymentLifecycle(defaultInvoice, recordMetrics = false)
     import payFixture._
     import cfg._
 
@@ -220,8 +220,34 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(routerForwarder.expectMsgType[RouteDidRelay].route.hops.map(_.nodeId) === Seq(a, b, c))
   }
 
+  test("send to route (blinded route)") { () =>
+    val (invoice, blindedHop, recipient) = createBlindedRoute(b, c, defaultAmountMsat, defaultExpiry, update_bc, defaultPaymentPreimage)
+    val route = Route(defaultAmountMsat, Seq(channelHopFromUpdate(a, b, update_ab), blindedHop))
+    val payFixture = createPaymentLifecycle(invoice)
+    import payFixture._
+
+    val request = SendPaymentToRoute(sender.ref, Right(route), defaultAmountMsat, recipient)
+    sender.send(paymentFSM, request)
+    routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
+    awaitCond(nodeParams.db.payments.getOutgoingPayment(cfg.id).exists(_.status == OutgoingPaymentStatus.Pending))
+    val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(cfg.id)
+    assert(outgoing.amount == defaultAmountMsat)
+    assert(outgoing.recipientAmount == defaultAmountMsat)
+    assert(outgoing.invoice.contains(invoice))
+    assert(outgoing.status == OutgoingPaymentStatus.Pending)
+
+    sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFulfill(UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentPreimage))))
+    val ps = sender.expectMsgType[PaymentSent]
+    assert(ps.id == cfg.parentId)
+    assert(ps.parts.head.route.contains(route.hops))
+    awaitCond(nodeParams.db.payments.getOutgoingPayment(cfg.id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
+
+    metricsListener.expectNoMessage()
+    assert(routerForwarder.expectMsgType[RouteDidRelay].route === route)
+  }
+
   test("payment failed (route not found)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -246,7 +272,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (route too expensive)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -278,7 +304,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (cannot build onion)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -298,7 +324,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (unparsable failure)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -343,7 +369,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (local error)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -364,7 +390,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (register error)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -384,7 +410,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -407,7 +433,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (first htlc failed on-chain)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -430,7 +456,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (disconnected before signing the first htlc)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -454,7 +480,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (TemporaryChannelFailure)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
 
     val request = SendPaymentToNode(sender.ref, defaultAmountMsat, ClearRecipient(defaultInvoice, defaultAmountMsat, defaultExpiry, Nil), 2, defaultRouteParams)
@@ -484,7 +510,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (Update)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -539,7 +565,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (Update in last attempt)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
 
     val request = SendPaymentToNode(sender.ref, defaultAmountMsat, ClearRecipient(defaultInvoice, defaultAmountMsat, defaultExpiry, Nil), 1, defaultRouteParams)
@@ -563,7 +589,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (Update in assisted route)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -607,7 +633,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (Update disabled in assisted route)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -637,7 +663,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   def testPermanentFailure(router: ActorRef, failure: FailureMessage): Unit = {
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -674,8 +700,42 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     testPermanentFailure(routerFixture.router, FailureMessageCodecs.failureMessageCodec.decode(hex"4011".bits).require.value)
   }
 
+  test("payment failed (blinded route)") { routerFixture =>
+    val (invoice, blindedHop, recipient) = createBlindedRoute(b, c, defaultAmountMsat, defaultExpiry, update_bc, defaultPaymentPreimage)
+    assert(recipient.extraEdges.length == 1)
+    val payFixture = createPaymentLifecycle(invoice)
+    import payFixture._
+
+    val request = SendPaymentToNode(sender.ref, defaultAmountMsat, recipient, 2, defaultRouteParams)
+    sender.send(paymentFSM, request)
+
+    val routeRequest1 = routerForwarder.expectMsgType[RouteRequest]
+    assert(routeRequest1.target == recipient.nodeId)
+    assert(routeRequest1.extraEdges == recipient.extraEdges)
+    routerForwarder.forward(routerFixture.router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, cmd1, Nil, sharedSecrets, _, route) = paymentFSM.stateData
+    register.expectMsg(ForwardShortId(paymentFSM.toTyped, scid_ab, cmd1))
+
+    // The payment fails inside the blinded route: the introduction node sends back an error.
+    val failure = InvalidOnionBlinding(randomBytes32())
+    val failureOnion = Sphinx.FailurePacket.create(sharedSecrets.head._1, failure)
+    sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))))
+
+    // We retry but we exclude the failed blinded route.
+    val routeRequest2 = routerForwarder.expectMsgType[RouteRequest]
+    assert(routeRequest2.target == recipient.nodeId)
+    assert(routeRequest2.extraEdges.isEmpty)
+    routerForwarder.forward(routerFixture.router)
+
+    // Without the blinded route, the router cannot find a route to the recipient.
+    val failed = sender.expectMsgType[PaymentFailed]
+    assert(failed.failures == Seq(RemoteFailure(defaultAmountMsat, route.hops, Sphinx.DecryptedFailurePacket(b, failure)), LocalFailure(defaultAmountMsat, Nil, RouteNotFound)))
+    awaitCond(nodeParams.db.payments.getOutgoingPayment(cfg.id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
+  }
+
   test("payment succeeded") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
@@ -731,7 +791,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     watcher.send(router, ValidateResult(chan_bh, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_h)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
     watcher.expectMsgType[WatchExternalChannelSpent]
 
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
 
     // we send a payment to H
@@ -783,6 +843,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("ignore failed nodes/channels") { () =>
     val route_abcd = channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil
+    val (_, blindedHop_bc, _) = createBlindedRoute(b, c, defaultAmountMsat, defaultExpiry, update_bc, defaultPaymentPreimage)
+    val blindedRoute_abc = channelHopFromUpdate(a, b, update_ab) :: blindedHop_bc :: Nil
     val testCases = Seq(
       // local failures -> ignore first channel if there is one
       (LocalFailure(defaultAmountMsat, Nil, RouteNotFound), Set.empty, Set.empty),
@@ -796,6 +858,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, PermanentChannelFailure)), Set.empty, Set(ChannelDesc(scid_bc, b, c))),
       (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(c, UnknownNextPeer)), Set.empty, Set(ChannelDesc(scid_cd, c, d))),
       (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, update_bc))), Set.empty, Set.empty),
+      (RemoteFailure(defaultAmountMsat, blindedRoute_abc, Sphinx.DecryptedFailurePacket(b, InvalidOnionBlinding(randomBytes32()))), Set.empty, Set(ChannelDesc(blindedHop_bc.dummyId, blindedHop_bc.nodeId, blindedHop_bc.nextNodeId))),
       // unreadable remote failures -> blacklist all nodes except our direct peer and the final recipient
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil), Set.empty, Set.empty),
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: NodeHop(d, e, CltvExpiryDelta(24), 0 msat) :: Nil), Set(c, d), Set.empty)
@@ -818,7 +881,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("disable database and events") { routerFixture =>
-    val payFixture = createPaymentLifecycle(storeInDb = false, publishEvent = false, recordMetrics = false)
+    val payFixture = createPaymentLifecycle(defaultInvoice, storeInDb = false, publishEvent = false, recordMetrics = false)
     import payFixture._
     import cfg._
 
@@ -839,7 +902,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("send to route (no retry on error") { () =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(defaultInvoice)
     import payFixture._
     import cfg._
 
