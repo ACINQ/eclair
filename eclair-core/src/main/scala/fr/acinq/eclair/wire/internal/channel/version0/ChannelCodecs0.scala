@@ -230,7 +230,7 @@ private[channel] object ChannelCodecs0 {
       ("nextRemoteCommit" | remoteCommitCodec) ::
         ("sent" | commitSigCodec) ::
         ("sentAfterLocalCommitIndex" | uint64overflow) ::
-        ("reSignAsap" | bool)).as[WaitingForRevocation].decodeOnly
+        ("reSignAsap" | ignore(1))).as[WaitingForRevocation].decodeOnly
 
     val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 

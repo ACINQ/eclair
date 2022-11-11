@@ -45,7 +45,7 @@ case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
 case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ByteVector64)
 case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey)
-case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
+case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 // @formatter:on
 
 // @formatter:off
@@ -779,7 +779,7 @@ object Commitments {
     commitments.remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.publicKey != commitments.remoteCommit.remotePerCommitmentPoint =>
         Left(InvalidRevocation(commitments.channelId))
-      case Left(WaitingForRevocation(theirNextCommit, _, _, _)) =>
+      case Left(WaitingForRevocation(theirNextCommit, _, _)) =>
         val receivedHtlcs = commitments.remoteChanges.signed.collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
