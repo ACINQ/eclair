@@ -37,7 +37,7 @@ import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFr
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
+import fr.acinq.eclair._
 import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -57,10 +57,11 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
     val paymentHandler = TestProbe[Any]("payment-handler")
+    val triggerer = TestProbe[AsyncPaymentTriggerer.Command]("payment-triggerer")
     val probe = TestProbe[Any]()
     // we can't spawn top-level actors with akka typed
     testKit.spawn(Behaviors.setup[Any] { context =>
-      val relayer = context.toClassic.actorOf(Relayer.props(nodeParams, router.ref.toClassic, register.ref.toClassic, paymentHandler.ref.toClassic))
+      val relayer = context.toClassic.actorOf(Relayer.props(nodeParams, router.ref.toClassic, register.ref.toClassic, paymentHandler.ref.toClassic, triggerer.ref))
       probe.ref ! relayer
       Behaviors.empty[Any]
     })

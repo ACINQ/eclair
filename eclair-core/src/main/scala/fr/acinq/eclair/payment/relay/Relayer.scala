@@ -49,7 +49,7 @@ import scala.util.Random
  * It also receives channel HTLC events (fulfill / failed) and relays those to the appropriate handlers.
  * It also maintains an up-to-date view of local channel balances.
  */
-class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
+class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command], initialized: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
 
   import Relayer._
 
@@ -58,7 +58,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, register, initialized), "post-restart-htlc-cleaner")
   private val channelRelayer = context.spawn(Behaviors.supervise(ChannelRelayer(nodeParams, register)).onFailure(SupervisorStrategy.resume), "channel-relayer")
-  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, register, NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register))).onFailure(SupervisorStrategy.resume), name = "node-relayer")
+  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, register, NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register), triggerer)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
 
   def receive: Receive = {
     case RelayForward(add) =>
@@ -119,8 +119,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
 object Relayer extends Logging {
 
-  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None): Props =
-    Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
+  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command], initialized: Option[Promise[Done]] = None): Props =
+    Props(new Relayer(nodeParams, router, register, paymentHandler, triggerer, initialized))
 
   // @formatter:off
   case class RelayFees(feeBase: MilliSatoshi, feeProportionalMillionths: Long) {
