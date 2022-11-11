@@ -409,7 +409,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val sender = TestProbe()
     val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index
     val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommit.index
-    val rHasChanges = Commitments.localHasChanges(r.stateData.asInstanceOf[PersistentChannelData].commitments)
+    val rHasChanges = r.stateData.asInstanceOf[PersistentChannelData].commitments.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
     s2r.expectMsgType[CommitSig]
