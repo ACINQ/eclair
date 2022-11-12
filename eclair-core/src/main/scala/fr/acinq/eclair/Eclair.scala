@@ -531,17 +531,36 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   private def getChannelDescs(shortChannelIds: Set[ShortChannelId])(implicit timeout: Timeout): Future[Set[ChannelDesc]] = {
+    def toChannelDesc(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey): Set[ChannelDesc] = {
+      Set(
+        ChannelDesc(shortChannelId, nodeId1, nodeId2),
+        ChannelDesc(shortChannelId, nodeId2, nodeId1))
+    }
+
+    def getLocalChannelDescs: Future[(Set[ChannelDesc], Set[ShortChannelId])] = {
+      channelsInfo(None).map { channels =>
+        channels.foldLeft((Set.empty[ChannelDesc], shortChannelIds)) { (acc, channel) =>
+          channel.data match {
+            case data: DATA_NORMAL if shortChannelIds(data.channelUpdate.shortChannelId) =>
+              val descs = toChannelDesc(data.channelUpdate.shortChannelId, channel.nodeId, appKit.nodeParams.nodeId)
+              val (channelDescs, nonLocalChannels) = acc
+              (channelDescs ++ descs, nonLocalChannels - data.channelUpdate.shortChannelId)
+            case _ => acc
+          }
+        }
+      }
+    }
+
     if (shortChannelIds.isEmpty) {
       Future.successful(Set.empty)
     } else {
       for {
+        (localChannelDescs, nonLocalChannelIds) <- getLocalChannelDescs
         channelsMap <- (appKit.router ? GetChannelsMap).mapTo[SortedMap[ShortChannelId, PublicChannel]]
       } yield {
-        shortChannelIds.flatMap { id =>
-          val c = channelsMap.getOrElse(id, throw new IllegalArgumentException(s"unknown channel: $id"))
-          Set(
-            ChannelDesc(c.ann.shortChannelId, c.ann.nodeId1, c.ann.nodeId2),
-            ChannelDesc(c.ann.shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
+        localChannelDescs ++ nonLocalChannelIds.flatMap { id =>
+          val ann = channelsMap.getOrElse(id, throw new IllegalArgumentException(s"unknown channel: $id")).ann
+          toChannelDesc(ann.shortChannelId, ann.nodeId1, ann.nodeId2)
         }
       }
     }
