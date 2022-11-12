@@ -246,7 +246,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
 
       // The resulting transaction is valid and has the right feerate.
-      assert(txA.signedTx.txid == txB.tx.buildUnsignedTx().txid)
+      assert(txA.signedTx.txid == txB.txId)
       assert(txA.signedTx.lockTime == aliceParams.lockTime)
       assert(txA.tx.localAmountIn == utxosA.sum)
       assert(txA.tx.remoteAmountIn == utxosB.sum)
@@ -412,7 +412,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
 
       // The resulting transaction is valid and has the right feerate.
-      assert(txA.signedTx.txid == txB.tx.buildUnsignedTx().txid)
+      assert(txA.signedTx.txid == txB.txId)
       assert(txA.signedTx.lockTime == aliceParams.lockTime)
       assert(txA.tx.localAmountIn == utxosA.sum)
       assert(txA.tx.remoteAmountIn == 0.sat)
@@ -507,7 +507,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
 
       // The resulting transaction doesn't contain Bob's removed inputs and outputs.
-      assert(txA.signedTx.txid == txB.tx.buildUnsignedTx().txid)
+      assert(txA.signedTx.txid == txB.txId)
       assert(txA.signedTx.lockTime == aliceParams.lockTime)
       assert(txA.signedTx.txIn.map(_.outPoint) == Seq(toOutPoint(inputA)))
       assert(txA.signedTx.txOut.length == 2)

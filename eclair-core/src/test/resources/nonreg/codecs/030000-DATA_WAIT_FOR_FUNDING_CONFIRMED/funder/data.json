@@ -1,6 +1,6 @@
 {
   "type" : "DATA_WAIT_FOR_FUNDING_CONFIRMED",
-  "commitments" : {
+  "metaCommitments" : {
     "channelId" : "e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f4",
     "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
     "channelFeatures" : [ ],

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.f
 
 import akka.testkit.TestProbe
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, SatoshiLong, Transaction}
@@ -116,9 +117,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     bob ! CMD_FULFILL_HTLC(0, r1)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fulfill)
+    )
   }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
@@ -208,9 +209,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     bob ! CMD_FAIL_HTLC(1, Right(PermanentChannelFailure()))
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fail)
+    )
   }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
@@ -238,9 +239,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     bob ! CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fail)
+    )
   }
 
   test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { f =>
@@ -517,9 +518,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_FEE]]
     val fee = alice2bob.expectMsgType[UpdateFee]
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))))
+    awaitCond(alice.stateData == initialState
+      .modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fee)
+    )
   }
 
   test("recv CMD_UPDATE_FEE (when fundee)") { f =>
@@ -536,7 +537,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialData = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee))))
+    awaitCond(bob.stateData == initialData
+      .modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ fee)
+    )
   }
 
   test("recv UpdateFee (when sender is not funder)") { f =>

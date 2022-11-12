@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel.states.e
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, SatoshiLong, Script, Transaction}
@@ -84,12 +85,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(e.commitments.availableBalanceForSend < initialState.commitments.availableBalanceForSend)
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     assert(htlc.id == 0 && htlc.paymentHash == h)
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localNextHtlcId = 1,
-        localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
-        originChannels = Map(0L -> add.origin)
-      )))
+    awaitCond(alice.stateData == initialState
+      .modify(_.metaCommitments.main.localNextHtlcId).setTo(1)
+      .modify(_.metaCommitments.main.localChanges.proposed).setTo(htlc :: Nil)
+      .modify(_.metaCommitments.main.originChannels).setTo(Map(0L -> add.origin)))
   }
 
   test("recv CMD_ADD_HTLC (empty origin)") { f =>
@@ -124,12 +123,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     assert(htlc.id == 0 && htlc.paymentHash == h)
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localNextHtlcId = 1,
-        localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
-        originChannels = Map(0L -> cmd.origin)
-      )))
+    awaitCond(alice.stateData == initialState
+      .modify(_.metaCommitments.main.localNextHtlcId).setTo(1)
+      .modify(_.metaCommitments.main.localChanges.proposed).setTo(htlc :: Nil)
+      .modify(_.metaCommitments.main.originChannels).setTo(Map(0L -> cmd.origin)))
   }
 
   test("recv CMD_ADD_HTLC (trampoline relayed htlc)") { f =>
@@ -145,12 +142,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     assert(htlc.id == 0 && htlc.paymentHash == h)
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localNextHtlcId = 1,
-        localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
-        originChannels = Map(0L -> cmd.origin)
-      )))
+    awaitCond(alice.stateData == initialState
+      .modify(_.metaCommitments.main.localNextHtlcId).setTo(1)
+      .modify(_.metaCommitments.main.localChanges.proposed).setTo(htlc :: Nil)
+      .modify(_.metaCommitments.main.originChannels).setTo(Map(0L -> cmd.origin)))
   }
 
   test("recv CMD_ADD_HTLC (expiry too small)") { f =>
@@ -587,10 +582,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateAddHtlc") { f =>
     import f._
-    val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, 150000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None)
     bob ! htlc
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ htlc)
+      .modify(_.metaCommitments.main.remoteNextHtlcId).setTo(1))
     // bob won't forward the add before it is cross-signed
     bob2relayer.expectNoMessage()
   }
@@ -1520,9 +1517,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     bob ! CMD_FULFILL_HTLC(htlc.id, r)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
+    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fulfill))
   }
 
   test("recv CMD_FULFILL_HTLC") {
@@ -1606,8 +1601,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test begins
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     bob2alice.forward(alice)
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ fulfill))
     // alice immediately propagates the fulfill upstream
     val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
     assert(forward.result.fulfill == fulfill)
@@ -1692,9 +1686,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(fail.id == htlc.id)
     bob ! cmd
     bob2alice.expectMsg(fail)
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fail))
   }
 
   test("recv CMD_FAIL_HTLC") {
@@ -1724,9 +1716,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(fail.id == htlc.id)
     bob ! cmd
     bob2alice.expectMsg(fail)
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fail))
   }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
@@ -1779,9 +1769,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fail))
   }
 
   test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { f =>
@@ -1826,8 +1814,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test begins
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     bob2alice.forward(alice)
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ fail))
     // alice won't forward the fail before it is cross-signed
     alice2relayer.expectNoMessage()
   }
@@ -1860,8 +1847,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     bob2alice.forward(alice)
 
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ fail))
     // alice won't forward the fail before it is cross-signed
     alice2relayer.expectNoMessage()
 
@@ -1941,9 +1927,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat))
     val fee = alice2bob.expectMsgType[UpdateFee]
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fee))
   }
 
   test("recv CMD_UPDATE_FEE") {
@@ -2059,9 +2043,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsgType[UpdateFee]
     alice ! CMD_UPDATE_FEE(FeeratePerKw(30000 sat))
     val fee2 = alice2bob.expectMsgType[UpdateFee]
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee2))))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.main.localChanges.proposed).using(_ :+ fee2))
   }
 
   test("recv CMD_UPDATE_FEE (when fundee)") { f =>
@@ -2076,29 +2058,35 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateFee") { f =>
     import f._
-    val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ fee)
+      .modify(_.metaCommitments.main.remoteNextHtlcId).setTo(0))
   }
 
   test("recv UpdateFee (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
-    val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialData.commitments.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     val fee = UpdateFee(ByteVector32.Zeroes, TestConstants.anchorOutputsFeeratePerKw * 0.8)
     bob ! fee
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ fee)
+      .modify(_.metaCommitments.main.remoteNextHtlcId).setTo(0))
   }
 
   test("recv UpdateFee (two in a row)") { f =>
     import f._
-    val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val fee1 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee1
     val fee2 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(14000 sat))
     bob ! fee2
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee2), remoteNextHtlcId = 0)))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ fee2)
+      .modify(_.metaCommitments.main.remoteNextHtlcId).setTo(0))
   }
 
   test("recv UpdateFee (when sender is not funder)") { f =>
@@ -2174,7 +2162,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.send(bob, add)
     val fee = UpdateFee(initialState.channelId, TestConstants.anchorOutputsFeeratePerKw * 3)
     alice2bob.send(bob, fee)
-    awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(proposed = initialState.commitments.remoteChanges.proposed :+ add :+ fee), remoteNextHtlcId = 1)))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ add :+ fee)
+      .modify(_.metaCommitments.main.remoteNextHtlcId).setTo(1))
     bob2alice.expectNoMessage(250 millis) // we don't close because we're using anchor outputs
   }
 
@@ -2187,7 +2177,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.send(bob, add)
     val fee = UpdateFee(initialState.channelId, FeeratePerKw(FeeratePerByte(2 sat)))
     alice2bob.send(bob, fee)
-    awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(proposed = initialState.commitments.remoteChanges.proposed :+ add :+ fee), remoteNextHtlcId = 1)))
+    awaitCond(bob.stateData == initialState
+      .modify(_.metaCommitments.main.remoteChanges.proposed).using(_ :+ add :+ fee)
+      .modify(_.metaCommitments.main.remoteNextHtlcId).setTo(1))
     bob2alice.expectNoMessage(250 millis) // we don't close because we're using anchor outputs
   }
 
@@ -3594,7 +3586,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
     bob ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
-    import initialState.commitments.{localParams, remoteParams}
+    import initialState.metaCommitments.main.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
     // actual test starts here
     bob2alice.forward(alice, annSigsB)
@@ -3621,7 +3613,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
     bob ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
-    import initialState.commitments.{localParams, remoteParams}
+    import initialState.metaCommitments.main.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.contains(channelAnn))

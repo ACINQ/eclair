@@ -271,8 +271,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             case Success(_) =>
               val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelFeatures.commitmentFormat)
               val channelId = toLongId(fundingTxHash, fundingTxOutputIndex)
-              // watch the funding tx transaction
-              val commitInput = localCommitTx.input
               val fundingSigned = FundingSigned(
                 channelId = channelId,
                 signature = localSigOfRemoteTx
@@ -296,7 +294,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                 case Some(fundingMinDepth) => blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
                 case None => blockchain ! WatchPublished(self, commitments.fundingTxId)
               }
-              goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
+              val metaCommitments = MetaCommitments(commitments)
+              goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
           }
       }
 
@@ -341,9 +340,10 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
             case None => blockchain ! WatchPublished(self, commitments.fundingTxId)
           }
+          val metaCommitments = MetaCommitments(commitments)
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
-          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(commitments, fundingTx, fundingTxFee)
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments, blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(commitments, fundingTx, fundingTxFee)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
@@ -414,7 +414,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_CHANNEL_READY)(handleExceptions {
     case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_CHANNEL_READY) =>
-      val d1 = receiveChannelReady(d.shortIds, channelReady, d.commitments)
+      val d1 = receiveChannelReady(d.shortIds, channelReady, d.metaCommitments)
       goto(NORMAL) using d1 storing()
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_CHANNEL_READY) if d.commitments.announceChannel =>

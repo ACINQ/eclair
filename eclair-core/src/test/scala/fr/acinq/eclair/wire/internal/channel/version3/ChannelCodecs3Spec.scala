@@ -15,6 +15,7 @@
  */
 package fr.acinq.eclair.wire.internal.channel.version3
 
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
@@ -99,10 +100,10 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     val remoteParams1 = remoteParams.copy(shutdownScript = Some(ByteVector.fromValidHex("deadbeef")))
     assert(codec.decodeValue(codec.encode(remoteParams1).require).require == remoteParams1)
 
-    val dataWithoutRemoteShutdownScript = normal.copy(commitments = normal.commitments.copy(remoteParams = remoteParams))
+    val dataWithoutRemoteShutdownScript = normal.modify(_.metaCommitments.main.remoteParams).setTo(remoteParams)
     assert(channelDataCodec.decode(channelDataCodec.encode(dataWithoutRemoteShutdownScript).require).require.value == dataWithoutRemoteShutdownScript)
 
-    val dataWithRemoteShutdownScript = normal.copy(commitments = normal.commitments.copy(remoteParams = remoteParams1))
+    val dataWithRemoteShutdownScript = normal.modify(_.metaCommitments.main.remoteParams).setTo(remoteParams1)
     assert(channelDataCodec.decode(channelDataCodec.encode(dataWithRemoteShutdownScript).require).require.value == dataWithRemoteShutdownScript)
   }
 

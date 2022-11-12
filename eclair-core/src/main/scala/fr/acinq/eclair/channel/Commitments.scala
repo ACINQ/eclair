@@ -881,6 +881,7 @@ case class Commitments(channelId: ByteVector32,
 
   /**
    * We update local/global features at reconnection
+   * TODO: should be moved to [[MetaCommitments]]
    */
   def updateFeatures(localInit: Init, remoteInit: Init): Commitments = copy(
     localParams = localParams.copy(initFeatures = localInit.features),

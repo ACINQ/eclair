@@ -122,6 +122,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
       case Success(_) =>
         // we consider the funding tx as confirmed (even in the zero-conf case)
         val commitments1 = d.commitments.copy(fundingTxStatus = ConfirmedFundingTx(fundingTx))
+        val metaCommitments1 = d.metaCommitments.copy(main = commitments1)
         realScidStatus match {
           case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
           case _ => () // zero-conf channel
@@ -129,7 +130,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
         val shortIds = createShortIds(d.channelId, realScidStatus)
         val channelReady = createChannelReady(shortIds, commitments1)
         d.deferred.foreach(self ! _)
-        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds, channelReady) storing() sending channelReady
+        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds, channelReady) storing() sending channelReady
       case Failure(t) =>
         log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
         goto(CLOSED)

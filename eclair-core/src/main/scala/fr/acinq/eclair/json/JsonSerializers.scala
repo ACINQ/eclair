@@ -329,7 +329,7 @@ object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](rout
   val hops = route.hops.map(_.shortChannelId)
   val finalHop = route.finalHop_opt.map {
     case _: NodeHop => "trampoline"
-    case _: BlindedHop => "blinded"  
+    case _: BlindedHop => "blinded"
   }
   RouteShortChannelIdsJson(route.amount, hops, finalHop)
 })
@@ -484,6 +484,9 @@ object OriginSerializer extends MinimalSerializer({
     )
   })
 })
+
+// TODO: we only display current commitments
+object MetaCommitmentsSerializer extends ConvertClassSerializer[MetaCommitments](m => m.main)
 
 // @formatter:off
 private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
@@ -643,6 +646,7 @@ object JsonSerializers {
     PaymentFailedSummarySerializer +
     OnionMessageReceivedSerializer +
     ShortIdsSerializer +
-    FundingTxStatusSerializer
+    FundingTxStatusSerializer +
+    MetaCommitmentsSerializer
 
 }

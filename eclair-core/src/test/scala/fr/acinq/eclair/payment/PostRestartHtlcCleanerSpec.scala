@@ -21,6 +21,7 @@ import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
@@ -140,7 +141,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to fail the htlcs:
-    val data1 = channels.head.copy(commitments = channels.head.commitments.copy(localCommit = channels.head.commitments.localCommit.copy(spec = channels.head.commitments.localCommit.spec.copy(htlcs = Set.empty))))
+    val data1 = channels.head.modify(_.metaCommitments.main.localCommit.spec.htlcs).setTo(Set.empty)
     system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.commitments)))
     channel.expectNoMessage(100 millis)
 
@@ -214,7 +215,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to sign the htlcs:
-    val data1 = channels.head.copy(commitments = channels.head.commitments.copy(localCommit = channels.head.commitments.localCommit.copy(spec = channels.head.commitments.localCommit.spec.copy(htlcs = Set.empty))))
+    val data1 = channels.head.modify(_.metaCommitments.main.localCommit.spec.htlcs).setTo(Set.empty)
     system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.commitments)))
     channel.expectNoMessage(100 millis)
 
@@ -475,7 +476,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val dummyClaimMainTx = Transaction(2, Seq(TxIn(OutPoint(revokedCommitTx, 0), Nil, 0)), Seq(revokedCommitTx.txOut.head.copy(amount = 4000 sat)), 0)
       val dummyClaimMain = ClaimRemoteDelayedOutputTx(InputInfo(OutPoint(revokedCommitTx, 0), revokedCommitTx.txOut.head, Nil), dummyClaimMainTx)
       val rcp = RevokedCommitPublished(revokedCommitTx, Some(dummyClaimMain), None, Nil, Nil, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
-      DATA_CLOSING(normal.commitments, BlockHeight(0), Nil, Nil, revokedCommitPublished = List(rcp))
+      DATA_CLOSING(normal.metaCommitments, BlockHeight(0), mutualCloseProposed = Nil, revokedCommitPublished = List(rcp))
     }
 
     nodeParams.db.channels.addOrUpdateChannel(upstreamChannel)

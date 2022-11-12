@@ -330,7 +330,7 @@ object ChannelCodecsSpec {
       fundingTxStatus = UnknownFundingTx,
       remotePerCommitmentSecrets = ShaChain.init)
 
-    DATA_NORMAL(commitments, ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None)
+    DATA_NORMAL(MetaCommitments(commitments), ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None)
   }
 
 }

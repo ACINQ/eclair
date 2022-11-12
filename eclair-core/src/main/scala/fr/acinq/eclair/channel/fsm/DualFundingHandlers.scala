@@ -21,7 +21,7 @@ import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
-import fr.acinq.eclair.channel.FundingTxStatus.ConfirmedFundingTx
+import fr.acinq.eclair.channel.FundingTxStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
@@ -60,16 +60,22 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
-  private def pruneCommitments(d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, fundingTx: Transaction): Option[Commitments] = {
+  def pruneCommitments(metaCommitments: MetaCommitments, fundingTx: Transaction): Option[MetaCommitments] = {
     // We can forget other funding attempts now that one of the funding txs is confirmed.
-    val otherFundingTxs = d.allFundingTxs.filter(_.txId != fundingTx.txid)
+    val otherFundingTxs = metaCommitments.all
+      .map(_.fundingTxStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
+      .filter(_.txId != fundingTx.txid)
     rollbackDualFundingTxs(otherFundingTxs)
     // We find which funding transaction got confirmed.
-    (d.commitments +: d.previousCommitments).find(_.fundingTxId == fundingTx.txid) match {
+    metaCommitments.all.find(_.fundingTxId == fundingTx.txid) match {
       case Some(commitments) =>
         // we consider the funding tx as confirmed (even in the zero-conf case)
         val commitments1 = commitments.copy(fundingTxStatus = ConfirmedFundingTx(fundingTx))
-        Some(commitments1)
+        val metaCommitments1 = metaCommitments.copy(
+          main = commitments1, // this is the only remaining commitment
+          rbfed = Nil // those are permanently overridden
+        )
+        Some(metaCommitments1)
       case None =>
         // An unknown funding tx has been confirmed, this should never happen. Note that this isn't a case of
         // ERR_INFORMATION_LEAK, because here we receive a response from the watcher from a WatchConfirmed that we put
@@ -80,8 +86,10 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def acceptDualFundingTx(d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, fundingTx: Transaction, realScidStatus: RealScidStatus): Option[(DATA_WAIT_FOR_DUAL_FUNDING_READY, ChannelReady)] = {
-    pruneCommitments(d, fundingTx).map {
-      commitments =>
+    pruneCommitments(d.metaCommitments, fundingTx).map {
+      metaCommitments =>
+        // after pruning, there is only one commitments
+        val commitments = metaCommitments.main
         watchFundingTx(commitments)
         realScidStatus match {
           case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
@@ -90,7 +98,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
         val shortIds = createShortIds(d.channelId, realScidStatus)
         val channelReady = createChannelReady(shortIds, commitments)
         d.deferred.foreach(self ! _)
-        (DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady), channelReady)
+        (DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments, shortIds, channelReady), channelReady)
     }
   }
 
@@ -100,14 +108,16 @@ trait DualFundingHandlers extends CommonFundingHandlers {
    * transactions immediately.
    */
   def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
-    pruneCommitments(d, w.tx) match {
-      case Some(commitments) =>
+    pruneCommitments(d.metaCommitments, w.tx) match {
+      case Some(metaCommitments) =>
+        // after pruning, there is only one commitments
+        val commitments = metaCommitments.main
         watchFundingTx(commitments)
         context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
         if (d.previousFundingTxs.nonEmpty) {
-          log.info(s"funding txid={} was confirmed in state disconnected, cleaning up {} alternative txs", w.tx.txid, d.previousFundingTxs.size)
+          log.info(s"funding txid={} was confirmed in state disconnected, cleaning up {} alternative txs", w.tx.txid, d.metaCommitments.all.size - 1)
         }
-        stay() using d.copy(commitments = commitments, previousCommitments = Nil) storing()
+        stay() using d.copy(metaCommitments = metaCommitments) storing()
       case None =>
         stay()
     }
@@ -124,13 +134,13 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       handleFundingTimeout(d)
     } else if (d.lastChecked + 6 < c.blockHeight) {
       log.debug("checking if funding transactions have been double-spent")
-      val fundingTxs = (d.fundingTx +: d.previousFundingTxs).map(_.tx.buildUnsignedTx())
+      val fundingTxs = d.allFundingTxs.flatMap(_.signedTx_opt)
       // We check whether *all* funding attempts have been double-spent.
       // Since we only consider a transaction double-spent when the spending transaction is confirmed, this will not
       // return false positives when one of our transactions is confirmed, because its individual result will be false.
       Future.sequence(fundingTxs.map(tx => wallet.doubleSpent(tx))).map(_.forall(_ == true)).map {
         case true => self ! BITCOIN_FUNDING_DOUBLE_SPENT(fundingTxs.map(_.txid).toSet)
-        case false => publishFundingTx(d.fundingParams, d.fundingTx) // we republish the highest feerate funding transaction
+        case false => publishFundingTx(d.fundingParams, d.mainFundingTx) // we republish the highest feerate funding transaction
       }
       stay() using d.copy(lastChecked = c.blockHeight) storing()
     } else {
@@ -139,10 +149,10 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def handleDualFundingDoubleSpent(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
-    val fundingTxIds = (d.commitments +: d.previousCommitments).map(_.fundingTxId).toSet
+    val fundingTxIds = d.metaCommitments.all.map(_.fundingTxId).toSet
     if (fundingTxIds.subsetOf(e.fundingTxIds)) {
       log.warning("{} funding attempts have been double-spent, forgetting channel", fundingTxIds.size)
-      (d.fundingTx +: d.previousFundingTxs).foreach(tx => wallet.rollback(tx.tx.buildUnsignedTx()))
+      d.allFundingTxs.flatMap(_.signedTx_opt).foreach(tx => wallet.rollback(tx))
       channelOpenReplyToUser(Left(LocalError(FundingTxDoubleSpent(d.channelId))))
       goto(CLOSED) sending Error(d.channelId, FundingTxDoubleSpent(d.channelId).getMessage)
     } else {

@@ -231,14 +231,14 @@ object InteractiveTxBuilder {
 
   def addRemoteSigs(fundingParams: InteractiveTxParams, partiallySignedTx: PartiallySignedSharedTransaction, remoteSigs: TxSignatures): Either[ChannelException, FullySignedSharedTransaction] = {
     if (partiallySignedTx.tx.localInputs.length != partiallySignedTx.localSigs.witnesses.length) {
-      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.tx.buildUnsignedTx().txid)))
+      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
     if (partiallySignedTx.tx.remoteInputs.length != remoteSigs.witnesses.length) {
-      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.tx.buildUnsignedTx().txid)))
+      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
     val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs)
     if (remoteSigs.txId != txWithSigs.signedTx.txid) {
-      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.tx.buildUnsignedTx().txid)))
+      return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
     // We allow a 5% error margin since witness size prediction could be inaccurate.
     if (fundingParams.localAmount > 0.sat && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
@@ -250,7 +250,7 @@ object InteractiveTxBuilder {
       localOutputs ++ remoteOutputs
     }
     Try(Transaction.correctlySpends(txWithSigs.signedTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
-      case Failure(_) => Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.tx.buildUnsignedTx().txid)))
+      case Failure(_) => Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
       case Success(_) => Right(txWithSigs)
     }
   }

@@ -1,6 +1,6 @@
 {
   "type" : "DATA_NORMAL",
-  "commitments" : {
+  "metaCommitments" : {
     "channelId" : "6ecfe1e9e01abd3fbe482efde50e4687b3f1f5d8cba609174aebce1c01415611",
     "channelConfig" : [ ],
     "channelFeatures" : [ ],
