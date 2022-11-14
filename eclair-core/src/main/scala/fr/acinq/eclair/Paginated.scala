@@ -18,7 +18,9 @@ package fr.acinq.eclair
 
 /**
  * Created by rorp on 03/11/2022.
- *
+ */
+
+/**
  * Simple class for pagination database and API queries.
  */
 case class Paginated(count: Int, skip: Int) {

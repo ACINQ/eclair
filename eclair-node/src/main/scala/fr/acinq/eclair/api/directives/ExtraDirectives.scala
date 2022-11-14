@@ -43,9 +43,6 @@ trait ExtraDirectives extends Directives {
   val nodeIdFormParam: NameReceptacle[PublicKey] = "nodeId".as[PublicKey]
   val nodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "nodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val paymentHashFormParam: NameUnmarshallerReceptacle[ByteVector32] = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
-  // we limit default values to avoid accidentally reading too much data from the DB
-  val fromFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "from".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.now() - 1.day)
-  val toFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "to".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.now())
   val amountMsatFormParam: NameReceptacle[MilliSatoshi] = "amountMsat".as[MilliSatoshi]
   val invoiceFormParam: NameReceptacle[Bolt11Invoice] = "invoice".as[Bolt11Invoice]
   val routeFormatFormParam: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
@@ -54,6 +51,13 @@ trait ExtraDirectives extends Directives {
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
   val countFormParam: NameReceptacle[Int] = "count".as[Int]
   val skipFormParam: NameReceptacle[Int] = "skip".as[Int]
+
+  // @formatter:off
+  // We limit default values to avoid accidentally reading too much data from the DB.
+  // We cannot use a val, otherwise the default values would not be recomputed for every request.
+  def fromFormParam(): NameDefaultUnmarshallerReceptacle[TimestampSecond] = "from".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.now() - 1.day)
+  def toFormParam(): NameDefaultUnmarshallerReceptacle[TimestampSecond] = "to".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.now())
+  // @formatter:on
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {

@@ -55,7 +55,7 @@ trait IncomingPaymentsDb {
   def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment]
 
   /** List all pending (not paid, not expired) incoming payments in the given time range (milli-seconds). */
-  def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
+  def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment]
 
   /** List all expired (not paid) incoming payments in the given time range (milli-seconds). */
   def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]

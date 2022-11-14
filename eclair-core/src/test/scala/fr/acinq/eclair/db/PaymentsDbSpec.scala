@@ -559,7 +559,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.listIncomingPayments(0 unixms, now, None) == Seq(expiredPayment1, expiredPayment2, expiredPayment3, pendingPayment1, pendingPayment2, pendingPayment3, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending), payment3.copy(status = IncomingPaymentStatus.Pending)))
       assert(db.listExpiredIncomingPayments(0 unixms, now) == Seq(expiredPayment1, expiredPayment2, expiredPayment3))
       assert(db.listReceivedIncomingPayments(0 unixms, now) == Nil)
-      assert(db.listPendingIncomingPayments(0 unixms, now) == Seq(pendingPayment1, pendingPayment2, pendingPayment3, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending), payment3.copy(status = IncomingPaymentStatus.Pending)))
+      assert(db.listPendingIncomingPayments(0 unixms, now, None) == Seq(pendingPayment1, pendingPayment2, pendingPayment3, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending), payment3.copy(status = IncomingPaymentStatus.Pending)))
 
       db.receiveIncomingPayment(paidInvoice1.paymentHash, 461 msat, receivedAt1)
       db.receiveIncomingPayment(paidInvoice1.paymentHash, 100 msat, receivedAt2) // adding another payment to this invoice should sum
@@ -572,13 +572,13 @@ class PaymentsDbSpec extends AnyFunSuite {
 
       assert(db.listIncomingPayments(0 unixms, now, None) == Seq(expiredPayment1, expiredPayment2, expiredPayment3, pendingPayment1, pendingPayment2, pendingPayment3, payment1, payment2, payment3))
       assert(db.listIncomingPayments(now - 60.seconds, now, None) == Seq(pendingPayment1, pendingPayment2, pendingPayment3, payment1, payment2, payment3))
-      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(0,0))) == Seq())
-      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(0,3))) == Seq())
-      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(3,0))) == Seq(expiredPayment1, expiredPayment2, expiredPayment3))
-      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(3,3))) == Seq(pendingPayment1, pendingPayment2, pendingPayment3))
-      assert(db.listPendingIncomingPayments(0 unixms, now) == Seq(pendingPayment1, pendingPayment2, pendingPayment3))
+      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(0, 0))) == Seq())
+      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(0, 3))) == Seq())
+      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(3, 0))) == Seq(expiredPayment1, expiredPayment2, expiredPayment3))
+      assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(3, 3))) == Seq(pendingPayment1, pendingPayment2, pendingPayment3))
+      assert(db.listPendingIncomingPayments(0 unixms, now, None) == Seq(pendingPayment1, pendingPayment2, pendingPayment3))
+      assert(db.listPendingIncomingPayments(0 unixms, now, Some(Paginated(1, 1))) == Seq(pendingPayment2))
       assert(db.listReceivedIncomingPayments(0 unixms, now) == Seq(payment1, payment2, payment3))
-
 
       assert(db.removeIncomingPayment(paidInvoice1.paymentHash).isFailure)
       db.removeIncomingPayment(paidInvoice1.paymentHash).failed.foreach(e => assert(e.getMessage == "Cannot remove a received incoming payment"))

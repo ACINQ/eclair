@@ -62,7 +62,7 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     val now = TimestampMilli.now()
     assert(db.listIncomingPayments(0 unixms, now, None) == expiredPayments ++ pendingPayments ++ paidPayments)
     assert(db.listIncomingPayments(now - 100.days, now, None) == pendingPayments ++ paidPayments)
-    assert(db.listPendingIncomingPayments(0 unixms, now) == pendingPayments)
+    assert(db.listPendingIncomingPayments(0 unixms, now, None) == pendingPayments)
     assert(db.listReceivedIncomingPayments(0 unixms, now) == paidPayments)
     assert(db.listExpiredIncomingPayments(0 unixms, now) == expiredPayments)
 
