@@ -42,7 +42,7 @@ class DummyOnChainWallet extends OnChainWallet {
 
   override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
-  override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
+  override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Future.successful(FundTransactionResponse(tx, 0 sat, None))
 
@@ -82,7 +82,7 @@ class NoOpOnChainWallet extends OnChainWallet {
 
   override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
-  override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
+  override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Promise().future // will never be completed
 
@@ -119,7 +119,7 @@ class SingleKeyOnChainWallet extends OnChainWallet {
 
   override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(Bech32.encodeWitnessAddress("bcrt", 0, pubkey.hash160.toArray))
 
-  override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(pubkey)
+  override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(pubkey)
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
     val currentAmountIn = tx.txIn.flatMap(txIn => inputs.find(_.txid == txIn.outPoint.txid)).map(_.txOut.head.amount).sum

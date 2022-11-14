@@ -21,8 +21,8 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
-import fr.acinq.bitcoin.{SigHash, SigVersion}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2WpkhAddress}
+import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
@@ -49,7 +49,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   implicit val formats: Formats = DefaultFormats
 
   override def beforeAll(): Unit = {
-    startBitcoind()
+    startBitcoind(defaultAddressType_opt = Some("bech32m"))
     waitForBitcoindReady()
   }
 
@@ -938,16 +938,27 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(tx1)
   }
 
-  test("compute pubkey from a receive address") {
+  test("get pubkey for p2wpkh receive address") {
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
+    // We use Taproot addresses by default (segwit v1).
     bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
-    val address = sender.expectMsgType[String]
+    val defaultAddress = sender.expectMsgType[String]
+    val decoded = Bech32.decodeWitnessAddress(defaultAddress)
+    assert(decoded.getSecond == 1)
 
-    bitcoinClient.getReceivePubkey(receiveAddress = Some(address)).pipeTo(sender.ref)
+    // But we can explicitly use segwit v0 addresses.
+    bitcoinClient.getP2wpkhPubkey().pipeTo(sender.ref)
+    val amount = 50 millibtc
     val receiveKey = sender.expectMsgType[PublicKey]
-    assert(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash) == Script.pay2wpkh(receiveKey))
+    val address = computeP2WpkhAddress(receiveKey, Block.RegtestGenesisBlock.hash)
+    sendToAddress(address, amount, sender)
+    generateBlocks(1)
+
+    bitcoinrpcclient.invoke("getreceivedbyaddress", address).pipeTo(sender.ref)
+    val receivedAmount = sender.expectMsgType[JDecimal]
+    assert(Btc(receivedAmount.values).toMilliBtc == amount)
   }
 
 }
