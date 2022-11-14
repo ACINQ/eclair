@@ -22,6 +22,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
@@ -82,8 +83,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       assert(fundTxResponse.changePosition.nonEmpty)
-      assert(fundTxResponse.amountIn > 0.sat)
       assert(fundTxResponse.fee > 0.sat)
+      val amountIn = fundTxResponse.tx.txIn.map(txIn => {
+        bitcoinClient.getTransaction(txIn.outPoint.txid).pipeTo(sender.ref)
+        sender.expectMsgType[Transaction].txOut(txIn.outPoint.index.toInt).amount
+      }).sum
+      assert(amountIn == fundTxResponse.amountIn)
       fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.signatureScript.isEmpty && txIn.witness.isNull))
       fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence == bitcoin.TxIn.SEQUENCE_FINAL - 2))
 
@@ -115,7 +120,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val fundTxResponse1 = sender.expectMsgType[FundTransactionResponse]
       bitcoinClient.fundTransaction(fundTxResponse1.tx, FundTransactionOptions(TestConstants.feeratePerKw * 2)).pipeTo(sender.ref)
       val fundTxResponse2 = sender.expectMsgType[FundTransactionResponse]
-      assert(fundTxResponse1.tx !== fundTxResponse2.tx)
+      assert(fundTxResponse1.tx != fundTxResponse2.tx)
       assert(fundTxResponse1.fee < fundTxResponse2.fee)
     }
     {
@@ -124,10 +129,149 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       bitcoinClient.fundTransaction(txManyOutputs, FundTransactionOptions(TestConstants.feeratePerKw, replaceable = false, changePosition = Some(1))).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       assert(fundTxResponse.tx.txOut.size == 3)
-      assert(fundTxResponse.changePosition == Some(1))
+      assert(fundTxResponse.changePosition.contains(1))
       assert(!Set(230000 sat, 410000 sat).contains(fundTxResponse.tx.txOut(1).amount))
       assert(Set(230000 sat, 410000 sat) == Set(fundTxResponse.tx.txOut.head.amount, fundTxResponse.tx.txOut.last.amount))
       fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence == bitcoin.TxIn.SEQUENCE_FINAL - 1))
+    }
+  }
+
+  test("fund transactions with external inputs") {
+    val sender = TestProbe()
+    val defaultWallet = new BitcoinCoreClient(bitcoinrpcclient)
+    val walletExternalFunds = new BitcoinCoreClient(createWallet("external_inputs", sender))
+
+    // We receive some funds on an address that belongs to our wallet.
+    Seq(25 millibtc, 15 millibtc, 20 millibtc).foreach(amount => {
+      walletExternalFunds.getReceiveAddress().pipeTo(sender.ref)
+      val walletAddress = sender.expectMsgType[String]
+      defaultWallet.sendToAddress(walletAddress, amount, 1).pipeTo(sender.ref)
+      sender.expectMsgType[ByteVector32]
+    })
+
+    // We receive more funds on an address that does not belong to our wallet.
+    val externalInputWeight = 310
+    val (alicePriv, bobPriv, carolPriv) = (randomKey(), randomKey(), randomKey())
+    val (outpoint1, inputScript1) = {
+      val script = Script.createMultiSigMofN(1, Seq(alicePriv.publicKey, bobPriv.publicKey))
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(250_000 sat, Script.pay2wsh(script))), 0)
+      defaultWallet.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(2500 sat), changePosition = Some(1))).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
+      defaultWallet.signTransaction(fundedTx, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      defaultWallet.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      (OutPoint(signedTx, 0), script)
+    }
+
+    // We make sure these utxos are confirmed.
+    generateBlocks(1)
+
+    // We're able to spend those funds and ask bitcoind to fund the corresponding transaction.
+    val (tx2, inputScript2) = {
+      val targetFeerate = FeeratePerKw(5000 sat)
+      val outputScript = Script.createMultiSigMofN(1, Seq(alicePriv.publicKey, carolPriv.publicKey))
+      val txNotFunded = Transaction(2, Seq(TxIn(outpoint1, Nil, 0)), Seq(TxOut(300_000 sat, Script.pay2wsh(outputScript))), 0)
+      val smallExternalInputWeight = 200
+      assert(smallExternalInputWeight < externalInputWeight)
+      walletExternalFunds.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = Seq(InputWeight(outpoint1, smallExternalInputWeight)), changePosition = Some(1))).pipeTo(sender.ref)
+      val fundedTx1 = sender.expectMsgType[FundTransactionResponse]
+      assert(fundedTx1.tx.txIn.length >= 2)
+      val amountIn1 = fundedTx1.tx.txIn.map(txIn => {
+        defaultWallet.getTransaction(txIn.outPoint.txid).pipeTo(sender.ref)
+        sender.expectMsgType[Transaction].txOut(txIn.outPoint.index.toInt).amount
+      }).sum
+      assert(amountIn1 == fundedTx1.amountIn)
+      // If we specify a bigger weight, bitcoind uses a bigger fee.
+      walletExternalFunds.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = Seq(InputWeight(outpoint1, externalInputWeight)), changePosition = Some(1))).pipeTo(sender.ref)
+      val fundedTx2 = sender.expectMsgType[FundTransactionResponse]
+      assert(fundedTx2.tx.txIn.length >= 2)
+      assert(fundedTx1.fee < fundedTx2.fee)
+      val amountIn2 = fundedTx2.tx.txIn.map(txIn => {
+        defaultWallet.getTransaction(txIn.outPoint.txid).pipeTo(sender.ref)
+        sender.expectMsgType[Transaction].txOut(txIn.outPoint.index.toInt).amount
+      }).sum
+      assert(amountIn2 == fundedTx2.amountIn)
+      // We sign our external input.
+      val externalSig = Transaction.signInput(fundedTx2.tx, 0, inputScript1, SigHash.SIGHASH_ALL, 250_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
+      val partiallySignedTx = fundedTx2.tx.updateWitness(0, Script.witnessMultiSigMofN(Seq(alicePriv, bobPriv).map(_.publicKey), Seq(externalSig)))
+      // And let bitcoind sign the wallet input.
+      walletExternalFunds.signTransaction(partiallySignedTx, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      // The weight of our external input matches our estimation and the resulting feerate is correct.
+      val actualExternalInputWeight = signedTx.weight() - signedTx.copy(txIn = signedTx.txIn.tail).weight()
+      assert(actualExternalInputWeight * 0.9 <= externalInputWeight && externalInputWeight <= actualExternalInputWeight * 1.1)
+      walletExternalFunds.getMempoolTx(signedTx.txid).pipeTo(sender.ref)
+      val mempoolTx = sender.expectMsgType[MempoolTx]
+      val expectedFee = Transactions.weight2fee(targetFeerate, signedTx.weight())
+      val actualFee = mempoolTx.fees
+      assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+      (signedTx, outputScript)
+    }
+
+    // We're also able to spend unconfirmed external funds and ask bitcoind to fund the corresponding transaction.
+    val tx3 = {
+      val targetFeerate = FeeratePerKw(10_000 sat)
+      val externalOutpoint = OutPoint(tx2, 0)
+      val txNotFunded = Transaction(2, Seq(TxIn(externalOutpoint, Nil, 0)), Seq(TxOut(300_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      walletExternalFunds.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = Seq(InputWeight(externalOutpoint, externalInputWeight)), changePosition = Some(1))).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse]
+      assert(fundedTx.tx.txIn.length >= 2)
+      // We sign our external input.
+      val externalSig = Transaction.signInput(fundedTx.tx, 0, inputScript2, SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
+      val partiallySignedTx = fundedTx.tx.updateWitness(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig)))
+      // And let bitcoind sign the wallet input.
+      walletExternalFunds.signTransaction(partiallySignedTx, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      // The resulting feerate takes into account our unconfirmed parent as well.
+      walletExternalFunds.getMempoolTx(signedTx.txid).pipeTo(sender.ref)
+      val mempoolTx = sender.expectMsgType[MempoolTx]
+      assert(mempoolTx.fees == fundedTx.fee)
+      assert(mempoolTx.fees < mempoolTx.ancestorFees)
+      // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation (expected in Bitcoin Core 25).
+      // val actualFee = mempoolTx.ancestorFees
+      // val expectedFee = Transactions.weight2fee(targetFeerate, signedTx.weight() + tx2.weight())
+      // assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+      signedTx
+    }
+
+    // We can RBF our unconfirmed transaction by asking bitcoind to fund it again.
+    {
+      val targetFeerate = FeeratePerKw(15_000 sat)
+      // We simply remove the change output, but keep the rest of the transaction unchanged.
+      val txNotFunded = tx3.copy(txOut = tx3.txOut.take(1))
+      val inputWeights = txNotFunded.txIn.map(txIn => {
+        val weight = txNotFunded.weight() - txNotFunded.copy(txIn = txNotFunded.txIn.filterNot(_.outPoint == txIn.outPoint)).weight()
+        InputWeight(txIn.outPoint, weight)
+      })
+      walletExternalFunds.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = inputWeights, changePosition = Some(1))).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse]
+      assert(fundedTx.tx.txIn.length >= 2)
+      assert(fundedTx.tx.txOut.length == 2)
+      // We sign our external input.
+      val externalSig = Transaction.signInput(fundedTx.tx, 0, inputScript2, SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
+      val partiallySignedTx = fundedTx.tx.updateWitness(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig)))
+      // And let bitcoind sign the wallet input.
+      walletExternalFunds.signTransaction(partiallySignedTx, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      // We have replaced the previous transaction.
+      walletExternalFunds.getMempoolTx(tx3.txid).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Failure].cause.getMessage.contains("Transaction not in mempool"))
+      // The resulting feerate takes into account our unconfirmed parent as well.
+      walletExternalFunds.getMempoolTx(signedTx.txid).pipeTo(sender.ref)
+      val mempoolTx = sender.expectMsgType[MempoolTx]
+      assert(mempoolTx.fees == fundedTx.fee)
+      assert(mempoolTx.fees < mempoolTx.ancestorFees)
+      // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation (expected in Bitcoin Core 25).
+      // val actualFee = mempoolTx.ancestorFees
+      // val expectedFee = Transactions.weight2fee(targetFeerate, signedTx.weight() + tx2.weight())
+      // assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
     }
   }
 

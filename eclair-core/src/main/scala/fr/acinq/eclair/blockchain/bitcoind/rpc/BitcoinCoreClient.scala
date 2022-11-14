@@ -469,11 +469,27 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
 
 object BitcoinCoreClient {
 
-  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int])
+  /**
+   * When funding transactions that contain non-wallet inputs, we need to specify their maximum weight to let bitcoind
+   * compute the total weight of the (funded) transaction and set the fee accordingly.
+   */
+  case class InputWeight(txid: String, vout: Long, weight: Long)
+
+  object InputWeight {
+    def apply(outPoint: OutPoint, weight: Long): InputWeight = InputWeight(outPoint.txid.toHex, outPoint.index, weight)
+  }
+
+  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
 
   object FundTransactionOptions {
-    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, lockUtxos: Boolean = false, changePosition: Option[Int] = None): FundTransactionOptions = {
-      FundTransactionOptions(BigDecimal(FeeratePerKB(feerate).toLong).bigDecimal.scaleByPowerOfTen(-8), replaceable, lockUtxos, changePosition)
+    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, lockUtxos: Boolean = false, changePosition: Option[Int] = None, inputWeights: Seq[InputWeight] = Nil): FundTransactionOptions = {
+      FundTransactionOptions(
+        BigDecimal(FeeratePerKB(feerate).toLong).bigDecimal.scaleByPowerOfTen(-8),
+        replaceable,
+        lockUtxos,
+        changePosition,
+        if (inputWeights.isEmpty) None else Some(inputWeights)
+      )
     }
   }
 

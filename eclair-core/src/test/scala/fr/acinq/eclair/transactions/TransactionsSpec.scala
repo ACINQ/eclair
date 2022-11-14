@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, millibtc2satoshi}
-import fr.acinq.bitcoin.SigHash._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -208,9 +208,12 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         txIn = claimAnchorOutputTx.tx.txIn :+ TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, p2wpkhWitness),
         txOut = Seq(TxOut(1500 sat, Script.pay2wpkh(randomKey().publicKey)))
       ))
-      val weight = Transaction.weight(addSigs(claimAnchorOutputTxWithFees, PlaceHolderSig).tx)
+      val signedTx = addSigs(claimAnchorOutputTxWithFees, PlaceHolderSig).tx
+      val weight = Transaction.weight(signedTx)
       assert(weight == 717)
       assert(weight >= claimAnchorOutputMinWeight)
+      val inputWeight = Transaction.weight(signedTx) - Transaction.weight(signedTx.copy(txIn = signedTx.txIn.tail))
+      assert(inputWeight == anchorInputWeight)
     }
   }
 

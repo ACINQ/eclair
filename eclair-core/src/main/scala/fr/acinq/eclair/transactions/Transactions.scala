@@ -16,12 +16,12 @@
 
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.SigHash._
+import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.SigHash._
-import fr.acinq.bitcoin.SigVersion._
-import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.CommitmentOutput._
@@ -45,6 +45,8 @@ object Transactions {
     def htlcOutputWeight: Int
     def htlcTimeoutWeight: Int
     def htlcSuccessWeight: Int
+    def htlcTimeoutInputWeight: Int
+    def htlcSuccessInputWeight: Int
     // @formatter:on
   }
 
@@ -56,6 +58,8 @@ object Transactions {
     override val htlcOutputWeight = 172
     override val htlcTimeoutWeight = 663
     override val htlcSuccessWeight = 703
+    override val htlcTimeoutInputWeight = 449
+    override val htlcSuccessInputWeight = 488
   }
 
   /**
@@ -67,6 +71,8 @@ object Transactions {
     override val htlcOutputWeight = 172
     override val htlcTimeoutWeight = 666
     override val htlcSuccessWeight = 706
+    override val htlcTimeoutInputWeight = 452
+    override val htlcSuccessInputWeight = 491
   }
 
   object AnchorOutputsCommitmentFormat {
@@ -196,16 +202,12 @@ object Transactions {
   /**
    * these values are specific to us (not defined in the specification) and used to estimate fees
    */
-  val claimP2WPKHOutputWitnessWeight = 109
   val claimP2WPKHOutputWeight = 438
+  val anchorInputWeight = 279
   // The smallest transaction that spends an anchor contains 2 inputs (the commit tx output and a wallet input to set the feerate)
   // and 1 output (change). If we're using P2WPKH wallet inputs/outputs with 72 bytes signatures, this results in a weight of 717.
   // We round it down to 700 to allow for some error margin (e.g. signatures smaller than 72 bytes).
   val claimAnchorOutputMinWeight = 700
-  // The biggest htlc input is an HTLC-success with anchor outputs:
-  // 143 bytes (accepted_htlc_script) + 327 bytes (success_witness) + 41 bytes (commitment_input) = 511 bytes
-  // See https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#expected-weight-of-htlc-timeout-and-htlc-success-transactions
-  val htlcInputMaxWeight = 511
   val htlcDelayedWeight = 483
   val claimHtlcSuccessWeight = 571
   val claimHtlcTimeoutWeight = 545
@@ -292,7 +294,7 @@ object Transactions {
 
   /**
    * @param commitTxNumber         commit tx number
-   * @param isInitiator               true if local node initiated the channel open
+   * @param isInitiator            true if local node initiated the channel open
    * @param localPaymentBasePoint  local payment base point
    * @param remotePaymentBasePoint remote payment base point
    * @return the obscured tx number as defined in BOLT #3 (a 48 bits integer)
@@ -310,7 +312,7 @@ object Transactions {
 
   /**
    * @param commitTx               commit tx
-   * @param isInitiator               true if local node initiated the channel open
+   * @param isInitiator            true if local node initiated the channel open
    * @param localPaymentBasePoint  local payment base point
    * @param remotePaymentBasePoint remote payment base point
    * @return the actual commit tx number that was blinded and stored in locktime and sequence fields

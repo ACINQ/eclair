@@ -45,7 +45,7 @@ For more information please visit the [API documentation website](https://acinq.
 ## Documentation
 
 Please visit our [docs](./docs) folder to find detailed instructions on how to [configure](./docs/Configure.md) your
-node, connect to other nodes, open channels, send and receive payments, and help with more advanced scenarios. 
+node, connect to other nodes, open channels, send and receive payments, and help with more advanced scenarios.
 
 You will also find detailed [guides](./docs/Guides.md) and [frequently asked questions](./docs/FAQ.md) there.
 
@@ -57,11 +57,11 @@ Eclair relies on Bitcoin Core to interface with and monitor the blockchain and t
 
 This means that instead of re-implementing them, Eclair benefits from the verifications and optimisations (including fee management with RBF/CPFP, ...) that are implemented by Bitcoin Core. Eclair uses our own [bitcoin library](https://github.com/ACINQ/bitcoin-kmp) to verify data provided by Bitcoin Core.
 
-:warning: This also means that Eclair has strong requirements on how your Bitcoin Core node is configured (see below), and that you must back up your Bitcoin Core wallet as well as your Eclair node (see [here](#configure-bitcoin-core-wallet)): 
-- Eclair needs a _synchronized_, _segwit-ready_, 
-**_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. 
-- You must configure your Bitcoin node to use `bech32` (segwit) addresses. If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `bech32` address before running Eclair.
-- Eclair requires Bitcoin Core 0.20.1 or 0.21.1. (other versions of Bitcoin Core are *not* actively tested - use at your own risk).  If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
+:warning: This also means that Eclair has strong requirements on how your Bitcoin Core node is configured (see below), and that you must back up your Bitcoin Core wallet as well as your Eclair node (see [here](#configure-bitcoin-core-wallet)):
+
+* Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
+* You must configure your Bitcoin node to use `bech32` (segwit) addresses. If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `bech32` address before running Eclair.
+* Eclair requires Bitcoin Core 23.0 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
@@ -181,11 +181,12 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile
 ### Backup
 
 You need to backup:
-- your Bitcoin Core wallet
-- your Eclair channels
 
-For Bitcoin Core, you need to backup the wallet file for the wallet that Eclair is using. You only need to do this once, when the wallet is 
-created. See [Managing Wallets](https://github.com/bitcoin/bitcoin/blob/master/doc/managing-wallets.md) in the Bitcoin Core documentation for more information. 
+* your Bitcoin Core wallet
+* your Eclair channels
+
+For Bitcoin Core, you need to backup the wallet file for the wallet that Eclair is using. You only need to do this once, when the wallet is
+created. See [Managing Wallets](https://github.com/bitcoin/bitcoin/blob/master/doc/managing-wallets.md) in the Bitcoin Core documentation for more information.
 
 For Eclair, the files that you need to backup are located in your data directory. You must backup:
 
@@ -210,7 +211,7 @@ before copying that file to your final backup location.
 ## Docker
 
 A [Dockerfile](Dockerfile) x86_64 image is built on each commit on [docker hub](https://hub.docker.com/r/acinq/eclair) for running a dockerized eclair-node.
-For arm64 platforms you can use an [arm64 Dockerfile](contrib/arm64v8.Dockerfile) to build your own arm64 container. 
+For arm64 platforms you can use an [arm64 Dockerfile](contrib/arm64v8.Dockerfile) to build your own arm64 container.
 
 You can use the `JAVA_OPTS` environment variable to set arguments to `eclair-node`.
 
