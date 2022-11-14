@@ -21,7 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
@@ -938,16 +938,20 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(tx1)
   }
 
-  test("compute pubkey from a receive address") {
+  test("get pubkey for p2wpkh receive address") {
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
-    bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
-    val address = sender.expectMsgType[String]
-
-    bitcoinClient.getReceivePubkey(receiveAddress = Some(address)).pipeTo(sender.ref)
+    bitcoinClient.getReceivePubkey().pipeTo(sender.ref)
+    val amount = 50 millibtc
     val receiveKey = sender.expectMsgType[PublicKey]
-    assert(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash) == Script.pay2wpkh(receiveKey))
+    val address = computeP2WpkhAddress(receiveKey, Block.RegtestGenesisBlock.hash)
+    sendToAddress(address, amount, sender)
+    generateBlocks(1)
+
+    bitcoinrpcclient.invoke("getreceivedbyaddress", address).pipeTo(sender.ref)
+    val receivedAmount = sender.expectMsgType[JDecimal]
+    assert(Btc(receivedAmount.values).toMilliBtc == amount)
   }
 
 }

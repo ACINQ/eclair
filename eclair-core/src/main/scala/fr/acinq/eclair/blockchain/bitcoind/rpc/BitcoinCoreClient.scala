@@ -362,8 +362,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     JString(address) <- rpcClient.invoke("getnewaddress", label)
   } yield address
 
-  def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = for {
-    address <- receiveAddress.map(Future.successful).getOrElse(getReceiveAddress())
+  def getReceivePubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = for {
+    address <- rpcClient.invoke("getnewaddress", "", "bech32")
     JString(rawKey) <- rpcClient.invoke("getaddressinfo", address).map(_ \ "pubkey")
   } yield PublicKey(ByteVector.fromValidHex(rawKey))
 
