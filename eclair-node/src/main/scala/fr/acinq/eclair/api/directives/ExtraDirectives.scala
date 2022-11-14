@@ -27,7 +27,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.payment.Bolt11Invoice
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampSecond}
 
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
@@ -52,6 +52,8 @@ trait ExtraDirectives extends Directives {
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
+  val countFormParam: NameReceptacle[Int] = "count".as[Int]
+  val skipFormParam: NameReceptacle[Int] = "skip".as[Int]
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
@@ -59,6 +61,13 @@ trait ExtraDirectives extends Directives {
     case Success(None) =>
       complete(HttpResponse(NotFound).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("Not found"))))
     case Failure(_) => reject
+  }
+
+  def withPaginated: Directive1[Option[Paginated]] = formFields(countFormParam.?, skipFormParam.?).tflatMap {
+    case (Some(count), Some(skip)) => provide(Some(Paginated(count = count, skip = skip)))
+    case (Some(count), None) => provide(Some(Paginated(count = count, skip = 0)))
+    case (None, Some(_)) => reject(MalformedFormFieldRejection("skip", "Must specify count"))
+    case (None, None) => provide(None)
   }
 
   def withChannelIdentifier: Directive1[ChannelIdentifier] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).tflatMap {

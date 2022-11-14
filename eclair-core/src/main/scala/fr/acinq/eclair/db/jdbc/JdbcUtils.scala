@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.jdbc
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.{MilliSatoshi, Paginated}
 import grizzled.slf4j.Logger
 import org.sqlite.SQLiteConnection
 import scodec.Decoder
@@ -212,6 +212,11 @@ trait JdbcUtils {
 
   object ExtendedResultSet {
     implicit def conv(rs: ResultSet): ExtendedResultSet = ExtendedResultSet(rs)
+  }
+
+  def limited(sql: String, paginated_opt: Option[Paginated]): String = paginated_opt match {
+    case Some(paginated) => s"$sql LIMIT ${paginated.count} OFFSET ${paginated.skip}"
+    case None => sql
   }
 
 }

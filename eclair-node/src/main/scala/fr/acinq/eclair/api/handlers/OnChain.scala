@@ -43,8 +43,12 @@ trait OnChain {
   }
 
   val onChainTransactions: Route = postRequest("onchaintransactions") { implicit t =>
-    formFields("count".as[Int].?, "skip".as[Int].?) { (count_opt, skip_opt) =>
-      complete(eclairApi.onChainTransactions(count_opt.getOrElse(10), skip_opt.getOrElse(0)))
+    withPaginated { paginated_opt =>
+      formFields(countFormParam, skipFormParam) { (count_opt, skip_opt) =>
+        val count = paginated_opt.map(_.count).getOrElse(10)
+        val skip = paginated_opt.map(_.skip).getOrElse(0)
+        complete(eclairApi.onChainTransactions(count, skip))
+      }
     }
   }
 

@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
+import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampMilli}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -52,7 +52,7 @@ trait IncomingPaymentsDb {
   def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit]
 
   /** List all incoming payments (pending, expired and succeeded) in the given time range (milli-seconds). */
-  def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
+  def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment]
 
   /** List all pending (not paid, not expired) incoming payments in the given time range (milli-seconds). */
   def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]

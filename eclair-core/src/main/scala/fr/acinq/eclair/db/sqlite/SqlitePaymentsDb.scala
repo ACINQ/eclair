@@ -24,7 +24,7 @@ import fr.acinq.eclair.db.PaymentsDb._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
+import fr.acinq.eclair.{MilliSatoshi, Paginated, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
 import scodec.bits.{BitVector, ByteVector}
 
@@ -328,8 +328,8 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
+  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement(limited("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at", paginated_opt))) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
       statement.executeQuery().flatMap(parseIncomingPayment).toSeq
