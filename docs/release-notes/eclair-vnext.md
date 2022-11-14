@@ -117,7 +117,7 @@ upgrading to this release.
 - `channelbalances` and `usablebalances` return a `shortIds` object instead of a single `shortChannelId` (#2323)
 - `stop` stops eclair: please note that the recommended way of stopping eclair is simply to kill its process (#2233)
 - `rbfopen` lets the initiator of a dual-funded channel RBF the funding transaction (#2275)
-- `listinvoices` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474)
+- `listinvoices` and `audit` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474, #2487)
 
 ### Miscellaneous improvements and bug fixes
 
