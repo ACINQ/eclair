@@ -176,19 +176,19 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
     primary.addPathFindingExperimentMetrics(metrics)
   }
 
-  override def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent] = {
-    runAsync(secondary.listSent(from, to))
-    primary.listSent(from, to)
+  override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentSent] = {
+    runAsync(secondary.listSent(from, to, paginated_opt))
+    primary.listSent(from, to, paginated_opt)
   }
 
-  override def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived] = {
-    runAsync(secondary.listReceived(from, to))
-    primary.listReceived(from, to)
+  override def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentReceived] = {
+    runAsync(secondary.listReceived(from, to, paginated_opt))
+    primary.listReceived(from, to, paginated_opt)
   }
 
-  override def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed] = {
-    runAsync(secondary.listRelayed(from, to))
-    primary.listRelayed(from, to)
+  override def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentRelayed] = {
+    runAsync(secondary.listRelayed(from, to, paginated_opt))
+    primary.listRelayed(from, to, paginated_opt)
   }
 
   override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[AuditDb.NetworkFee] = {

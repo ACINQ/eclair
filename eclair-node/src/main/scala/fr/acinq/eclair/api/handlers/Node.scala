@@ -57,8 +57,10 @@ trait Node {
   }
 
   val audit: Route = postRequest("audit") { implicit t =>
-    formFields(fromFormParam(), toFormParam()) { (from, to) =>
-      complete(eclairApi.audit(from, to))
+    withPaginated { paginated_opt =>
+      formFields(fromFormParam(), toFormParam()) { (from, to) =>
+        complete(eclairApi.audit(from, to, paginated_opt))
+      }
     }
   }
 

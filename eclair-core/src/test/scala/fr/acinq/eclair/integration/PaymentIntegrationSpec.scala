@@ -362,8 +362,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat), paymentParts)
 
-    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
-    val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now())
+    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now(), None).nonEmpty)
+    val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now(), None)
     assert(sent.length == 1, sent)
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
 
@@ -485,10 +485,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(receivedAmount == amount)
 
     awaitCond({
-      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == invoice.paymentHash)
+      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now(), None).filter(_.paymentHash == invoice.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == invoice.paymentHash).head
+    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now(), None).filter(_.paymentHash == invoice.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1210100.msat, relayed)
 
@@ -531,10 +531,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
 
     awaitCond({
-      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == invoice.paymentHash)
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now(), None).filter(_.paymentHash == invoice.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == invoice.paymentHash).head
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now(), None).filter(_.paymentHash == invoice.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 750000.msat, relayed)
 
@@ -545,8 +545,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }
     assert(outgoingSuccess.map(_.amount).sum == amount + 750000.msat, outgoingSuccess)
 
-    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
-    val sent = nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now())
+    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now(), None).nonEmpty)
+    val sent = nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now(), None)
     assert(sent.length == 1, sent)
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
   }
@@ -582,10 +582,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
 
     awaitCond({
-      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == invoice.paymentHash)
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now(), None).filter(_.paymentHash == invoice.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == invoice.paymentHash).head
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now(), None).filter(_.paymentHash == invoice.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1500000.msat, relayed)
 
