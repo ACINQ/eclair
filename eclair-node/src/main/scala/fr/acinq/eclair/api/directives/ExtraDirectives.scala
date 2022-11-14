@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.api.directives
 
-import akka.http.scaladsl.common.{NameDefaultUnmarshallerReceptacle, NameReceptacle, NameUnmarshallerReceptacle}
+import akka.http.scaladsl.common.{NameReceptacle, NameUnmarshallerReceptacle}
 import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.StatusCodes.NotFound
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
@@ -43,17 +43,16 @@ trait ExtraDirectives extends Directives {
   val nodeIdFormParam: NameReceptacle[PublicKey] = "nodeId".as[PublicKey]
   val nodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "nodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val paymentHashFormParam: NameUnmarshallerReceptacle[ByteVector32] = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
-  // we limit default values to avoid accidentally reading too much data from the DB
-  val fromFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "from".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.now() - 1.day)
-  val toFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "to".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.now())
+  val fromFormParam: NameUnmarshallerReceptacle[TimestampSecond] = "from".as[TimestampSecond](timestampSecondUnmarshaller)
+  val toFormParam: NameUnmarshallerReceptacle[TimestampSecond] = "to".as[TimestampSecond](timestampSecondUnmarshaller)
+  val countFormParam: NameReceptacle[Int] = "count".as[Int]
+  val skipFormParam: NameReceptacle[Int] = "skip".as[Int]
   val amountMsatFormParam: NameReceptacle[MilliSatoshi] = "amountMsat".as[MilliSatoshi]
   val invoiceFormParam: NameReceptacle[Bolt11Invoice] = "invoice".as[Bolt11Invoice]
   val routeFormatFormParam: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
-  val countFormParam: NameReceptacle[Int] = "count".as[Int]
-  val skipFormParam: NameReceptacle[Int] = "skip".as[Int]
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
@@ -61,6 +60,11 @@ trait ExtraDirectives extends Directives {
     case Success(None) =>
       complete(HttpResponse(NotFound).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("Not found"))))
     case Failure(_) => reject
+  }
+
+  // we limit default values to avoid accidentally reading too much data from the DB
+  def withFromToTimestamps: Directive1[(TimestampSecond, TimestampSecond)] = formFields(fromFormParam.?, toFormParam.?).tflatMap {
+    case (from_opt, to_opt) => provide(from_opt.getOrElse(TimestampSecond.now() - 1.day), to_opt.getOrElse(TimestampSecond.now()))
   }
 
   def withPaginated: Directive1[Option[Paginated]] = formFields(countFormParam.?, skipFormParam.?).tflatMap {

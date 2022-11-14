@@ -28,7 +28,7 @@ trait Fees {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val networkFees: Route = postRequest("networkfees") { implicit t =>
-    formFields(fromFormParam, toFormParam) { (from, to) =>
+    withFromToTimestamps { case (from, to) =>
       complete(eclairApi.networkFees(from, to))
     }
   }
