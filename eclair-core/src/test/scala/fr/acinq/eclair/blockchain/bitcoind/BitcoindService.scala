@@ -66,7 +66,7 @@ trait BitcoindService extends Logging {
   var bitcoinrpcauthmethod: BitcoinJsonRPCAuthMethod = _
   var bitcoincli: ActorRef = _
 
-  def startBitcoind(useCookie: Boolean = false, startupFlags: String = ""): Unit = {
+  def startBitcoind(useCookie: Boolean = false, defaultAddressType_opt: Option[String] = None, startupFlags: String = ""): Unit = {
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
     if (!Files.exists(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)) {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
@@ -76,6 +76,8 @@ trait BitcoindService extends Logging {
           .replace("28332", bitcoindRpcPort.toString)
           .replace("28334", bitcoindZmqBlockPort.toString)
           .replace("28335", bitcoindZmqTxPort.toString)
+          .appendedAll(defaultAddressType_opt.map(addressType => s"addresstype=$addressType\n").getOrElse(""))
+          .appendedAll(defaultAddressType_opt.map(addressType => s"changetype=$addressType\n").getOrElse(""))
         if (useCookie) {
           defaultConf
             .replace("rpcuser=foo", "")

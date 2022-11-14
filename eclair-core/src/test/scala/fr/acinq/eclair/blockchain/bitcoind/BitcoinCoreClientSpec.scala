@@ -22,7 +22,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2WpkhAddress}
-import fr.acinq.bitcoin.{SigHash, SigVersion}
+import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
@@ -942,6 +942,13 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
+    // We use Taproot addresses by default (segwit v1).
+    bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
+    val defaultAddress = sender.expectMsgType[String]
+    val decoded = Bech32.decodeWitnessAddress(defaultAddress)
+    assert(decoded.getSecond == 1)
+
+    // But we can explicitly use segwit v0 addresses.
     bitcoinClient.getP2wpkhPubkey().pipeTo(sender.ref)
     val amount = 50 millibtc
     val receiveKey = sender.expectMsgType[PublicKey]
