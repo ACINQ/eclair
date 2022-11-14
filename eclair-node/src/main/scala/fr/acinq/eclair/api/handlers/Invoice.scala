@@ -43,7 +43,7 @@ trait Invoice {
 
   val listInvoices: Route = postRequest("listinvoices") { implicit t =>
     withPaginated { paginated_opt =>
-      withFromToTimestamps { case (from, to) =>
+      formFields(fromFormParam(), toFormParam()) { (from, to) =>
         complete(eclairApi.allInvoices(from, to, paginated_opt))
       }
     }
@@ -51,7 +51,7 @@ trait Invoice {
 
   val listPendingInvoices: Route = postRequest("listpendinginvoices") { implicit t =>
     withPaginated { paginated_opt =>
-      withFromToTimestamps { case (from, to) =>
+      formFields(fromFormParam(), toFormParam()) { (from, to) =>
         complete(eclairApi.pendingInvoices(from, to, paginated_opt))
       }
     }

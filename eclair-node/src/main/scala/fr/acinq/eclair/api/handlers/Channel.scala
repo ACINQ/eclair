@@ -123,7 +123,7 @@ trait Channel {
   }
 
   val channelStats: Route = postRequest("channelstats") { implicit t =>
-    withFromToTimestamps { case (from, to) =>
+    formFields(fromFormParam(), toFormParam()) { (from, to) =>
       complete(eclairApi.channelStats(from, to))
     }
   }

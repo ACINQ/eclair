@@ -57,7 +57,7 @@ trait Node {
   }
 
   val audit: Route = postRequest("audit") { implicit t =>
-    withFromToTimestamps { case (from, to) =>
+    formFields(fromFormParam(), toFormParam()) { (from, to) =>
       complete(eclairApi.audit(from, to))
     }
   }
