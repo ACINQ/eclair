@@ -500,7 +500,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       }
       val bigTxId = {
         // Dual funding cannot use transactions that exceed 65k bytes.
-        walletA.getReceivePubkey().pipeTo(probe.ref)
+        walletA.getP2wpkhPubkey().pipeTo(probe.ref)
         val publicKey = probe.expectMsgType[PublicKey]
         val tx = Transaction(2, Nil, TxOut(100_000 sat, Script.pay2wpkh(publicKey)) +: (1 to 2500).map(_ => TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
         val minerWallet = new BitcoinCoreClient(bitcoinrpcclient)

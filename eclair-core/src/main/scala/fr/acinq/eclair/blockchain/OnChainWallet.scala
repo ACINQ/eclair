@@ -85,7 +85,7 @@ trait OnChainAddressGenerator {
   def getReceiveAddress(label: String = "")(implicit ec: ExecutionContext): Future[String]
 
   /** Generate a p2wpkh wallet address and return the corresponding public key. */
-  def getReceivePubkey()(implicit ec: ExecutionContext): Future[PublicKey]
+  def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[PublicKey]
 
 }
 

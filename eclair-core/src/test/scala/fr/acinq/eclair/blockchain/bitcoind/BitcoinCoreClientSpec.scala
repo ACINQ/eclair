@@ -49,7 +49,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   implicit val formats: Formats = DefaultFormats
 
   override def beforeAll(): Unit = {
-    startBitcoind()
+    startBitcoind(defaultAddressType_opt = Some("bech32m"))
     waitForBitcoindReady()
   }
 
@@ -942,7 +942,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
-    bitcoinClient.getReceivePubkey().pipeTo(sender.ref)
+    bitcoinClient.getP2wpkhPubkey().pipeTo(sender.ref)
     val amount = 50 millibtc
     val receiveKey = sender.expectMsgType[PublicKey]
     val address = computeP2WpkhAddress(receiveKey, Block.RegtestGenesisBlock.hash)
