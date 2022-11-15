@@ -406,7 +406,7 @@ object PaymentOnion {
      */
     case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends FinalPayload {
       override val amount = records.get[AmountToForward].get.amount
-      override val totalAmount = records.get[TotalAmount].map(_.totalAmount).getOrElse(amount)
+      override val totalAmount = records.get[TotalAmount].get.totalAmount
       override val expiry = records.get[OutgoingCltv].get.cltv
       val pathId = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].get.data
       val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
@@ -418,6 +418,7 @@ object PaymentOnion {
         if (records.get[AmountToForward].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
         if (records.get[OutgoingCltv].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
         if (records.get[EncryptedRecipientData].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+        if (records.get[TotalAmount].isEmpty) return Left(MissingRequiredTlv(UInt64(18)))
         // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data`, `current_blinding_point`, `amt_to_forward`, `outgoing_cltv_value` and `total_amount_msat`.
         if (records.unknown.nonEmpty) return Left(ForbiddenTlv(records.unknown.head.tag))
         records.records.find {

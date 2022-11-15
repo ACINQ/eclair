@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
-import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, EncryptedRecipientData, OutgoingCltv}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, EncryptedRecipientData, OutgoingCltv, TotalAmount}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{PathId, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol._
@@ -92,7 +92,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   def createBlindedPacket(amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, pathId: ByteVector, blinding_opt: Option[PublicKey]): IncomingPaymentPacket.FinalPacket = {
     val add = UpdateAddHtlc(ByteVector32.One, 0, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, blinding_opt)
-    val payload = FinalPayload.Blinded(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
+    val payload = FinalPayload.Blinded(TlvStream(AmountToForward(amount), TotalAmount(amount), OutgoingCltv(expiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
     IncomingPaymentPacket.FinalPacket(add, payload)
   }
 
