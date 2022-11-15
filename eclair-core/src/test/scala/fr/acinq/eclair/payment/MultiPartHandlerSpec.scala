@@ -22,7 +22,7 @@ import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features._
+import fr.acinq.eclair.Features.{KeySend, _}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus}
@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
-import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, BlindingPoint, EncryptedRecipientData, OutgoingCltv}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{PathId, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol._
@@ -97,7 +97,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   def createBlindedPacket(amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, pathId: ByteVector, blinding_opt: Option[PublicKey]): IncomingPaymentPacket.FinalPacket = {
     val add = UpdateAddHtlc(ByteVector32.One, 0, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, blinding_opt)
-    val payload = FinalPayload.Blinded(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
+    val payload = FinalPayload.Blinded(TlvStream(AmountToForward(amount), TotalAmount(amount), OutgoingCltv(expiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
     IncomingPaymentPacket.FinalPacket(add, payload)
   }
 
@@ -543,7 +543,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(pathIds.size == 1)
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 5000 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
-    val payload = FinalPayload.Blinded(TlvStream(BlindingPoint(pathIds.keys.head), AmountToForward(5000 msat), OutgoingCltv(defaultExpiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathIds.values.head), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
+    val payload = FinalPayload.Blinded(TlvStream(BlindingPoint(pathIds.keys.head), AmountToForward(5000 msat), TotalAmount(5000 msat), OutgoingCltv(defaultExpiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathIds.values.head), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
     val packet = IncomingPaymentPacket.FinalPacket(add, payload)
     sender.send(handlerWithRouteBlinding, packet)
     register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message
