@@ -29,15 +29,6 @@ import scodec.{Attempt, Codec}
  */
 object LightningMessageCodecs {
 
-  val featuresCodec: Codec[Features[Feature]] = bytes.xmap[Features[Feature]](
-    { bytes => Features(bytes) },
-    { features => features.toByteVector }
-  )
-
-  val lengthPrefixedFeaturesCodec: Codec[Features[Feature]] = variableSizeBytes(uint16, featuresCodec)
-
-  val initFeaturesCodec: Codec[Features[InitFeature]] = lengthPrefixedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
-
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
   val combinedFeaturesCodec: Codec[Features[InitFeature]] = (
     ("globalFeatures" | varsizebinarydata) ::
