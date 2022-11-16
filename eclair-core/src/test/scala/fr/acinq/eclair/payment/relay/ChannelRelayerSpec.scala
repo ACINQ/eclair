@@ -28,6 +28,7 @@ import fr.acinq.eclair.Features.ScidAlias
 import fr.acinq.eclair.TestConstants.emptyOnionPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
@@ -153,12 +154,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdAdd(register, lcu2.channelId, outgoingAmount, outgoingExpiry)
   }
 
-  test("relay with onion tlv payload") { f =>
+  test("relay blinded payment") { f =>
     import f._
 
-    val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry)
-    val r = createValidIncomingPacket(payload)
-    val u = createLocalUpdate(channelId1)
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 2500 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(u.channelUpdate, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r)
@@ -183,9 +184,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! Relay(r)
 
     // first try
-    val fwd1 = expectFwdAdd(register, channelIds(realScId2), outgoingAmount, outgoingExpiry)
+    val fwd1 = expectFwdAdd(register, channelIds(realScid2), outgoingAmount, outgoingExpiry)
     // channel returns an error
-    fwd1.message.replyTo ! RES_ADD_FAILED(fwd1.message, HtlcValueTooHighInFlight(channelIds(realScId2), UInt64(1000000000L), 1516977616L msat), Some(u2.channelUpdate))
+    fwd1.message.replyTo ! RES_ADD_FAILED(fwd1.message, HtlcValueTooHighInFlight(channelIds(realScid2), UInt64(1000000000L), 1516977616L msat), Some(u2.channelUpdate))
 
     // second try
     val fwd2 = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry)
@@ -446,10 +447,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("settlement failure") { f =>
     import f._
 
-    val channelId1 = channelIds(realScid1)
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
     val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry)
-    val r = createValidIncomingPacket(payload)
-    val u = createLocalUpdate(channelId1)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
     val u_disabled = createLocalUpdate(channelId1, enabled = false)
     val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket, None)
 
@@ -457,7 +457,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val testCases = Seq(
       TestCase(HtlcResult.RemoteFail(UpdateFailHtlc(channelId1, downstream_htlc.id, hex"deadbeef")), CMD_FAIL_HTLC(r.add.id, Left(hex"deadbeef"), commit = true)),
-      TestCase(HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(channelId1, downstream_htlc.id, ByteVector32.One, FailureMessageCodecs.BADONION)), CMD_FAIL_MALFORMED_HTLC(r.add.id, ByteVector32.One, FailureMessageCodecs.BADONION, commit = true)),
+      TestCase(HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(channelId1, downstream_htlc.id, ByteVector32.One, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5)), CMD_FAIL_HTLC(r.add.id, Right(InvalidOnionHmac(ByteVector32.One)), commit = true)),
       TestCase(HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId1, downstream_htlc)), CMD_FAIL_HTLC(r.add.id, Right(PermanentChannelFailure), commit = true)),
       TestCase(HtlcResult.DisconnectedBeforeSigned(u_disabled.channelUpdate), CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(u_disabled.channelUpdate)), commit = true)),
       TestCase(HtlcResult.ChannelFailureBeforeSigned, CMD_FAIL_HTLC(r.add.id, Right(PermanentChannelFailure), commit = true))
@@ -470,6 +470,47 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
       fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream_htlc, testCase.result)
       expectFwdFail(register, r.add.channelId, testCase.cmd)
+    }
+  }
+
+  test("settlement failure (blinded payment)") { f =>
+    import f._
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val downstream = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket, None)
+
+    val testCases = Seq(
+      HtlcResult.RemoteFail(UpdateFailHtlc(channelId1, downstream.id, hex"deadbeef")),
+      HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(channelId1, downstream.id, randomBytes32(), FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5)),
+      HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId1, downstream)),
+      HtlcResult.DisconnectedBeforeSigned(createLocalUpdate(channelId1, enabled = false).channelUpdate),
+      HtlcResult.ChannelFailureBeforeSigned,
+    )
+
+    Seq(true, false).foreach { isIntroduction =>
+      testCases.foreach { htlcResult =>
+        val r = createValidIncomingPacket(createBlindedPayload(u.channelUpdate, isIntroduction), outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+        channelRelayer ! WrappedLocalChannelUpdate(u)
+        channelRelayer ! Relay(r)
+        val fwd = expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry)
+        fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
+        fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream, htlcResult)
+        val cmd = register.expectMessageType[Register.Forward[channel.Command]]
+        assert(cmd.channelId == r.add.channelId)
+        if (isIntroduction) {
+          assert(cmd.message.isInstanceOf[CMD_FAIL_HTLC])
+          val fail = cmd.message.asInstanceOf[CMD_FAIL_HTLC]
+          assert(fail.id == r.add.id)
+          assert(fail.reason == Right(InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket))))
+          assert(fail.delay_opt.nonEmpty)
+        } else {
+          assert(cmd.message.isInstanceOf[CMD_FAIL_MALFORMED_HTLC])
+          val fail = cmd.message.asInstanceOf[CMD_FAIL_MALFORMED_HTLC]
+          assert(fail.id == r.add.id)
+          assert(fail.onionHash == Sphinx.hash(r.add.onionRoutingPacket))
+          assert(fail.failureCode == InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code)
+        }
+      }
     }
   }
 
@@ -567,7 +608,7 @@ object ChannelRelayerSpec {
   val outgoingNodeId: PublicKey = randomKey().publicKey
 
   val realScid1: RealShortChannelId = RealShortChannelId(111111)
-  val realScId2: RealShortChannelId = RealShortChannelId(222222)
+  val realScid2: RealShortChannelId = RealShortChannelId(222222)
 
   val localAlias1: Alias = Alias(111000)
   val localAlias2: Alias = Alias(222000)
@@ -577,13 +618,30 @@ object ChannelRelayerSpec {
 
   val channelIds = Map(
     realScid1 -> channelId1,
-    realScId2 -> channelId2,
+    realScid2 -> channelId2,
     localAlias1 -> channelId1,
     localAlias2 -> channelId2,
   )
 
+  def createBlindedPayload(update: ChannelUpdate, isIntroduction: Boolean): ChannelRelay.Blinded = {
+    val tlvs = TlvStream[OnionPaymentPayloadTlv](Seq(
+      Some(OnionPaymentPayloadTlv.EncryptedRecipientData(hex"2a")),
+      if (isIntroduction) Some(OnionPaymentPayloadTlv.BlindingPoint(randomKey().publicKey)) else None,
+    ).flatten)
+    val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
+      RouteBlindingEncryptedDataTlv.OutgoingChannelId(update.shortChannelId),
+      RouteBlindingEncryptedDataTlv.PaymentRelay(update.cltvExpiryDelta, update.feeProportionalMillionths, update.feeBaseMsat),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(500_000), 0 msat),
+    )
+    ChannelRelay.Blinded(tlvs, blindedTlvs, randomKey().publicKey)
+  }
+
   def createValidIncomingPacket(payload: IntermediatePayload.ChannelRelay, amountIn: MilliSatoshi = 11_000_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100)): IncomingPaymentPacket.ChannelRelayPacket = {
-    val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, None)
+    val nextBlinding_opt = payload match {
+      case p: ChannelRelay.Blinded => Some(p.nextBlinding)
+      case _: ChannelRelay.Standard => None
+    }
+    val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, nextBlinding_opt)
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
   }
 
