@@ -22,7 +22,8 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import akka.pattern.ask
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
@@ -31,12 +32,16 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, randomBytes32, randomKey}
 import scodec.bits.HexStringSyntax
 
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -255,6 +260,8 @@ object MultiPartHandler {
   case class ReceiveOfferPayment(nodeKey: PrivateKey,
                                  offer: Offer,
                                  invoiceRequest: InvoiceRequest,
+                                 routes: Seq[Seq[PublicKey]],
+                                 router: ActorRef,
                                  paymentPreimage_opt: Option[ByteVector32] = None,
                                  paymentType: String = PaymentType.Blinded) extends ReceivePayment
 
@@ -298,21 +305,54 @@ object MultiPartHandler {
                   nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)
                   invoice
                 case r: ReceiveOfferPayment =>
-                  // TODO: get blinded paths from the router instead
-                  val pathId = RouteBlindingEncryptedDataTlv.PathId(randomBytes32())
-                  val dummyConstraints = RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(nodeParams.currentBlockHeight + 144), 1 msat)
-                  val dummyRelay = RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(0), 0, 0 msat)
-                  val dummyScid = RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId.toSelf)
-                  val dummyPath = Seq(
-                    (nodeParams.nodeId, RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(dummyScid, dummyRelay, dummyConstraints)).require.bytes),
-                    (nodeParams.nodeId, RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(dummyConstraints, pathId)).require.bytes),
-                  )
-                  val blindedRoute = Sphinx.RouteBlinding.create(randomKey(), dummyPath.map(_._1), dummyPath.map(_._2))
-                  val paymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 0 msat, Features.empty)
+                  val amount = r.invoiceRequest.amount.orElse(r.offer.amount.map(_ * r.invoiceRequest.quantity)).get
+                  val paths = r.routes.map(nodeIds => {
+                    require(nodeIds.nonEmpty, "route can't be empty")
+                    require(nodeIds.last == nodeParams.nodeId, "route must end at our node")
+                    println(s"creating blinded route: ${nodeIds.map(_.toHex).mkString("->")}")
+                    val pathId = randomBytes32()
+                    val finalExpiryDelta = nodeParams.channelConf.minFinalExpiryDelta + 3
+                    val finalConstraints = RouteBlindingEncryptedDataTlv.PaymentConstraints(finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1000), nodeParams.channelConf.htlcMinimum)
+                    val zeroPaymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), nodeParams.channelConf.htlcMinimum, amount, Features.empty)
+                    val finalPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
+                      finalConstraints,
+                      RouteBlindingEncryptedDataTlv.PathId(pathId)
+                    )).require.bytes
+                    val (paymentInfo, payloads) = if (nodeIds.length > 1) {
+                      val timeout = 30 second
+                      val routeResponse = Await.result(r.router.ask(Router.FinalizeRoute(0 msat, Router.PredefinedNodeRoute(nodeIds)))(timeout).mapTo[Router.RouteResponse], timeout)
+                      val routeToBlind = routeResponse.routes.head
+                      val totalCltvDelta = routeToBlind.hops.map(_.cltvExpiryDelta).fold(finalExpiryDelta)(_ + _)
+                      routeToBlind.hops.foldRight((zeroPaymentInfo, Seq(finalPayload))) {
+                        case (channel: ChannelHop, (payInfo, nextPayloads)) =>
+                          println(s"adding channel hop: ${channel.nodeId}->${channel.nextNodeId} with scid=${channel.params.shortChannelId}")
+                          val newFeeBase = MilliSatoshi((channel.params.relayFees.feeBase.toLong * 1_000_000 + payInfo.feeBase.toLong * (1_000_000 + channel.params.relayFees.feeProportionalMillionths) + 1_000_000 - 1) / 1_000_000)
+                          val newFeeProp = ((payInfo.feeProportionalMillionths + channel.params.relayFees.feeProportionalMillionths) * 1_000_000 + payInfo.feeProportionalMillionths * channel.params.relayFees.feeProportionalMillionths + 1_000_000 - 1) / 1_000_000
+                          // Because eclair (and others) lies about max HTLC, we remove 10% as a safety margin.
+                          val channelMaxHtlc = channel.params.htlcMaximum_opt.map(_ * 0.9).getOrElse(amount)
+                          val newPayInfo = PaymentInfo(newFeeBase, newFeeProp, payInfo.cltvExpiryDelta + channel.cltvExpiryDelta, payInfo.minHtlc.max(channel.params.htlcMinimum), payInfo.maxHtlc.min(channelMaxHtlc), payInfo.allowedFeatures)
+                          val payload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
+                            RouteBlindingEncryptedDataTlv.OutgoingChannelId(channel.params.shortChannelId),
+                            RouteBlindingEncryptedDataTlv.PaymentRelay(channel.cltvExpiryDelta, channel.params.relayFees.feeProportionalMillionths, channel.params.relayFees.feeBase),
+                            RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(nodeParams.currentBlockHeight + 1000), channel.params.htlcMinimum)
+                          )).require.bytes
+                          (newPayInfo, payload +: nextPayloads)
+                        case (hop: BlindedHop, _) =>
+                          // Should not be reachable
+                          context.log.error("received blinded hop from router: {}", hop)
+                          throw new Exception("received blinded hop from router")
+                      }
+                    } else {
+                      (zeroPaymentInfo, Seq(finalPayload))
+                    }
+                    println(s"payment info: feeBase=${paymentInfo.feeBase}, feeProp=${paymentInfo.feeProportionalMillionths}, expiryDelta=${paymentInfo.cltvExpiryDelta}, maxHtlc=${paymentInfo.maxHtlc}")
+                    val blindedRoute = Sphinx.RouteBlinding.create(randomKey(), nodeIds, payloads)
+                    (blindedRoute, paymentInfo, pathId)
+                  })
                   val invoiceFeatures = featuresTrampolineOpt.remove(Features.RouteBlinding).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-                  val invoice = Bolt12Invoice(r.offer, r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.channelConf.minFinalExpiryDelta, invoiceFeatures, Seq(PaymentBlindedRoute(blindedRoute.route, paymentInfo)))
+                  val invoice = Bolt12Invoice(r.offer, r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.channelConf.minFinalExpiryDelta, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) })
                   context.log.debug("generated invoice={} for offerId={}", invoice.toString, r.offer.offerId)
-                  nodeParams.db.payments.addIncomingBlindedPayment(invoice, paymentPreimage, Map(blindedRoute.lastBlinding -> pathId.data), r.paymentType)
+                  nodeParams.db.payments.addIncomingBlindedPayment(invoice, paymentPreimage, paths.map { case (blindedRoute, _, pathId) => blindedRoute.lastBlinding -> pathId.bytes }.toMap, r.paymentType)
                   invoice
               }
             } match {
@@ -422,14 +462,14 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePathId(add: UpdateAddHtlc, payload: FinalPayload.Blinded, record: IncomingBlindedPayment)(implicit log: LoggingAdapter): Boolean = {
-    add.blinding_opt.flatMap(record.pathIds.get) match {
+  private def validatePathId(blinding_opt: Option[PublicKey], payload: FinalPayload.Blinded, record: IncomingBlindedPayment)(implicit log: LoggingAdapter): Boolean = {
+    blinding_opt.flatMap(record.pathIds.get) match {
       case Some(pathId) if pathId == payload.pathId => true
       case Some(pathId) =>
         log.warning("received blinded payment with invalid pathId={} (expected {})", payload.pathId, pathId)
         false
       case None =>
-        log.warning("received blinded payment with an invalid blinding={}", add.blinding_opt.map(_.toHex).getOrElse("none"))
+        log.warning("received blinded payment with an invalid blinding={}", blinding_opt.map(_.toHex).getOrElse("none"))
         false
     }
   }
@@ -454,7 +494,7 @@ object MultiPartHandler {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
     val commonOk = validateCommon(nodeParams, add, payload, record)
-    val secretOk = validatePathId(add, payload, record)
+    val secretOk = validatePathId(add.blinding_opt.orElse(payload.blinding_opt), payload, record)
     if (commonOk && secretOk) None else Some(cmdFail)
   }
 

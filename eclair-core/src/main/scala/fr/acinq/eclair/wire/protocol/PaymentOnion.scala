@@ -408,6 +408,7 @@ object PaymentOnion {
       override val amount = records.get[AmountToForward].get.amount
       override val totalAmount = records.get[TotalAmount].get.totalAmount
       override val expiry = records.get[OutgoingCltv].get.cltv
+      val blinding_opt: Option[PublicKey] = records.get[BlindingPoint].map(_.publicKey)
       val pathId = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].get.data
       val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
       val allowedFeatures = blindedRecords.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)

@@ -52,7 +52,10 @@ object RouteCalculation {
           hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
-              val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
+              val selectedEdges = edges.map(es => {
+                println(s"scids between ${es.head.desc.a} and ${es.head.desc.b}: ${es.map(_.desc.shortChannelId).mkString(",")}")
+                es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi))
+              })
               val hops = selectedEdges.map(e => graphEdgeToHop(e))
               ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
             case _ =>
