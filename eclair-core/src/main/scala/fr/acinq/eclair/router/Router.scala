@@ -440,14 +440,11 @@ object Router {
     // @formatter:on
   }
 
-  sealed trait ChannelRelayParams extends HopRelayParams {
-    def shortChannelId: ShortChannelId
-  }
+  sealed trait ChannelRelayParams extends HopRelayParams
 
   object HopRelayParams {
     /** We learnt about this channel from a channel_update */
     case class FromAnnouncement(channelUpdate: ChannelUpdate) extends ChannelRelayParams {
-      override val shortChannelId = channelUpdate.shortChannelId
       override val cltvExpiryDelta = channelUpdate.cltvExpiryDelta
       override val relayFees = channelUpdate.relayFees
       override val htlcMinimum = channelUpdate.htlcMinimumMsat
@@ -456,7 +453,6 @@ object Router {
 
     /** We learnt about this channel from hints in a Bolt 11 invoice */
     case class FromHint(extraHop: Invoice.ChannelEdge) extends ChannelRelayParams {
-      override val shortChannelId = extraHop.shortChannelId
       override val cltvExpiryDelta = extraHop.cltvExpiryDelta
       override val relayFees = extraHop.relayFees
       override val htlcMinimum = extraHop.htlcMinimum
@@ -484,9 +480,8 @@ object Router {
    * @param nextNodeId id of the end node.
    * @param params     source for the channel parameters.
    */
-  case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, params: ChannelRelayParams) extends ConnectedHop {
+  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, params: ChannelRelayParams) extends ConnectedHop {
     // @formatter:off
-    val shortChannelId = params.shortChannelId
     override val cltvExpiryDelta = params.cltvExpiryDelta
     override val length = 1
     override def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)

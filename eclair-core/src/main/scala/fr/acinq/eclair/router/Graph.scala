@@ -649,7 +649,7 @@ object Graph {
       }
 
       def graphEdgeToHop(graphEdge: GraphEdge): ConnectedHop = graphEdge.params match {
-        case params: ChannelRelayParams => ChannelHop(graphEdge.desc.a, graphEdge.desc.b, params)
+        case params: ChannelRelayParams => ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, params)
         case params: HopRelayParams.FromBlindedRoute => BlindedHop(params.dummyId, params.route, params.paymentInfo)
       }
     }

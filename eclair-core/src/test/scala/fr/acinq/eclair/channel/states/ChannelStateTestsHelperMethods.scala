@@ -365,7 +365,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
   def makeSingleHopRoute(amount: MilliSatoshi, destination: PublicKey): Route = {
     val dummyParams = HopRelayParams.FromHint(Invoice.ChannelEdge(randomKey().publicKey, destination, ShortChannelId(0), 0 msat, 0, CltvExpiryDelta(0)))
-    Route(amount, Seq(ChannelHop(dummyParams.extraHop.sourceNodeId, dummyParams.extraHop.targetNodeId, dummyParams)))
+    Route(amount, Seq(ChannelHop(dummyParams.extraHop.shortChannelId, dummyParams.extraHop.sourceNodeId, dummyParams.extraHop.targetNodeId, dummyParams)))
   }
 
   def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {

@@ -155,7 +155,7 @@ class BlindPaymentIntegrationSpec extends IntegrationSpec {
     assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
   }
 
-  ignore("send an HTLC A->(D->D->D), blinded route with dummy hops") {
+  test("send an HTLC A->(D->D->D), blinded route with dummy hops") {
     val (sender, eventListener) = (TestProbe(), TestProbe())
     nodes("D").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
 
@@ -203,7 +203,7 @@ class BlindPaymentIntegrationSpec extends IntegrationSpec {
     assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
   }
 
-  ignore("send an HTLC A->(G->C->D), blinded route with node not supporting blinded routes") {
+  test("send an HTLC A->(G->C->D), blinded route with node not supporting blinded routes") {
     val (sender, eventListener) = (TestProbe(), TestProbe())
     nodes("D").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
 
@@ -225,7 +225,7 @@ class BlindPaymentIntegrationSpec extends IntegrationSpec {
     sender.expectMsgType[PaymentFailed]
   }
 
-  ignore("send an HTLC A->(A->B->C->D), blinded route with introduction node being the sender") {
+  test("send an HTLC A->(A->B->C->D), blinded route with introduction node being the sender") {
     val (sender, eventListener) = (TestProbe(), TestProbe())
     nodes("D").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
 
@@ -249,7 +249,7 @@ class BlindPaymentIntegrationSpec extends IntegrationSpec {
     assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
   }
 
-  ignore("send to multiple blinded routes: "){
+  test("send to multiple blinded routes: "){
     val (sender, eventListener) = (TestProbe(), TestProbe())
     nodes("F").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
 

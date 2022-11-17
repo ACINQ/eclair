@@ -238,7 +238,7 @@ object BaseRouterSpec {
   }
 
   def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: ChannelUpdate): ChannelHop =
-    ChannelHop(nodeId, nextNodeId, HopRelayParams.FromAnnouncement(channelUpdate))
+    ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, HopRelayParams.FromAnnouncement(channelUpdate))
 
   def createBlindedRoute(source: PublicKey, target: PublicKey, amount: MilliSatoshi, expiry: CltvExpiry, update: ChannelUpdate, preimage: ByteVector32): (Bolt12Invoice, BlindedHop, BlindedRecipient) = {
     val recipientKey = randomKey()

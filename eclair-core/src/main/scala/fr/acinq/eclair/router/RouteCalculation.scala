@@ -49,7 +49,14 @@ object RouteCalculation {
       fr.route match {
         case PredefinedNodeRoute(hops) =>
           // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
-          hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
+          hops.sliding(2).map {
+            case List(v1, v2) => if (v1 == localNodeId && v2 == localNodeId) {
+              Seq(GraphEdge(Invoice.ChannelEdge(localNodeId, localNodeId, ShortChannelId.toSelf, 0 msat, 0, CltvExpiryDelta(0))))
+            } else {
+              g.getEdgesBetween(v1, v2)
+            }
+
+          }.toList match {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => {

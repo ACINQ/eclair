@@ -325,14 +325,14 @@ object MultiPartHandler {
                       val totalCltvDelta = routeToBlind.hops.map(_.cltvExpiryDelta).fold(finalExpiryDelta)(_ + _)
                       routeToBlind.hops.foldRight((zeroPaymentInfo, Seq(finalPayload))) {
                         case (channel: ChannelHop, (payInfo, nextPayloads)) =>
-                          println(s"adding channel hop: ${channel.nodeId}->${channel.nextNodeId} with scid=${channel.params.shortChannelId}")
+                          println(s"adding channel hop: ${channel.nodeId}->${channel.nextNodeId} with scid=${channel.shortChannelId}")
                           val newFeeBase = MilliSatoshi((channel.params.relayFees.feeBase.toLong * 1_000_000 + payInfo.feeBase.toLong * (1_000_000 + channel.params.relayFees.feeProportionalMillionths) + 1_000_000 - 1) / 1_000_000)
                           val newFeeProp = ((payInfo.feeProportionalMillionths + channel.params.relayFees.feeProportionalMillionths) * 1_000_000 + payInfo.feeProportionalMillionths * channel.params.relayFees.feeProportionalMillionths + 1_000_000 - 1) / 1_000_000
                           // Because eclair (and others) lies about max HTLC, we remove 10% as a safety margin.
                           val channelMaxHtlc = channel.params.htlcMaximum_opt.map(_ * 0.9).getOrElse(amount)
                           val newPayInfo = PaymentInfo(newFeeBase, newFeeProp, payInfo.cltvExpiryDelta + channel.cltvExpiryDelta, payInfo.minHtlc.max(channel.params.htlcMinimum), payInfo.maxHtlc.min(channelMaxHtlc), payInfo.allowedFeatures)
                           val payload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
-                            RouteBlindingEncryptedDataTlv.OutgoingChannelId(channel.params.shortChannelId),
+                            RouteBlindingEncryptedDataTlv.OutgoingChannelId(channel.shortChannelId),
                             RouteBlindingEncryptedDataTlv.PaymentRelay(channel.cltvExpiryDelta, channel.params.relayFees.feeProportionalMillionths, channel.params.relayFees.feeBase),
                             RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(nodeParams.currentBlockHeight + 1000), channel.params.htlcMinimum)
                           )).require.bytes
