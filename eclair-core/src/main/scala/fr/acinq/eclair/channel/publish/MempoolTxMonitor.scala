@@ -47,7 +47,7 @@ object MempoolTxMonitor {
   private case class ParentTxStatus(confirmed: Boolean, blockHeight: BlockHeight) extends Command
   private case object TxNotFound extends Command
   private case class GetTxConfirmationsFailed(reason: Throwable) extends Command
-  private case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
+  final case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
   private case class CheckTxConfirmations(currentBlockHeight: BlockHeight) extends Command
   // @formatter:on
 
