@@ -132,8 +132,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
   }
 
   def waitForConfirmation(): Behavior[Command] = {
-    val messageAdapter = context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight))
-    context.system.eventStream ! EventStream.Subscribe(messageAdapter)
+    context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight)))
     context.system.eventStream ! EventStream.Publish(TransactionPublished(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
     Behaviors.receiveMessagePartial {
       case WrappedCurrentBlockHeight(currentBlockHeight) =>
@@ -160,7 +159,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
         } else {
           log.info("txid={} has reached min depth", cmd.tx.txid)
           context.system.eventStream ! EventStream.Publish(TransactionConfirmed(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx))
-          sendFinalResult(TxDeeplyBuried(cmd.tx), Some(messageAdapter))
+          sendFinalResult(TxDeeplyBuried(cmd.tx))
         }
       case ParentTxStatus(confirmed, currentBlockHeight) =>
         cmd.replyTo ! TxInMempool(cmd.tx.txid, currentBlockHeight, confirmed)
@@ -186,12 +185,11 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
         }
       case CheckInputFailed(reason) =>
         log.error("could not check input status: ", reason)
-        sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true)), Some(messageAdapter))
+        sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true)))
     }
   }
 
-  def sendFinalResult(result: FinalTxResult, blockSubscriber_opt: Option[ActorRef[CurrentBlockHeight]] = None): Behavior[Command] = {
-    blockSubscriber_opt.foreach(actor => context.system.eventStream ! EventStream.Unsubscribe(actor))
+  def sendFinalResult(result: FinalTxResult): Behavior[Command] = {
     cmd.replyTo ! result
     Behaviors.stopped
   }
