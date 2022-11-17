@@ -903,7 +903,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectNoMessage(1 second)
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+  ignore("recv WatchFundingSpentTriggered (other commit)") { f =>
     import f._
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)

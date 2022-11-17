@@ -541,7 +541,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     awaitCond(bob.stateName == CLOSING)
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+  ignore("recv WatchFundingSpentTriggered (other commit)") { f =>
     import f._
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)

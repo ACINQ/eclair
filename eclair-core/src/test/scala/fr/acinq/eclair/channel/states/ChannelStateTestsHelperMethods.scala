@@ -323,14 +323,16 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         bob2blockchain.expectMsgType[WatchPublished]
         alice ! WatchPublishedTriggered(fundingTx)
         bob ! WatchPublishedTriggered(fundingTx)
+        alice2blockchain.expectMsgType[WatchFundingConfirmed]
+        bob2blockchain.expectMsgType[WatchFundingConfirmed]
       } else {
         alice2blockchain.expectMsgType[WatchFundingConfirmed]
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
         alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
         bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+        alice2blockchain.expectMsgType[WatchFundingSpent]
+        bob2blockchain.expectMsgType[WatchFundingSpent]
       }
-      alice2blockchain.expectMsgType[WatchFundingSpent]
-      bob2blockchain.expectMsgType[WatchFundingSpent]
       alice2bob.expectMsgType[ChannelReady]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[ChannelReady]
@@ -429,12 +431,22 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val rHasChanges = r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
-    s2r.expectMsgType[CommitSig]
-    s2r.forward(r)
+    var sigs2r = 0
+    var batchSize = 0
+    do {
+      val sig = s2r.expectMsgType[CommitSig]
+      s2r.forward(r)
+      sigs2r += 1
+      batchSize = sig.batchSize
+    } while (sigs2r < batchSize)
     r2s.expectMsgType[RevokeAndAck]
     r2s.forward(s)
-    r2s.expectMsgType[CommitSig]
-    r2s.forward(s)
+    var sigr2s = 0
+    do {
+      r2s.expectMsgType[CommitSig]
+      r2s.forward(s)
+      sigr2s += 1
+    } while (sigr2s < batchSize)
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
     if (rHasChanges) {

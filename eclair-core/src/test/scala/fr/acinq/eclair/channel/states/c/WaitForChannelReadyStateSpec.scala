@@ -260,7 +260,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(alice.stateName == CLOSING)
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+  ignore("recv WatchFundingSpentTriggered (other commit)") { f =>
     import f._
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)

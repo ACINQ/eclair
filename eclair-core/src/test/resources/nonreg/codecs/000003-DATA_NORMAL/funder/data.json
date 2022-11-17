@@ -67,6 +67,7 @@
       "remoteNextHtlcId" : 151
     },
     "active" : [ {
+      "fundingTxIndex" : 0,
       "fundingTx" : {
         "outPoint" : "115641011cceeb4a1709a6cbd8f5f1b387460ee5fd2e48be3fbd1ae0e9e1cf6e:0",
         "amountSatoshis" : 15000000
@@ -106,6 +107,7 @@
         "remotePerCommitmentPoint" : "02b82bbd59e0d22665671d9e47d8733058b92f18e906e9403753661aa03dc9e4dd"
       }
     } ],
+    "inactive" : [ ],
     "remoteNextCommitInfo" : "02a4471183c519e54b8ee66fb41cbe06fed1153fce258db72ce67f9a9e044f0a16",
     "remotePerCommitmentSecrets" : null,
     "originChannels" : { }

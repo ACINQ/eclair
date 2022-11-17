@@ -403,7 +403,22 @@ object LightningMessageCodecs {
   //
 
   //
+  val spliceInitCodec: Codec[SpliceInit] = (
+    ("channelId" | bytes32) ::
+      ("fundingContribution" | satoshiSigned) ::
+      ("lockTime" | uint32) ::
+      ("feerate" | feeratePerKw) ::
+      ("tlvStream" | SpliceInitTlv.spliceInitTlvCodec)).as[SpliceInit]
 
+  val spliceAckCodec: Codec[SpliceAck] = (
+    ("channelId" | bytes32) ::
+      ("fundingContribution" | satoshiSigned) ::
+      ("tlvStream" | SpliceAckTlv.spliceAckTlvCodec)).as[SpliceAck]
+
+  val spliceLockedCodec: Codec[SpliceLocked] = (
+    ("channelId" | bytes32) ::
+      ("fundingTxid" | bytes32) ::
+      ("tlvStream" | SpliceLockedTlv.spliceLockedTlvCodec)).as[SpliceLocked]
   //
 
   //
@@ -455,10 +470,12 @@ object LightningMessageCodecs {
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
     .typecase(513, onionMessageCodec)
-  // NB: blank lines to minimize merge conflicts
+    // NB: blank lines to minimize merge conflicts
 
-  //
-
+    //
+    .typecase(37000, spliceInitCodec)
+    .typecase(37002, spliceAckCodec)
+    .typecase(37004, spliceLockedCodec)
   //
 
   //

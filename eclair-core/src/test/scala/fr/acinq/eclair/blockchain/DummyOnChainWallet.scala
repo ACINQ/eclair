@@ -131,7 +131,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(pubkey)
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
-    val currentAmountIn = tx.txIn.flatMap(txIn => inputs.find(_.txid == txIn.outPoint.txid)).map(_.txOut.head.amount).sum
+    val currentAmountIn = tx.txIn.flatMap(txIn => inputs.find(_.txid == txIn.outPoint.txid).flatMap(_.txOut.lift(txIn.outPoint.index.toInt))).map(_.amount).sum
     val amountOut = tx.txOut.map(_.amount).sum
     // We add a single input to reach the desired feerate.
     val inputAmount = amountOut + 100_000.sat
@@ -139,10 +139,10 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     inputs = inputs :+ inputTx
     val dummyWitness = Script.witnessPay2wpkh(pubkey, ByteVector.fill(73)(0))
     val dummySignedTx = tx.copy(
-      txIn = tx.txIn.map(_.copy(witness = dummyWitness)) :+ TxIn(OutPoint(inputTx, 0), ByteVector.empty, 0, dummyWitness),
+      txIn = tx.txIn.filterNot(i => externalInputsWeight.contains(i.outPoint)).map(_.copy(witness = dummyWitness)) :+ TxIn(OutPoint(inputTx, 0), ByteVector.empty, 0, dummyWitness),
       txOut = tx.txOut :+ TxOut(inputAmount, Script.pay2wpkh(pubkey)),
     )
-    val fee = Transactions.weight2fee(feeRate, dummySignedTx.weight())
+    val fee = Transactions.weight2fee(feeRate, dummySignedTx.weight() + externalInputsWeight.values.sum.toInt)
     val fundedTx = tx.copy(
       txIn = tx.txIn :+ TxIn(OutPoint(inputTx, 0), Nil, 0),
       txOut = tx.txOut :+ TxOut(inputAmount + currentAmountIn - amountOut - fee, Script.pay2wpkh(pubkey)),
@@ -163,7 +163,10 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     Future.successful(SignTransactionResponse(signedTx, complete))
   }
 
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = Future.successful(tx.txid)
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+    inputs = inputs :+ tx
+    Future.successful(tx.txid)
+  }
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
     val tx = Transaction(2, Nil, Seq(TxOut(amount, pubkeyScript)), 0)
@@ -178,7 +181,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = synchronized {
     inputs.find(_.txid == txId) match {
       case Some(tx) => Future.successful(tx)
-      case None => Future.failed(new RuntimeException("tx not found"))
+      case None => Future.failed(new RuntimeException(s"txid=$txId not found"))
     }
   }
 
