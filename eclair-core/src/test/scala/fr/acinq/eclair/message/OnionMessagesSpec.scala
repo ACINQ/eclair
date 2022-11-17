@@ -230,8 +230,6 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     val Success((_, messageForAlice)) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), Nil)
 
-    println(messageForAlice.onionRoutingPacket.payload.length)
-
     // Checking that the onion is relayed properly
     process(alice, messageForAlice) match {
       case SendMessage(nextNodeId, onionForBob) =>
