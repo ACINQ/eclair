@@ -18,8 +18,9 @@ package fr.acinq.eclair.wire.internal.channel.version3
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
+import fr.acinq.eclair.channel.FundingTxStatus._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
@@ -255,7 +256,7 @@ private[channel] object ChannelCodecs3 {
 
     val spentMapCodec: Codec[Map[OutPoint, Transaction]] = mapCodec(outPointCodec, txCodec)
 
-    val commitmentsCodec: Codec[Commitments] = (
+    val readOnlyCompatibilityCommitmentsCodec: Codec[Commitments] = (
       ("channelId" | bytes32) ::
         ("channelConfig" | channelConfigCodec) ::
         (("channelFeatures" | channelFeaturesCodec) >>:~ { channelFeatures =>
@@ -271,8 +272,9 @@ private[channel] object ChannelCodecs3 {
             ("originChannels" | originsMapCodec) ::
             ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
             ("commitInput" | inputInfoCodec) ::
+            ("fundingTxStatus" | provide(UnknownFundingTx).upcast[FundingTxStatus]) ::
             ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
-        })).as[Commitments]
+        })).as[Commitments].decodeOnly
 
     private val remoteTxAddInputCodec: Codec[RemoteTxAddInput] = (
       ("serialId" | uint64) ::
@@ -305,9 +307,41 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x01, partiallySignedSharedTransactionCodec)
       .typecase(0x02, fullySignedSharedTransactionCodec)
 
+    val fundingTxStatusCodec: Codec[FundingTxStatus] = discriminated[FundingTxStatus].by(uint8)
+      .typecase(0x00, optional(bool8, txCodec).as[SingleFundedUnconfirmedFundingTx])
+      .typecase(0x01, txCodec.map(tx => SingleFundedUnconfirmedFundingTx(Some(tx))).decodeOnly) // for backward compat
+      .typecase(0x02, signedSharedTransactionCodec.as[DualFundedUnconfirmedFundingTx])
+      .typecase(0x03, txCodec.as[ConfirmedFundingTx])
+      .typecase(0x04, provide(UnknownFundingTx))
+
+    val unconfirmedFundingTxCodec: Codec[UnconfirmedFundingTx] = fundingTxStatusCodec.downcast[UnconfirmedFundingTx].decodeOnly
+
+    val commitmentsCodec: Codec[Commitments] = (
+      ("channelId" | bytes32) ::
+        ("channelConfig" | channelConfigCodec) ::
+        (("channelFeatures" | channelFeaturesCodec) >>:~ { channelFeatures =>
+          ("localParams" | localParamsCodec(channelFeatures)) ::
+            ("remoteParams" | remoteParamsCodec(channelFeatures)) ::
+            ("channelFlags" | channelflags) ::
+            ("localCommit" | localCommitCodec) ::
+            ("remoteCommit" | remoteCommitCodec) ::
+            ("localChanges" | localChangesCodec) ::
+            ("remoteChanges" | remoteChangesCodec) ::
+            ("localNextHtlcId" | uint64overflow) ::
+            ("remoteNextHtlcId" | uint64overflow) ::
+            ("originChannels" | originsMapCodec) ::
+            ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
+            ("commitInput" | inputInfoCodec) ::
+            ("fundingTxStatus" | fundingTxStatusCodec) ::
+            ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
+        })).as[Commitments]
+
+    /** Once a dual funding tx has been signed, we must remember the associated commitments. */
+    case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: Commitments)
+
     private val dualFundingTxCodec: Codec[DualFundingTx] = (
       ("fundingTx" | signedSharedTransactionCodec) ::
-        ("commitments" | commitmentsCodec)).as[DualFundingTx]
+        ("commitments" | readOnlyCompatibilityCommitmentsCodec)).as[DualFundingTx].decodeOnly
 
     private val fundingParamsCodec: Codec[InteractiveTxParams] = (
       ("channelId" | bytes32) ::
@@ -353,15 +387,24 @@ private[channel] object ChannelCodecs3 {
         ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
-      ("commitments" | commitmentsCodec) ::
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
         ("fundingTx_opt" | optional(bool8, txCodec)) ::
-        // TODO: next time we define a new channel codec version, we should use the blockHeight codec here (32 bytes)
         ("waitingSince" | int64.as[BlockHeight]) ::
+        ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec))) ::
+        ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).map {
+      case commitments :: fundingTx :: waitingSince :: deferred :: lastSent :: HNil =>
+        val commitments1 = commitments.copy(fundingTxStatus = SingleFundedUnconfirmedFundingTx(fundingTx))
+        DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments1, waitingSince, deferred, lastSent)
+    }.decodeOnly
+
+    val DATA_WAIT_FOR_FUNDING_CONFIRMED_15_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
+      ("commitments" | commitmentsCodec) ::
+        ("waitingSince" | blockHeight) ::
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec))) ::
         ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_CHANNEL_READY_01_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
-      ("commitments" | commitmentsCodec) ::
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
         ("shortChannelId" | realshortchannelid) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).map {
       case commitments :: shortChannelId :: lastSent :: HNil =>
@@ -369,12 +412,17 @@ private[channel] object ChannelCodecs3 {
     }.decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_0a_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
+        ("shortIds" | shortids) ::
+        ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
+
+    val DATA_WAIT_FOR_CHANNEL_READY_14_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
         ("shortIds" | shortids) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0b_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
-      ("commitments" | commitmentsCodec) ::
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
         ("fundingTx" | signedSharedTransactionCodec) ::
         ("fundingParams" | fundingParamsCodec) ::
         ("localPushAmount" | millisatoshi) ::
@@ -383,15 +431,36 @@ private[channel] object ChannelCodecs3 {
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::
         ("rbfStatus" | provide[RbfStatus](RbfStatus.NoRbf)) ::
+        ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec)))).map {
+      case commitments :: fundingTx :: fundingParams :: localPushAmount :: remotePushAmount :: previousFundingTxs :: waitingSince :: lastChecked :: rbfStatus :: deferred :: HNil =>
+        val commitments1 = commitments.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(fundingTx))
+        val previousCommitments = previousFundingTxs.map { case DualFundingTx(f, c) => c.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(f)) }
+        DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments1, fundingParams, localPushAmount, remotePushAmount, previousCommitments, waitingSince, lastChecked, rbfStatus, deferred)
+    }.decodeOnly
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_13_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
+      ("commitments" | commitmentsCodec) ::
+        ("fundingParams" | fundingParamsCodec) ::
+        ("localPushAmount" | millisatoshi) ::
+        ("remotePushAmount" | millisatoshi) ::
+        ("previousCommitments" | listOfN(uint16, commitmentsCodec)) ::
+        ("waitingSince" | blockHeight) ::
+        ("lastChecked" | blockHeight) ::
+        ("rbfStatus" | provide[RbfStatus](RbfStatus.NoRbf)) ::
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_0c_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
+        ("shortIds" | shortids) ::
+        ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_READY_12_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | commitmentsCodec) ::
         ("shortIds" | shortids) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
 
     val DATA_NORMAL_02_Codec: Codec[DATA_NORMAL] = (
-      ("commitments" | commitmentsCodec) ::
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
         ("shortChannelId" | realshortchannelid) ::
         ("buried" | bool8) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
@@ -404,7 +473,7 @@ private[channel] object ChannelCodecs3 {
     }.decodeOnly
 
     val DATA_NORMAL_07_Codec: Codec[DATA_NORMAL] = (
-      ("commitments" | commitmentsCodec) ::
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
         ("shortChannelId" | realshortchannelid) ::
         ("buried" | bool8) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
@@ -417,6 +486,15 @@ private[channel] object ChannelCodecs3 {
     }.decodeOnly
 
     val DATA_NORMAL_09_Codec: Codec[DATA_NORMAL] = (
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
+        ("shortids" | shortids) ::
+        ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
+        ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_NORMAL]
+
+    val DATA_NORMAL_11_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
         ("shortids" | shortids) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
@@ -426,18 +504,31 @@ private[channel] object ChannelCodecs3 {
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_NORMAL]
 
     val DATA_SHUTDOWN_03_Codec: Codec[DATA_SHUTDOWN] = (
-      ("commitments" | commitmentsCodec) ::
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_SHUTDOWN]
 
     val DATA_SHUTDOWN_08_Codec: Codec[DATA_SHUTDOWN] = (
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
+        ("localShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_SHUTDOWN]
+
+    val DATA_SHUTDOWN_10_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_SHUTDOWN]
 
     val DATA_NEGOTIATING_04_Codec: Codec[DATA_NEGOTIATING] = (
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
+        ("localShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
+        ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[DATA_NEGOTIATING]
+
+    val DATA_NEGOTIATING_0f_Codec: Codec[DATA_NEGOTIATING] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
@@ -445,7 +536,7 @@ private[channel] object ChannelCodecs3 {
         ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[DATA_NEGOTIATING]
 
     val DATA_CLOSING_05_Codec: Codec[DATA_CLOSING] = (
-      ("commitments" | commitmentsCodec) ::
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
         ("fundingTx_opt" | optional(bool8, txCodec)) ::
         ("waitingSince" | int64.as[BlockHeight]) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
@@ -456,12 +547,9 @@ private[channel] object ChannelCodecs3 {
         ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case commitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
-        DATA_CLOSING(commitments, fundingTx_opt.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince, Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+        val commitments1 = commitments.copy(fundingTxStatus = SingleFundedUnconfirmedFundingTx(fundingTx_opt))
+        DATA_CLOSING(commitments1, waitingSince, alternativeCommitments = Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
-
-    val unconfirmedFundingTxCodec: Codec[UnconfirmedFundingTx] = discriminated[UnconfirmedFundingTx].by(uint8)
-      .typecase(0x01, txCodec.as[SingleFundedUnconfirmedFundingTx])
-      .typecase(0x02, signedSharedTransactionCodec.as[DualFundedUnconfirmedFundingTx])
 
     val DATA_CLOSING_0d_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodec) ::
@@ -474,15 +562,45 @@ private[channel] object ChannelCodecs3 {
         ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
+      case commitments :: fundingTx_opt :: waitingSince :: alternativeCommitments :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
+        val commitments1 = commitments.copy(fundingTxStatus = fundingTx_opt.getOrElse(UnknownFundingTx))
+        val alternativeCommitments1 = alternativeCommitments.map { case DualFundingTx(f, c) => c.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(f)) }
+        DATA_CLOSING(commitments1, waitingSince, alternativeCommitments1, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+    }.decodeOnly
+
+    val DATA_CLOSING_0e_Codec: Codec[DATA_CLOSING] = (
+      ("commitments" | commitmentsCodec) ::
+        ("waitingSince" | blockHeight) ::
+        ("alternativeCommitments" | listOfN(uint16, commitmentsCodec)) ::
+        ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
+        ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
+        ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::
+        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
+        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_06_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
+      ("commitments" | readOnlyCompatibilityCommitmentsCodec) ::
+        ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
+
+    val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_16_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
       ("commitments" | commitmentsCodec) ::
         ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
   }
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x16, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_16_Codec)
+    .typecase(0x15, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_15_Codec)
+    .typecase(0x14, Codecs.DATA_WAIT_FOR_CHANNEL_READY_14_Codec)
+    .typecase(0x13, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_13_Codec)
+    .typecase(0x12, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_READY_12_Codec)
+    .typecase(0x11, Codecs.DATA_NORMAL_11_Codec)
+    .typecase(0x10, Codecs.DATA_SHUTDOWN_10_Codec)
+    .typecase(0x0f, Codecs.DATA_NEGOTIATING_0f_Codec)
+    .typecase(0x0e, Codecs.DATA_CLOSING_0e_Codec)
     .typecase(0x0d, Codecs.DATA_CLOSING_0d_Codec)
     .typecase(0x0c, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_READY_0c_Codec)
     .typecase(0x0b, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0b_Codec)

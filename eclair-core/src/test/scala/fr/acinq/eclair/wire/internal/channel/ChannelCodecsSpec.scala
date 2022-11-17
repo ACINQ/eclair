@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire.internal.channel
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Satoshi, SatoshiLong, Transaction, TxIn}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.FundingTxStatus.UnknownFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -93,7 +94,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // and re-encode it with the new codec
     val bin_new = ByteVector(channelDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format
-    assert(bin_new.startsWith(hex"030000"))
+    assert(bin_new.startsWith(hex"030015"))
     // now let's decode it again
     val data_new2 = channelDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
@@ -327,6 +328,7 @@ object ChannelCodecsSpec {
       originChannels = origins,
       remoteNextCommitInfo = Right(randomKey().publicKey),
       commitInput = commitmentInput,
+      fundingTxStatus = UnknownFundingTx,
       remotePerCommitmentSecrets = ShaChain.init)
 
     DATA_NORMAL(commitments, ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None)

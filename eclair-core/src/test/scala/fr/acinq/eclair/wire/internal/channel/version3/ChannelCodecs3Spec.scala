@@ -33,8 +33,8 @@ class ChannelCodecs3Spec extends AnyFunSuite {
 
   test("basic serialization test (NORMAL)") {
     val data = normal
-    val bin = DATA_NORMAL_09_Codec.encode(data).require
-    val check = DATA_NORMAL_09_Codec.decodeValue(bin).require
+    val bin = DATA_NORMAL_11_Codec.encode(data).require
+    val check = DATA_NORMAL_11_Codec.decodeValue(bin).require
     assert(data.commitments.localCommit.spec == check.commitments.localCommit.spec)
     assert(data == check)
   }
@@ -100,10 +100,10 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     assert(codec.decodeValue(codec.encode(remoteParams1).require).require == remoteParams1)
 
     val dataWithoutRemoteShutdownScript = normal.copy(commitments = normal.commitments.copy(remoteParams = remoteParams))
-    assert(DATA_NORMAL_09_Codec.decode(DATA_NORMAL_09_Codec.encode(dataWithoutRemoteShutdownScript).require).require.value == dataWithoutRemoteShutdownScript)
+    assert(channelDataCodec.decode(channelDataCodec.encode(dataWithoutRemoteShutdownScript).require).require.value == dataWithoutRemoteShutdownScript)
 
     val dataWithRemoteShutdownScript = normal.copy(commitments = normal.commitments.copy(remoteParams = remoteParams1))
-    assert(DATA_NORMAL_09_Codec.decode(DATA_NORMAL_09_Codec.encode(dataWithRemoteShutdownScript).require).require.value == dataWithRemoteShutdownScript)
+    assert(channelDataCodec.decode(channelDataCodec.encode(dataWithRemoteShutdownScript).require).require.value == dataWithRemoteShutdownScript)
   }
 
   test("encode/decode optional channel reserve") {
@@ -160,7 +160,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     assert(decoded1.asInstanceOf[DATA_NORMAL].closingFeerates.isEmpty)
     val newBin = channelDataCodec.encode(decoded1).require.bytes
     // make sure that encoding used the new codec
-    assert(newBin.startsWith(hex"0009"))
+    assert(newBin.startsWith(hex"0011"))
     val decoded2 = channelDataCodec.decode(newBin.bits).require.value
     assert(decoded1 == decoded2)
   }
@@ -171,7 +171,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     assert(decoded1.asInstanceOf[DATA_SHUTDOWN].closingFeerates.isEmpty)
     val newBin = channelDataCodec.encode(decoded1).require.bytes
     // make sure that encoding used the new codec
-    assert(newBin.startsWith(hex"0008"))
+    assert(newBin.startsWith(hex"0010"))
     val decoded2 = channelDataCodec.decode(newBin.bits).require.value
     assert(decoded1 == decoded2)
   }
@@ -257,7 +257,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
       assert(data.shortIds.localAlias == ShortChannelId(123456789L))
       assert(data.shortIds.real == RealScidStatus.Temporary(RealShortChannelId(123456789L)))
       val binMigrated = channelDataCodec.encode(data).require.toHex
-      assert(binMigrated.startsWith("000a")) // NB: 01 -> 0a
+      assert(binMigrated.startsWith("0014")) // NB: 01 -> 0a
     }
 
     {
@@ -266,7 +266,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
       assert(data.shortIds.localAlias == ShortChannelId(42))
       assert(data.shortIds.real == RealScidStatus.Final(RealShortChannelId(42)))
       val binMigrated = channelDataCodec.encode(data).require.toHex
-      assert(binMigrated.startsWith("0009"))
+      assert(binMigrated.startsWith("0011"))
     }
   }
 

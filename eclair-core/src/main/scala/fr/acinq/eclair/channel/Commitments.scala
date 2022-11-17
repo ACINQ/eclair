@@ -82,6 +82,7 @@ case class Commitments(channelId: ByteVector32,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
+                       fundingTxStatus: FundingTxStatus,
                        remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
 
   import Commitments._

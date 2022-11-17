@@ -20,6 +20,7 @@ import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.FundingTxStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
@@ -406,18 +407,22 @@ object RealScidStatus {
  */
 case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Option[Alias])
 
-sealed trait UnconfirmedFundingTx {
-  def signedTx_opt: Option[Transaction]
+sealed trait FundingTxStatus { def signedTx_opt: Option[Transaction] }
+object FundingTxStatus {
+  /** Needed for backward compat */
+  case object UnknownFundingTx extends FundingTxStatus {
+    override def signedTx_opt: Option[Transaction] = None
+  }
+  sealed trait UnconfirmedFundingTx extends FundingTxStatus
+  /** In single-funding, fundees only know the funding txid */
+  case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx
+  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction) extends UnconfirmedFundingTx {
+    override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
+  }
+  case class ConfirmedFundingTx(tx: Transaction) extends FundingTxStatus {
+    override val signedTx_opt: Option[Transaction] = Some(tx)
+  }
 }
-case class SingleFundedUnconfirmedFundingTx(signedTx: Transaction) extends UnconfirmedFundingTx {
-  override val signedTx_opt: Option[Transaction] = Some(signedTx)
-}
-case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction) extends UnconfirmedFundingTx {
-  override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
-}
-
-/** Once a dual funding tx has been signed, we must remember the associated commitments. */
-case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: Commitments)
 
 sealed trait RbfStatus
 object RbfStatus {
@@ -485,10 +490,11 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
                                               channelFeatures: ChannelFeatures,
                                               lastSent: FundingCreated) extends TransientChannelData
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
-                                                 fundingTx_opt: Option[Transaction],
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[ChannelReady],
-                                                 lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
+                                                 lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData {
+  def fundingTx_opt: Option[Transaction] = commitments.fundingTxStatus.signedTx_opt
+}
 final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
                                              shortIds: ShortIds,
                                              lastSent: ChannelReady) extends PersistentChannelData
@@ -505,15 +511,18 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
                                                     deferred: Option[ChannelReady]) extends TransientChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
-                                                      fundingTx: SignedSharedTransaction,
                                                       fundingParams: InteractiveTxParams,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,
-                                                      previousFundingTxs: List[DualFundingTx],
+                                                      previousCommitments: List[Commitments],
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfStatus: RbfStatus,
-                                                      deferred: Option[ChannelReady]) extends PersistentChannelData
+                                                      deferred: Option[ChannelReady]) extends PersistentChannelData {
+  def fundingTx: SignedSharedTransaction = commitments.fundingTxStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx
+  def previousFundingTxs: Seq[SignedSharedTransaction] = previousCommitments.map(_.fundingTxStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
+  def allFundingTxs: Seq[SignedSharedTransaction] = fundingTx +: previousFundingTxs
+}
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments,
                                                   shortIds: ShortIds,
                                                   lastSent: ChannelReady) extends PersistentChannelData
@@ -534,9 +543,8 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
   require(!commitments.localParams.isInitiator || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
-                              fundingTx: Option[UnconfirmedFundingTx],
                               waitingSince: BlockHeight, // how long since we initiated the closing
-                              alternativeCommitments: List[DualFundingTx], // commitments we signed that spend a different funding output
+                              alternativeCommitments: List[Commitments], // commitments we signed that spend a different funding output
                               mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[ClosingTx] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,

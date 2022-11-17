@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse}
+import fr.acinq.eclair.channel.FundingTxStatus.ConfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT, FUNDING_TIMEOUT_FUNDEE}
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
@@ -119,14 +120,16 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     // We also check as funder even if it's not really useful
     Try(Transaction.correctlySpends(d.commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
       case Success(_) =>
+        // we consider the funding tx as confirmed (even in the zero-conf case)
+        val commitments1 = d.commitments.copy(fundingTxStatus = ConfirmedFundingTx(fundingTx))
         realScidStatus match {
           case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
           case _ => () // zero-conf channel
         }
         val shortIds = createShortIds(d.channelId, realScidStatus)
-        val channelReady = createChannelReady(shortIds, d.commitments)
+        val channelReady = createChannelReady(shortIds, commitments1)
         d.deferred.foreach(self ! _)
-        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(d.commitments, shortIds, channelReady) storing() sending channelReady
+        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds, channelReady) storing() sending channelReady
       case Failure(t) =>
         log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
         goto(CLOSED)

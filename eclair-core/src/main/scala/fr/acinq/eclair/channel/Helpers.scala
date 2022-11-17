@@ -589,7 +589,7 @@ object Helpers {
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
     def nothingAtStake(data: PersistentChannelData): Boolean = data match {
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => (d.commitments +: d.previousFundingTxs.map(_.commitments)).forall(commitments => nothingAtStake(commitments))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => (d.commitments +: d.previousCommitments).forall(commitments => nothingAtStake(commitments))
       case _ => nothingAtStake(data.commitments)
     }
 

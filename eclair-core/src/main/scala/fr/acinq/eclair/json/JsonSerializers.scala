@@ -40,7 +40,7 @@ import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
-import org.json4s.{DefaultFormats, Extraction, Formats, JDecimal, JValue, KeySerializer, Serializer, ShortTypeHints, TypeHints, jackson}
+import org.json4s.{CustomSerializer, DefaultFormats, Extraction, Formats, JDecimal, JValue, KeySerializer, Serializer, ShortTypeHints, TypeHints, jackson}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -502,6 +502,15 @@ private case class ShortIdsJson(real: RealScidStatus, localAlias: Alias, remoteA
 object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real, s.localAlias, s.remoteAlias_opt))
 // @formatter:on
 
+// @formatter:off
+private case class FundingTxStatusJson(`type`: String, tx: Option[Transaction])
+object FundingTxStatusSerializer extends ConvertClassSerializer[FundingTxStatus]({
+  case FundingTxStatus.UnknownFundingTx => FundingTxStatusJson("unknown", None)
+  case s: FundingTxStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt)
+  case s: FundingTxStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt)
+})
+// @formatter:on
+
 case class CustomTypeHints(custom: Map[Class[_], String], override val typeHintFieldName: String = "type") extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
@@ -633,6 +642,7 @@ object JsonSerializers {
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
     OnionMessageReceivedSerializer +
-    ShortIdsSerializer
+    ShortIdsSerializer +
+    FundingTxStatusSerializer
 
 }

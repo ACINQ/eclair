@@ -22,6 +22,7 @@ import akka.pattern.pipe
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.channel.FundingTxStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
@@ -282,7 +283,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                 localNextHtlcId = 0L, remoteNextHtlcId = 0L,
                 originChannels = Map.empty,
                 remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
-                commitInput, ShaChain.init)
+                commitInput, SingleFundedUnconfirmedFundingTx(None),
+                ShaChain.init)
               peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
               txPublisher ! SetChannelId(remoteNodeId, channelId)
               context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
@@ -294,7 +296,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                 case Some(fundingMinDepth) => blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
                 case None => blockchain ! WatchPublished(self, commitments.fundingTxId)
               }
-              goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
+              goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
           }
       }
 
@@ -327,7 +329,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             originChannels = Map.empty,
             remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
-            commitInput, ShaChain.init)
+            commitInput, SingleFundedUnconfirmedFundingTx(Some(fundingTx)),
+            ShaChain.init)
           val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitments.fundingTxId}")
@@ -340,7 +343,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           }
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
-          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(commitments, fundingTx, fundingTxFee)
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(commitments, fundingTx, fundingTxFee)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>

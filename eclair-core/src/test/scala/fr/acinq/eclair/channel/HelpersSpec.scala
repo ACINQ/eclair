@@ -256,7 +256,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
@@ -272,7 +271,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: Nil,
@@ -295,7 +293,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: Nil,
@@ -318,7 +315,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
@@ -347,7 +343,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: Nil,
@@ -376,7 +371,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments.copy(remoteNextCommitInfo = Left(WaitingForRevocation(commitments.remoteCommit, null, 7L))),
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = tx1 :: Nil,
@@ -411,7 +405,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
@@ -433,7 +426,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
@@ -455,7 +447,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = Nil,
@@ -503,7 +494,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
         commitments = commitments,
-        fundingTx = None,
         waitingSince = BlockHeight(0),
         alternativeCommitments = Nil,
         mutualCloseProposed = Nil,

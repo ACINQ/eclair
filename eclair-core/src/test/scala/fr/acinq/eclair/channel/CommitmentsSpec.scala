@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.Commitments._
+import fr.acinq.eclair.channel.FundingTxStatus.UnknownFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
@@ -505,6 +505,7 @@ object CommitmentsSpec {
       originChannels = Map.empty,
       remoteNextCommitInfo = Right(randomKey().publicKey),
       commitInput = commitmentInput,
+      fundingTxStatus = UnknownFundingTx,
       remotePerCommitmentSecrets = ShaChain.init)
   }
 
@@ -529,6 +530,7 @@ object CommitmentsSpec {
       originChannels = Map.empty,
       remoteNextCommitInfo = Right(randomKey().publicKey),
       commitInput = commitmentInput,
+      fundingTxStatus = UnknownFundingTx,
       remotePerCommitmentSecrets = ShaChain.init)
   }
 

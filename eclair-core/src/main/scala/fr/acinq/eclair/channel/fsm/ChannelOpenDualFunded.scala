@@ -20,6 +20,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapte
 import akka.actor.{ActorRef, Status}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.channel.FundingTxStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
@@ -345,7 +346,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
           case None => blockchain ! WatchPublished(self, commitments.fundingTxId)
         }
-        val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, d.localPushAmount, d.remotePushAmount, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
+        val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingParams, d.localPushAmount, d.remotePushAmount, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
         fundingTx match {
           case fundingTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending fundingTx.localSigs
           case fundingTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending fundingTx.localSigs calling publishFundingTx(fundingParams, fundingTx)
@@ -378,8 +379,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {
     case Event(txSigs: TxSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      d.fundingTx match {
-        case fundingTx: PartiallySignedSharedTransaction => InteractiveTxBuilder.addRemoteSigs(d.fundingParams, fundingTx, txSigs) match {
+      d.commitments.fundingTxStatus match {
+        case DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction) => InteractiveTxBuilder.addRemoteSigs(d.fundingParams, fundingTx, txSigs) match {
           case Left(cause) =>
             val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
             log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", txSigs.txId, unsignedFundingTx.txid, cause.getMessage)
@@ -388,10 +389,11 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
           case Right(fundingTx) =>
             log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
-            val d1 = d.copy(fundingTx = fundingTx)
+            val commitments1 = d.commitments.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(fundingTx))
+            val d1 = d.copy(commitments = commitments1)
             stay() using d1 storing() calling publishFundingTx(d.fundingParams, fundingTx)
         }
-        case _: FullySignedSharedTransaction =>
+        case DualFundedUnconfirmedFundingTx(_: FullySignedSharedTransaction) =>
           d.rbfStatus match {
             case RbfStatus.RbfInProgress(txBuilder) =>
               txBuilder ! InteractiveTxBuilder.ReceiveTxSigs(txSigs)
@@ -401,6 +403,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               log.debug("ignoring duplicate tx_signatures for txid={}", txSigs.txId)
               stay()
           }
+        case _ => ??? // impossible
       }
 
     case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
@@ -470,7 +473,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.commitments.remoteCommit.remotePerCommitmentPoint,
             d.commitments.channelFlags, d.commitments.channelConfig, d.commitments.channelFeatures,
             wallet))
-          txBuilder ! InteractiveTxBuilder.Start(self, d.fundingTx +: d.previousFundingTxs.map(_.fundingTx))
+          txBuilder ! InteractiveTxBuilder.Start(self, d.fundingTx +: d.previousFundingTxs)
           stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder)) sending TxAckRbf(d.channelId, fundingParams.localAmount)
         }
       }
@@ -504,7 +507,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.commitments.remoteCommit.remotePerCommitmentPoint,
             d.commitments.channelFlags, d.commitments.channelConfig, d.commitments.channelFeatures,
             wallet))
-          txBuilder ! InteractiveTxBuilder.Start(self, d.fundingTx +: d.previousFundingTxs.map(_.fundingTx))
+          txBuilder ! InteractiveTxBuilder.Start(self, d.fundingTx +: d.previousFundingTxs)
           stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder))
         case _ =>
           log.info("ignoring unexpected tx_ack_rbf")
@@ -552,8 +555,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         // We now have more than one version of the funding tx, so we cannot use zero-conf.
         val fundingMinDepth = Funding.minDepthDualFunding(nodeParams.channelConf, commitments.localParams.initFeatures, fundingParams).getOrElse(nodeParams.channelConf.minDepthBlocks.toLong)
         blockchain ! WatchFundingConfirmed(self, commitments.fundingTxId, fundingMinDepth)
-        val previousFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
-        val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, d.localPushAmount, d.remotePushAmount, previousFundingTxs, d.waitingSince, d.lastChecked, RbfStatus.NoRbf, d.deferred)
+        val previousCommitments = d.commitments +: d.previousCommitments
+        val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingParams, d.localPushAmount, d.remotePushAmount, previousCommitments, d.waitingSince, d.lastChecked, RbfStatus.NoRbf, d.deferred)
         fundingTx match {
           case fundingTx: PartiallySignedSharedTransaction => stay() using d1 storing() sending fundingTx.localSigs
           case fundingTx: FullySignedSharedTransaction => stay() using d1 storing() sending fundingTx.localSigs calling publishFundingTx(fundingParams, fundingTx)

@@ -18,6 +18,7 @@ package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.channel.FundingTxStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -360,14 +361,24 @@ private[channel] object ChannelCodecs0 {
         ("fundingTx_opt" | provide[Option[Transaction]](None)) ::
         ("waitingSince" | provide(BlockHeight(TimestampSecond.now().toLong))) ::
         ("deferred" | optional(bool, channelReadyCodec)) ::
-        ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
+        ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).map {
+      case commitments :: fundingTx :: waitingSince :: deferred :: lastSent :: HNil =>
+        val commitments1 = commitments.copy(fundingTxStatus = SingleFundedUnconfirmedFundingTx(fundingTx))
+        DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments1, waitingSince, deferred, lastSent)
+    }.decodeOnly
+
+      .as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_08_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx_opt" | optional(bool, txCodec)) ::
         ("waitingSince" | int64.as[BlockHeight]) ::
         ("deferred" | optional(bool, channelReadyCodec)) ::
-        ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
+        ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).map {
+      case commitments :: fundingTx :: waitingSince :: deferred :: lastSent :: HNil =>
+        val commitments1 = commitments.copy(fundingTxStatus = SingleFundedUnconfirmedFundingTx(fundingTx))
+        DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments1, waitingSince, deferred, lastSent)
+    }.decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_02_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
@@ -435,7 +446,8 @@ private[channel] object ChannelCodecs0 {
         ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case commitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
-        DATA_CLOSING(commitments, fundingTx_opt.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince, Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+        val commitments1 = commitments.copy(fundingTxStatus = SingleFundedUnconfirmedFundingTx(fundingTx_opt))
+        DATA_CLOSING(commitments1, waitingSince, alternativeCommitments = Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
     val DATA_CLOSING_09_Codec: Codec[DATA_CLOSING] = (
@@ -450,7 +462,8 @@ private[channel] object ChannelCodecs0 {
         ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case commitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
-        DATA_CLOSING(commitments, fundingTx_opt.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince, Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+        val commitments1 = commitments.copy(fundingTxStatus = SingleFundedUnconfirmedFundingTx(fundingTx_opt))
+        DATA_CLOSING(commitments1, waitingSince, alternativeCommitments = Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
     val channelReestablishCodec: Codec[ChannelReestablish] = (

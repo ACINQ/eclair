@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, LexicographicalOrdering, OutP
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.OnChainWallet.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.FundingTxStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
@@ -165,11 +166,13 @@ object InteractiveTxBuilder {
 
   // @formatter:off
   sealed trait SignedSharedTransaction {
+    def txId: ByteVector32
     def tx: SharedTransaction
     def localSigs: TxSignatures
     def signedTx_opt: Option[Transaction]
   }
   case class PartiallySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures) extends SignedSharedTransaction {
+    override val txId: ByteVector32 = tx.buildUnsignedTx().txid
     override val signedTx_opt: Option[Transaction] = None
   }
   case class FullySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures, remoteSigs: TxSignatures) extends SignedSharedTransaction {
@@ -185,6 +188,7 @@ object InteractiveTxBuilder {
       val outputs = (localTxOut ++ remoteTxOut).sortBy(_._1).map(_._2)
       Transaction(2, inputs, outputs, lockTime)
     }
+    override val txId: ByteVector32 = signedTx.txid
     override val signedTx_opt: Option[Transaction] = Some(signedTx)
     val feerate: FeeratePerKw = Transactions.fee2rate(tx.fees, signedTx.weight())
   }
@@ -598,6 +602,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                   originChannels = Map.empty,
                   remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
                   localCommitTx.input,
+                  fundingTxStatus = null, // TODO: hacky, but we don't have the funding tx yet
                   ShaChain.init)
                 signFundingTx(completeTx, commitments)
             }
@@ -636,7 +641,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             unlockAndStop(completeTx)
           case Right(fullySignedTx) =>
             log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
-            replyTo ! Succeeded(fundingParams, fullySignedTx, commitments)
+            replyTo ! Succeeded(fundingParams, fullySignedTx, commitments.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(fullySignedTx)))
             Behaviors.stopped
         }
       case SignTransactionResult(signedTx, None) =>
@@ -645,10 +650,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         if (completeTx.remoteAmountIn == 0.sat) {
           log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
           val remoteSigs = TxSignatures(signedTx.localSigs.channelId, signedTx.localSigs.txHash, Nil)
-          replyTo ! Succeeded(fundingParams, FullySignedSharedTransaction(signedTx.tx, signedTx.localSigs, remoteSigs), commitments)
+          val signedTx1 = FullySignedSharedTransaction(signedTx.tx, signedTx.localSigs, remoteSigs)
+          val commitments1 = commitments.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(signedTx1))
+          replyTo ! Succeeded(fundingParams, signedTx1, commitments1)
         } else {
           log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
-          replyTo ! Succeeded(fundingParams, signedTx, commitments)
+          val commitments1 = commitments.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(signedTx))
+          replyTo ! Succeeded(fundingParams, signedTx, commitments1)
         }
         Behaviors.stopped
       case ReceiveTxSigs(remoteSigs) =>
