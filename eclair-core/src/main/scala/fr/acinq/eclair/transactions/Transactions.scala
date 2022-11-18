@@ -100,7 +100,7 @@ object Transactions {
     case object Remote extends TxOwner
   }
 
-  sealed trait TransactionWithInputInfo {
+  trait TransactionWithInputInfo {
     def input: InputInfo
     def desc: String
     def tx: Transaction

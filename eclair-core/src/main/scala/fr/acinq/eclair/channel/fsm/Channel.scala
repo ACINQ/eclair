@@ -1648,6 +1648,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid =>
       log.warning(s"processing local commit spent in catch-all handler")
       spendLocalCurrent(d)
+
+    // forward unknown messages that originate from loaded plugins
+    case Event(unknownMsg: UnknownMessage, _) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
+      send(unknownMsg)
+      stay()
   }
 
   onTransition {
