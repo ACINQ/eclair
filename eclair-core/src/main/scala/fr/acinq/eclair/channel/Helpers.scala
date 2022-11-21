@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensEach}
+import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt, QuicklensEach}
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
@@ -52,15 +52,15 @@ object Helpers {
    */
   def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData = {
     data match {
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_CHANNEL_READY => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NORMAL => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_SHUTDOWN => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NEGOTIATING => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_CLOSING => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.modifyAll(_.metaCommitments.main, _.metaCommitments.rbfed.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_CHANNEL_READY => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_NORMAL => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_SHUTDOWN => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_NEGOTIATING => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_CLOSING => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
     }
   }
 

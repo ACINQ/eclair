@@ -520,7 +520,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments: MetaCommi
                                                       rbfStatus: RbfStatus,
                                                       deferred: Option[ChannelReady]) extends PersistentChannelData {
   def mainFundingTx: SignedSharedTransaction = metaCommitments.main.fundingTxStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx
-  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.rbfed.map(_.fundingTxStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
+  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.all.drop(1).map(_.fundingTxStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
   def allFundingTxs: Seq[SignedSharedTransaction] = mainFundingTx +: previousFundingTxs
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments: MetaCommitments,

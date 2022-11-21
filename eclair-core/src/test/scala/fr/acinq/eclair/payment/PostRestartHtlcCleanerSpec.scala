@@ -21,7 +21,7 @@ import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
-import com.softwaremill.quicklens.ModifyPimp
+import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
@@ -141,7 +141,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to fail the htlcs:
-    val data1 = channels.head.modify(_.metaCommitments.main.localCommit.spec.htlcs).setTo(Set.empty)
+    val data1 = channels.head.modify(_.metaCommitments.all.at(0).localCommit.spec.htlcs).setTo(Set.empty)
     system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.commitments)))
     channel.expectNoMessage(100 millis)
 
@@ -215,7 +215,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to sign the htlcs:
-    val data1 = channels.head.modify(_.metaCommitments.main.localCommit.spec.htlcs).setTo(Set.empty)
+    val data1 = channels.head.modify(_.metaCommitments.all.at(0).localCommit.spec.htlcs).setTo(Set.empty)
     system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.commitments)))
     channel.expectNoMessage(100 millis)
 
