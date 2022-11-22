@@ -40,6 +40,7 @@ object AsyncPaymentTriggerer {
   sealed trait Command
   case class Start(switchboard: ActorRef[Switchboard.GetPeerInfo]) extends Command
   case class Watch(replyTo: ActorRef[Result], remoteNodeId: PublicKey, paymentHash: ByteVector32, timeout: BlockHeight) extends Command
+  private case class NotifierStopped(remoteNodeId: PublicKey) extends Command
   private case class WrappedPeerReadyResult(result: PeerReadyNotifier.Result) extends Command
   private case class WrappedCurrentBlockHeight(currentBlockHeight: CurrentBlockHeight) extends Command
 
@@ -79,6 +80,7 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
     }
 
     def trigger(): Unit = pendingPayments.foreach(e => e.replyTo ! AsyncPaymentTriggered)
+    def timeout(): Unit = pendingPayments.foreach(e => e.replyTo ! AsyncPaymentTimeout)
   }
 
   def start(): Behavior[Command] = {
@@ -92,9 +94,10 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
         peers.get(remoteNodeId) match {
           case None =>
             val notifier = context.spawn(
-              Behaviors.supervise(PeerReadyNotifier(remoteNodeId, switchboard, None)).onFailure(SupervisorStrategy.restart),
+              Behaviors.supervise(PeerReadyNotifier(remoteNodeId, switchboard, None)).onFailure(SupervisorStrategy.stop),
               s"peer-ready-notifier-$remoteNodeId",
             )
+            context.watchWith(notifier, NotifierStopped(remoteNodeId))
             notifier ! NotifyWhenPeerReady(context.messageAdapter[PeerReadyNotifier.Result](WrappedPeerReadyResult))
             val peer = PeerPayments(notifier, Set(Payment(replyTo, timeout, paymentHash)))
             watching(peers + (remoteNodeId -> peer))
@@ -111,6 +114,13 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
         // notify watcher that destination peer is ready to receive async payments; PeerReadyNotifier will stop itself
         peers.get(remoteNodeId).foreach(_.trigger())
         watching(peers - remoteNodeId)
+      case NotifierStopped(remoteNodeId) =>
+        peers.get(remoteNodeId) match {
+          case None => Behaviors.same
+          case Some(peer) => peer.timeout()
+            context.log.error(s"PeerReadyNotifier stopped unexpectedly while watching node $remoteNodeId.")
+            watching(peers - remoteNodeId)
+        }
     }
   }
 
