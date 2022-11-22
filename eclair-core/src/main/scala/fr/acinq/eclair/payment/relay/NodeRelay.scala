@@ -39,7 +39,7 @@ import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
 
 import java.util.UUID
 import scala.collection.immutable.Queue
@@ -215,23 +215,17 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def waitForTrigger(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket): Behavior[Command] = {
     context.log.info(s"waiting for async payment to trigger before relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv}, asyncPaymentsParams=${nodeParams.relayParams.asyncPaymentsParams})")
-    // a trigger must be received before waiting more than `holdTimeoutBlocks`
-    val timeoutBlock: BlockHeight = nodeParams.currentBlockHeight + nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks
-    // a trigger must be received `cancelSafetyBeforeTimeoutBlocks` before the incoming payment cltv expiry
-    val safetyBlock: BlockHeight = (upstream.expiryIn - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
+    val timeoutBlock = nodeParams.currentBlockHeight + nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks
+    val safetyBlock = (upstream.expiryIn - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
     // wait for notification until which ever occurs first: the hold timeout block or the safety block
-    val notifierTimeout: BlockHeight = Seq(timeoutBlock, safetyBlock).min
+    val notifierTimeout = Seq(timeoutBlock, safetyBlock).min
     val peerReadyResultAdapter = context.messageAdapter[AsyncPaymentTriggerer.Result](WrappedPeerReadyResult)
 
     triggerer ! AsyncPaymentTriggerer.Watch(peerReadyResultAdapter, nextPayload.outgoingNodeId, paymentHash, notifierTimeout)
     context.system.eventStream ! EventStream.Publish(WaitingToRelayPayment(nextPayload.outgoingNodeId, paymentHash))
     Behaviors.receiveMessagePartial {
       case WrappedPeerReadyResult(AsyncPaymentTriggerer.AsyncPaymentTimeout) =>
-        if (safetyBlock < timeoutBlock) {
-          context.log.warn(s"rejecting async payment; was not triggered ${nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout} safety blocks before upstream cltv expiry of ${upstream.expiryIn}")
-        } else {
-          context.log.warn(s"rejecting async payment; was not triggered after waiting ${nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks} blocks")
-        }
+        context.log.warn("rejecting async payment; was not triggered before block {}", notifierTimeout)
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
         stopping()
       case CancelAsyncPayment =>

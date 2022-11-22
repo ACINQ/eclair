@@ -22,20 +22,19 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.BlockHeight
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.io.PeerReadyNotifier.NotifyWhenPeerReady
 import fr.acinq.eclair.io.{PeerReadyNotifier, Switchboard}
 import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer.Command
+import fr.acinq.eclair.{BlockHeight, Logs}
 
 import scala.concurrent.duration.Duration
 
 /**
  * This actor waits for an async payment receiver to become ready to receive a payment or for a block timeout to expire.
  * If the receiver of the payment is a connected peer, spawn a PeerReadyNotifier actor.
- * TODO: If the receiver is not a connected peer, wait for a `ReceiverReady` onion message containing the specified paymentHash.
  */
-
 object AsyncPaymentTriggerer {
   // @formatter:off
   sealed trait Command
@@ -50,73 +49,69 @@ object AsyncPaymentTriggerer {
   // @formatter:on
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
-    new AsyncPaymentTriggerer(context).initializing()
+    Behaviors.withMdc(Logs.mdc(category_opt = Some(LogCategory.PAYMENT))) {
+      Behaviors.receiveMessagePartial {
+        case Start(switchboard) => new AsyncPaymentTriggerer(switchboard, context).start()
+      }
+    }
   }
 }
 
-private class AsyncPaymentTriggerer(context: ActorContext[Command]) {
+private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInfo], context: ActorContext[Command]) {
+
   import AsyncPaymentTriggerer._
 
-  case class Watcher(replyTo: ActorRef[Result], timeout: BlockHeight, paymentHash: ByteVector32) {
+  case class Payment(replyTo: ActorRef[Result], timeout: BlockHeight, paymentHash: ByteVector32) {
     def expired(currentBlockHeight: BlockHeight): Boolean = timeout <= currentBlockHeight
   }
-  case class AsyncPaymentTrigger(notifier: ActorRef[PeerReadyNotifier.Command], watchers: Set[Watcher]) {
-    def update(currentBlockHeight: BlockHeight): Option[AsyncPaymentTrigger] = {
-      // notify watchers that timeout occurred before offline peer reconnected
-      val expiredWatchers = watchers.filter(_.expired(currentBlockHeight))
-      expiredWatchers.foreach(e => e.replyTo ! AsyncPaymentTimeout)
-      // remove timed out watchers from set
-      val updatedWatchers: Set[Watcher] = watchers.removedAll(expiredWatchers)
-      if (updatedWatchers.isEmpty) {
-        // stop notifier for offline peer when all watchers time out
+
+  case class PeerPayments(notifier: ActorRef[PeerReadyNotifier.Command], pendingPayments: Set[Payment]) {
+    def update(currentBlockHeight: BlockHeight): Option[PeerPayments] = {
+      val expiredPayments = pendingPayments.filter(_.expired(currentBlockHeight))
+      expiredPayments.foreach(e => e.replyTo ! AsyncPaymentTimeout)
+      val pendingPayments1 = pendingPayments.removedAll(expiredPayments)
+      if (pendingPayments1.isEmpty) {
         context.stop(notifier)
         None
       } else {
-        Some(AsyncPaymentTrigger(notifier, updatedWatchers))
+        Some(PeerPayments(notifier, pendingPayments1))
       }
     }
-    def trigger(): Unit = watchers.foreach(e => e.replyTo ! AsyncPaymentTriggered)
+
+    def trigger(): Unit = pendingPayments.foreach(e => e.replyTo ! AsyncPaymentTriggered)
   }
 
-  private def initializing(): Behavior[Command] = {
-    Behaviors.receiveMessage[Command] {
-      case Start(switchboard) => watching(switchboard, Map())
-      case m => context.log.error(s"received unhandled message ${m.getClass.getSimpleName} before Start received.")
-        Behaviors.same
-    }
-  }
-
-  private def watching(switchboard: ActorRef[Switchboard.GetPeerInfo], triggers: Map[PublicKey, AsyncPaymentTrigger]): Behavior[Command] = {
-    val peerReadyResultAdapter = context.messageAdapter[PeerReadyNotifier.Result](WrappedPeerReadyResult)
+  def start(): Behavior[Command] = {
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockHeight](WrappedCurrentBlockHeight))
+    watching(Map.empty)
+  }
 
-    Behaviors.receiveMessage[Command] {
+  private def watching(peers: Map[PublicKey, PeerPayments]): Behavior[Command] = {
+    Behaviors.receiveMessagePartial {
       case Watch(replyTo, remoteNodeId, paymentHash, timeout) =>
-        triggers.get(remoteNodeId) match {
+        peers.get(remoteNodeId) match {
           case None =>
-            // add a new trigger
-            val notifier = context.spawn(Behaviors.supervise(PeerReadyNotifier(remoteNodeId, switchboard, None))
-              .onFailure(SupervisorStrategy.restart), s"peer-ready-notifier-$remoteNodeId-$timeout")
-            notifier ! NotifyWhenPeerReady(peerReadyResultAdapter)
-            val newTrigger = AsyncPaymentTrigger(notifier, Set(Watcher(replyTo, timeout, paymentHash)))
-            watching(switchboard, triggers + (remoteNodeId -> newTrigger))
-          case Some(trigger) =>
-            // add a new watcher to an existing trigger
-            val updatedTrigger = AsyncPaymentTrigger(trigger.notifier, trigger.watchers + Watcher(replyTo, timeout, paymentHash))
-            watching(switchboard, triggers + (remoteNodeId -> updatedTrigger))
+            val notifier = context.spawn(
+              Behaviors.supervise(PeerReadyNotifier(remoteNodeId, switchboard, None)).onFailure(SupervisorStrategy.restart),
+              s"peer-ready-notifier-$remoteNodeId",
+            )
+            notifier ! NotifyWhenPeerReady(context.messageAdapter[PeerReadyNotifier.Result](WrappedPeerReadyResult))
+            val peer = PeerPayments(notifier, Set(Payment(replyTo, timeout, paymentHash)))
+            watching(peers + (remoteNodeId -> peer))
+          case Some(peer) =>
+            val peer1 = PeerPayments(peer.notifier, peer.pendingPayments + Payment(replyTo, timeout, paymentHash))
+            watching(peers + (remoteNodeId -> peer1))
         }
       case WrappedCurrentBlockHeight(CurrentBlockHeight(currentBlockHeight)) =>
-        // update watchers, and remove triggers with no more active watchers
-        val newTriggers = triggers.collect(m => m._2.update(currentBlockHeight) match {
-          case Some(t) => m._1 -> t
-        })
-        watching(switchboard, newTriggers)
+        val peers1 = peers.flatMap {
+          case (remoteNodeId, peer) => peer.update(currentBlockHeight).map(peer1 => remoteNodeId -> peer1)
+        }
+        watching(peers1)
       case WrappedPeerReadyResult(PeerReadyNotifier.PeerReady(remoteNodeId, _)) =>
         // notify watcher that destination peer is ready to receive async payments; PeerReadyNotifier will stop itself
-        triggers(remoteNodeId).trigger()
-        watching(switchboard, triggers - remoteNodeId)
-      case m => context.log.error(s"received unhandled message ${m.getClass.getSimpleName} after Start received.")
-        Behaviors.same
+        peers.get(remoteNodeId).foreach(_.trigger())
+        watching(peers - remoteNodeId)
     }
   }
+
 }
