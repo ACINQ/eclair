@@ -26,6 +26,7 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.Invoice.BasicEdge
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.receive.MultiPartHandler._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
@@ -273,6 +274,30 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
   }
 
+  test("Aggregate route fees") { f =>
+    val rand = new scala.util.Random
+    for (_ <- 0 to 100) {
+      val routeLength = rand.nextInt(10) + 1
+      val hops =
+        for (_ <- 1 to routeLength;
+             scid = ShortChannelId.generateLocalAlias();
+             nid = randomKey().publicKey;
+             params = Router.ChannelRelayParams.FromHint(BasicEdge(nid, nid, scid, MilliSatoshi(rand.nextLong(10_000)), rand.nextInt(5000), CltvExpiryDelta(0))))
+        yield Router.ChannelHop(scid, nid, nid, params)
+      val route = Router.Route(0 msat, hops)
+      val aggregate = CreateInvoiceActor.aggregatePayInfo(route)
+      for (_ <- 0 to 100) {
+        val amount = MilliSatoshi(rand.nextLong(10_000_000_000L))
+        val fee1 = aggregate.fee(amount)
+        val fee2 = route.copy(amount = amount).fee(true)
+        // The aggregated fees are always enough
+        assert(fee1 >= fee2, s"amount=$amount, route=${route.hops.map(_.params.relayFees)}, aggregate=$aggregate")
+        // and we don't overpay too much.
+        assert(fee1 - fee2 < 1000.msat.max(amount * 1e-5), s"amount=$amount, route=${route.hops.map(_.params.relayFees)}, aggregate=$aggregate")
+      }
+    }
+  }
+
   test("Invoice generation with route blinding support") { f =>
     import f._
 
@@ -299,7 +324,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     assert(invoice.description == Left("a blinded coffee please"))
     assert(invoice.offerId.contains(offer.offerId))
-    assert(invoice.extraEdges.length == 3)
+    assert(invoice.blindedPaths.length == 3)
     assert(invoice.blindedPaths(0).blindedNodeIds.length == 4)
     assert(invoice.blindedPaths(0).introductionNodeId == a)
     assert(invoice.blindedPathsInfo(0) == PaymentInfo(1801 msat, 1155, CltvExpiryDelta(201), 0 msat, 25_000 msat, Features.empty))
