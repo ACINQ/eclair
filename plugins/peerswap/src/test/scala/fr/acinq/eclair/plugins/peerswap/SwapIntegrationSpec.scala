@@ -5,7 +5,10 @@ import akka.actor.{ActorSystem, Kill}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.MilliSatoshi.toMilliSatoshi
+import fr.acinq.eclair.blockchain.DummyOnChainWallet
+import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
 import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
@@ -20,8 +23,9 @@ import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.{BlockHeight, ShortChannelId}
 import org.scalatest.TestData
 import org.scalatest.concurrent.{IntegrationPatience, PatienceConfiguration}
-import scodec.bits.HexStringSyntax
+import scodec.bits.{ByteVector, HexStringSyntax}
 
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
 
 /**
@@ -78,19 +82,30 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     shortChannelId
   }
 
+  def nodeWithOnChainBalance(node: MinimalNodeFixture, balance: Satoshi): MinimalNodeFixture = node.copy(wallet = new DummyOnChainWallet() {
+    override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+      if (amount <= balance) {
+        val tx = DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, amount)
+        funded += (tx.fundingTx.txid -> tx.fundingTx)
+        Future.successful(tx)
+      } else {
+        Future.failed(new RuntimeException("insufficient funds"))
+      }
+    }
+  })
+
   test("swap in - claim by invoice") { f =>
     import f._
 
-    val (aliceSwap, bobSwap) = swapActors(alice, bob)
-    val shortChannelId = connectNodes(alice, bob)
-
-    // bob must have enough on-chain balance to send
     val amount = Satoshi(1000)
     val feeRatePerKw = alice.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = alice.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
     val premium = 0.sat // TODO: (feeRatePerKw * claimByInvoiceTxWeight / 1000).toLong.sat
     val openingBlock = BlockHeight(1)
     val claimByInvoiceBlock = BlockHeight(4)
-    bob.wallet.confirmedBalance = amount + premium
+    // bob must have enough on-chain balance to send
+    val fundedBob = nodeWithOnChainBalance(bob, amount+premium)
+    val (aliceSwap, bobSwap) = swapActors(alice, fundedBob)
+    val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
     bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
@@ -126,16 +141,14 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
   test("swap in - claim by coop, receiver does not have sufficient channel balance") { f =>
     import f._
 
-    val (aliceSwap, bobSwap) = swapActors(alice, bob)
-    val shortChannelId = connectNodes(alice, bob)
-
     // swap more satoshis than alice has available in the channel to send to bob
     val amount = 100_000 sat
     val feeRatePerKw = alice.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = alice.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
     val premium = 0.sat // TODO: (feeRatePerKw * claimByInvoiceTxWeight / 1000).toLong.sat
     val openingBlock = BlockHeight(1)
     val claimByCoopBlock = BlockHeight(2)
-    bob.wallet.confirmedBalance = amount + premium
+    val (aliceSwap, bobSwap) = swapActors(alice, bob)
+    val shortChannelId = connectNodes(alice, bob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
     bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
@@ -178,16 +191,15 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
   test("swap in - claim by csv, receiver does not pay after opening tx confirmed") { f =>
     import f._
 
-    val (aliceSwap, bobSwap) = swapActors(alice, bob)
-    val shortChannelId = connectNodes(alice, bob)
-
-    // bob must have enough on-chain balance to send
     val amount = Satoshi(1000)
     val feeRatePerKw = alice.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = alice.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
     val premium = 0.sat // TODO: (feeRatePerKw * claimByInvoiceTxWeight / 1000).toLong.sat
     val openingBlock = BlockHeight(1)
     val claimByCsvBlock = claimByCsvDelta.toCltvExpiry(openingBlock).blockHeight
-    bob.wallet.confirmedBalance = amount + premium
+    // bob must have enough on-chain balance to send
+    val fundedBob = nodeWithOnChainBalance(bob, amount + premium)
+    val (aliceSwap, bobSwap) = swapActors(alice, fundedBob)
+    val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
     bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
@@ -220,16 +232,15 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
   test("swap in - claim by coop, receiver cancels while waiting for opening tx to confirm") { f =>
     import f._
 
-    val (aliceSwap, bobSwap) = swapActors(alice, bob)
-    val shortChannelId = connectNodes(alice, bob)
-
-    // bob must have enough on-chain balance to send
     val amount = Satoshi(1000)
     val feeRatePerKw = alice.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = alice.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
     val premium = 0.sat // TODO: (feeRatePerKw * claimByInvoiceTxWeight / 1000).toLong.sat
     val openingBlock = BlockHeight(1)
     val claimByCoopBlock = claimByCsvDelta.toCltvExpiry(openingBlock).blockHeight
-    bob.wallet.confirmedBalance = amount + premium
+    // bob must have enough on-chain balance to send
+    val fundedBob = nodeWithOnChainBalance(bob, amount + premium)
+    val (aliceSwap, bobSwap) = swapActors(alice, fundedBob)
+    val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
     bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
@@ -257,16 +268,15 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
   test("swap out - claim by invoice") { f =>
     import f._
 
-    val (aliceSwap, bobSwap) = swapActors(alice, bob)
-    val shortChannelId = connectNodes(alice, bob)
-
-    // bob must have enough on-chain balance to send
     val amount = Satoshi(1000)
     val feeRatePerKw = alice.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = alice.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
     val fee = (feeRatePerKw * openingTxWeight / 1000).toLong.sat
     val openingBlock = BlockHeight(1)
     val claimByInvoiceBlock = BlockHeight(4)
-    bob.wallet.confirmedBalance = amount + fee
+    // bob must have enough on-chain balance to send
+    val fundedBob = nodeWithOnChainBalance(bob, amount + fee)
+    val (aliceSwap, bobSwap) = swapActors(alice, fundedBob)
+    val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap out receiver (alice) requests a swap out with swap out sender (bob)
     aliceSwap.swapRegister ! SwapOutRequested(aliceSwap.cli.ref.toTyped, amount, shortChannelId)
@@ -301,6 +311,30 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     // both parties publish that the swap was completed via claim-by-invoice
     assert(aliceSwap.swapEvents.expectMsgType[ClaimByInvoiceConfirmed].swapId == swapId)
     assert(bobSwap.swapEvents.expectMsgType[ClaimByInvoicePaid].swapId == swapId)
+  }
+
+  test("swap in - sender cancels because they do not have sufficient on-chain balance") { f =>
+    import f._
+
+    val amount = Satoshi(1000)
+    // bob must have enough on-chain balance to create opening tx
+    val fundedBob = nodeWithOnChainBalance(bob, Satoshi(0))
+    val (aliceSwap, bobSwap) = swapActors(alice, fundedBob)
+    val shortChannelId = connectNodes(alice, fundedBob)
+
+    // swap in sender (bob) requests a swap in with swap in receiver (alice)
+    bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
+    bobSwap.cli.expectMsgType[SwapOpened]
+
+    // both parties publish that the swap was canceled because bob could not fund the opening tx
+    assert(aliceSwap.swapEvents.expectMsgType[Canceled].reason.contains("error while funding swap open tx"))
+    assert(bobSwap.swapEvents.expectMsgType[Canceled].reason.contains("error while funding swap open tx"))
+
+    // both parties have no pending swaps
+    bobSwap.swapRegister ! ListPendingSwaps(bobSwap.cli.ref.toTyped)
+    assert(bobSwap.cli.expectMsgType[Iterable[Status]].isEmpty)
+    aliceSwap.swapRegister ! ListPendingSwaps(aliceSwap.cli.ref.toTyped)
+    assert(aliceSwap.cli.expectMsgType[Iterable[Status]].isEmpty)
   }
 
 }
