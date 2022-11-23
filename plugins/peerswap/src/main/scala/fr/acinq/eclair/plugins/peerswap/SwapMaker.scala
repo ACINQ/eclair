@@ -126,7 +126,6 @@ object SwapMaker {
             case Failure(e) => context.log.error(s"could not restore swap sender with invalid shortChannelId: $d, $e")
               Behaviors.stopped
           }
-        case AbortSwap => Behaviors.stopped
       }
     }
 }

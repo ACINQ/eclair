@@ -133,7 +133,6 @@ object SwapTaker {
             case Failure(e) => context.log.error(s"could not restore swap receiver with invalid shortChannelId: $d, $e")
               Behaviors.stopped
           }
-        case AbortSwap => Behaviors.stopped
       }
     }
 }
