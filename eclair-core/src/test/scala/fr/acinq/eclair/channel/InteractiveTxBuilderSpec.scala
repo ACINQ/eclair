@@ -180,7 +180,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     testFun(Fixture(alice, bob, aliceRbf, bobRbf, channelParams.fundingParamsA, channelParams.fundingParamsB, walletA, rpcClientA, walletB, rpcClientB, TestProbe(), TestProbe()))
   }
 
-  test("initiator contributes more than non-initiator") {
+  test("initiator funds more than non-initiator") {
     val targetFeerate = FeeratePerKw(5000 sat)
     val fundingA = 120_000 sat
     val utxosA = Seq(50_000 sat, 35_000 sat, 60_000 sat)
@@ -257,7 +257,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  test("initiator contributes less than non-initiator") {
+  test("initiator funds less than non-initiator") {
     val targetFeerate = FeeratePerKw(3000 sat)
     val fundingA = 10_000 sat
     val utxosA = Seq(50_000 sat)
@@ -313,6 +313,54 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(mempoolTx.fees == txB.tx.fees)
       assert(txA.tx.fees == txB.tx.fees)
       assert(targetFeerate <= txB.feerate && txB.feerate <= targetFeerate * 1.25, s"unexpected feerate (target=$targetFeerate actual=${txB.feerate})")
+    }
+  }
+
+  test("initiator funds more than non-initiator but contributes less") {
+    val targetFeerate = FeeratePerKw(5000 sat)
+    val fundingA = 100_000 sat
+    val utxosA = Seq(150_000 sat)
+    val fundingB = 50_000 sat
+    val utxosB = Seq(200_000 sat)
+    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 42, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+      import f._
+
+      alice ! Start(alice2bob.ref, Nil)
+      bob ! Start(bob2alice.ref, Nil)
+
+      // Bob waits for Alice to send the first message.
+      bob2alice.expectNoMessage(100 millis)
+      // Alice --- tx_add_input --> Bob
+      val inputA = f.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      val inputB = f.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      f.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_output --- Bob
+      f.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_add_output --> Bob
+      f.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      f.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      f.forwardAlice2Bob[TxComplete]
+      // Alice <-- commit_sig --- Bob
+      f.forwardBob2Alice[CommitSig]
+      // Alice --- commit_sig --> Bob
+      f.forwardAlice2Bob[CommitSig]
+
+      // Alice contributes more than Bob to funding output, but Bob's inputs are bigger than Alice's, so Alice must sign first.
+      assert(inputA.previousTx.txOut(inputA.previousTxOutput.toInt).amount < inputB.previousTx.txOut(inputB.previousTxOutput.toInt).amount)
+      // Alice --- tx_signatures --> Bob
+      val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[PartiallySignedSharedTransaction]
+      bob ! ReceiveTxSigs(txA.localSigs)
+      // Alice <-- tx_signatures --- Bob
+      val txB = bob2alice.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
+
+      // The resulting transaction is valid.
+      val probe = TestProbe()
+      walletA.publishTransaction(txB.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txB.signedTx.txid)
     }
   }
 
