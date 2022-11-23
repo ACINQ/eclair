@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
@@ -421,14 +421,14 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePathId(add: UpdateAddHtlc, payload: FinalPayload.Blinded, record: IncomingBlindedPayment)(implicit log: LoggingAdapter): Boolean = {
-    add.blinding_opt.flatMap(record.pathIds.get) match {
+  private def validatePathId(blinding_opt: Option[PublicKey], payload: FinalPayload.Blinded, record: IncomingBlindedPayment)(implicit log: LoggingAdapter): Boolean = {
+    blinding_opt.flatMap(record.pathIds.get) match {
       case Some(pathId) if pathId == payload.pathId => true
       case Some(pathId) =>
         log.warning("received blinded payment with invalid pathId={} (expected {})", payload.pathId, pathId)
         false
       case None =>
-        log.warning("received blinded payment with an invalid blinding={}", add.blinding_opt.map(_.toHex).getOrElse("none"))
+        log.warning("received blinded payment with an invalid blinding={}", blinding_opt.map(_.toHex).getOrElse("none"))
         false
     }
   }
@@ -453,7 +453,7 @@ object MultiPartHandler {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
     val commonOk = validateCommon(nodeParams, add, payload, record)
-    val secretOk = validatePathId(add, payload, record)
+    val secretOk = validatePathId(add.blinding_opt.orElse(payload.blinding_opt), payload, record)
     if (commonOk && secretOk) None else Some(cmdFail)
   }
 
