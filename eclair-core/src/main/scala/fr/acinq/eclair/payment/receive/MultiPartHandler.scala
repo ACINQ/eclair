@@ -265,7 +265,9 @@ object MultiPartHandler {
                                  routes: Seq[Seq[PublicKey]],
                                  router: ActorRef,
                                  paymentPreimage_opt: Option[ByteVector32] = None,
-                                 paymentType: String = PaymentType.Blinded) extends ReceivePayment
+                                 paymentType: String = PaymentType.Blinded) extends ReceivePayment {
+    require(routes.forall(_.nonEmpty), "each route must have at least one node")
+  }
 
   object CreateInvoiceActor {
 
