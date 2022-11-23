@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
-import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, EncryptedRecipientData, OutgoingCltv}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, BlindingPoint, EncryptedRecipientData, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{PathId, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol._
@@ -453,6 +453,42 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(5000 msat, nodeParams.currentBlockHeight)))
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
+  }
+
+  test("PaymentHandler should accept incoming blinded payment with correct blinding point and path id") { f =>
+    import f._
+
+    val offer = Offer(None, "a blinded coffee please", randomKey().publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(randomKey(), offer, invoiceReq))
+    val invoice = sender.expectMsgType[Bolt12Invoice]
+    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
+    val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
+    assert(pathIds.size == 1)
+
+    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, pathIds.values.head, Some(pathIds.keys.head))
+    sender.send(handlerWithRouteBlinding, packet)
+    register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status.isInstanceOf[IncomingPaymentStatus.Received])
+  }
+
+  test("PaymentHandler should accept incoming blinded payment with correct blinding point and path id (zero hop)") { f =>
+    import f._
+
+    val offer = Offer(None, "a blinded coffee please", randomKey().publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.invoiceFeatures(), randomKey(), Block.RegtestGenesisBlock.hash)
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(randomKey(), offer, invoiceReq))
+    val invoice = sender.expectMsgType[Bolt12Invoice]
+    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
+    val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
+    assert(pathIds.size == 1)
+
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 5000 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
+    val payload = FinalPayload.Blinded(TlvStream(BlindingPoint(pathIds.keys.head), AmountToForward(5000 msat), OutgoingCltv(defaultExpiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathIds.values.head), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
+    val packet = IncomingPaymentPacket.FinalPacket(add, payload)
+    sender.send(handlerWithRouteBlinding, packet)
+    register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status.isInstanceOf[IncomingPaymentStatus.Received])
   }
 
   test("PaymentHandler should reject incoming blinded payment without a blinding point") { f =>
