@@ -54,6 +54,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   val chain: ByteVector32 = records.get[Chain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
   val offerId: Option[ByteVector32] = records.get[OfferId].map(_.offerId)
   val blindedPaths: Seq[RouteBlinding.BlindedRoute] = records.get[Paths].get.paths
+  val blindedPathsInfo: Seq[PaymentInfo] = records.get[PaymentPathsInfo].get.paymentInfo
   val issuer: Option[String] = records.get[Issuer].map(_.issuer)
   val quantity: Option[Long] = records.get[Quantity].map(_.quantity)
   val refundFor: Option[ByteVector32] = records.get[RefundFor].map(_.refundedPaymentHash)
@@ -101,6 +102,8 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
 }
 
+case class PaymentBlindedRoute(route: Sphinx.RouteBlinding.BlindedRoute, paymentInfo: PaymentInfo)
+
 object Bolt12Invoice {
   val hrp = "lni"
   val DEFAULT_EXPIRY_SECONDS: Long = 7200
@@ -122,7 +125,7 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             features: Features[InvoiceFeature],
-            paths: Seq[Sphinx.RouteBlinding.BlindedRoute]): Bolt12Invoice = {
+            paths: Seq[PaymentBlindedRoute]): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
     val amount = request.amount.orElse(offer.amount.map(_ * request.quantity)).get
     val tlvs: Seq[InvoiceTlv] = Seq(
@@ -131,8 +134,8 @@ object Bolt12Invoice {
       Some(Amount(amount)),
       Some(Description(offer.description)),
       if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
-      Some(Paths(paths)),
-      Some(PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty)))),
+      Some(Paths(paths.map(_.route))),
+      Some(PaymentPathsInfo(paths.map(_.paymentInfo))),
       offer.issuer.map(Issuer),
       Some(NodeId(nodeKey.publicKey)),
       request.quantity_opt.map(Quantity),
