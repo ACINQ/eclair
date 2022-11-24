@@ -109,7 +109,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       awaiting = Map.empty,
       privateChannels = Map.empty,
       scid2PrivateChannels = Map.empty,
-      excludedChannels = Set.empty,
+      excludedChannels = Map.empty,
       graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
       sync = Map.empty)
     startWith(NORMAL, data)
@@ -173,11 +173,11 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(ExcludeChannel(desc, duration_opt), d) =>
       log.info("excluding shortChannelId={} from nodeId={} for duration={}", desc.shortChannelId, desc.a, duration_opt.getOrElse("n/a"))
       duration_opt.foreach(banDuration => context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc)))
-      stay() using d.copy(excludedChannels = d.excludedChannels + desc)
+      stay() using d.copy(excludedChannels = d.excludedChannels.updatedWith(desc)(x => Some(x.getOrElse(0) + 1)))
 
     case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
-      stay() using d.copy(excludedChannels = d.excludedChannels - desc)
+      stay() using d.copy(excludedChannels = d.excludedChannels.updatedWith(desc)(_.filter(_ > 1).map(_ - 1)))
 
     case Event(GetNodes, d) =>
       sender() ! d.nodes.values
@@ -643,7 +643,7 @@ object Router {
                   awaiting: Map[ChannelAnnouncement, Seq[GossipOrigin]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
                   privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
                   scid2PrivateChannels: Map[Long, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
-                  excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  excludedChannels: Map[ChannelDesc, Int], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  ) {
