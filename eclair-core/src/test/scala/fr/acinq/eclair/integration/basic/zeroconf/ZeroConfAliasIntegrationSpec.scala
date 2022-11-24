@@ -1,5 +1,6 @@
 package fr.acinq.eclair.integration.basic.zeroconf
 
+import akka.testkit.TestProbe
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
@@ -10,9 +11,10 @@ import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.RouteNotFound
+import fr.acinq.eclair.router.Router.{FinalizeRoute, PredefinedNodeRoute, RouteResponse}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.protocol.{FailureMessage, UnknownNextPeer, Update}
-import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId}
+import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId, ShortChannelId}
 import org.scalatest.OptionValues.convertOptionToValuable
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatest.{Tag, TestData}
@@ -95,6 +97,17 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     assert(result == expected)
   }
 
+  private def createSelfRouteCarol(f: FixtureParam, scid_ab: ShortChannelId, scid_bc: ShortChannelId): Unit = {
+    import f._
+    val sender = TestProbe("sender")
+    sender.send(carol.router, FinalizeRoute(50_000 msat, PredefinedNodeRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId))))
+    val route = sender.expectMsgType[RouteResponse].routes.head
+    assert(route.length == 2)
+    assert(route.hops.map(_.nodeId) == Seq(alice.nodeId, bob.nodeId))
+    assert(route.hops.map(_.nextNodeId) == Seq(bob.nodeId, carol.nodeId))
+    assert(route.hops.map(_.shortChannelId) == Seq(scid_ab, scid_bc))
+  }
+
   private def internalTest(f: FixtureParam,
                            deepConfirm: Boolean,
                            bcPublic: Boolean,
@@ -105,7 +118,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
                            paymentWithRealScidHint_opt: Option[Either[Either[Throwable, FailureMessage], Ok.type]]): Unit = {
     import f._
 
-    val (_, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm)
+    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm)
 
     eventually {
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
@@ -142,6 +155,16 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     paymentWithRealScidHint_opt.foreach { paymentWithRealScidHint =>
       eventually {
         sendPaymentAliceToCarol(f, paymentWithRealScidHint, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.toOption.value))
+      }
+    }
+
+    eventually {
+      if (deepConfirm) {
+        val scidsAlice = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds
+        val scid_ab = scidsAlice.real.toOption.get
+        val scidsBob = getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds
+        val scid_bc = if (bcPublic) scidsBob.real.toOption.get else scidsBob.localAlias
+        createSelfRouteCarol(f, scid_ab, scid_bc)
       }
     }
   }
