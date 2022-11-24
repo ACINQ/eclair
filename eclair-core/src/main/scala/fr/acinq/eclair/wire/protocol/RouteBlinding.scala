@@ -18,11 +18,10 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta, featuresCodec}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{fixedLengthTlvField, tlvField, tmillisatoshi, tmillisatoshi32}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
@@ -139,32 +138,6 @@ object RouteBlindingEncryptedDataCodecs {
   case class CannotDecryptData(message: String) extends InvalidEncryptedData
   case class CannotDecodeData(message: String) extends InvalidEncryptedData
   // @formatter:on
-
-  /** Create a blinded route from a non-empty list of channel hops. */
-  def createBlindedRouteFromHops(hops: Seq[Router.ChannelHop], pathId: ByteVector, minAmount: MilliSatoshi, routeFinalExpiry: CltvExpiry): Sphinx.RouteBlinding.BlindedRouteDetails = {
-    require(hops.nonEmpty, "route must contain at least one hop")
-    // We use the same constraints for all nodes so they can't use it to guess their position.
-    val routeExpiry = hops.foldLeft(routeFinalExpiry) { case (expiry, hop) => expiry + hop.cltvExpiryDelta }
-    val routeMinAmount = hops.foldLeft(minAmount) { case (amount, hop) => amount.max(hop.params.htlcMinimum) }
-    val finalPayload = blindedRouteDataCodec.encode(TlvStream(PaymentConstraints(routeExpiry, routeMinAmount), PathId(pathId))).require.bytes
-    val payloads = hops.foldRight(Seq(finalPayload)) {
-      case (channel, payloads) =>
-        val payload = blindedRouteDataCodec.encode(TlvStream(
-          OutgoingChannelId(channel.shortChannelId),
-          PaymentRelay(channel.cltvExpiryDelta, channel.params.relayFees.feeProportionalMillionths, channel.params.relayFees.feeBase),
-          PaymentConstraints(routeExpiry, routeMinAmount),
-        )).require.bytes
-        payload +: payloads
-    }
-    val nodeIds = hops.map(_.nodeId) :+ hops.last.nextNodeId
-    Sphinx.RouteBlinding.create(randomKey(), nodeIds, payloads)
-  }
-
-  /** Create a blinded route where the recipient is also the introduction point (which reveals the recipient's identity). */
-  def createBlindedRouteWithoutHops(nodeId: PublicKey, pathId: ByteVector, minAmount: MilliSatoshi, routeExpiry: CltvExpiry): Sphinx.RouteBlinding.BlindedRouteDetails = {
-    val finalPayload = blindedRouteDataCodec.encode(TlvStream(PaymentConstraints(routeExpiry, minAmount), PathId(pathId))).require.bytes
-    Sphinx.RouteBlinding.create(randomKey(), Seq(nodeId), Seq(finalPayload))
-  }
 
   /**
    * Decrypt and decode the contents of an encrypted_recipient_data TLV field.

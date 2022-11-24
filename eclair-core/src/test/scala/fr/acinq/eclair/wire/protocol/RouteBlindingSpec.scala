@@ -3,13 +3,10 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRouteDetails
-import fr.acinq.eclair.payment.Invoice
-import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.{RouteBlindingDecryptedData, blindedRouteDataCodec, createBlindedRouteFromHops, createBlindedRouteWithoutHops}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.{RouteBlindingDecryptedData, blindedRouteDataCodec}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, UInt64, UnknownFeature, randomBytes32, randomKey}
-import org.scalatest.Tag
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, UInt64, UnknownFeature, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -167,72 +164,6 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
     for ((bin, expected) <- testCases) {
       val decoded = blindedRouteDataCodec.decode(bin.bits).require.value
       assert(BlindedRouteData.validateMessageRecipientData(decoded) == Left(expected))
-    }
-  }
-
-  test("create blinded route without hops") {
-    val a = randomKey()
-    val pathId = randomBytes32()
-    val route = createBlindedRouteWithoutHops(a.publicKey, pathId, 1 msat, CltvExpiry(500))
-    assert(route.route.introductionNodeId == a.publicKey)
-    assert(route.route.encryptedPayloads.length == 1)
-    assert(route.route.blindingKey == route.lastBlinding)
-    val Right(decoded) = RouteBlindingEncryptedDataCodecs.decode(a, route.route.blindingKey, route.route.encryptedPayloads.head)
-    assert(BlindedRouteData.validPaymentRecipientData(decoded.tlvs).isRight)
-    assert(decoded.tlvs.get[PathId].get.data == pathId.bytes)
-  }
-
-  test("create blinded route from channel hops") {
-    val (a, b, c) = (randomKey(), randomKey(), randomKey())
-    val pathId = randomBytes32()
-    val (channelId1, channelId2) = (ShortChannelId(1), ShortChannelId(2))
-    val hops = Seq(
-      Router.ChannelHop(channelId1, a.publicKey, b.publicKey, Router.ChannelRelayParams.FromHint(Invoice.BasicEdge(a.publicKey, b.publicKey, channelId1, 10 msat, 300, CltvExpiryDelta(200)))),
-      Router.ChannelHop(channelId2, b.publicKey, c.publicKey, Router.ChannelRelayParams.FromHint(Invoice.BasicEdge(b.publicKey, c.publicKey, channelId2, 20 msat, 150, CltvExpiryDelta(600)))),
-    )
-    val route = createBlindedRouteFromHops(hops, pathId, 1 msat, CltvExpiry(500))
-    assert(route.route.introductionNodeId == a.publicKey)
-    assert(route.route.encryptedPayloads.length == 3)
-    val Right(decoded1) = RouteBlindingEncryptedDataCodecs.decode(a, route.route.blindingKey, route.route.encryptedPayloads(0))
-    assert(BlindedRouteData.validatePaymentRelayData(decoded1.tlvs).isRight)
-    assert(decoded1.tlvs.get[OutgoingChannelId].get.shortChannelId == channelId1)
-    assert(decoded1.tlvs.get[PaymentRelay].get.feeBase == 10.msat)
-    assert(decoded1.tlvs.get[PaymentRelay].get.feeProportionalMillionths == 300)
-    assert(decoded1.tlvs.get[PaymentRelay].get.cltvExpiryDelta == CltvExpiryDelta(200))
-    val Right(decoded2) = RouteBlindingEncryptedDataCodecs.decode(b, decoded1.nextBlinding, route.route.encryptedPayloads(1))
-    assert(BlindedRouteData.validatePaymentRelayData(decoded2.tlvs).isRight)
-    assert(decoded2.tlvs.get[OutgoingChannelId].get.shortChannelId == channelId2)
-    assert(decoded2.tlvs.get[PaymentRelay].get.feeBase == 20.msat)
-    assert(decoded2.tlvs.get[PaymentRelay].get.feeProportionalMillionths == 150)
-    assert(decoded2.tlvs.get[PaymentRelay].get.cltvExpiryDelta == CltvExpiryDelta(600))
-    val Right(decoded3) = RouteBlindingEncryptedDataCodecs.decode(c, decoded2.nextBlinding, route.route.encryptedPayloads(2))
-    assert(BlindedRouteData.validPaymentRecipientData(decoded3.tlvs).isRight)
-    assert(decoded3.tlvs.get[PathId].get.data == pathId.bytes)
-  }
-
-  test("create blinded route payment info", Tag("fuzzy")) {
-    val rand = new scala.util.Random()
-    val nodeId = randomKey().publicKey
-    for (_ <- 0 to 100) {
-      val routeLength = rand.nextInt(10) + 1
-      val hops = (1 to routeLength).map(i => {
-        val scid = ShortChannelId(i)
-        val feeBase = rand.nextInt(10_000).msat
-        val feeProp = rand.nextInt(5000)
-        val cltvExpiryDelta = CltvExpiryDelta(rand.nextInt(500))
-        val params = Router.ChannelRelayParams.FromHint(Invoice.BasicEdge(nodeId, nodeId, scid, feeBase, feeProp, cltvExpiryDelta))
-        Router.ChannelHop(scid, nodeId, nodeId, params)
-      })
-      for (_ <- 0 to 100) {
-        val amount = rand.nextLong(10_000_000_000L).msat
-        val payInfo = OfferTypes.PaymentInfo(amount, hops)
-        assert(payInfo.cltvExpiryDelta == CltvExpiryDelta(hops.map(_.cltvExpiryDelta.toInt).sum))
-        // We verify that the aggregated fee slightly exceeds the actual fee (because of proportional fees rounding).
-        val aggregatedFee = payInfo.fee(amount)
-        val actualFee = Router.Route(amount, hops).fee(includeLocalChannelCost = true)
-        assert(aggregatedFee >= actualFee, s"amount=$amount, hops=${hops.map(_.params.relayFees)}, aggregatedFee=$aggregatedFee, actualFee=$actualFee")
-        assert(aggregatedFee - actualFee < 1000.msat.max(amount * 1e-5), s"amount=$amount, hops=${hops.map(_.params.relayFees)}, aggregatedFee=$aggregatedFee, actualFee=$actualFee")
-      }
     }
   }
 

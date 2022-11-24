@@ -20,10 +20,9 @@ import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
-import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64, nodeFee}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64, nodeFee}
 import fr.acinq.secp256k1.Secp256k1JvmKt
 import scodec.Codec
 import scodec.bits.ByteVector
@@ -68,22 +67,6 @@ object OfferTypes {
                          maxHtlc: MilliSatoshi,
                          allowedFeatures: Features[Feature]) {
     def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(feeBase, feeProportionalMillionths, amount)
-  }
-
-  object PaymentInfo {
-    /** Compute aggregated fees and expiry for a blinded route. */
-    def apply(amount: MilliSatoshi, hops: Seq[Router.ChannelHop]): PaymentInfo = {
-      val zeroPaymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty)
-      hops.foldRight(zeroPaymentInfo) {
-        case (channel, payInfo) =>
-          val newFeeBase = MilliSatoshi((channel.params.relayFees.feeBase.toLong * 1_000_000 + payInfo.feeBase.toLong * (1_000_000 + channel.params.relayFees.feeProportionalMillionths) + 1_000_000 - 1) / 1_000_000)
-          val newFeeProp = ((payInfo.feeProportionalMillionths + channel.params.relayFees.feeProportionalMillionths) * 1_000_000 + payInfo.feeProportionalMillionths * channel.params.relayFees.feeProportionalMillionths + 1_000_000 - 1) / 1_000_000
-          // Most nodes on the network set `htlc_maximum_msat` to the channel capacity. We cannot expect the route to be
-          // able to relay that amount, so we remove 10% as a safety margin.
-          val channelMaxHtlc = channel.params.htlcMaximum_opt.map(_ * 0.9).getOrElse(amount)
-          PaymentInfo(newFeeBase, newFeeProp, payInfo.cltvExpiryDelta + channel.cltvExpiryDelta, payInfo.minHtlc.max(channel.params.htlcMinimum), payInfo.maxHtlc.min(channelMaxHtlc), payInfo.allowedFeatures)
-      }
-    }
   }
 
   case class PaymentPathsInfo(paymentInfo: Seq[PaymentInfo]) extends InvoiceTlv
