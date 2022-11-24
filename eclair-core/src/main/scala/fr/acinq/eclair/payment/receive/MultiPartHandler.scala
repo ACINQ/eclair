@@ -28,19 +28,18 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
-import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRouteDetails
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.{createBlindedRouteFromHops, createBlindedRouteWithoutHops}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, ShortChannelId, TimestampMilli, randomBytes32}
+import scodec.bits.HexStringSyntax
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContextExecutor, Future}
@@ -296,49 +295,6 @@ object MultiPartHandler {
     case class CreateInvoice(replyTo: ActorRef, receivePayment: ReceivePayment) extends Command
     // @formatter:on
 
-    def blindedRouteFromHops(hops: Seq[ChannelHop], pathId: ByteVector, minAmount: MilliSatoshi, routeFinalExpiry: CltvExpiry): BlindedRouteDetails = {
-      require(hops.nonEmpty, "route must contain at least one hop")
-      // We use the same constraints for all nodes so they can't use it to guess their position.
-      val routeExpiry = hops.foldLeft(routeFinalExpiry) { case (expiry, hop) => expiry + hop.cltvExpiryDelta }
-      val routeMinAmount = hops.foldLeft(minAmount) { case (amount, hop) => amount.max(hop.params.htlcMinimum) }
-      val finalPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
-        RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, routeMinAmount),
-        RouteBlindingEncryptedDataTlv.PathId(pathId)
-      )).require.bytes
-      val payloads = hops.foldRight(Seq(finalPayload)) {
-        case (channel, payloads) =>
-          val payload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
-            RouteBlindingEncryptedDataTlv.OutgoingChannelId(channel.shortChannelId),
-            RouteBlindingEncryptedDataTlv.PaymentRelay(channel.cltvExpiryDelta, channel.params.relayFees.feeProportionalMillionths, channel.params.relayFees.feeBase),
-            RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, routeMinAmount),
-          )).require.bytes
-          payload +: payloads
-      }
-      val nodeIds = hops.map(_.nodeId) :+ hops.last.nextNodeId
-      Sphinx.RouteBlinding.create(randomKey(), nodeIds, payloads)
-    }
-
-    def blindedRouteWithoutHops(nodeId: PublicKey, pathId: ByteVector, minAmount: MilliSatoshi, routeExpiry: CltvExpiry): BlindedRouteDetails = {
-      val finalPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
-        RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, minAmount),
-        RouteBlindingEncryptedDataTlv.PathId(pathId)
-      )).require.bytes
-      Sphinx.RouteBlinding.create(randomKey(), Seq(nodeId), Seq(finalPayload))
-    }
-
-    def aggregatePayInfo(amount: MilliSatoshi, hops: Seq[ChannelHop]): PaymentInfo = {
-      val zeroPaymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty)
-      hops.foldRight(zeroPaymentInfo) {
-        case (channel, payInfo) =>
-          val newFeeBase = MilliSatoshi((channel.params.relayFees.feeBase.toLong * 1_000_000 + payInfo.feeBase.toLong * (1_000_000 + channel.params.relayFees.feeProportionalMillionths) + 1_000_000 - 1) / 1_000_000)
-          val newFeeProp = ((payInfo.feeProportionalMillionths + channel.params.relayFees.feeProportionalMillionths) * 1_000_000 + payInfo.feeProportionalMillionths * channel.params.relayFees.feeProportionalMillionths + 1_000_000 - 1) / 1_000_000
-          // Most nodes on the network set `htlc_maximum_msat` to the channel capacity. We cannot expect the route to be
-          // able to relay that amount, so we remove 10% as a safety margin.
-          val channelMaxHtlc = channel.params.htlcMaximum_opt.map(_ * 0.9).getOrElse(amount)
-          PaymentInfo(newFeeBase, newFeeProp, payInfo.cltvExpiryDelta + channel.cltvExpiryDelta, payInfo.minHtlc.max(channel.params.htlcMinimum), payInfo.maxHtlc.min(channelMaxHtlc), payInfo.allowedFeatures)
-      }
-    }
-
     def apply(nodeParams: NodeParams): Behavior[Command] = {
       Behaviors.setup { context =>
         Behaviors.receiveMessage {
@@ -388,18 +344,18 @@ object MultiPartHandler {
                   })
                   if (route.nodes.length == 1) {
                     val blindedRoute = if (dummyHops.isEmpty) {
-                      blindedRouteWithoutHops(route.nodes.last, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
+                      createBlindedRouteWithoutHops(route.nodes.last, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                     } else {
-                      blindedRouteFromHops(dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
+                      createBlindedRouteFromHops(dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                     }
-                    val paymentInfo = aggregatePayInfo(r.amount, dummyHops)
+                    val paymentInfo = OfferTypes.PaymentInfo(r.amount, dummyHops)
                     Future.successful((blindedRoute, paymentInfo, pathId))
                   } else {
                     implicit val timeout: Timeout = 10.seconds
                     r.router.ask(Router.FinalizeRoute(r.amount, Router.PredefinedNodeRoute(route.nodes))).mapTo[Router.RouteResponse].map(routeResponse => {
                       val clearRoute = routeResponse.routes.head
-                      val blindedRoute = blindedRouteFromHops(clearRoute.hops ++ dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
-                      val paymentInfo = aggregatePayInfo(r.amount, clearRoute.hops ++ dummyHops)
+                      val blindedRoute = createBlindedRouteFromHops(clearRoute.hops ++ dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
+                      val paymentInfo = OfferTypes.PaymentInfo(r.amount, clearRoute.hops ++ dummyHops)
                       (blindedRoute, paymentInfo, pathId)
                     })
                   }

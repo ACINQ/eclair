@@ -27,26 +27,24 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
-import fr.acinq.eclair.payment.Invoice.BasicEdge
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.receive.MultiPartHandler._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.router.Router.{ChannelRelayParams, RouteResponse}
+import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, BlindingPoint, EncryptedRecipientData, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{OutgoingChannelId, PathId, PaymentConstraints, PaymentRelay}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{PathId, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, TimestampMilli, TimestampMilliLong, randomBytes32, randomKey}
+import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.collection.immutable.Queue
 import scala.concurrent.duration._
-import scala.util.Random
 
 /**
  * Created by PM on 24/03/2017.
@@ -275,71 +273,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(invoice.features.hasFeature(BasicMultiPartPayment))
       assert(invoice.features.hasFeature(TrampolinePaymentPrototype))
     }
-  }
-
-  test("Aggregate route fees", Tag("fuzzy")) { _ =>
-    val rand = new Random()
-    val nodeId = randomKey().publicKey
-    for (_ <- 0 to 100) {
-      val routeLength = rand.nextInt(10) + 1
-      val hops = (1 to routeLength).map(i => {
-        val scid = ShortChannelId(i)
-        val feeBase = rand.nextInt(10_000).msat
-        val feeProp = rand.nextInt(5000)
-        val cltvExpiryDelta = CltvExpiryDelta(rand.nextInt(500))
-        val params = Router.ChannelRelayParams.FromHint(BasicEdge(nodeId, nodeId, scid, feeBase, feeProp, cltvExpiryDelta))
-        Router.ChannelHop(scid, nodeId, nodeId, params)
-      })
-      for (_ <- 0 to 100) {
-        val amount = rand.nextLong(10_000_000_000L).msat
-        val payInfo = CreateInvoiceActor.aggregatePayInfo(amount, hops)
-        // We verify that the aggregated fee slightly exceeds the actual fee (because of proportional fees rounding).
-        val aggregatedFee = payInfo.fee(amount)
-        val actualFee = Router.Route(amount, hops).fee(includeLocalChannelCost = true)
-        assert(aggregatedFee >= actualFee, s"amount=$amount, hops=${hops.map(_.params.relayFees)}, aggregatedFee=$aggregatedFee, actualFee=$actualFee")
-        assert(aggregatedFee - actualFee < 1000.msat.max(amount * 1e-5), s"amount=$amount, hops=${hops.map(_.params.relayFees)}, aggregatedFee=$aggregatedFee, actualFee=$actualFee")
-      }
-    }
-  }
-
-  test("Generate blinded route from zero hop") { () =>
-    val a = randomKey()
-    val pathId = randomBytes32()
-    val route = CreateInvoiceActor.blindedRouteWithoutHops(a.publicKey, pathId, 1 msat, CltvExpiry(500))
-    assert(route.route.introductionNodeId == a.publicKey)
-    assert(route.route.encryptedPayloads.length == 1)
-    assert(route.route.blindingKey == route.lastBlinding)
-    val Right(decoded) = RouteBlindingEncryptedDataCodecs.decode(a, route.route.blindingKey, route.route.encryptedPayloads.head)
-    assert(BlindedRouteData.validPaymentRecipientData(decoded.tlvs).isRight)
-    assert(decoded.tlvs.get[PathId].get.data == pathId.bytes)
-  }
-
-  test("Generate blinded route from hops") { () =>
-    val (a, b, c) = (randomKey(), randomKey(), randomKey())
-    val pathId = randomBytes32()
-    val (channelId1, channelId2) = (ShortChannelId.generateLocalAlias(), ShortChannelId.generateLocalAlias())
-    val hops = Seq(
-      Router.ChannelHop(channelId1, a.publicKey, b.publicKey, ChannelRelayParams.FromHint(Invoice.BasicEdge(a.publicKey, b.publicKey, channelId1, 10 msat, 300, CltvExpiryDelta(200)))),
-      Router.ChannelHop(channelId2, b.publicKey, c.publicKey, ChannelRelayParams.FromHint(Invoice.BasicEdge(b.publicKey, c.publicKey, channelId2, 20 msat, 150, CltvExpiryDelta(600)))),
-    )
-    val route = CreateInvoiceActor.blindedRouteFromHops(hops, pathId, 1 msat, CltvExpiry(500))
-    assert(route.route.introductionNodeId == a.publicKey)
-    assert(route.route.encryptedPayloads.length == 3)
-    val Right(decoded1) = RouteBlindingEncryptedDataCodecs.decode(a, route.route.blindingKey, route.route.encryptedPayloads(0))
-    assert(BlindedRouteData.validatePaymentRelayData(decoded1.tlvs).isRight)
-    assert(decoded1.tlvs.get[OutgoingChannelId].get.shortChannelId == channelId1)
-    assert(decoded1.tlvs.get[PaymentRelay].get.feeBase == 10.msat)
-    assert(decoded1.tlvs.get[PaymentRelay].get.feeProportionalMillionths == 300)
-    assert(decoded1.tlvs.get[PaymentRelay].get.cltvExpiryDelta == CltvExpiryDelta(200))
-    val Right(decoded2) = RouteBlindingEncryptedDataCodecs.decode(b, decoded1.nextBlinding, route.route.encryptedPayloads(1))
-    assert(BlindedRouteData.validatePaymentRelayData(decoded2.tlvs).isRight)
-    assert(decoded2.tlvs.get[OutgoingChannelId].get.shortChannelId == channelId2)
-    assert(decoded2.tlvs.get[PaymentRelay].get.feeBase == 20.msat)
-    assert(decoded2.tlvs.get[PaymentRelay].get.feeProportionalMillionths == 150)
-    assert(decoded2.tlvs.get[PaymentRelay].get.cltvExpiryDelta == CltvExpiryDelta(600))
-    val Right(decoded3) = RouteBlindingEncryptedDataCodecs.decode(c, decoded2.nextBlinding, route.route.encryptedPayloads(2))
-    assert(BlindedRouteData.validPaymentRecipientData(decoded3.tlvs).isRight)
-    assert(decoded3.tlvs.get[PathId].get.data == pathId.bytes)
   }
 
   test("Invoice generation with route blinding support") { f =>
