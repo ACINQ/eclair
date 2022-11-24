@@ -123,7 +123,8 @@ object SwapMaker {
           ShortChannelId.fromCoordinates(d.request.scid) match {
             case Success(shortChannelId) => new SwapMaker(shortChannelId, nodeParams, watcher, register, wallet, keyManager, db, context)
               .awaitClaimPayment(d.request, d.agreement, d.invoice, d.openingTxBroadcasted, d.isInitiator)
-            case Failure(e) => context.log.error(s"could not restore swap sender with invalid shortChannelId: $d, $e")
+            case Failure(e) => context.log.error(s"Could not restore from a checkpoint with an invalid shortChannelId: $d, $e")
+              db.addResult(CouldNotRestore(d.swapId, d))
               Behaviors.stopped
           }
       }

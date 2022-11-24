@@ -42,5 +42,8 @@ object SwapEvents {
   case class ClaimByCsvConfirmed(swapId: String, confirmation: WatchTxConfirmedTriggered) extends SwapEvent {
     override def toString: String = s"Claimed by csv: $confirmation"
   }
+  case class CouldNotRestore(swapId: String, checkpoint: SwapData) extends SwapEvent {
+    override def toString: String = s"Could not restore from checkpoint: $checkpoint"
+  }
 
 }

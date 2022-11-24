@@ -130,7 +130,8 @@ object SwapTaker {
                 // if payment was not yet sent, fail the swap
                 swap.sendCoopClose(d.request, s"Lightning payment not sent.")
               )
-            case Failure(e) => context.log.error(s"could not restore swap receiver with invalid shortChannelId: $d, $e")
+            case Failure(e) => context.log.error(s"Could not restore from a checkpoint with an invalid shortChannelId: $d, $e")
+              db.addResult(CouldNotRestore(d.swapId, d))
               Behaviors.stopped
           }
       }

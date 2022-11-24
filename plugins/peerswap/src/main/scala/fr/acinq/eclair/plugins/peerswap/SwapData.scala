@@ -26,7 +26,10 @@ object SwapRole extends Enumeration {
   val Taker: SwapRole.Value = Value(2, "Taker")
 }
 
-case class SwapData(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, swapRole: SwapRole, isInitiator: Boolean, result: String = "")
+case class SwapData(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, swapRole: SwapRole, isInitiator: Boolean, result: String = "") {
+  val swapId: String = request.swapId
+  val scid: String = request.scid
+}
 
 object SwapData {
 }
