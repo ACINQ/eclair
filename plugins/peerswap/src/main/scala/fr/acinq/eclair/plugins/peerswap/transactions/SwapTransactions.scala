@@ -29,10 +29,16 @@ import scodec.bits.ByteVector
 
 object SwapTransactions {
 
-  // TODO: find alternative to unsealing TransactionWithInputInfo
-  case class SwapClaimByInvoiceTx(override val input: InputInfo, override val tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "swap-claimbyinvoice-tx" }
-  case class SwapClaimByCoopTx(override val input: InputInfo, override val tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "swap-claimbycoop-tx" }
-  case class SwapClaimByCsvTx(override val input: InputInfo, override val tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "swap-claimbycsv-tx" }
+  sealed trait SwapTransactionWithInputInfo {
+    def input: InputInfo
+    def desc: String
+    def tx: Transaction
+    def amountIn: Satoshi = input.txOut.amount
+    def fee: Satoshi = amountIn - tx.txOut.map(_.amount).sum
+  }
+  case class SwapClaimByInvoiceTx(override val input: InputInfo, override val tx: Transaction) extends SwapTransactionWithInputInfo { override def desc: String = "swap-claimbyinvoice-tx" }
+  case class SwapClaimByCoopTx(override val input: InputInfo, override val tx: Transaction) extends SwapTransactionWithInputInfo { override def desc: String = "swap-claimbycoop-tx" }
+  case class SwapClaimByCsvTx(override val input: InputInfo, override val tx: Transaction) extends SwapTransactionWithInputInfo { override def desc: String = "swap-claimbycsv-tx" }
 
   /**
    * This default sig takes 72B when encoded in DER (incl. 1B for the trailing sig hash), it is used for fee estimation

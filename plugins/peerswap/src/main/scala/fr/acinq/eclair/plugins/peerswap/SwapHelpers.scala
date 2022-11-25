@@ -21,6 +21,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, Transaction}
 import fr.acinq.eclair.MilliSatoshi.toMilliSatoshi
@@ -35,10 +36,9 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents.TransactionPublished
-import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.makeSwapOpeningTxOut
+import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{SwapTransactionWithInputInfo, makeSwapOpeningTxOut}
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodecWithFallback
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.{HasSwapId, OpeningTxBroadcasted}
-import fr.acinq.eclair.transactions.Transactions.{TransactionWithInputInfo, checkSpendable}
 import fr.acinq.eclair.wire.protocol.UnknownMessage
 import fr.acinq.eclair.{NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
 
@@ -126,7 +126,12 @@ object SwapHelpers {
     }
   }
 
-  def commitClaim(wallet: OnChainWallet)(swapId: String, txInfo: TransactionWithInputInfo, desc: String)(implicit context: ActorContext[SwapCommand]): Unit =
+  def checkSpendable(txinfo: SwapTransactionWithInputInfo): Try[Unit] = {
+    // NB: we don't verify the other inputs as they should only be wallet inputs used to RBF the transaction
+    Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.input.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+  }
+
+  def commitClaim(wallet: OnChainWallet)(swapId: String, txInfo: SwapTransactionWithInputInfo, desc: String)(implicit context: ActorContext[SwapCommand]): Unit =
     checkSpendable(txInfo) match {
       case Success(_) =>
         // publish claim tx
