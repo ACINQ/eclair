@@ -1716,6 +1716,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testCmdFailHtlc _
   }
 
+  test("recv CMD_FAIL_HTLC (with delay)") { f =>
+    import f._
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure), delay_opt = Some(50 millis))
+    val Right(fail) = OutgoingPaymentPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
+    assert(fail.id == htlc.id)
+    bob ! cmd
+    bob2alice.expectMsg(fail)
+    awaitCond(bob.stateData == initialState.copy(
+      commitments = initialState.commitments.copy(
+        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+  }
+
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
     import f._
     val sender = TestProbe()
@@ -1765,20 +1781,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
-    val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
-    awaitCond(bob.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
-  }
-
-  test("recv CMD_FAIL_MALFORMED_HTLC (with delay)") { f =>
-    import f._
-    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-
-    // actual test begins
-    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 24, delay_opt = Some(50 millis))
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(

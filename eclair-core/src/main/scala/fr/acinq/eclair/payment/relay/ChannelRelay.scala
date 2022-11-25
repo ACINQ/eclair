@@ -28,6 +28,7 @@ import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
+import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, TimestampSecond, channel, nodeFee}
@@ -83,21 +84,10 @@ object ChannelRelay {
     }
   }
 
-  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail, relayPacket_opt: Option[IncomingPaymentPacket.ChannelRelayPacket]): channel.Command with channel.HtlcSettlementCommand = {
+  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail): CMD_FAIL_HTLC = {
     fail match {
       case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, Left(f.fail.reason), commit = true)
-      case f: HtlcResult.RemoteFailMalformed => relayPacket_opt match {
-        case Some(IncomingPaymentPacket.ChannelRelayPacket(add, payload: IntermediatePayload.ChannelRelay.Blinded, _)) =>
-          // Bolt 2:
-          //  - if it is part of a blinded route:
-          //    - MUST return an `update_fail_malformed_htlc` error using the `invalid_onion_blinding` failure code, with the `sha256_of_onion` of the onion it received.
-          //    - If its onion payload contains `current_blinding_point`:
-          //      - SHOULD add a random delay before sending `update_fail_malformed_htlc`.
-          val delay_opt = payload.records.get[OnionPaymentPayloadTlv.BlindingPoint].map(_ => Random.nextLong(1000).millis)
-          CMD_FAIL_MALFORMED_HTLC(originHtlcId, Sphinx.hash(add.onionRoutingPacket), InvalidOnionBlinding(ByteVector32.Zeroes).code, delay_opt, commit = true)
-        case _ =>
-          CMD_FAIL_MALFORMED_HTLC(originHtlcId, f.fail.onionHash, f.fail.failureCode, commit = true)
-      }
+      case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, Right(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), commit = true)
       case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
       case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
       case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, Right(TemporaryChannelFailure(f.channelUpdate)), commit = true)
@@ -171,13 +161,31 @@ class ChannelRelay private(nodeParams: NodeParams,
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail)) =>
         context.log.info("relaying fail to upstream")
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-        val cmd = translateRelayFailure(o.originHtlcId, fail, Some(r))
+        val cmd = translateRelayFailure(o.originHtlcId, fail)
         safeSendAndStop(o.originChannelId, cmd)
     }
 
-  def safeSendAndStop(channelId: ByteVector32, cmd: channel.Command with channel.HtlcSettlementCommand): Behavior[Command] = {
+  def safeSendAndStop(channelId: ByteVector32, cmd: channel.HtlcSettlementCommand): Behavior[Command] = {
+    val toSend = cmd match {
+      case _: CMD_FULFILL_HTLC => cmd
+      case _: CMD_FAIL_HTLC | _: CMD_FAIL_MALFORMED_HTLC => r.payload match {
+        case payload: IntermediatePayload.ChannelRelay.Blinded =>
+          // We are inside a blinded route, so we must carefully choose the error we return to avoid leaking information.
+          val failure = InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket))
+          payload.records.get[OnionPaymentPayloadTlv.BlindingPoint] match {
+            case Some(_) =>
+              // We are the introduction node: we add a delay to make it look like it could come from further downstream.
+              val delay = Some(Random.nextLong(1000).millis)
+              CMD_FAIL_HTLC(cmd.id, Right(failure), delay, commit = true)
+            case None =>
+              // We are not the introduction node.
+              CMD_FAIL_MALFORMED_HTLC(cmd.id, failure.onionHash, failure.code, commit = true)
+          }
+        case _: IntermediatePayload.ChannelRelay.Standard => cmd
+      }
+    }
     // NB: we are not using an adapter here because we are stopping anyway so we won't be there to get the result
-    PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
+    PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, toSend)
     Behaviors.stopped
   }
 
@@ -236,7 +244,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           channel.channelUpdate,
           relayResult match {
             case _: RelaySuccess => "success"
-            case RelayFailure(CMD_FAIL_HTLC(_, Right(failureReason), _, _)) => failureReason
+            case RelayFailure(CMD_FAIL_HTLC(_, Right(failureReason), _, _, _)) => failureReason
             case other => other
           })
         (channel, relayResult)

@@ -163,4 +163,20 @@ object FailureMessageCodecs {
    */
   def failureOnionCodec(mac: Mac32, payloadAndPadLength: Int = 256): Codec[FailureMessage] = CommonCodecs.prependmac(failureOnionPayload(payloadAndPadLength).complete, mac)
 
+  /** Create a BadOnion failure matching the failure code provided. */
+  def createBadOnionFailure(onionHash: ByteVector32, failureCode: Int): BadOnion = {
+    if (failureCode == (BADONION | PERM | 4)) {
+      InvalidOnionVersion(onionHash)
+    } else if (failureCode == (BADONION | PERM | 5)) {
+      InvalidOnionHmac(onionHash)
+    } else if (failureCode == (BADONION | PERM | 6)) {
+      InvalidOnionKey(onionHash)
+    } else if (failureCode == (BADONION | PERM | 24)) {
+      InvalidOnionBlinding(onionHash)
+    } else {
+      // unknown failure code, we default to a generic error
+      InvalidOnionVersion(onionHash)
+    }
+  }
+
 }

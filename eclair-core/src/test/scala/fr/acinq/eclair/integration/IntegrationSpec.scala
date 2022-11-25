@@ -100,6 +100,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     s"eclair.features.${Wumbo.rfcName}" -> "optional",
     s"eclair.features.${ShutdownAnySegwit.rfcName}" -> "optional",
     s"eclair.features.${ChannelType.rfcName}" -> "optional",
+    s"eclair.features.${RouteBlinding.rfcName}" -> "optional",
   ).asJava)
 
   val withDefaultCommitment = commonFeatures.withFallback(ConfigFactory.parseMap(Map(

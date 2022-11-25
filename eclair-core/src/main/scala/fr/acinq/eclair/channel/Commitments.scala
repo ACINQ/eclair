@@ -514,7 +514,7 @@ object Commitments {
       case None => Left(UnknownHtlcId(commitments.channelId, fulfill.id))
     }
 
-  def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either[ChannelException, (Commitments, UpdateFailHtlc)] =
+  def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either[ChannelException, (Commitments, HtlcFailureMessage)] =
     commitments.getIncomingHtlcCrossSigned(cmd.id) match {
       case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc

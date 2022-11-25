@@ -33,7 +33,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.{NodePayload, Upstream, bui
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.{ClearRecipient, ClearTrampolineRecipient}
-import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
+import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
@@ -41,6 +41,7 @@ import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
+import scodec.bits.HexStringSyntax
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
@@ -149,6 +150,42 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(fail.id == add_ab.id)
     assert(fail.onionHash == Sphinx.hash(add_ab.onionRoutingPacket))
     assert(fail.failureCode == (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5))
+
+    register.expectNoMessage(50 millis)
+  }
+
+  test("fail to relay an htlc-add with invalid blinding data (introduction node)") { f =>
+    import f._
+
+    // we use an expired blinded route.
+    val routeExpiry = CltvExpiry(nodeParams.currentBlockHeight - 10)
+    val (_, blindedHop, recipient) = blindedRouteFromHops(finalAmount, finalExpiry, Seq(channelHopFromUpdate(b, c, channelUpdate_bc)), routeExpiry, paymentPreimage, hex"deadbeef")
+    val route = Route(finalAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), Some(blindedHop))
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    val add_ab = UpdateAddHtlc(channelId_ab, 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    relayer ! RelayForward(add_ab)
+
+    val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(fail.id == add_ab.id)
+    assert(fail.reason == Right(InvalidOnionBlinding(Sphinx.hash(add_ab.onionRoutingPacket))))
+    assert(fail.delay_opt.nonEmpty)
+
+    register.expectNoMessage(50 millis)
+  }
+
+  test("fail to relay an htlc-add with invalid blinding data (intermediate node)") { f =>
+    import f._
+
+    // we use an expired blinded route.
+    val (route, recipient) = singleBlindedHop(routeExpiry = CltvExpiry(nodeParams.currentBlockHeight - 1))
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    val add_ab = UpdateAddHtlc(channelId_ab, 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    relayer ! RelayForward(add_ab)
+
+    val fail = register.expectMessageType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
+    assert(fail.id == add_ab.id)
+    assert(fail.onionHash == Sphinx.hash(add_ab.onionRoutingPacket))
+    assert(fail.failureCode == (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 24))
 
     register.expectNoMessage(50 millis)
   }

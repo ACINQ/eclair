@@ -303,7 +303,7 @@ object OutgoingPaymentPacket {
     }
   }
 
-  def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
+  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
     Sphinx.peel(nodeSecret, Some(add.paymentHash), add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
         val encryptedReason = reason match {
@@ -315,8 +315,15 @@ object OutgoingPaymentPacket {
     }
   }
 
-  def buildHtlcFailure(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, UpdateFailHtlc] = {
-    buildHtlcFailure(nodeSecret, cmd.reason, add).map(encryptedReason => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason))
+  def buildHtlcFailure(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, HtlcFailureMessage] = {
+    add.blinding_opt match {
+      case Some(_) =>
+        // We are part of a blinded route and we're not the introduction node.
+        val failure = InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket))
+        Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
+      case None =>
+        buildHtlcFailure(nodeSecret, cmd.reason, add).map(encryptedReason => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason))
+    }
   }
 
 }
