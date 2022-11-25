@@ -99,7 +99,7 @@ object RouteCalculation {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
       val extraEdges = r.extraEdges.map(GraphEdge(_)).filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
-      val ignoredEdges = r.ignore.channels ++ d.excludedChannels
+      val ignoredEdges = r.ignore.channels ++ d.excludedChannels.keySet
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
