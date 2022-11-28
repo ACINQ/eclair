@@ -24,6 +24,8 @@ import scodec.Attempt
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
+import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -330,6 +332,91 @@ object Sphinx extends Logging {
       loop(packet, sharedSecrets)
     }
 
+  }
+
+  case class InvalidAttributableErrorPacket(hopPayloads: Seq[(PublicKey, AttributableError.HopPayload)], failingNode: PublicKey)
+
+  object AttributableErrorPacket {
+
+    import AttributableError._
+
+    private val payloadAndPadLength = 256
+    private val hopPayloadLength = 5
+    private val maxNumHop = 20
+    private val totalLength = 4 + payloadAndPadLength + maxNumHop * hopPayloadLength + (maxNumHop * (maxNumHop + 1)) / 2 * 4
+
+    def create(sharedSecret: ByteVector32, failure: FailureMessage, holdTime: FiniteDuration): ByteVector = {
+      val failurePayload = FailureMessageCodecs.failureOnionPayload(payloadAndPadLength).encode(failure).require.toByteVector
+      val zeroPayloads = Seq.fill(maxNumHop)(ByteVector.fill(hopPayloadLength)(0))
+      val zeroHmacs = (maxNumHop.to(1, -1)).map(Seq.fill(_)(ByteVector.low(4)))
+      val plainError = attributableErrorCodec(totalLength, hopPayloadLength, maxNumHop).encode(AttributableError(failurePayload, zeroPayloads, zeroHmacs)).require.bytes
+      wrap(plainError, sharedSecret, holdTime, isSource = true).get
+    }
+
+    private def computeHmacs(mac: Mac32, failurePayload: ByteVector, hopPayloads: Seq[ByteVector], hmacs: Seq[Seq[ByteVector]], minNumHop: Int): Seq[ByteVector] = {
+      val newHmacs = (minNumHop until maxNumHop).map(i => {
+        val y = maxNumHop - i
+        mac.mac(failurePayload ++
+          ByteVector.concat(hopPayloads.take(y)) ++
+          ByteVector.concat((0 until y - 1).map(j => hmacs(j)(i)))).bytes.take(4)
+      })
+      newHmacs
+    }
+
+    def wrap(errorPacket: ByteVector, sharedSecret: ByteVector32, holdTime: FiniteDuration, isSource: Boolean): Try[ByteVector] = Try {
+      val um = generateKey("um", sharedSecret)
+      val error = attributableErrorCodec(errorPacket.length.toInt, hopPayloadLength, maxNumHop).decode(errorPacket.bits).require.value
+      val hopPayloads = hopPayloadCodec.encode(HopPayload(isSource, holdTime)).require.bytes +: error.hopPayloads.dropRight(1)
+      val hmacs = computeHmacs(Hmac256(um), error.failurePayload, hopPayloads, error.hmacs.map(_.drop(1)), 0) +: error.hmacs.dropRight(1).map(_.drop(1))
+      val newError = attributableErrorCodec(errorPacket.length.toInt, hopPayloadLength, maxNumHop).encode(AttributableError(error.failurePayload, hopPayloads, hmacs)).require.bytes
+      val key = generateKey("ammag", sharedSecret)
+      val stream = generateStream(key, newError.length.toInt)
+      newError xor stream
+    }
+
+    def wrapOrCreate(errorPacket: ByteVector, sharedSecret: ByteVector32, holdTime: FiniteDuration): ByteVector =
+      wrap(errorPacket, sharedSecret, holdTime, isSource = false) match {
+        case Failure(_) => create(sharedSecret, TemporaryNodeFailure(), holdTime)
+        case Success(value) => value
+      }
+
+    private def unwrap(errorPacket: ByteVector, sharedSecret: ByteVector32, minNumHop: Int): Try[(ByteVector, HopPayload)] = Try {
+      val key = generateKey("ammag", sharedSecret)
+      val stream = generateStream(key, errorPacket.length.toInt)
+      val error = attributableErrorCodec(errorPacket.length.toInt, hopPayloadLength, maxNumHop).decode((errorPacket xor stream).bits).require.value
+      val um = generateKey("um", sharedSecret)
+      val shiftedHmacs = error.hmacs.tail.map(ByteVector.low(4) +: _) :+ Seq(ByteVector.low(4))
+      val hmacs = computeHmacs(Hmac256(um), error.failurePayload, error.hopPayloads, error.hmacs.tail, minNumHop)
+      require(hmacs == error.hmacs.head.drop(minNumHop), "Invalid HMAC")
+      val shiftedHopPayloads = error.hopPayloads.tail :+ ByteVector.fill(hopPayloadLength)(0)
+      val unwrapedError = AttributableError(error.failurePayload, shiftedHopPayloads, shiftedHmacs)
+      (attributableErrorCodec(errorPacket.length.toInt, hopPayloadLength, maxNumHop).encode(unwrapedError).require.bytes,
+        hopPayloadCodec.decode(error.hopPayloads.head.bits).require.value)
+    }
+
+    def decrypt(errorPacket: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Either[InvalidAttributableErrorPacket, DecryptedFailurePacket] = {
+      var packet = errorPacket
+      var minNumHop = 0
+      val hopPayloads = ArrayBuffer.empty[(PublicKey, HopPayload)]
+      for ((sharedSecret, nodeId) <- sharedSecrets) {
+        unwrap(packet, sharedSecret, minNumHop) match {
+          case Failure(_) => return Left(InvalidAttributableErrorPacket(hopPayloads.toSeq, nodeId))
+          case Success((unwrapedPacket, hopPayload)) if hopPayload.isPayloadSource =>
+            val failurePayload = attributableErrorCodec(errorPacket.length.toInt, hopPayloadLength, maxNumHop).decode(unwrapedPacket.bits).require.value.failurePayload
+            FailureMessageCodecs.failureOnionPayload(payloadAndPadLength).decode(failurePayload.bits) match {
+              case Attempt.Successful(failureMessage) =>
+                return Right(DecryptedFailurePacket(nodeId, failureMessage.value))
+              case Attempt.Failure(_) =>
+                return Left(InvalidAttributableErrorPacket(hopPayloads.toSeq, nodeId))
+            }
+          case Success((unwrapedPacket, hopPayload)) =>
+            packet = unwrapedPacket
+            minNumHop += 1
+            hopPayloads += ((nodeId, hopPayload))
+        }
+      }
+      Left(InvalidAttributableErrorPacket(hopPayloads.toSeq, sharedSecrets.last._2))
+    }
   }
 
   /**

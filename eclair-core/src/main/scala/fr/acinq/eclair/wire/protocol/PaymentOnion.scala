@@ -165,6 +165,11 @@ object OnionPaymentPayloadTlv {
   case class PaymentMetadata(data: ByteVector) extends OnionPaymentPayloadTlv
 
   /**
+   * Flag to signal that attributable errors mut be used for this HTLC.
+   */
+  case class UseAttributableError() extends OnionPaymentPayloadTlv
+
+  /**
    * Invoice feature bits. Only included for intermediate trampoline nodes when they should convert to a legacy payment
    * because the final recipient doesn't support trampoline.
    */
@@ -215,6 +220,8 @@ object PaymentOnion {
   /** Per-hop payload from an HTLC's payment onion (after decryption and decoding). */
   sealed trait PerHopPayload {
     def records: TlvStream[OnionPaymentPayloadTlv]
+
+    def useAttributableError: Boolean = records.get[UseAttributableError].isDefined
   }
 
   /** Per-hop payload for an intermediate node. */
@@ -505,6 +512,8 @@ object PaymentOnionCodecs {
 
   private val totalAmount: Codec[TotalAmount] = tlvField(tmillisatoshi)
 
+  private val useAttributableError: Codec[UseAttributableError] = fixedLengthTlvField(0, provide(UseAttributableError()))
+
   private val invoiceFeatures: Codec[InvoiceFeatures] = tlvField(bytes)
 
   private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = tlvField(list(listOfN(uint8, Bolt11Invoice.Codecs.extraHopCodec)))
@@ -524,6 +533,7 @@ object PaymentOnionCodecs {
     .typecase(UInt64(12), blindingPoint)
     .typecase(UInt64(16), paymentMetadata)
     .typecase(UInt64(18), totalAmount)
+    .typecase(UInt64(20), useAttributableError)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
     .typecase(UInt64(66097), invoiceFeatures)
     .typecase(UInt64(66098), outgoingNodeId)

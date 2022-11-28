@@ -61,10 +61,10 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   private def addHtlcPart(ctx: ActorContext, add: UpdateAddHtlc, payload: FinalPayload, payment: IncomingPayment): Unit = {
     pendingPayments.get(add.paymentHash) match {
       case Some((_, handler)) =>
-        handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, add)
+        handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, add, payload.useAttributableError)
       case None =>
         val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, payload.totalAmount, ctx.self))
-        handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, add)
+        handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, add, payload.useAttributableError)
         pendingPayments = pendingPayments + (add.paymentHash -> (payment, handler))
     }
   }
@@ -124,7 +124,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               ctx.self ! ProcessPacket(add, payload, Some(IncomingStandardPayment(invoice, paymentPreimage, PaymentType.KeySend, TimestampMilli.now(), IncomingPaymentStatus.Pending)))
             case _ =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
-              val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
+              val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), useAttributableErrors = payload.useAttributableError, TimestampMilli.now(), commit = true)
               PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
           }
         }
@@ -142,9 +142,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         }
       }
 
-    case RejectPacket(add, failure) if doHandle(add.paymentHash) =>
+    case RejectPacket(add, failure, useAttributableError) if doHandle(add.paymentHash) =>
       Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, failure.getClass.getSimpleName).increment()
-      val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), commit = true)
+      val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), useAttributableError, TimestampMilli.now(), commit = true)
       PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
 
     case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
@@ -153,7 +153,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         log.warning("payment with paidAmount={} failed ({})", parts.map(_.amount).sum, failure)
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
         parts.collect {
-          case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
+          case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), p.useAttributableErrors, p.startTime, commit = true))
         }
         pendingPayments = pendingPayments - paymentHash
       }
@@ -173,7 +173,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         failure match {
           case Some(failure) => p match {
-            case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
+            case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), p.useAttributableErrors, p.startTime, commit = true))
           }
           case None => p match {
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
@@ -184,7 +184,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
                 ctx.system.eventStream.publish(received)
               } else {
-                val cmdFail = CMD_FAIL_HTLC(p.htlc.id, Right(IncorrectOrUnknownPaymentDetails(received.amount, nodeParams.currentBlockHeight)), commit = true)
+                val cmdFail = CMD_FAIL_HTLC(p.htlc.id, Right(IncorrectOrUnknownPaymentDetails(received.amount, nodeParams.currentBlockHeight)), p.useAttributableErrors, p.startTime, commit = true)
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, cmdFail)
               }
             })
@@ -217,7 +217,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           parts.collect {
             case p: MultiPartPaymentFSM.HtlcPart =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
-              val cmdFail = CMD_FAIL_HTLC(p.htlc.id, Right(IncorrectOrUnknownPaymentDetails(received.amount, nodeParams.currentBlockHeight)), commit = true)
+              val cmdFail = CMD_FAIL_HTLC(p.htlc.id, Right(IncorrectOrUnknownPaymentDetails(received.amount, nodeParams.currentBlockHeight)), p.useAttributableErrors, p.startTime, commit = true)
               PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, cmdFail)
           }
         }
@@ -235,7 +235,7 @@ object MultiPartHandler {
   // @formatter:off
   case class ProcessPacket(add: UpdateAddHtlc, payload: FinalPayload.Standard, payment_opt: Option[IncomingStandardPayment])
   case class ProcessBlindedPacket(add: UpdateAddHtlc, payload: FinalPayload.Blinded, payment: IncomingBlindedPayment)
-  case class RejectPacket(add: UpdateAddHtlc, failure: FailureMessage)
+  case class RejectPacket(add: UpdateAddHtlc, failure: FailureMessage, useAttributableError: Boolean)
   case class DoFulfill(payment: IncomingPayment, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)
 
   case object GetPendingPayments
@@ -425,7 +425,7 @@ object MultiPartHandler {
                   nodeParams.db.payments.getIncomingPayment(packet.add.paymentHash) match {
                     case Some(_: IncomingBlindedPayment) =>
                       context.log.info("rejecting non-blinded htlc #{} from channel {}: expected a blinded payment", packet.add.id, packet.add.channelId)
-                      replyTo ! RejectPacket(packet.add, IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight))
+                      replyTo ! RejectPacket(packet.add, IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight), payload.useAttributableError)
                     case Some(payment: IncomingStandardPayment) => replyTo ! ProcessPacket(packet.add, payload, Some(payment))
                     case None => replyTo ! ProcessPacket(packet.add, payload, None)
                   }
@@ -446,7 +446,7 @@ object MultiPartHandler {
           Behaviors.stopped
         case RejectPayment(reason) =>
           context.log.info("rejecting blinded htlc #{} from channel {}: {}", add.id, add.channelId, reason)
-          replyTo ! RejectPacket(add, IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight))
+          replyTo ! RejectPacket(add, IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight), payload.useAttributableError)
           Behaviors.stopped
       }
     }
@@ -520,7 +520,7 @@ object MultiPartHandler {
 
   private def validateStandardPayment(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload.Standard, record: IncomingStandardPayment)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
-    val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
+    val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), payload.useAttributableError, TimestampMilli.now(), commit = true)
     val commonOk = validateCommon(nodeParams, add, payload, record)
     val secretOk = validatePaymentSecret(add, payload, record.invoice)
     if (commonOk && secretOk) None else Some(cmdFail)
@@ -528,7 +528,7 @@ object MultiPartHandler {
 
   private def validateBlindedPayment(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload.Blinded, record: IncomingBlindedPayment)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
-    val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
+    val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), payload.useAttributableError, TimestampMilli.now(), commit = true)
     val commonOk = validateCommon(nodeParams, add, payload, record)
     if (commonOk) None else Some(cmdFail)
   }

@@ -30,6 +30,7 @@ import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
 import java.util.UUID
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success}
 
 /**
@@ -246,7 +247,7 @@ object OutgoingPaymentPacket {
       val expiryIn: CltvExpiry = adds.map(_.add.cltvExpiry).min
     }
 
-    case class ReceivedHtlc(add: UpdateAddHtlc, receivedAt: TimestampMilli)
+    case class ReceivedHtlc(add: UpdateAddHtlc, receivedAt: TimestampMilli, useAttributableErrors: Boolean)
   }
   // @formatter:on
 
@@ -304,10 +305,12 @@ object OutgoingPaymentPacket {
     }
   }
 
-  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
+  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc, useAttributableErrors: Boolean, holdTime: FiniteDuration): Either[CannotExtractSharedSecret, ByteVector] = {
     Sphinx.peel(nodeSecret, Some(add.paymentHash), add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
         val encryptedReason = reason match {
+          case Left(forwarded) if useAttributableErrors => Sphinx.AttributableErrorPacket.wrapOrCreate(forwarded, sharedSecret, holdTime)
+          case Right(failure) if useAttributableErrors => Sphinx.AttributableErrorPacket.create(sharedSecret, failure, holdTime)
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
           case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
         }
@@ -323,7 +326,7 @@ object OutgoingPaymentPacket {
         val failure = InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket))
         Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
       case None =>
-        buildHtlcFailure(nodeSecret, cmd.reason, add).map(encryptedReason => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason))
+        buildHtlcFailure(nodeSecret, cmd.reason, add, cmd.useAttributableErrors, TimestampMilli.now() - cmd.startHoldTime).map(encryptedReason => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason))
     }
   }
 

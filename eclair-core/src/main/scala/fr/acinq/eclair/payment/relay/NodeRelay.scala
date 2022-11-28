@@ -188,12 +188,12 @@ class NodeRelay private(nodeParams: NodeParams,
       case Relay(IncomingPaymentPacket.NodeRelayPacket(add, outer, _, _)) =>
         require(outer.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", add.id, add.channelId)
-        handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
-        receiving(htlcs :+ Upstream.ReceivedHtlc(add, TimestampMilli.now()), nextPayload, nextPacket, handler)
+        handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add, outer.useAttributableError)
+        receiving(htlcs :+ Upstream.ReceivedHtlc(add, TimestampMilli.now(), outer.useAttributableError), nextPayload, nextPacket, handler)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
-        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
+        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure), p.useAttributableErrors, p.startTime) }
         stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
@@ -332,31 +332,31 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def rejectExtraHtlcPartialFunction: PartialFunction[Command, Behavior[Command]] = {
     case Relay(nodeRelayPacket) =>
-      rejectExtraHtlc(nodeRelayPacket.add)
+      rejectExtraHtlc(nodeRelayPacket.add, nodeRelayPacket.outerPayload.useAttributableError, TimestampMilli.now())
       Behaviors.same
     // NB: this message would be sent from the payment FSM which we stopped before going to this state, but all this is asynchronous.
     // We always fail extraneous HTLCs. They are a spec violation from the sender, but harmless in the relay case.
     // By failing them fast (before the payment has reached the final recipient) there's a good chance the sender won't lose any money.
     // We don't expect to relay pay-to-open payments.
     case WrappedMultiPartExtraPaymentReceived(extraPaymentReceived) =>
-      rejectExtraHtlc(extraPaymentReceived.payment.htlc)
+      rejectExtraHtlc(extraPaymentReceived.payment.htlc, extraPaymentReceived.payment.useAttributableErrors, extraPaymentReceived.payment.startTime)
       Behaviors.same
   }
 
-  private def rejectExtraHtlc(add: UpdateAddHtlc): Unit = {
+  private def rejectExtraHtlc(add: UpdateAddHtlc, useAttributableErrors: Boolean, startHoldTime: TimestampMilli): Unit = {
     context.log.warn("rejecting extra htlc #{} from channel {}", add.id, add.channelId)
-    rejectHtlc(add.id, add.channelId, add.amountMsat)
+    rejectHtlc(add.id, add.channelId, add.amountMsat, None, useAttributableErrors, startHoldTime)
   }
 
-  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None): Unit = {
+  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None, useAttributableErrors: Boolean, startHoldTime: TimestampMilli): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
-    val cmd = CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true)
+    val cmd = CMD_FAIL_HTLC(htlcId, Right(failureMessage), useAttributableErrors, startHoldTime, commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
   }
 
   private def rejectPayment(upstream: Upstream.Trampoline, failure: Option[FailureMessage]): Unit = {
     Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
-    upstream.adds.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, failure))
+    upstream.adds.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, failure, r.useAttributableErrors, r.receivedAt))
   }
 
   private def fulfillPayment(upstream: Upstream.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(r => {

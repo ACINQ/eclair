@@ -1498,7 +1498,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val (_, htlc) = addHtlc(150000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    bob ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()))
+    bob ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()), useAttributableErrors = false, TimestampMilli.now())
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()
@@ -1782,7 +1782,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()))
+    val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()), useAttributableErrors = false, TimestampMilli.now())
     val Right(fail) = OutgoingPaymentPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
     assert(fail.id == htlc.id)
     bob ! cmd
@@ -1812,7 +1812,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()), delay_opt = Some(50 millis))
+    val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()), useAttributableErrors = false, TimestampMilli.now(), delay_opt = Some(50 millis))
     val Right(fail) = OutgoingPaymentPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
     assert(fail.id == htlc.id)
     bob ! cmd
@@ -1825,7 +1825,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure()), replyTo_opt = Some(sender.ref))
+    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure()), useAttributableErrors = false, TimestampMilli.now(), replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
@@ -1845,7 +1845,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[CommitSig]
 
     // We cannot fail the HTLC, we must wait for the fulfill to be acked.
-    val c = CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure()), replyTo_opt = Some(sender.ref))
+    val c = CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure()), useAttributableErrors = false, TimestampMilli.now(), replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), htlc.id)))
   }
@@ -1855,7 +1855,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure()), replyTo_opt = Some(sender.ref))
+    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure()), useAttributableErrors = false, TimestampMilli.now(), replyTo_opt = Some(sender.ref))
     sender.send(bob, c) // this will fail
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(initialState.channelId).isEmpty)
@@ -1909,7 +1909,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    bob ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()))
+    bob ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()), useAttributableErrors = false, TimestampMilli.now())
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
 
     // actual test begins
@@ -2016,7 +2016,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     // Bob receives a failure with a completely invalid onion error (missing mac)
-    bob ! CMD_FAIL_HTLC(htlc.id, Left(ByteVector.fill(561)(42)))
+    bob ! CMD_FAIL_HTLC(htlc.id, Left(ByteVector.fill(561)(42)), useAttributableErrors = false, TimestampMilli.now())
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     assert(fail.id == htlc.id)
     // We propagate failure upstream (hopefully the sender knows how to unwrap them).

@@ -190,7 +190,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     val (preimage, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     val cmd = c match {
       case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage)
-      case FailHtlc => CMD_FAIL_HTLC(add.id, Left(randomBytes32()))
+      case FailHtlc => CMD_FAIL_HTLC(add.id, Left(randomBytes32()), useAttributableErrors = false, TimestampMilli.now())
     }
     crossSign(bob, alice, bob2alice, alice2bob)
     val sender = initiateQuiescence(f, sendInitialStfu)

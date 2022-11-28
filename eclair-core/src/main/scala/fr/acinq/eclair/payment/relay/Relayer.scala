@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams}
+import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
@@ -73,7 +73,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
         case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
-            PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing()), commit = true))
+            PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing()), r.outerPayload.useAttributableError,TimestampMilli.now(), commit = true))
           } else {
             nodeRelayer ! NodeRelayer.Relay(r)
           }
@@ -84,7 +84,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
               // We are the introduction point of a blinded path: we add a non-negligible delay to make it look like it
               // could come from a downstream node.
               val delay = Some(500.millis + Random.nextLong(1500).millis)
-              CMD_FAIL_HTLC(add.id, Right(InvalidOnionBlinding(badOnion.onionHash)), delay, commit = true)
+              CMD_FAIL_HTLC(add.id, Right(InvalidOnionBlinding(badOnion.onionHash)), useAttributableErrors = false, TimestampMilli.now(), delay, commit = true)
             case _ =>
               CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           }
@@ -92,7 +92,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
         case Left(failure) =>
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=$failure")
-          val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), commit = true)
+          val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), useAttributableErrors = false, TimestampMilli.now(), commit = true)
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
       }
 
