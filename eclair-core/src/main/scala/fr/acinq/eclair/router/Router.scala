@@ -196,6 +196,10 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
       stay() using d.copy(excludedChannels = d.excludedChannels - desc)
 
+    case Event(GetExcludedChannels, d) =>
+      sender() ! d.excludedChannels
+      stay()
+
     case Event(GetNodes, d) =>
       sender() ! d.nodes.values
       stay()
@@ -600,6 +604,8 @@ object Router {
   sealed trait ExcludedChannelStatus
   case object ExcludedForever extends ExcludedChannelStatus
   case class ExcludedUntil(liftExclusionAt: TimestampSecond, timer: Cancellable) extends ExcludedChannelStatus
+
+  case object GetExcludedChannels
   // @formatter:on
 
   // @formatter:off

@@ -511,25 +511,23 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsgType[RouteResponse]
     val bc = ChannelDesc(scid_bc, b, c)
     sender.send(router, ExcludeChannel(bc, Some(1 second)))
-    sender.send(router, ExcludeChannel(bc, Some(3 second)))
+    sender.send(router, ExcludeChannel(bc, Some(10 minute)))
     sender.send(router, ExcludeChannel(bc, Some(1 second)))
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
-    Thread.sleep(2000)
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
-    sender.expectMsg(Failure(RouteNotFound))
-    Thread.sleep(2000)
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
-    sender.expectMsgType[RouteResponse]
-    sender.send(router, ExcludeChannel(bc, None))
-    sender.send(router, ExcludeChannel(bc, Some(0 second)))
-    Thread.sleep(1000)
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
-    sender.expectMsg(Failure(RouteNotFound))
+    sender.send(router, GetExcludedChannels)
+    val excludedChannels1 = sender.expectMsgType[Map[ChannelDesc, ExcludedChannelStatus]]
+    assert(excludedChannels1.size == 1)
+    assert(excludedChannels1(bc).isInstanceOf[ExcludedUntil])
+    assert(excludedChannels1(bc).asInstanceOf[ExcludedUntil].liftExclusionAt > TimestampSecond.now() + 9.minute)
     sender.send(router, LiftChannelExclusion(bc))
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsgType[RouteResponse]
-
+    sender.send(router, ExcludeChannel(bc, None))
+    sender.send(router, GetExcludedChannels)
+    val excludedChannels2 = sender.expectMsgType[Map[ChannelDesc, ExcludedChannelStatus]]
+    assert(excludedChannels2.size == 1)
+    assert(excludedChannels2(bc) == ExcludedForever)
   }
 
   test("send routing state") { fixture =>
