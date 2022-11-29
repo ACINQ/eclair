@@ -22,9 +22,8 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
-import fr.acinq.eclair.io.Peer.OutgoingMessage
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UnknownMessage, UnknownNextPeer, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -614,17 +613,6 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
       val rvk5b = Closing.updateRevokedCommitPublished(rvk5a, theirClaimHtlcTimeout)
       assert(rvk5b.isDone)
     }
-  }
-
-  test("send UnknownMessage to peer if tag registered by a plugin") {
-    val unknownMessage = UnknownMessage(60003, ByteVector32.One)
-    val setup = init()
-    reachNormal(setup)
-    import setup._
-    awaitCond(alice.stateName == NORMAL)
-    alicePeer.receiveN(5)
-    alice ! unknownMessage
-    assert(alicePeer.expectMsgType[OutgoingMessage].msg == unknownMessage)
   }
 
 }
