@@ -6,7 +6,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.MilliSatoshi.toMilliSatoshi
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
-import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
+import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
@@ -15,8 +15,9 @@ import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapEvents._
 import fr.acinq.eclair.plugins.peerswap.SwapIntegrationFixture.swapRegister
-import fr.acinq.eclair.plugins.peerswap.SwapRegister.{CancelSwapRequested, ListPendingSwaps, SwapInRequested, SwapOutRequested}
+import fr.acinq.eclair.plugins.peerswap.SwapRegister.{CancelSwapRequested, ListPendingSwaps, SwapRequested}
 import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Status, SwapOpened}
+import fr.acinq.eclair.plugins.peerswap.SwapRole.{Maker, Taker}
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.openingTxWeight
 import fr.acinq.eclair.testutils.FixtureSpec
@@ -108,7 +109,7 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
-    bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
+    bobSwap.swapRegister ! SwapRequested(bobSwap.cli.ref.toTyped, Maker, amount, shortChannelId, None)
     val swapId = bobSwap.cli.expectMsgType[SwapOpened].swapId
 
     // swap in sender (bob) confirms opening tx published
@@ -151,7 +152,7 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val shortChannelId = connectNodes(alice, bob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
-    bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
+    bobSwap.swapRegister ! SwapRequested(bobSwap.cli.ref.toTyped, Maker, amount, shortChannelId, None)
     val swapId = bobSwap.cli.expectMsgType[SwapOpened].swapId
 
     // swap in sender (bob) confirms opening tx published
@@ -202,7 +203,7 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
-    bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
+    bobSwap.swapRegister ! SwapRequested(bobSwap.cli.ref.toTyped, Maker, amount, shortChannelId, None)
     val swapId = bobSwap.cli.expectMsgType[SwapOpened].swapId
 
     // swap in sender (bob) confirms opening tx published
@@ -243,7 +244,7 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
-    bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
+    bobSwap.swapRegister ! SwapRequested(bobSwap.cli.ref.toTyped, Maker, amount, shortChannelId, None)
     val swapId = bobSwap.cli.expectMsgType[SwapOpened].swapId
 
     // swap in sender (bob) confirms opening tx is published, but NOT yet confirmed on-chain
@@ -279,7 +280,7 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap out receiver (alice) requests a swap out with swap out sender (bob)
-    aliceSwap.swapRegister ! SwapOutRequested(aliceSwap.cli.ref.toTyped, amount, shortChannelId)
+    aliceSwap.swapRegister ! SwapRequested(aliceSwap.cli.ref.toTyped, Taker, amount, shortChannelId, None)
     val swapId = aliceSwap.cli.expectMsgType[SwapOpened].swapId
 
     // swap out receiver (alice) sends a payment of `fee` to swap out sender (bob)
@@ -323,7 +324,7 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val shortChannelId = connectNodes(alice, fundedBob)
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
-    bobSwap.swapRegister ! SwapInRequested(bobSwap.cli.ref.toTyped, amount, shortChannelId)
+    bobSwap.swapRegister ! SwapRequested(bobSwap.cli.ref.toTyped, Maker, amount, shortChannelId, None)
     bobSwap.cli.expectMsgType[SwapOpened]
 
     // both parties publish that the swap was canceled because bob could not fund the opening tx

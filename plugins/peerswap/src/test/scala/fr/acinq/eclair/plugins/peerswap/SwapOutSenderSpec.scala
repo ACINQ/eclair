@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
 import fr.acinq.eclair.channel.DATA_NORMAL
-import fr.acinq.eclair.channel.Register.ForwardShortId
+import fr.acinq.eclair.io.Switchboard.ForwardUnknownMessage
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
@@ -38,10 +38,10 @@ import fr.acinq.eclair.plugins.peerswap.SwapEvents.{ClaimByInvoiceConfirmed, Swa
 import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Status, SwapStatus}
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{makeSwapClaimByInvoiceTx, makeSwapOpeningTxOut}
-import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.swapOutRequestCodec
+import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodec
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.{OpeningTxBroadcasted, SwapOutAgreement, SwapOutRequest}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.wire.protocol.UnknownMessage
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, NodeParams, ShortChannelId, TestConstants, ToMilliSatoshiConversion, randomBytes32}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -80,12 +80,15 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
   val scriptOut: Long = 0
   val blindingKey: String = ""
   val request: SwapOutRequest = SwapOutRequest(protocolVersion, swapId, noAsset, network, shortChannelId.toString, amount.toLong, makerPubkey.toHex)
-  def expectUnknownMessage(register: TestProbe[Any]): UnknownMessage = register.expectMessageType[ForwardShortId[UnknownMessage]].message
 
+  def expectSwapMessage[B](switchboard: TestProbe[Any]): B = {
+    val unknownMessage = switchboard.expectMessageType[ForwardUnknownMessage].msg
+    val encoded = LightningMessageCodecs.unknownMessageCodec.encode(unknownMessage).require.toByteVector
+    peerSwapMessageCodec.decode(encoded.toBitVector).require.value.asInstanceOf[B]
+  }
   override def withFixture(test: OneArgTest): Outcome = {
     val watcher = testKit.createTestProbe[ZmqWatcher.Command]()
     val paymentHandler = testKit.createTestProbe[Any]()
-    val register = testKit.createTestProbe[Any]()
     val relayer = testKit.createTestProbe[Any]()
     val router = testKit.createTestProbe[Any]()
     val switchboard = testKit.createTestProbe[Any]()
@@ -93,20 +96,20 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
 
     val wallet = new DummyOnChainWallet()
     val userCli = testKit.createTestProbe[Status]()
-    val sender = testKit.createTestProbe[Any]()
     val swapEvents = testKit.createTestProbe[SwapEvent]()
     val monitor = testKit.createTestProbe[SwapCommands.SwapCommand]()
     val keyManager: SwapKeyManager = new LocalSwapKeyManager(TestConstants.Bob.seed, TestConstants.Bob.nodeParams.chainHash)
+    val remoteNodeId: PublicKey = TestConstants.Bob.nodeParams.nodeId
 
     // subscribe to notification events from SwapInReceiver when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapOutSender = testKit.spawn(Behaviors.monitor(monitor.ref, SwapTaker(TestConstants.Bob.nodeParams, paymentInitiator.ref.toClassic, watcher.ref, register.ref.toClassic, wallet, keyManager, db)), "swap-out-sender")
+    val swapOutSender = testKit.spawn(Behaviors.monitor(monitor.ref, SwapTaker(remoteNodeId, TestConstants.Bob.nodeParams, paymentInitiator.ref.toClassic, watcher.ref, switchboard.ref.toClassic, wallet, keyManager, db)), "swap-out-sender")
 
-    withFixture(test.toNoArgTest(FixtureParam(swapOutSender, userCli, monitor, register, relayer, router, paymentInitiator, switchboard, paymentHandler, sender, TestConstants.Bob.nodeParams, watcher, wallet, swapEvents)))
+    withFixture(test.toNoArgTest(FixtureParam(swapOutSender, userCli, monitor, switchboard, relayer, router, paymentInitiator, paymentHandler, TestConstants.Bob.nodeParams, watcher, wallet, swapEvents, remoteNodeId)))
   }
 
-  case class FixtureParam(swapOutSender: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], monitor: TestProbe[SwapCommands.SwapCommand], register: TestProbe[Any], relayer: TestProbe[Any], router: TestProbe[Any], paymentInitiator: TestProbe[Any], switchboard: TestProbe[Any], paymentHandler: TestProbe[Any], sender: TestProbe[Any], nodeParams: NodeParams, watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent])
+  case class FixtureParam(swapOutSender: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], monitor: TestProbe[SwapCommands.SwapCommand], switchboard: TestProbe[Any], relayer: TestProbe[Any], router: TestProbe[Any], paymentInitiator: TestProbe[Any], paymentHandler: TestProbe[Any], nodeParams: NodeParams, watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent], remoteNodeId: PublicKey)
 
   test("happy path for new swap out sender") { f =>
     import f._
@@ -116,7 +119,7 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
     monitor.expectMessageType[StartSwapOutSender]
 
     // SwapOutSender: SwapOutRequest -> SwapOutReceiver
-    val request = swapOutRequestCodec.decode(expectUnknownMessage(register).data.toBitVector).require.value
+    val request = expectSwapMessage[SwapOutRequest](switchboard)
     assert(request.pubkey == takerPubkey.toHex)
 
     // SwapOutReceiver: SwapOutAgreement -> SwapOutSender (request fee)

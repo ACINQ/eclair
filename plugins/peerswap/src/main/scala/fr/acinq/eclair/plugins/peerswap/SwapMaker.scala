@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents._
 import fr.acinq.eclair.plugins.peerswap.SwapHelpers._
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{CreateFailed, Error, Fail, InternalError, InvalidMessage, PeerCanceled, SwapError, SwapStatus, UserCanceled}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.{CreateInvoiceFailed, Error, Fail, InternalError, InvalidMessage, PeerCanceled, SwapError, SwapStatus, UserCanceled}
 import fr.acinq.eclair.plugins.peerswap.SwapRole.Maker
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.db.SwapsDb
@@ -106,22 +106,22 @@ object SwapMaker {
 
   */
 
-  def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, keyManager: SwapKeyManager, db: SwapsDb): Behavior[SwapCommands.SwapCommand] =
+  def apply(remoteNodeId: PublicKey, nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], switchboard: actor.ActorRef, wallet: OnChainWallet, keyManager: SwapKeyManager, db: SwapsDb): Behavior[SwapCommands.SwapCommand] =
     Behaviors.setup { context =>
       Behaviors.receiveMessagePartial {
         case StartSwapInSender(amount, swapId, shortChannelId) =>
-          new SwapMaker(shortChannelId, nodeParams, watcher, register, wallet, keyManager, db, context)
+          new SwapMaker(remoteNodeId, shortChannelId, nodeParams, watcher, switchboard, wallet, keyManager, db, context)
             .createSwap(amount, swapId)
         case StartSwapOutReceiver(request: SwapOutRequest) =>
           ShortChannelId.fromCoordinates(request.scid) match {
-            case Success(shortChannelId) => new SwapMaker(shortChannelId, nodeParams, watcher, register, wallet, keyManager, db, context)
+            case Success(shortChannelId) => new SwapMaker(remoteNodeId, shortChannelId, nodeParams, watcher, switchboard, wallet, keyManager, db, context)
               .validateRequest(request)
             case Failure(e) => context.log.error(s"received swap request with invalid shortChannelId: $request, $e")
               Behaviors.stopped
           }
         case RestoreSwap(d) =>
           ShortChannelId.fromCoordinates(d.request.scid) match {
-            case Success(shortChannelId) => new SwapMaker(shortChannelId, nodeParams, watcher, register, wallet, keyManager, db, context)
+            case Success(shortChannelId) => new SwapMaker(remoteNodeId, shortChannelId, nodeParams, watcher, switchboard, wallet, keyManager, db, context)
               .awaitClaimPayment(d.request, d.agreement, d.invoice, d.openingTxBroadcasted, d.isInitiator)
             case Failure(e) => context.log.error(s"Could not restore from a checkpoint with an invalid shortChannelId: $d, $e")
               db.addResult(CouldNotRestore(d.swapId, d))
@@ -131,7 +131,7 @@ object SwapMaker {
     }
 }
 
-private class SwapMaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], register: actor.ActorRef, wallet: OnChainWallet, keyManager: SwapKeyManager, db: SwapsDb, implicit val context: ActorContext[SwapCommands.SwapCommand]) {
+private class SwapMaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], switchboard: actor.ActorRef, wallet: OnChainWallet, keyManager: SwapKeyManager, db: SwapsDb, implicit val context: ActorContext[SwapCommands.SwapCommand]) {
   val protocolVersion = 3
   val noAsset = ""
   implicit val timeout: Timeout = 30 seconds
@@ -154,21 +154,21 @@ private class SwapMaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
     awaitAgreement(SwapInRequest(protocolVersion, swapId, noAsset, NodeParams.chainFromHash(nodeParams.chainHash), shortChannelId.toString, amount.toLong, makerPubkey(swapId).toHex))
   }
 
-  def validateRequest(request: SwapOutRequest): Behavior[SwapCommand] = {
+  private def validateRequest(request: SwapOutRequest): Behavior[SwapCommand] = {
     // fail if swap out request is invalid, otherwise respond with agreement
     if (request.protocolVersion != protocolVersion || request.asset != noAsset || request.network != NodeParams.chainFromHash(nodeParams.chainHash)) {
       swapCanceled(InternalError(request.swapId, s"incompatible request: $request."))
     } else {
       createInvoice(nodeParams, openingFee.sat, "receive-swap-out") match {
         case Success(invoice) => awaitFeePayment(request, SwapOutAgreement(protocolVersion, request.swapId, makerPubkey(request.swapId).toHex, invoice.toString), invoice)
-        case Failure(exception) => swapCanceled(CreateFailed(request.swapId, "could not create invoice"))
+        case Failure(exception) => swapCanceled(CreateInvoiceFailed(request.swapId, exception))
       }
     }
   }
 
   private def awaitFeePayment(request: SwapOutRequest, agreement: SwapOutAgreement, invoice: Bolt11Invoice): Behavior[SwapCommand] = {
     watchForPayment(watch = true) // subscribe to be notified of payment events
-    sendShortId(register, shortChannelId)(agreement)
+    send(switchboard, remoteNodeId)(agreement)
 
     Behaviors.withTimers { timers =>
       timers.startSingleTimer(swapFeeExpiredTimer(request.swapId), InvoiceExpired, invoice.createdAt + invoice.relativeExpiry.toSeconds - TimestampSecond.now())
@@ -190,7 +190,7 @@ private class SwapMaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
   }
 
   private def awaitAgreement(request: SwapInRequest): Behavior[SwapCommand] = {
-    sendShortId(register, shortChannelId)(request)
+    send(switchboard, remoteNodeId)(request)
 
     receiveSwapMessage[AwaitAgreementMessages](context, "awaitAgreement") {
       case SwapMessageReceived(agreement: SwapInAgreement) if agreement.protocolVersion != protocolVersion =>
@@ -221,7 +221,7 @@ private class SwapMaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
         commitOpening(wallet)(request.swapId, invoice, fundingResponse, "swap-in-sender-opening")
         Behaviors.same
       case OpeningTxCommitted(invoice, openingTxBroadcasted) =>
-        db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Maker, isInitiator))
+        db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Maker, isInitiator, remoteNodeId))
         awaitClaimPayment(request, agreement, invoice, openingTxBroadcasted, isInitiator)
       case OpeningTxFailed(error, None) => swapCanceled(InternalError(request.swapId, s"failed to fund swap open tx, error: $error"))
       case OpeningTxFailed(error, Some(r)) => rollback(wallet)(error, r.fundingTx)
@@ -242,7 +242,7 @@ private class SwapMaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
   def awaitClaimPayment(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean): Behavior[SwapCommand] = {
     // TODO: query payment database for received payment
     watchForPayment(watch = true) // subscribe to be notified of payment events
-    sendShortId(register, shortChannelId)(openingTxBroadcasted) // send message to peer about opening tx broadcast
+    send(switchboard, remoteNodeId)(openingTxBroadcasted) // send message to peer about opening tx broadcast
 
     Behaviors.withTimers { timers =>
       timers.startSingleTimer(swapInvoiceExpiredTimer(request.swapId), InvoiceExpired, invoice.createdAt + invoice.relativeExpiry.toSeconds - TimestampSecond.now())
@@ -343,7 +343,7 @@ private class SwapMaker(shortChannelId: ShortChannelId, nodeParams: NodeParams, 
   def swapCanceled(failure: Fail): Behavior[SwapCommand] = {
     val swapEvent = Canceled(failure.swapId, failure.toString)
     context.system.eventStream ! Publish(swapEvent)
-    if (!failure.isInstanceOf[PeerCanceled]) sendShortId(register, shortChannelId)(CancelSwap(failure.swapId, failure.toString))
+    if (!failure.isInstanceOf[PeerCanceled]) send(switchboard, remoteNodeId)(CancelSwap(failure.swapId, failure.toString))
     failure match {
       case e: Error => context.log.error(s"canceled swap: $e")
       case f: Fail => context.log.info(s"canceled swap: $f")

@@ -35,8 +35,9 @@ object SwapResponses {
 
   sealed trait Error extends Fail
 
-  case class SwapExistsForChannel(swapId: String, shortChannelId: String) extends Fail {
-    override def toString: String = s"swap $swapId already exists for channel $shortChannelId"
+  case class SwapExistsForChannel(shortChannelId: String) extends Fail {
+    override def swapId: String = ""
+    override def toString: String = s"swap already exists for channel $shortChannelId"
   }
 
   case class SwapNotFound(swapId: String) extends Fail {
@@ -52,7 +53,11 @@ object SwapResponses {
   }
 
   case class CreateFailed(swapId: String, reason: String) extends Fail {
-    override def toString: String = s"could not create swap $swapId: $reason."
+    override def toString: String = s"could not create swap: $reason."
+  }
+
+  case class CreateInvoiceFailed(swapId: String, throwable: Throwable) extends Fail {
+    override def toString: String = s"swap $swapId canceled, could not create invoice: $throwable"
   }
 
   case class InvalidMessage(swapId: String, behavior: String, message: HasSwapId) extends Fail {

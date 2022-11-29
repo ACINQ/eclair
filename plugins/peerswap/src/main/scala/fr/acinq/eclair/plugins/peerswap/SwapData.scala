@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.plugins.peerswap
 
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.plugins.peerswap.SwapRole.SwapRole
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.{OpeningTxBroadcasted, SwapAgreement, SwapRequest}
@@ -26,7 +27,7 @@ object SwapRole extends Enumeration {
   val Taker: SwapRole.Value = Value(2, "Taker")
 }
 
-case class SwapData(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, swapRole: SwapRole, isInitiator: Boolean, result: String = "") {
+case class SwapData(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, swapRole: SwapRole, isInitiator: Boolean, remoteNodeId: PublicKey, result: String = "") {
   val swapId: String = request.swapId
   val scid: String = request.scid
 }

@@ -30,9 +30,9 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.publish.FinalTxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
+import fr.acinq.eclair.plugins.peerswap.SwapHelpers.checkSpendable
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions._
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.checkSpendable
 import grizzled.slf4j.Logging
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike

@@ -30,10 +30,10 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
 import fr.acinq.eclair.channel.DATA_NORMAL
-import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.db.OutgoingPaymentStatus.Pending
 import fr.acinq.eclair.db.PaymentsDbSpec.alice
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
+import fr.acinq.eclair.io.Switchboard.ForwardUnknownMessage
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
@@ -42,11 +42,11 @@ import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Status, SwapStatus}
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{claimByInvoiceTxWeight, makeSwapClaimByInvoiceTx, makeSwapOpeningTxOut}
-import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.{coopCloseCodec, swapInAgreementCodec}
-import fr.acinq.eclair.plugins.peerswap.wire.protocol.{OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
+import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodec
+import fr.acinq.eclair.plugins.peerswap.wire.protocol.{CoopClose, OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.wire.protocol.UnknownMessage
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TimestampMilliLong, ToMilliSatoshiConversion, randomBytes32}
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TimestampMilliLong, ToMilliSatoshiConversion, randomBytes32}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{BeforeAndAfterAll, Outcome}
@@ -81,12 +81,16 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
   val scriptOut: Long = 0
   val blindingKey: String = ""
   val request: SwapInRequest = SwapInRequest(protocolVersion, swapId, noAsset, network, shortChannelId.toString, amount.toLong, makerPubkey.toHex)
-  def expectUnknownMessage(register: TestProbe[Any]): UnknownMessage = register.expectMessageType[ForwardShortId[UnknownMessage]].message
+
+  def expectSwapMessage[B](switchboard: TestProbe[Any]): B = {
+    val unknownMessage = switchboard.expectMessageType[ForwardUnknownMessage].msg
+    val encoded = LightningMessageCodecs.unknownMessageCodec.encode(unknownMessage).require.toByteVector
+    peerSwapMessageCodec.decode(encoded.toBitVector).require.value.asInstanceOf[B]
+  }
 
   override def withFixture(test: OneArgTest): Outcome = {
     val watcher = testKit.createTestProbe[ZmqWatcher.Command]()
     val paymentHandler = testKit.createTestProbe[Any]()
-    val register = testKit.createTestProbe[Any]()
     val relayer = testKit.createTestProbe[Any]()
     val router = testKit.createTestProbe[Any]()
     val switchboard = testKit.createTestProbe[Any]()
@@ -94,27 +98,27 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     val wallet = new DummyOnChainWallet()
     val userCli = testKit.createTestProbe[Status]()
-    val sender = testKit.createTestProbe[Any]()
     val swapEvents = testKit.createTestProbe[SwapEvent]()
     val monitor = testKit.createTestProbe[SwapCommands.SwapCommand]()
     val nodeParams = TestConstants.Bob.nodeParams
+    val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
     // subscribe to notification events from SwapInReceiver when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapInReceiver = testKit.spawn(Behaviors.monitor(monitor.ref, SwapTaker(nodeParams, paymentInitiator.ref.toClassic, watcher.ref, register.ref.toClassic, wallet, keyManager, db)), "swap-in-receiver")
+    val swapInReceiver = testKit.spawn(Behaviors.monitor(monitor.ref, SwapTaker(remoteNodeId, nodeParams, paymentInitiator.ref.toClassic, watcher.ref, switchboard.ref.toClassic, wallet, keyManager, db)), "swap-in-receiver")
 
-    withFixture(test.toNoArgTest(FixtureParam(swapInReceiver, userCli, monitor, register, relayer, router, paymentInitiator, switchboard, paymentHandler, sender, nodeParams, watcher, wallet, swapEvents)))
+    withFixture(test.toNoArgTest(FixtureParam(swapInReceiver, userCli, monitor, switchboard, relayer, router, paymentInitiator, paymentHandler, nodeParams, watcher, wallet, swapEvents, remoteNodeId)))
   }
 
-  case class FixtureParam(swapInReceiver: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], monitor: TestProbe[SwapCommands.SwapCommand], register: TestProbe[Any], relayer: TestProbe[Any], router: TestProbe[Any], paymentInitiator: TestProbe[Any], switchboard: TestProbe[Any], paymentHandler: TestProbe[Any], sender: TestProbe[Any], nodeParams: NodeParams, watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent])
+  case class FixtureParam(swapInReceiver: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], monitor: TestProbe[SwapCommands.SwapCommand], switchboard: TestProbe[Any], relayer: TestProbe[Any], router: TestProbe[Any], paymentInitiator: TestProbe[Any], paymentHandler: TestProbe[Any], nodeParams: NodeParams, watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent], remoteNodeId: PublicKey)
 
   test("send cooperative close after a restore with no pending payment") { f =>
     import f._
 
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
-    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false, remoteNodeId)
     db.add(swapData)
     swapInReceiver ! RestoreSwap(swapData)
     monitor.expectMessageType[RestoreSwap]
@@ -132,7 +136,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // restore the SwapInReceiver actor state from a confirmed on-chain opening tx
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
-    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false, remoteNodeId)
     db.add(swapData)
 
     // add failed outgoing payment to the payments databases
@@ -157,7 +161,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // restore the SwapInReceiver actor state from a confirmed on-chain opening tx
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
-    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false, remoteNodeId)
     db.add(swapData)
 
     // add paid outgoing payment to the payments databases
@@ -193,7 +197,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // restore the SwapInReceiver actor state from a confirmed on-chain opening tx
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
-    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false)
+    val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false, remoteNodeId)
     db.add(swapData)
 
     // add pending outgoing payment to the payments databases
@@ -239,7 +243,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     monitor.expectMessage(StartSwapInReceiver(request))
 
     // SwapInReceiver:SwapInAgreement -> SwapInSender
-    val agreement = swapInAgreementCodec.decode(expectUnknownMessage(register).data.toBitVector).require.value
+    val agreement = expectSwapMessage[SwapInAgreement](switchboard)
 
     // Maker:OpeningTxBroadcasted -> Taker
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
@@ -295,7 +299,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     monitor.expectMessage(StartSwapInReceiver(request))
 
     // SwapInReceiver:SwapInAgreement -> SwapInSender
-    val agreement = swapInAgreementCodec.decode(expectUnknownMessage(register).data.toBitVector).require.value
+    val agreement = expectSwapMessage[SwapInAgreement](switchboard)
 
     // Maker:OpeningTxBroadcasted -> Taker, with payreq invoice where minFinalCltvExpiry >= claimByCsvDelta
     val badInvoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), Crypto.sha256(paymentPreimage), makerPrivkey, Left("SwapInReceiver invoice - bad min-final-cltv-expiry-delta"), claimByCsvDelta)
@@ -312,7 +316,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     paymentInitiator.expectNoMessage()
 
     // SwapInReceiver:CoopClose -> SwapInSender
-    val coopClose = coopCloseCodec.decode(expectUnknownMessage(register).data.toBitVector).require.value
+    val coopClose = expectSwapMessage[CoopClose](switchboard)
     assert(coopClose.message.contains("min-final-cltv-expiry delta too long"))
   }
 }

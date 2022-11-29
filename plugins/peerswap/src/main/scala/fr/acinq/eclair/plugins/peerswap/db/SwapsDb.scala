@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.plugins.peerswap.db
 
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.plugins.peerswap.SwapEvents.SwapEvent
 import fr.acinq.eclair.plugins.peerswap.SwapRole.Maker
@@ -23,6 +24,7 @@ import fr.acinq.eclair.plugins.peerswap.wire.protocol._
 import fr.acinq.eclair.plugins.peerswap.{SwapData, SwapRole}
 import org.json4s.jackson.JsonMethods.{compact, parse, render}
 import org.json4s.jackson.Serialization
+import scodec.bits.ByteVector
 
 import java.sql.{PreparedStatement, ResultSet}
 
@@ -51,7 +53,8 @@ object SwapsDb {
     statement.setString(5, Serialization.write(swapData.openingTxBroadcasted))
     statement.setInt(6, swapData.swapRole.id)
     statement.setBoolean(7, swapData.isInitiator)
-    statement.setString(8, "")
+    statement.setString(8, swapData.remoteNodeId.toHex)
+    statement.setString(9, "")
   }
 
   def getSwapData(rs: ResultSet): SwapData = {
@@ -78,6 +81,7 @@ object SwapsDb {
       Serialization.read[OpeningTxBroadcasted](compact(render(parse(openingTxBroadcasted_json).camelizeKeys))),
       SwapRole(rs.getInt("swap_role")),
       rs.getBoolean("is_initiator"),
+      PublicKey(ByteVector.fromValidHex(rs.getString("remote_node_id"))),
       result)
   }
 }

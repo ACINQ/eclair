@@ -30,8 +30,8 @@ import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{CMD_GET_CHANNEL_DATA, ChannelData, RES_GET_CHANNEL_DATA, Register}
 import fr.acinq.eclair.db.PaymentType
+import fr.acinq.eclair.io.Switchboard.ForwardUnknownMessage
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
@@ -40,22 +40,13 @@ import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{SwapTrans
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodecWithFallback
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.{HasSwapId, OpeningTxBroadcasted}
 import fr.acinq.eclair.wire.protocol.UnknownMessage
-import fr.acinq.eclair.{NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{NodeParams, TimestampSecond, randomBytes32}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
 object SwapHelpers {
-
-  def queryChannelData(register: actor.ActorRef, shortChannelId: ShortChannelId)(implicit context: ActorContext[SwapCommand]): Unit =
-    register ! Register.ForwardShortId[CMD_GET_CHANNEL_DATA](channelDataFailureAdapter(context), shortChannelId, CMD_GET_CHANNEL_DATA(channelDataResultAdapter(context).toClassic))
-
-  def channelDataResultAdapter(context: ActorContext[SwapCommand]): ActorRef[RES_GET_CHANNEL_DATA[ChannelData]] =
-    context.messageAdapter[RES_GET_CHANNEL_DATA[ChannelData]](ChannelDataResult)
-
-  def channelDataFailureAdapter(context: ActorContext[SwapCommand]): ActorRef[Register.ForwardShortIdFailure[CMD_GET_CHANNEL_DATA]] =
-    context.messageAdapter[Register.ForwardShortIdFailure[CMD_GET_CHANNEL_DATA]](ChannelDataFailure)
 
   def receiveSwapMessage[B <: SwapCommand : ClassTag](context: ActorContext[SwapCommand], stateName: String)(f: B => Behavior[SwapCommand]): Behavior[SwapCommand] = {
     context.log.debug(s"$stateName: waiting for messages, context: ${context.self.toString}")
@@ -77,9 +68,6 @@ object SwapHelpers {
   def watchForTxCsvConfirmation(watcher: ActorRef[ZmqWatcher.Command])(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: ByteVector32, minDepth: Long): Unit =
     watcher ! WatchFundingDeeplyBuried(replyTo, txId, minDepth)
 
-  def watchForOutputSpent(watcher: ActorRef[ZmqWatcher.Command])(replyTo: ActorRef[WatchOutputSpentTriggered], txId: ByteVector32, outputIndex: Int): Unit =
-    watcher ! WatchOutputSpent(replyTo, txId, outputIndex, Set())
-
   def payInvoice(nodeParams: NodeParams)(paymentInitiator: actor.ActorRef, swapId: String, invoice: Bolt11Invoice): Unit =
     paymentInitiator ! SendPaymentToNode(invoice.amount_opt.get, invoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, blockUntilComplete = true)
 
@@ -94,17 +82,8 @@ object SwapHelpers {
     UnknownMessage(encoded.sliceToInt(0, 16, signed = false), encoded.drop(16).toByteVector)
   }
 
-  def sendShortId(register: actor.ActorRef, shortChannelId: ShortChannelId)(message: HasSwapId)(implicit context: ActorContext[SwapCommand]): Unit =
-    register ! Register.ForwardShortId(forwardShortIdAdapter(context), shortChannelId, makeUnknownMessage(message))
-
-  def forwardShortIdAdapter(context: ActorContext[SwapCommand]): ActorRef[Register.ForwardShortIdFailure[UnknownMessage]] =
-    context.messageAdapter[Register.ForwardShortIdFailure[UnknownMessage]](ForwardShortIdFailureAdapter)
-
-  def send(register: actor.ActorRef, channelId: ByteVector32)(message: HasSwapId)(implicit context: ActorContext[SwapCommand]): Unit =
-    register ! Register.Forward(forwardAdapter(context), channelId, makeUnknownMessage(message))
-
-  def forwardAdapter(context: ActorContext[SwapCommand]): ActorRef[Register.ForwardFailure[UnknownMessage]] =
-    context.messageAdapter[Register.ForwardFailure[UnknownMessage]](ForwardFailureAdapter)
+  def send(switchboard: actor.ActorRef, remoteNodeId: PublicKey)(message: HasSwapId)(implicit context: ActorContext[SwapCommand]): Unit =
+    switchboard ! ForwardUnknownMessage(remoteNodeId, makeUnknownMessage(message))
 
   def fundOpening(wallet: OnChainWallet, feeRatePerKw: FeeratePerKw)(amount: Satoshi, makerPubkey: PublicKey, takerPubkey: PublicKey, invoice: Bolt11Invoice)(implicit context: ActorContext[SwapCommand]): Unit = {
     // setup conditions satisfied, create the opening tx

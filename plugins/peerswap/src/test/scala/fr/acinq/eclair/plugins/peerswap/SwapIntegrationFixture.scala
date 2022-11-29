@@ -34,7 +34,7 @@ object SwapIntegrationFixture {
   def swapRegister(node: MinimalNodeFixture): ActorRef[SwapRegister.Command] = {
     val keyManager: SwapKeyManager = new LocalSwapKeyManager(TestConstants.Alice.seed, node.nodeParams.chainHash)
     val db = new SqliteSwapsDb(DriverManager.getConnection("jdbc:sqlite::memory:"))
-    node.system.spawn(Behaviors.supervise(SwapRegister(node.nodeParams, node.paymentInitiator, node.watcher.ref.toTyped, node.register, node.wallet, keyManager, db, Set())).onFailure(SupervisorStrategy.stop), s"swap-register-${node.nodeParams.alias}")
+    node.system.spawn(Behaviors.supervise(SwapRegister(node.nodeParams, node.paymentInitiator, node.watcher.ref.toTyped, node.register, node.switchboard, node.wallet, keyManager, db, Set())).onFailure(SupervisorStrategy.stop), s"swap-register-${node.nodeParams.alias}")
   }
   def apply(aliceParams: NodeParams, bobParams: NodeParams): SwapIntegrationFixture = {
     val system = ActorSystem("system-test")

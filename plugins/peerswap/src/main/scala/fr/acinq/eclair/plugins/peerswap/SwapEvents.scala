@@ -27,7 +27,7 @@ object SwapEvents {
 
   case class Canceled(swapId: String, reason: String) extends SwapEvent
   case class TransactionPublished(swapId: String, tx: Transaction, desc: String) extends SwapEvent
-  case class ClaimByInvoiceConfirmed(swapId: String, confirmation: WatchTxConfirmedTriggered) extends SwapEvent{
+  case class ClaimByInvoiceConfirmed(swapId: String, confirmation: WatchTxConfirmedTriggered) extends SwapEvent {
     override def toString: String = s"Claimed by paid invoice: $confirmation"
   }
   case class ClaimByCoopOffered(swapId: String, reason: String) extends SwapEvent {

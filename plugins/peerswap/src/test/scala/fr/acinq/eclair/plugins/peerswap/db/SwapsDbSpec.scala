@@ -50,6 +50,7 @@ class SwapsDbSpec extends AnyFunSuite {
   val paymentPreimage: ByteVector32 = ByteVector32.One
   val feePreimage: ByteVector32 = ByteVector32.Zeroes
   val scid = "1x1x1"
+  val remoteNodeId: PublicKey = TestConstants.Alice.nodeParams.nodeId
 
   def paymentInvoice(swapId: String): Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), Crypto.sha256(paymentPreimage), makerPrivkey(swapId), Left("SwapOutSender payment invoice"), CltvExpiryDelta(18))
   def feeInvoice(swapId: String): Bolt11Invoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(fee.toMilliSatoshi), Crypto.sha256(feePreimage), makerPrivkey(swapId), Left("SwapOutSender fee invoice"), CltvExpiryDelta(18))
@@ -63,14 +64,14 @@ class SwapsDbSpec extends AnyFunSuite {
   def swapOutAgreement(swapId: String): SwapOutAgreement = SwapOutAgreement(protocolVersion, swapId, makerPubkey(swapId).toHex, feeInvoice(swapId).toString)
   def openingTxBroadcasted(swapId: String): OpeningTxBroadcasted = OpeningTxBroadcasted(swapId, paymentInvoice(swapId).toString, txid, scriptOut, blindingKey)
   def paymentCompleteResult(swapId: String): ClaimByInvoicePaid = ClaimByInvoicePaid(swapId, PaymentReceived(paymentInvoice(swapId).paymentHash, Seq(PartialPayment(amount.toMilliSatoshi, randomBytes32()))))
-  def swapData(swapId: String, isInitiator: Boolean, swapType: SwapRole): SwapData = {
+  def swapData(swapId: String, isInitiator: Boolean, swapType: SwapRole, remoteNodeId: PublicKey): SwapData = {
     val (request, agreement) = (isInitiator, swapType == Maker) match {
       case (true, true) => (swapInRequest(swapId), swapInAgreement(swapId))
       case (false, false) => (swapInRequest(swapId), swapInAgreement(swapId))
       case (true, false) => (swapOutRequest(swapId), swapOutAgreement(swapId))
       case (false, true) => (swapOutRequest(swapId), swapOutAgreement(swapId))
     }
-    SwapData(request, agreement, paymentInvoice(swapId), openingTxBroadcasted(swapId), swapType, isInitiator)
+    SwapData(request, agreement, paymentInvoice(swapId), openingTxBroadcasted(swapId), swapType, isInitiator, remoteNodeId)
   }
 
   test("init database two times in a row") {
@@ -83,10 +84,10 @@ class SwapsDbSpec extends AnyFunSuite {
     val db = new SqliteSwapsDb(DriverManager.getConnection("jdbc:sqlite::memory:"))
     assert(db.list().isEmpty)
 
-    val swap_1 = swapData(randomBytes32().toString(),isInitiator = true, Maker)
-    val swap_2 = swapData(randomBytes32().toString(),isInitiator = false, Maker)
-    val swap_3 = swapData(randomBytes32().toString(),isInitiator = true, Taker)
-    val swap_4 = swapData(randomBytes32().toString(),isInitiator = false, Taker)
+    val swap_1 = swapData(randomBytes32().toString(),isInitiator = true, Maker, remoteNodeId)
+    val swap_2 = swapData(randomBytes32().toString(),isInitiator = false, Maker, remoteNodeId)
+    val swap_3 = swapData(randomBytes32().toString(),isInitiator = true, Taker, remoteNodeId)
+    val swap_4 = swapData(randomBytes32().toString(),isInitiator = false, Taker, remoteNodeId)
 
     assert(db.list().toSet == Set.empty)
     db.add(swap_1)
@@ -111,7 +112,7 @@ class SwapsDbSpec extends AnyFunSuite {
 
     implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(8))
     val futures = for (_ <- 0 until 2500) yield {
-      Future(db.add(swapData(randomBytes32().toString(),isInitiator = true, Maker)))
+      Future(db.add(swapData(randomBytes32().toString(),isInitiator = true, Maker, remoteNodeId)))
     }
     val res = Future.sequence(futures)
     Await.result(res, 60 seconds)

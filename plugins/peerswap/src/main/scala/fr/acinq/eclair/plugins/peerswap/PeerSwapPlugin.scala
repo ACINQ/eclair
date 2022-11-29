@@ -29,6 +29,7 @@ import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.db.sqlite.SqliteUtils
 import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Response, Status}
+import fr.acinq.eclair.plugins.peerswap.SwapRole.{Maker, Taker}
 import fr.acinq.eclair.plugins.peerswap.db.SwapsDb
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
 import fr.acinq.eclair.{CustomFeaturePlugin, Feature, InitFeature, Kit, NodeFeature, NodeParams, Plugin, PluginParams, RouteProvider, Setup, ShortChannelId, randomBytes32}
@@ -88,7 +89,7 @@ class PeerSwapPlugin extends Plugin with RouteProvider with Logging {
 
   override def onKit(kit: Kit): Unit = {
     val data = db.restore().toSet
-    val swapRegister = kit.system.spawn(Behaviors.supervise(SwapRegister(kit.nodeParams, kit.paymentInitiator, kit.watcher, kit.register, kit.wallet, swapKeyManager, db, data)).onFailure(SupervisorStrategy.restart), "peerswap-plugin-swap-register")
+    val swapRegister = kit.system.spawn(Behaviors.supervise(SwapRegister(kit.nodeParams, kit.paymentInitiator, kit.watcher, kit.register, kit.switchboard, kit.wallet, swapKeyManager, db, data)).onFailure(SupervisorStrategy.restart), "peerswap-plugin-swap-register")
     pluginKit = PeerSwapKit(kit.nodeParams, kit.system, swapRegister, db)
   }
 
@@ -100,10 +101,10 @@ case class PeerSwapKit(nodeParams: NodeParams, system: ActorSystem, swapRegister
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-pending-commands").build()))
 
   def swapIn(shortChannelId: ShortChannelId, amount: Satoshi)(implicit timeout: Timeout): Future[Response] =
-    swapRegister.ask(ref => SwapRegister.SwapInRequested(ref, amount, shortChannelId))(timeout, system.scheduler.toTyped)
+    swapRegister.ask(ref => SwapRegister.SwapRequested(ref, Maker, amount, shortChannelId, None))(timeout, system.scheduler.toTyped)
 
   def swapOut(shortChannelId: ShortChannelId, amount: Satoshi)(implicit timeout: Timeout): Future[Response] =
-    swapRegister.ask(ref => SwapRegister.SwapOutRequested(ref, amount, shortChannelId))(timeout, system.scheduler.toTyped)
+    swapRegister.ask(ref => SwapRegister.SwapRequested(ref, Taker, amount, shortChannelId, None))(timeout, system.scheduler.toTyped)
 
   def listSwaps()(implicit timeout: Timeout): Future[Iterable[Status]] =
     swapRegister.ask(ref => SwapRegister.ListPendingSwaps(ref))(timeout, system.scheduler.toTyped)

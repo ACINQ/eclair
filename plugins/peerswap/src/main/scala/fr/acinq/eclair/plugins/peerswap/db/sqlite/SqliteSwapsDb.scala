@@ -40,7 +40,7 @@ class SqliteSwapsDb (val sqlite: Connection) extends SwapsDb with Logging {
   using(sqlite.createStatement(), inTransaction = true) { statement =>
     getVersion(statement, DB_NAME) match {
       case None =>
-        statement.executeUpdate("CREATE TABLE swaps (swap_id STRING NOT NULL PRIMARY KEY, request STRING NOT NULL, agreement STRING NOT NULL, invoice STRING NOT NULL, opening_tx_broadcasted STRING NOT NULL, swap_role INTEGER NOT NULL, is_initiator BOOLEAN NOT NULL, result STRING NOT NULL)")
+        statement.executeUpdate("CREATE TABLE swaps (swap_id STRING NOT NULL PRIMARY KEY, request STRING NOT NULL, agreement STRING NOT NULL, invoice STRING NOT NULL, opening_tx_broadcasted STRING NOT NULL, swap_role INTEGER NOT NULL, is_initiator BOOLEAN NOT NULL, remote_node_id STRING NOT NULL, result STRING NOT NULL)")
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -49,8 +49,8 @@ class SqliteSwapsDb (val sqlite: Connection) extends SwapsDb with Logging {
 
   override def add(swapData: SwapData): Unit = withMetrics("swaps/add", DbBackends.Sqlite) {
       using(sqlite.prepareStatement(
-        """INSERT INTO swaps (swap_id, request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, result)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (swap_id) DO NOTHING""")) { statement =>
+        """INSERT INTO swaps (swap_id, request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, remote_node_id, result)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (swap_id) DO NOTHING""")) { statement =>
         setSwapData(statement, swapData)
         statement.executeUpdate()
       }
@@ -72,14 +72,14 @@ class SqliteSwapsDb (val sqlite: Connection) extends SwapsDb with Logging {
   }
 
   override def restore(): Seq[SwapData] = withMetrics("swaps/restore", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT swap_id, request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, result FROM swaps WHERE result=?")) { statement =>
+    using(sqlite.prepareStatement("SELECT swap_id, request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, remote_node_id, result FROM swaps WHERE result=?")) { statement =>
       statement.setString(1, "")
       statement.executeQuery().map(rs => getSwapData(rs)).toSeq
     }
   }
 
   override def list(): Seq[SwapData] = withMetrics("swaps/list", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT swap_id, request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, result FROM swaps")) { statement =>
+    using(sqlite.prepareStatement("SELECT swap_id, request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, remote_node_id, result FROM swaps")) { statement =>
       statement.executeQuery().map(rs => getSwapData(rs)).toSeq
     }
   }
