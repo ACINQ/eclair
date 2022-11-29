@@ -270,8 +270,10 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! Error(ByteVector32.Zeroes, "please help me recover my funds")
     // We have nothing at stake, but we publish our commitment to help our peer recover their funds more quickly.
+    awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid)
-    bob2blockchain.expectNoMessage(100 millis)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
+    bob ! WatchTxConfirmedTriggered(BlockHeight(42), 1, tx)
     awaitCond(bob.stateName == CLOSED)
   }
 
