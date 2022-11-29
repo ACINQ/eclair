@@ -3,7 +3,7 @@ package fr.acinq.eclair.io
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{Actor, ActorContext, ActorRef, Props, Status}
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.ByteVector64
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.channel.ChannelIdAssigned
@@ -136,6 +136,18 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     probe.send(switchboard, GetPeerInfo(probe.ref.toTyped, knownPeerNodeId))
     peer.expectMsg(Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+  }
+
+  test("forward UnknownMessage to peer") {
+    val unknownMessage = UnknownMessage(60003, ByteVector32.One)
+    val (probe, peer) = (TestProbe(), TestProbe())
+    val switchboard = TestActorRef(new Switchboard(Alice.nodeParams, FakePeerFactory(probe, peer)))
+    val knownPeerNodeId = randomKey().publicKey
+    probe.send(switchboard, Peer.Connect(knownPeerNodeId, None, probe.ref, isPersistent = true))
+    peer.expectMsgType[Peer.Init]
+    peer.expectMsgType[Peer.Connect]
+    probe.send(switchboard, ForwardUnknownMessage(knownPeerNodeId, unknownMessage))
+    peer.expectMsg(Peer.RelayUnknownMessage(unknownMessage))
   }
 
 }
