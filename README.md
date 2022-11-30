@@ -60,7 +60,7 @@ This means that instead of re-implementing them, Eclair benefits from the verifi
 :warning: This also means that Eclair has strong requirements on how your Bitcoin Core node is configured (see below), and that you must back up your Bitcoin Core wallet as well as your Eclair node (see [here](#configure-bitcoin-core-wallet)):
 
 * Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
-* You must configure your Bitcoin node to use `bech32` (segwit) addresses. If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `bech32` address before running Eclair.
+* You must configure your Bitcoin node to use `bech32` or `bech32m` (segwit) addresses. If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit`, `bech32` or `bech32m`), you must send them to a `bech32` or `bech32m` address before running Eclair.
 * Eclair requires Bitcoin Core 23.0 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
@@ -70,6 +70,8 @@ server=1
 rpcuser=foo
 rpcpassword=bar
 txindex=1
+addresstype=bech32
+changetype=bech32
 zmqpubhashblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```
@@ -280,6 +282,8 @@ so you can easily run your Bitcoin node on both mainnet and testnet. For example
 ```conf
 server=1
 txindex=1
+addresstype=bech32
+changetype=bech32
 
 [main]
 rpcuser=<your-mainnet-rpc-user-here>
