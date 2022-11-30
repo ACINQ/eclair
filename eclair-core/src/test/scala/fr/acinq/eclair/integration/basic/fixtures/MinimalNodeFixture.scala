@@ -50,7 +50,9 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       paymentHandler: ActorRef,
                                       watcher: TestProbe,
                                       wallet: DummyOnChainWallet,
-                                      bitcoinClient: TestBitcoinCoreClient)
+                                      bitcoinClient: TestBitcoinCoreClient) {
+  val nodeId = nodeParams.nodeId
+}
 
 object MinimalNodeFixture extends Assertions with Eventually with IntegrationPatience with EitherValues {
 
