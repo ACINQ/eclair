@@ -313,11 +313,10 @@ object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](rout
 
 // @formatter:off
 private case class PaymentFailureSummaryJson(amount: MilliSatoshi, route: Seq[PublicKey], message: String)
-private case class PaymentFailedSummaryJson(paymentHash: ByteVector32, destination: PublicKey, totalAmount: MilliSatoshi, pathFindingExperiment: String, failures: Seq[PaymentFailureSummaryJson])
+private case class PaymentFailedSummaryJson(paymentHash: ByteVector32, destination: PublicKey, pathFindingExperiment: String, failures: Seq[PaymentFailureSummaryJson])
 object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFailedSummary](p => PaymentFailedSummaryJson(
   p.cfg.paymentHash,
   p.cfg.recipientNodeId,
-  p.cfg.recipientAmount,
   p.pathFindingExperiment,
   p.paymentFailed.failures.map(f => {
     val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)

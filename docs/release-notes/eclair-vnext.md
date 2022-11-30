@@ -118,6 +118,7 @@ upgrading to this release.
 - `stop` stops eclair: please note that the recommended way of stopping eclair is simply to kill its process (#2233)
 - `rbfopen` lets the initiator of a dual-funded channel RBF the funding transaction (#2275)
 - `listinvoices` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474)
+- `sendtoroute` removes the `--trampolineNodes` argument and implicitly uses a single trampoline hop (#2480)
 
 ### Miscellaneous improvements and bug fixes
 

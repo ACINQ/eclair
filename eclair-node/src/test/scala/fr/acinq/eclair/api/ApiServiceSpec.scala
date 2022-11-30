@@ -956,7 +956,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val jsonNodes = serialization.write(expectedRoute.nodes)
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
+    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
     Post("/sendtoroute", FormData("nodeIds" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId, "invoice" -> pr.toString).toEntity) ~>
@@ -967,7 +967,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == expected)
-        eclair.sendToRoute(1234 msat, None, Some(externalId), None, pr, expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
+        eclair.sendToRoute(1234 msat, None, Some(externalId), None, pr, expectedRoute, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -979,7 +979,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
+    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
     // this test uses CSV encoded route
@@ -991,7 +991,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == expected)
-        eclair.sendToRoute(1234 msat, None, None, None, pr, expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
+        eclair.sendToRoute(1234 msat, None, None, None, pr, expectedRoute, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 

@@ -159,7 +159,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from D
     val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.paymentMetadata.nonEmpty)
 
     // then we make the actual payment
@@ -506,7 +506,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
     val amount = 2500000000L.msat
     sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(Some(amount), Left("trampoline-MPP is so #reckless")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
@@ -562,7 +562,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val amount = 3000000000L.msat
     sender.send(nodes("A").paymentHandler, ReceiveStandardPayment(Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
