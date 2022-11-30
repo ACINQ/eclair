@@ -21,7 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
@@ -959,6 +959,23 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     bitcoinrpcclient.invoke("getreceivedbyaddress", address).pipeTo(sender.ref)
     val receivedAmount = sender.expectMsgType[JDecimal]
     assert(Btc(receivedAmount.values).toMilliBtc == amount)
+  }
+
+  test("generate segwit change outputs") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+
+    // Even when we pay a legacy address, our change output must use segwit, otherwise it won't be usable for lightning channels.
+    val pubKey = randomKey().publicKey
+    val legacyAddress = computeP2PkhAddress(pubKey, Block.RegtestGenesisBlock.hash)
+    bitcoinClient.sendToAddress(legacyAddress, 150_000 sat, 1).pipeTo(sender.ref)
+    val txId = sender.expectMsgType[ByteVector32]
+    bitcoinClient.getTransaction(txId).pipeTo(sender.ref)
+    val tx = sender.expectMsgType[Transaction]
+    // We have a change output.
+    assert(tx.txOut.length == 2)
+    assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(Script.pay2pkh(pubKey))) == 1)
+    assert(tx.txOut.count(txOut => Script.isNativeWitnessScript(txOut.publicKeyScript)) == 1)
   }
 
 }

@@ -33,6 +33,7 @@ Values do not need to be surrounded by quotes, except if they contain special ch
 ### Changing the data directory
 
 You can change the data directory with the `eclair.datadir` parameter:
+
 ```sh
 eclair-node.sh -Declair.datadir="/path/to/custom/eclair/data/folder"
 ```
@@ -41,7 +42,7 @@ eclair-node.sh -Declair.datadir="/path/to/custom/eclair/data/folder"
 
 Note that HOCON allows you to have files include other files. This allows you to split your configuration file into
 several logical files, for easier management. For example, you could define a file `routing.conf` file with parameters
-related to routing configuration, and include it from `eclair.conf`. 
+related to routing configuration, and include it from `eclair.conf`.
 
 ## Options reference
 
@@ -234,13 +235,14 @@ You'll also have to make sure the node is accessible from the outside world (por
 
 ### Bitcoin Core cookie authentication
 
-If you run Eclair and Bitcoin on the same computer an alternative way to handle the Bitcoin Core RPC authentication 
+If you run Eclair and Bitcoin on the same computer an alternative way to handle the Bitcoin Core RPC authentication.
 is to use the safecookie. To use safecookie authentication, you need to remove `rpcpassword=***` and `rpcuser=***` from your `bitcoin.conf` and add the following to `eclair.conf`:
 
 ```conf
 eclair.bitcoind.auth = "safecookie"
 eclair.bitcoind.cookie = "PATH TO THE COOKIE FILE"
 ```
+
 Setting `eclair.bitcoind.cookie` might not be necessary if Bitcoin is running on mainnet and using the default datadir.
 
 Eclair will need read access to Bitcoin Core's cookie file.
