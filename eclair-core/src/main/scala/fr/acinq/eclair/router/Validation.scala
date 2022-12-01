@@ -533,8 +533,11 @@ object Validation {
         }
       case None =>
         lcu.shortIds.real.toOption match {
-          case Some(realScid) if d.prunedChannels.contains(realScid) => log.debug("created local channel update for pruned channelId={} scid={}", lcu.channelId, realScid)
-          case _ => log.warning("unrecognized local channel update for channelId={} localAlias={}", lcu.channelId, lcu.shortIds.localAlias)
+          case Some(realScid) if d.prunedChannels.contains(realScid) =>
+            log.debug("this is a known pruned local channel, processing channel_update for channelId={} scid={}", lcu.channelId, realScid)
+          case _ =>
+            // should never happen
+            log.warning("unrecognized local channel update for channelId={} localAlias={}", lcu.channelId, lcu.shortIds.localAlias)
         }
         // handle the update: it will be rejected if there is no related channel
         handleChannelUpdate(d, db, nodeParams.currentBlockHeight, Left(lcu))
