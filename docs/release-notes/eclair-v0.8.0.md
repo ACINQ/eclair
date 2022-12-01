@@ -142,7 +142,7 @@ upgrading to this release.
 
 ### Remove support for MacOS arm64
 
-This version of eclair uses `libsecp256k1` natively and we don't yet support MacOS arm64.
+This version of eclair uses `libsecp256k1` natively, we include bindings for Linux arm64 but not for MacOS arm64 yet.
 This can be worked around by downloading an x86-64 version of the JVM to run eclair.
 See [the following issue](https://github.com/ACINQ/eclair/issues/2427) for more details.
 
