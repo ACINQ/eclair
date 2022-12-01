@@ -140,6 +140,12 @@ Dropped support for version 2 of Tor protocol. That means:
 IMPORTANT: You'll need to upgrade your Tor daemon if for some reason you still use Tor v0.3.3.5 or earlier before
 upgrading to this release.
 
+### Remove support for MacOS arm64
+
+This version of eclair uses `libsecp256k1` natively and we don't yet support MacOS arm64.
+This can be worked around by downloading an x86-64 version of the JVM to run eclair.
+See [the following issue](https://github.com/ACINQ/eclair/issues/2427) for more details.
+
 ### API changes
 
 - `channelbalances` retrieves information about the balances of all local channels (#2196)
