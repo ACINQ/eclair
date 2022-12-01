@@ -242,6 +242,39 @@ fundingFeerateSatByte | Feerate in sat/byte to apply to the funding transaction 
 announceChannel       | True for public channels, false otherwise                                  | Yes      | Boolean
 openTimeoutSeconds    | Timeout for the operation to complete                                      | Yes      | Seconds (Integer)
 
+## RbfOpen
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F channelId=<channel_id> -F targetFeerateSatByte=<target_feerate> "http://localhost:8080/rbfopen"
+
+# with eclair-cli
+eclair-cli rbfopen --channelId=<channel_id> --targetFeerateSatByte=<target_feerate>
+```
+
+> The above command returns:
+
+```shell
+{
+  "<channelId>": "ok"
+}
+```
+
+Increase the fees of an unconfirmed dual-funded channel to speed up confirmation.
+You must specify the target **channelId** and the feerate that should be set for the funding transaction.
+A negotiation will start with your channel peer, and if they agree, your node will publish an updated funding transaction paying more fees.
+
+### HTTP Request
+
+`POST http://localhost:8080/rbfopen`
+
+### Parameters
+
+Parameter            | Description                                             | Optional | Type
+-------------------- | ------------------------------------------------------- | -------- | ---------------------------
+channelId            | The **channelId** of the channel that should be RBF-ed  | No       | 33-bytes-HexString (String)
+targetFeerateSatByte | Feerate in sat/byte to apply to the funding transaction | No       | Satoshis (Integer)
+lockTime             | The nLockTime to apply to the funding transaction       | Yes      | Integer
+
 # Close
 
 ## Close
@@ -459,11 +492,11 @@ commitTxFeerate | sats/kw
           },
           "dustLimit": 546,
           "maxHtlcValueInFlightMsat": 5000000000,
-          "channelReserve": 4500,
+          "requestedChannelReserve_opt": 4500,
           "htlcMinimum": 1,
           "toSelfDelay": 120,
           "maxAcceptedHtlcs": 30,
-          "isFunder": true,
+          "isInitiator": true,
           "defaultFinalScriptPubKey": "00144f5f4c215f8143d5a1d4c122256b17ffde12ae31",
           "initFeatures": {
             "activated": {
@@ -487,7 +520,7 @@ commitTxFeerate | sats/kw
           "nodeId": "02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2",
           "dustLimit": 546,
           "maxHtlcValueInFlightMsat": 5000000000,
-          "channelReserve": 4500,
+          "requestedChannelReserve_opt": 4500,
           "htlcMinimum": 1,
           "toSelfDelay": 120,
           "maxAcceptedHtlcs": 30,
@@ -565,8 +598,14 @@ commitTxFeerate | sats/kw
         },
         "remotePerCommitmentSecrets": null
       },
-      "shortChannelId": "2899x1x1",
-      "buried": true,
+      "shortIds": {
+        "real": {
+          "status": "final",
+          "realScid": "2899x1x1"
+        },
+        "localAlias": "0x17537e03b55a01e",
+        "remoteAlias": "0xcde44c7ebd1449"
+      },
       "channelAnnouncement": {
         "nodeSignature1": "982f9a7f9d6ff5a4e5732f0382e79f4fb5e20121d0d10ff6d03f264d0d11cc0f04c702fa4d0e52e05d34f465847654f59b199f2f16d01de52e39782a5884cb3f",
         "nodeSignature2": "5ef70341c149ae65006ac38d7b0352bf2b0500e7275ff396797495abd41fd2ca336bbc3c51123e1cdb74b8d9f4c85d8535f01ca1ec257e6fb445668c531887b7",
@@ -594,6 +633,9 @@ commitTxFeerate | sats/kw
         "timestamp": {
           "iso": "2022-02-01T12:27:50Z",
           "unix": 1643718470
+        },
+        "messageFlags": {
+          "dontForward": false
         },
         "channelFlags": {
           "isEnabled": true,
@@ -681,11 +723,11 @@ commitTxFeerate | sats/kw
         },
         "dustLimit": 546,
         "maxHtlcValueInFlightMsat": 5000000000,
-        "channelReserve": 4500,
+        "requestedChannelReserve_opt": 4500,
         "htlcMinimum": 1,
         "toSelfDelay": 120,
         "maxAcceptedHtlcs": 30,
-        "isFunder": true,
+        "isInitiator": true,
         "defaultFinalScriptPubKey": "00144f5f4c215f8143d5a1d4c122256b17ffde12ae31",
         "initFeatures": {
           "activated": {
@@ -709,7 +751,7 @@ commitTxFeerate | sats/kw
         "nodeId": "02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2",
         "dustLimit": 546,
         "maxHtlcValueInFlightMsat": 5000000000,
-        "channelReserve": 4500,
+        "requestedChannelReserve_opt": 4500,
         "htlcMinimum": 1,
         "toSelfDelay": 120,
         "maxAcceptedHtlcs": 30,
@@ -787,8 +829,14 @@ commitTxFeerate | sats/kw
       },
       "remotePerCommitmentSecrets": null
     },
-    "shortChannelId": "2899x1x1",
-    "buried": true,
+    "shortIds": {
+      "real": {
+        "status": "final",
+        "realScid": "2899x1x1"
+      },
+      "localAlias": "0x17537e03b55a01e",
+      "remoteAlias": "0xcde44c7ebd1449"
+    },
     "channelAnnouncement": {
       "nodeSignature1": "982f9a7f9d6ff5a4e5732f0382e79f4fb5e20121d0d10ff6d03f264d0d11cc0f04c702fa4d0e52e05d34f465847654f59b199f2f16d01de52e39782a5884cb3f",
       "nodeSignature2": "5ef70341c149ae65006ac38d7b0352bf2b0500e7275ff396797495abd41fd2ca336bbc3c51123e1cdb74b8d9f4c85d8535f01ca1ec257e6fb445668c531887b7",
@@ -816,6 +864,9 @@ commitTxFeerate | sats/kw
       "timestamp": {
         "iso": "2022-02-01T12:27:50Z",
         "unix": 1643718470
+      },
+      "messageFlags": {
+        "dontForward": false
       },
       "channelFlags": {
         "isEnabled": true,
@@ -997,6 +1048,9 @@ eclair-cli allupdates
       "iso": "2022-02-01T12:27:50Z",
       "unix": 1643718470
     },
+    "messageFlags": {
+      "dontForward": false
+    },
     "channelFlags": {
       "isEnabled": true,
       "isNode1": true
@@ -1018,6 +1072,9 @@ eclair-cli allupdates
     "timestamp": {
       "iso": "2022-02-01T12:27:19Z",
       "unix": 1643718439
+    },
+    "messageFlags": {
+      "dontForward": false
     },
     "channelFlags": {
       "isEnabled": false,
@@ -1726,6 +1783,8 @@ Parameter | Description                                           | Optional | T
 --------- | ----------------------------------------------------- | -------- | -----------------------------------
 from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
 to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
+count     | Limits the number of results returned                 | Yes      | Integer
+skip      | Skip some number of results                           | Yes      | Integer
 
 ## ListPendingInvoices
 
@@ -1805,6 +1864,8 @@ Parameter | Description                                           | Optional | T
 --------- | ----------------------------------------------------- | -------- | -----------------------------------
 from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
 to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
+count     | Limits the number of results returned                 | Yes      | Integer
+skip      | Skip some number of results                           | Yes      | Integer
 
 # Route
 
@@ -1873,6 +1934,9 @@ When using `format=full`, the above command would return the last `channel_updat
             "timestamp": {
               "iso": "2022-02-01T12:40:19Z",
               "unix": 1643719219
+            },
+            "messageFlags": {
+              "dontForward": false
             },
             "channelFlags": {
               "isEnabled": true,
@@ -2537,19 +2601,79 @@ eclair-cli usablebalances
 [
   {
     "remoteNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-    "shortChannelId": "562890x809x0",
+    "shortIds": {
+      "real": {
+        "status": "final",
+        "realScid": "562890x809x0"
+      },
+      "localAlias": "0x17537e03b55a01e",
+      "remoteAlias": "0xcde44c7ebd1449"
+    },
     "canSend": 131219000,
     "canReceive": 466000,
-    "isPublic": true
+    "isPublic": true,
+    "isEnabled": true
   }
 ]
 ```
 
-Retrieves information about the available balance of local channels.
+Retrieves information about the available balance of local channels, excluding channels that are disabled or empty.
 
 ### HTTP Request
 
 `POST http://localhost:8080/usablebalances`
+
+## ChannelBalances
+
+```shell
+curl -s -u :<eclair_api_password> -X POST "http://localhost:8080/channelbalances"
+
+# with eclair-cli
+eclair-cli channelbalances
+```
+
+> The above command returns:
+
+```json
+[
+  {
+    "remoteNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
+    "shortIds": {
+      "real": {
+        "status": "final",
+        "realScid": "562890x809x0"
+      },
+      "localAlias": "0x17537e03b55a01e",
+      "remoteAlias": "0xcde44c7ebd1449"
+    },
+    "canSend": 131219000,
+    "canReceive": 466000,
+    "isPublic": true,
+    "isEnabled": true
+  },
+  {
+    "remoteNodeId": "02865c138ddfb0e1e8c62aa8cebbed383d5b343c2d40fa22c31773a6725854154f",
+    "shortIds": {
+      "real": {
+        "status": "final",
+        "realScid": "562890x809x1"
+      },
+      "localAlias": "0x8676ba94f75888",
+      "remoteAlias": "0x317b1df704e350f"
+    },
+    "canSend": 0,
+    "canReceive": 1250000,
+    "isPublic": true,
+    "isEnabled": false
+  }
+]
+```
+
+Retrieves information about the available balance of all local channels, including channels that are disabled or empty.
+
+### HTTP Request
+
+`POST http://localhost:8080/channelbalances`
 
 ## GlobalBalance
 
@@ -2571,7 +2695,7 @@ eclair-cli globalbalance
   },
   "offChain": {
     "waitForFundingConfirmed": 0,
-    "waitForFundingLocked": 0,
+    "waitForChannelReady": 0,
     "normal": {
       "toLocal": 0.00445015,
       "htlcs": 0
@@ -2743,7 +2867,7 @@ several types covering all the possible outcomes. All monetary values are expres
 {
   "type": "channel-opened",
   "remoteNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
-  "isFunder": true,
+  "isInitiator": true,
   "temporaryChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
   "initialFeeratePerKw": 1200,
   "fundingTxFeeratePerKw": 2000
