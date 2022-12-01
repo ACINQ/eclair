@@ -255,6 +255,9 @@
                   <li>
                     <a href="#open-2" class="toc-h2 toc-link" data-title="Open">Open</a>
                   </li>
+                  <li>
+                    <a href="#rbfopen" class="toc-h2 toc-link" data-title="RbfOpen">RbfOpen</a>
+                  </li>
               </ul>
           </li>
           <li>
@@ -406,6 +409,9 @@
                   </li>
                   <li>
                     <a href="#usablebalances" class="toc-h2 toc-link" data-title="UsableBalances">UsableBalances</a>
+                  </li>
+                  <li>
+                    <a href="#channelbalances" class="toc-h2 toc-link" data-title="ChannelBalances">ChannelBalances</a>
                   </li>
                   <li>
                     <a href="#globalbalance" class="toc-h2 toc-link" data-title="GlobalBalance">GlobalBalance</a>
@@ -692,6 +698,51 @@ Otherwise the values from <code>eclair.conf</code> will be used (see <code>eclai
 <td>Seconds (Integer)</td>
 </tr>
 </tbody></table>
+<h2 id='rbfopen'>RbfOpen</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel_id&gt; -F <span class="nv">targetFeerateSatByte</span><span class="o">=</span>&lt;target_feerate&gt; <span class="s2">"http://localhost:8080/rbfopen"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli rbfopen --channelId<span class="o">=</span>&lt;channel_id&gt; --targetFeerateSatByte<span class="o">=</span>&lt;target_feerate&gt;
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight shell tab-shell"><code><span class="o">{</span>
+  <span class="s2">"&lt;channelId&gt;"</span>: <span class="s2">"ok"</span>
+<span class="o">}</span>
+</code></pre>
+<p>Increase the fees of an unconfirmed dual-funded channel to speed up confirmation.
+You must specify the target <strong>channelId</strong> and the feerate that should be set for the funding transaction.
+A negotiation will start with your channel peer, and if they agree, your node will publish an updated funding transaction paying more fees.</p>
+<h3 id='http-request-7'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/rbfopen</code></p>
+<h3 id='parameters-6'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>channelId</td>
+<td>The <strong>channelId</strong> of the channel that should be RBF-ed</td>
+<td>No</td>
+<td>33-bytes-HexString (String)</td>
+</tr>
+<tr>
+<td>targetFeerateSatByte</td>
+<td>Feerate in sat/byte to apply to the funding transaction</td>
+<td>No</td>
+<td>Satoshis (Integer)</td>
+</tr>
+<tr>
+<td>lockTime</td>
+<td>The nLockTime to apply to the funding transaction</td>
+<td>Yes</td>
+<td>Integer</td>
+</tr>
+</tbody></table>
 <h1 id='close'>Close</h1><h2 id='close-2'>Close</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="s2">"http://localhost:8080/close"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -711,9 +762,9 @@ The endpoint supports receiving multiple channel id(s) or short channel id(s); t
 <p>If you specified a <code>scriptPubKey</code> then the closing transaction will spend to that address.</p>
 
 <p>You can specify a fee range for the closing transaction with the <code>preferredFeerateSatByte</code>, <code>minFeerateSatByte</code> and <code>maxFeerateSatByte</code>.</p>
-<h3 id='http-request-7'>HTTP Request</h3>
+<h3 id='http-request-8'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/close</code></p>
-<h3 id='parameters-6'>Parameters</h3>
+<h3 id='parameters-7'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -786,9 +837,9 @@ eclair-cli forceclose --channelId<span class="o">=</span>&lt;channel&gt;
 <p>Initiates a unilateral close for given channels that belong to this eclair node.
 Once the commitment has been broadcast, the API returns its transaction id.
 The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channels, you can use the parameters <code>channelIds</code> or <code>shortChannelIds</code> below.</p>
-<h3 id='http-request-8'>HTTP Request</h3>
+<h3 id='http-request-9'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/forceclose</code></p>
-<h3 id='parameters-7'>Parameters</h3>
+<h3 id='parameters-8'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -845,9 +896,9 @@ The endpoint supports receiving multiple node id(s); to update multiple nodes, y
 <p>New updates for every channel you have with the selected node(s) will be broadcast to the network.
 Note that you can call this API even without having any channel with the selected node(s).
 That will ensure that when you open channels to the selected node(s), the fees you have configured will be automatically applied (instead of the default fees from your <code>eclair.conf</code>).</p>
-<h3 id='http-request-9'>HTTP Request</h3>
+<h3 id='http-request-10'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/updaterelayfee</code></p>
-<h3 id='parameters-8'>Parameters</h3>
+<h3 id='parameters-9'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -906,7 +957,7 @@ eclair-cli peers
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns the list of currently known peers, both connected and disconnected.</p>
-<h3 id='http-request-10'>HTTP Request</h3>
+<h3 id='http-request-11'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/peers</code></p>
 <h1 id='channels'>Channels</h1><h2 id='channels-2'>Channels</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channels"</span>
 
@@ -980,11 +1031,11 @@ eclair-cli channels
           </span><span class="p">},</span><span class="w">
           </span><span class="s2">"dustLimit"</span><span class="p">:</span><span class="w"> </span><span class="mi">546</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxHtlcValueInFlightMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">5000000000</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"channelReserve"</span><span class="p">:</span><span class="w"> </span><span class="mi">4500</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"requestedChannelReserve_opt"</span><span class="p">:</span><span class="w"> </span><span class="mi">4500</span><span class="p">,</span><span class="w">
           </span><span class="s2">"htlcMinimum"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
           </span><span class="s2">"toSelfDelay"</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxAcceptedHtlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"isFunder"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"isInitiator"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
           </span><span class="s2">"defaultFinalScriptPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"00144f5f4c215f8143d5a1d4c122256b17ffde12ae31"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"initFeatures"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
@@ -1008,7 +1059,7 @@ eclair-cli channels
           </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"dustLimit"</span><span class="p">:</span><span class="w"> </span><span class="mi">546</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxHtlcValueInFlightMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">5000000000</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"channelReserve"</span><span class="p">:</span><span class="w"> </span><span class="mi">4500</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"requestedChannelReserve_opt"</span><span class="p">:</span><span class="w"> </span><span class="mi">4500</span><span class="p">,</span><span class="w">
           </span><span class="s2">"htlcMinimum"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
           </span><span class="s2">"toSelfDelay"</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxAcceptedHtlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
@@ -1086,8 +1137,14 @@ eclair-cli channels
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"remotePerCommitmentSecrets"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w">
       </span><span class="p">},</span><span class="w">
-      </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2899x1x1"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"buried"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"shortIds"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"real"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"final"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2899x1x1"</span><span class="w">
+        </span><span class="p">},</span><span class="w">
+        </span><span class="s2">"localAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x17537e03b55a01e"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"remoteAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0xcde44c7ebd1449"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"channelAnnouncement"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
         </span><span class="s2">"nodeSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"982f9a7f9d6ff5a4e5732f0382e79f4fb5e20121d0d10ff6d03f264d0d11cc0f04c702fa4d0e52e05d34f465847654f59b199f2f16d01de52e39782a5884cb3f"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"nodeSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"5ef70341c149ae65006ac38d7b0352bf2b0500e7275ff396797495abd41fd2ca336bbc3c51123e1cdb74b8d9f4c85d8535f01ca1ec257e6fb445668c531887b7"</span><span class="p">,</span><span class="w">
@@ -1116,6 +1173,9 @@ eclair-cli channels
           </span><span class="s2">"iso"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2022-02-01T12:27:50Z"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"unix"</span><span class="p">:</span><span class="w"> </span><span class="mi">1643718470</span><span class="w">
         </span><span class="p">},</span><span class="w">
+        </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"dontForward"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
+        </span><span class="p">},</span><span class="w">
         </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
           </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
           </span><span class="s2">"isNode1"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
@@ -1135,9 +1195,9 @@ eclair-cli channels
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns the list of local channels, optionally filtered by remote node.</p>
-<h3 id='http-request-11'>HTTP Request</h3>
+<h3 id='http-request-12'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channels</code></p>
-<h3 id='parameters-9'>Parameters</h3>
+<h3 id='parameters-10'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1224,11 +1284,11 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"dustLimit"</span><span class="p">:</span><span class="w"> </span><span class="mi">546</span><span class="p">,</span><span class="w">
         </span><span class="s2">"maxHtlcValueInFlightMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">5000000000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelReserve"</span><span class="p">:</span><span class="w"> </span><span class="mi">4500</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"requestedChannelReserve_opt"</span><span class="p">:</span><span class="w"> </span><span class="mi">4500</span><span class="p">,</span><span class="w">
         </span><span class="s2">"htlcMinimum"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
         </span><span class="s2">"toSelfDelay"</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w">
         </span><span class="s2">"maxAcceptedHtlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"isFunder"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"isInitiator"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
         </span><span class="s2">"defaultFinalScriptPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"00144f5f4c215f8143d5a1d4c122256b17ffde12ae31"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"initFeatures"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
           </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
@@ -1252,7 +1312,7 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
         </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"dustLimit"</span><span class="p">:</span><span class="w"> </span><span class="mi">546</span><span class="p">,</span><span class="w">
         </span><span class="s2">"maxHtlcValueInFlightMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">5000000000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelReserve"</span><span class="p">:</span><span class="w"> </span><span class="mi">4500</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"requestedChannelReserve_opt"</span><span class="p">:</span><span class="w"> </span><span class="mi">4500</span><span class="p">,</span><span class="w">
         </span><span class="s2">"htlcMinimum"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
         </span><span class="s2">"toSelfDelay"</span><span class="p">:</span><span class="w"> </span><span class="mi">120</span><span class="p">,</span><span class="w">
         </span><span class="s2">"maxAcceptedHtlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
@@ -1330,8 +1390,14 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
       </span><span class="p">},</span><span class="w">
       </span><span class="s2">"remotePerCommitmentSecrets"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w">
     </span><span class="p">},</span><span class="w">
-    </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2899x1x1"</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"buried"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"shortIds"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"real"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"final"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2899x1x1"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
+      </span><span class="s2">"localAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x17537e03b55a01e"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"remoteAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0xcde44c7ebd1449"</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"channelAnnouncement"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"nodeSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"982f9a7f9d6ff5a4e5732f0382e79f4fb5e20121d0d10ff6d03f264d0d11cc0f04c702fa4d0e52e05d34f465847654f59b199f2f16d01de52e39782a5884cb3f"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"nodeSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"5ef70341c149ae65006ac38d7b0352bf2b0500e7275ff396797495abd41fd2ca336bbc3c51123e1cdb74b8d9f4c85d8535f01ca1ec257e6fb445668c531887b7"</span><span class="p">,</span><span class="w">
@@ -1360,6 +1426,9 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
         </span><span class="s2">"iso"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2022-02-01T12:27:50Z"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"unix"</span><span class="p">:</span><span class="w"> </span><span class="mi">1643718470</span><span class="w">
       </span><span class="p">},</span><span class="w">
+      </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"dontForward"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
         </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
         </span><span class="s2">"isNode1"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
@@ -1378,9 +1447,9 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Returns detailed information about a local channel.</p>
-<h3 id='http-request-12'>HTTP Request</h3>
+<h3 id='http-request-13'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channel</code></p>
-<h3 id='parameters-10'>Parameters</h3>
+<h3 id='parameters-11'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1479,9 +1548,9 @@ eclair-cli nodes
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns information about public nodes on the lightning network; this information is taken from the <em>node_announcement</em> network message.</p>
-<h3 id='http-request-13'>HTTP Request</h3>
+<h3 id='http-request-14'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/nodes</code></p>
-<h3 id='parameters-11'>Parameters</h3>
+<h3 id='parameters-12'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1536,6 +1605,9 @@ eclair-cli allupdates
       </span><span class="s2">"iso"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2022-02-01T12:27:50Z"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"unix"</span><span class="p">:</span><span class="w"> </span><span class="mi">1643718470</span><span class="w">
     </span><span class="p">},</span><span class="w">
+    </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"dontForward"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
       </span><span class="s2">"isNode1"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
@@ -1557,6 +1629,9 @@ eclair-cli allupdates
     </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"iso"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2022-02-01T12:27:19Z"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"unix"</span><span class="p">:</span><span class="w"> </span><span class="mi">1643718439</span><span class="w">
+    </span><span class="p">},</span><span class="w">
+    </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"dontForward"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w">
@@ -1581,9 +1656,9 @@ eclair-cli allupdates
 <aside class="warning">
 The allupdates API is CPU intensive for eclair and might slow down the application.
 </aside>
-<h3 id='http-request-14'>HTTP Request</h3>
+<h3 id='http-request-15'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/allupdates</code></p>
-<h3 id='parameters-12'>Parameters</h3>
+<h3 id='parameters-13'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1652,9 +1727,9 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Create a <strong>BOLT11</strong> payment invoice.</p>
-<h3 id='http-request-15'>HTTP Request</h3>
+<h3 id='http-request-16'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/createinvoice</code></p>
-<h3 id='parameters-13'>Parameters</h3>
+<h3 id='parameters-14'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1718,9 +1793,9 @@ eclair-cli deleteinvoice --paymentHash<span class="o">=</span>&lt;payment_hash&g
 <pre class="highlight shell tab-shell"><code>Cannot remove a received incoming payment
 </code></pre>
 <p>Delete an unpaid <strong>BOLT11</strong> payment invoice.</p>
-<h3 id='http-request-16'>HTTP Request</h3>
+<h3 id='http-request-17'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/deleteinvoice</code></p>
-<h3 id='parameters-14'>Parameters</h3>
+<h3 id='parameters-15'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1786,9 +1861,9 @@ eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Returns detailed information about the given invoice.</p>
-<h3 id='http-request-17'>HTTP Request</h3>
+<h3 id='http-request-18'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/parseinvoice</code></p>
-<h3 id='parameters-15'>Parameters</h3>
+<h3 id='parameters-16'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1821,9 +1896,9 @@ It&#39;s possible to add an extra <code>externalId</code> and this will be retur
 
 <p>When <code>--blocking=true</code> is provided, the API will instead block until the payment completes.
 It will then return full details about the payment (succeeded or failed).</p>
-<h3 id='http-request-18'>HTTP Request</h3>
+<h3 id='http-request-19'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/payinvoice</code></p>
-<h3 id='parameters-16'>Parameters</h3>
+<h3 id='parameters-17'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1900,9 +1975,9 @@ It&#39;s possible to add an extra <code>externalId</code> and this will be retur
 
 <p>Note that this feature isn&#39;t specified in the BOLTs, so it may be removed or updated in the future.
 If the recipient has given you an invoice, you should instead of the <code>payinvoice</code> API.</p>
-<h3 id='http-request-19'>HTTP Request</h3>
+<h3 id='http-request-20'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtonode</code></p>
-<h3 id='parameters-17'>Parameters</h3>
+<h3 id='parameters-18'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -1990,9 +2065,9 @@ It&#39;s possible to add an extra <code>externalId</code> and this will be retur
 
 <p>This command may also be used to send multipart payments with your own splitting algorithm.
 Go to the <a href="https://github.com/ACINQ/eclair/wiki">wiki</a> for details on how to do that.</p>
-<h3 id='http-request-20'>HTTP Request</h3>
+<h3 id='http-request-21'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtoroute</code></p>
-<h3 id='parameters-18'>Parameters</h3>
+<h3 id='parameters-19'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2218,9 +2293,9 @@ The API can be queried by <code>paymentHash</code> OR by <code>uuid</code>.</p>
 
 <p>Note that when you provide the <code>id</code> instead of the <code>payment_hash</code>, eclair will only return results for this particular attempt.
 For multi-part payments, the <code>id</code> provided must be the <code>parentId</code>, not the <code>paymentId</code> of a partial payment.</p>
-<h3 id='http-request-21'>HTTP Request</h3>
+<h3 id='http-request-22'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getsentinfo</code></p>
-<h3 id='parameters-19'>Parameters</h3>
+<h3 id='parameters-20'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2317,9 +2392,9 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
 </span></code></pre>
 <p>Checks whether a payment corresponding to the given <code>paymentHash</code> has been received.
 It is possible to use a <strong>BOLT11</strong> invoice as parameter instead of the <code>paymentHash</code> but at least one of the two must be specified.</p>
-<h3 id='http-request-22'>HTTP Request</h3>
+<h3 id='http-request-23'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getreceivedinfo</code></p>
-<h3 id='parameters-20'>Parameters</h3>
+<h3 id='parameters-21'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2393,9 +2468,9 @@ eclair-cli getinvoice --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Queries the payment DB for a stored invoice with the given <code>paymentHash</code>. If none is found, it responds HTTP 404.</p>
-<h3 id='http-request-23'>HTTP Request</h3>
+<h3 id='http-request-24'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getinvoice</code></p>
-<h3 id='parameters-21'>Parameters</h3>
+<h3 id='parameters-22'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2483,9 +2558,9 @@ eclair-cli listinvoices
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns all the <strong>BOLT11</strong> invoices stored.</p>
-<h3 id='http-request-24'>HTTP Request</h3>
+<h3 id='http-request-25'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listinvoices</code></p>
-<h3 id='parameters-22'>Parameters</h3>
+<h3 id='parameters-23'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2505,6 +2580,18 @@ eclair-cli listinvoices
 <td>Filters elements no younger than this unix-timestamp</td>
 <td>Yes</td>
 <td>Unix timestamp in seconds (Integer)</td>
+</tr>
+<tr>
+<td>count</td>
+<td>Limits the number of results returned</td>
+<td>Yes</td>
+<td>Integer</td>
+</tr>
+<tr>
+<td>skip</td>
+<td>Skip some number of results</td>
+<td>Yes</td>
+<td>Integer</td>
 </tr>
 </tbody></table>
 <h2 id='listpendinginvoices'>ListPendingInvoices</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/listpendinginvoices"</span>
@@ -2580,9 +2667,9 @@ eclair-cli listpendinginvoices
 </span></code></pre>
 <p>Returns all non-paid, non-expired <strong>BOLT11</strong> invoices stored.
 The invoices can be filtered by date and are output in descending order.</p>
-<h3 id='http-request-25'>HTTP Request</h3>
+<h3 id='http-request-26'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listpendinginvoices</code></p>
-<h3 id='parameters-23'>Parameters</h3>
+<h3 id='parameters-24'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2602,6 +2689,18 @@ The invoices can be filtered by date and are output in descending order.</p>
 <td>Filters elements no younger than this unix-timestamp</td>
 <td>Yes</td>
 <td>Unix timestamp in seconds (Integer)</td>
+</tr>
+<tr>
+<td>count</td>
+<td>Limits the number of results returned</td>
+<td>Yes</td>
+<td>Integer</td>
+</tr>
+<tr>
+<td>skip</td>
+<td>Skip some number of results</td>
+<td>Yes</td>
+<td>Integer</td>
 </tr>
 </tbody></table>
 <h1 id='route'>Route</h1><h2 id='findroute'>FindRoute</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/findroute"</span>
@@ -2660,6 +2759,9 @@ When using <code>format=shortChannelId</code>, the above command would return:</
               </span><span class="s2">"iso"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2022-02-01T12:40:19Z"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"unix"</span><span class="p">:</span><span class="w"> </span><span class="mi">1643719219</span><span class="w">
             </span><span class="p">},</span><span class="w">
+            </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+              </span><span class="s2">"dontForward"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
+            </span><span class="p">},</span><span class="w">
             </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
               </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
               </span><span class="s2">"isNode1"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
@@ -2682,9 +2784,9 @@ When using <code>format=shortChannelId</code>, the above command would return:</
 
 </span></code></pre>
 <p>The formats currently supported are <code>nodeId</code>, <code>shortChannelId</code> and <code>full</code>.</p>
-<h3 id='http-request-26'>HTTP Request</h3>
+<h3 id='http-request-27'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroute</code></p>
-<h3 id='parameters-24'>Parameters</h3>
+<h3 id='parameters-25'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2765,9 +2867,9 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Finds a route to the given node.</p>
-<h3 id='http-request-27'>HTTP Request</h3>
+<h3 id='http-request-28'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroutetonode</code></p>
-<h3 id='parameters-25'>Parameters</h3>
+<h3 id='parameters-26'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2848,9 +2950,9 @@ eclair-cli --sourceNodeId<span class="o">=</span>&lt;some_node&gt; --targetNodeI
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Finds a route between two nodes.</p>
-<h3 id='http-request-28'>HTTP Request</h3>
+<h3 id='http-request-29'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroutebetweennodes</code></p>
-<h3 id='parameters-26'>Parameters</h3>
+<h3 id='parameters-27'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2927,7 +3029,7 @@ eclair-cli getnewaddress
 <p>Get a new on-chain address from the wallet. This can be used to deposit funds that will later be used
 to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
 depend on the configured address-type in <code>bitcoin.conf</code>.</p>
-<h3 id='http-request-29'>HTTP Request</h3>
+<h3 id='http-request-30'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getnewaddress</code></p>
 <h2 id='sendonchain'>SendOnChain</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">address</span><span class="o">=</span>&lt;bitcoin_address&gt; <span class="se">\</span>
      -F <span class="nv">amountSatoshis</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">confirmationTarget</span><span class="o">=</span>&lt;number_of_blocks&gt; <span class="s2">"http://localhost:8080/sendonchain"</span>
@@ -2942,9 +3044,9 @@ eclair-cli sendonchain --address<span class="o">=</span>2NEDjKwa56LFcFVjPefuwkN3
 </span></code></pre>
 <p>Send an on-chain transaction to the given address. The API is only available with the bitcoin-core watcher type.
 The API returns the txid of the bitcoin transaction sent.</p>
-<h3 id='http-request-30'>HTTP Request</h3>
+<h3 id='http-request-31'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendonchain</code></p>
-<h3 id='parameters-27'>Parameters</h3>
+<h3 id='parameters-28'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3035,9 +3137,9 @@ eclair-cli onchaintransactions --count<span class="o">=</span>2 --skip<span clas
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the latest on-chain transactions made by our Bitcoin wallet (most recent transactions first).</p>
-<h3 id='http-request-31'>HTTP Request</h3>
+<h3 id='http-request-32'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/onchaintransactions</code></p>
-<h3 id='parameters-28'>Parameters</h3>
+<h3 id='parameters-29'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3116,9 +3218,9 @@ If that fails, or if you don&#39;t want to expose your <code>nodeId</code> by di
 <p>If you expect a response, you should provide a route from the recipient back to you in the <code>--replyPath</code> field.
 Eclair will automatically create a corresponding blinded route to ensure that the recipient doesn&#39;t learn your <code>nodeId</code>.
 The API will then wait for a response (or timeout if it doesn&#39;t receive a response).</p>
-<h3 id='http-request-32'>HTTP Request</h3>
+<h3 id='http-request-33'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendonionmessage</code></p>
-<h3 id='parameters-29'>Parameters</h3>
+<h3 id='parameters-30'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3175,9 +3277,9 @@ eclair-cli signmessage --msg<span class="o">=</span><span class="k">$(</span><sp
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Sign a base64-encoded message with the node&#39;s private key.</p>
-<h3 id='http-request-33'>HTTP Request</h3>
+<h3 id='http-request-34'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/signmessage</code></p>
-<h3 id='parameters-30'>Parameters</h3>
+<h3 id='parameters-31'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3210,9 +3312,9 @@ eclair-cli verifymessage --msg<span class="o">=</span><span class="k">$(</span><
 </span></code></pre>
 <p>Verify a base64-encoded message signature.
 The public key of the signing node will be identified and returned.</p>
-<h3 id='http-request-34'>HTTP Request</h3>
+<h3 id='http-request-35'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/verifymessage</code></p>
-<h3 id='parameters-31'>Parameters</h3>
+<h3 id='parameters-32'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3349,9 +3451,9 @@ eclair-cli audit
 </span></code></pre>
 <p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.
 All monetary values are expressed in millisatoshi.</p>
-<h3 id='http-request-35'>HTTP Request</h3>
+<h3 id='http-request-36'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
-<h3 id='parameters-32'>Parameters</h3>
+<h3 id='parameters-33'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3396,9 +3498,9 @@ eclair-cli networkfees
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about on-chain fees paid during channel operations (currency values are in satoshis).</p>
-<h3 id='http-request-36'>HTTP Request</h3>
+<h3 id='http-request-37'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/networkfees</code></p>
-<h3 id='parameters-33'>Parameters</h3>
+<h3 id='parameters-34'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3465,9 +3567,9 @@ eclair-cli channelstats
 </span></code></pre>
 <p>Retrieves information about local channels. The information is then aggregated in order to display
 statistics about the routing activity of the channels. Values are in Satoshis.</p>
-<h3 id='http-request-37'>HTTP Request</h3>
+<h3 id='http-request-38'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
-<h3 id='parameters-34'>Parameters</h3>
+<h3 id='parameters-35'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3500,16 +3602,68 @@ eclair-cli usablebalances
 <pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
   </span><span class="p">{</span><span class="w">
     </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x0"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"shortIds"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"real"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"final"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x0"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
+      </span><span class="s2">"localAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x17537e03b55a01e"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"remoteAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0xcde44c7ebd1449"</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"canSend"</span><span class="p">:</span><span class="w"> </span><span class="mi">131219000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"canReceive"</span><span class="p">:</span><span class="w"> </span><span class="mi">466000</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"isPublic"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+    </span><span class="s2">"isPublic"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Retrieves information about the available balance of local channels.</p>
-<h3 id='http-request-38'>HTTP Request</h3>
+<p>Retrieves information about the available balance of local channels, excluding channels that are disabled or empty.</p>
+<h3 id='http-request-39'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/usablebalances</code></p>
+<h2 id='channelbalances'>ChannelBalances</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channelbalances"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli channelbalances
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
+  </span><span class="p">{</span><span class="w">
+    </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"shortIds"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"real"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"final"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x0"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
+      </span><span class="s2">"localAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x17537e03b55a01e"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"remoteAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0xcde44c7ebd1449"</span><span class="w">
+    </span><span class="p">},</span><span class="w">
+    </span><span class="s2">"canSend"</span><span class="p">:</span><span class="w"> </span><span class="mi">131219000</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"canReceive"</span><span class="p">:</span><span class="w"> </span><span class="mi">466000</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"isPublic"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="p">{</span><span class="w">
+    </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02865c138ddfb0e1e8c62aa8cebbed383d5b343c2d40fa22c31773a6725854154f"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"shortIds"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"real"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"final"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x1"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
+      </span><span class="s2">"localAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x8676ba94f75888"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"remoteAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x317b1df704e350f"</span><span class="w">
+    </span><span class="p">},</span><span class="w">
+    </span><span class="s2">"canSend"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"canReceive"</span><span class="p">:</span><span class="w"> </span><span class="mi">1250000</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"isPublic"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre>
+<p>Retrieves information about the available balance of all local channels, including channels that are disabled or empty.</p>
+<h3 id='http-request-40'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/channelbalances</code></p>
 <h2 id='globalbalance'>GlobalBalance</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/globalbalance"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -3526,7 +3680,7 @@ eclair-cli globalbalance
   </span><span class="p">},</span><span class="w">
   </span><span class="s2">"offChain"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
     </span><span class="s2">"waitForFundingConfirmed"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"waitForFundingLocked"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"waitForChannelReady"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
     </span><span class="s2">"normal"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.00445015</span><span class="p">,</span><span class="w">
       </span><span class="s2">"htlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w">
@@ -3564,7 +3718,7 @@ This API can be used to regularly check that your node is not losing funds.
 However, it is computationally intensive, so you should not call it too often to avoid disrupting your node&#39;s operations.</p>
 
 <p>All amounts are in bitcoin.</p>
-<h3 id='http-request-39'>HTTP Request</h3>
+<h3 id='http-request-41'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/globalbalance</code></p>
 <h1 id='websocket'>WebSocket</h1><h2 id='ws'>WS</h2>
 <p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">WebSocket</a> that will output payment related events. It supports
@@ -3686,7 +3840,7 @@ several types covering all the possible outcomes. All monetary values are expres
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
   </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"channel-opened"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"isFunder"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"isInitiator"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
   </span><span class="s2">"temporaryChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"initialFeeratePerKw"</span><span class="p">:</span><span class="w"> </span><span class="mi">1200</span><span class="p">,</span><span class="w">
   </span><span class="s2">"fundingTxFeeratePerKw"</span><span class="p">:</span><span class="w"> </span><span class="mi">2000</span><span class="w">
@@ -3766,7 +3920,7 @@ several types covering all the possible outcomes. All monetary values are expres
 <td>An onion message was received</td>
 </tr>
 </tbody></table>
-<h3 id='http-request-40'>HTTP Request</h3>
+<h3 id='http-request-42'>HTTP Request</h3>
 <p><code>GET ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
