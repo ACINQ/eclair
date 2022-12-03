@@ -1,7 +1,6 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.zaxxer.hikari.HikariConfig
 import fr.acinq.eclair.TestDatabases.TestPgDatabases.getNewDatabase
 import fr.acinq.eclair.channel._
@@ -128,6 +127,8 @@ object TestDatabases {
   }
 
   object TestPgDatabases {
+    import _root_.io.zonky.test.db.postgres.embedded.EmbeddedPostgres
+
     /** single instance */
     private val pg = EmbeddedPostgres.start()
 
