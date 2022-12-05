@@ -88,8 +88,10 @@ private class SwapRegister(context: ActorContext[Command], nodeParams: NodeParam
 
   private def spawnSwap(swapRole: SwapRole, remoteNodeId: PublicKey, scid: String) = {
     swapRole match {
-      case SwapRole.Maker => context.spawn(Behaviors.supervise(SwapMaker(remoteNodeId, nodeParams, watcher, switchboard, wallet, keyManager, db)).onFailure(typed.SupervisorStrategy.stop), "SwapMaker-" + scid)
-      case SwapRole.Taker => context.spawn(Behaviors.supervise(SwapTaker(remoteNodeId, nodeParams, paymentInitiator, watcher, switchboard, wallet, keyManager, db)).onFailure(typed.SupervisorStrategy.stop), "SwapTaker-" + scid)
+      // swap maker is safe to resume because an opening transaction will only be funded once
+      case SwapRole.Maker => context.spawn(Behaviors.supervise(SwapMaker(remoteNodeId, nodeParams, watcher, switchboard, wallet, keyManager, db)).onFailure(typed.SupervisorStrategy.resume), "SwapMaker-" + scid)
+      // swap taker is safe to resume because a payment will only be sent once
+      case SwapRole.Taker => context.spawn(Behaviors.supervise(SwapTaker(remoteNodeId, nodeParams, paymentInitiator, watcher, switchboard, wallet, keyManager, db)).onFailure(typed.SupervisorStrategy.resume), "SwapTaker-" + scid)
     }
   }
 

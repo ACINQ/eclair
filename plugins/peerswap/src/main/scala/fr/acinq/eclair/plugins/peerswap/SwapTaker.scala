@@ -260,26 +260,29 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     }
   }
 
-  def validateOpeningTx(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, openingTx: Transaction, isInitiator: Boolean): Behavior[SwapCommand] = {
-    Bolt11Invoice.fromString(openingTxBroadcasted.payreq) match {
-      case Failure(e) => sendCoopClose(request, s"Could not parse payreq: $e")
-      case Success(invoice) if invoice.amount_opt.isDefined && invoice.amount_opt.get > request.amount.sat.toMilliSatoshi =>
-        sendCoopClose(request, s"Invoice amount ${invoice.amount_opt.get} > requested on-chain amount ${request.amount.sat.toMilliSatoshi}")
-      case Success(invoice) if invoice.routingInfo.flatten.exists(hop => hop.shortChannelId != shortChannelId) =>
-        sendCoopClose(request, s"Channel hop other than $shortChannelId found in invoice hints ${invoice.routingInfo}")
-      case Success(invoice) if invoice.isExpired() =>
-        sendCoopClose(request, s"Invoice is expired.")
-      case Success(invoice) if invoice.minFinalCltvExpiryDelta >= CltvExpiryDelta(claimByCsvDelta.toInt / 2) =>
-        sendCoopClose(request, s"Invoice min-final-cltv-expiry delta too long.")
-      case Success(invoice) if validOpeningTx(openingTx, openingTxBroadcasted.scriptOut, (request.amount + agreement.premium).sat, makerPubkey(request, agreement, isInitiator), takerPubkey(request.swapId), invoice.paymentHash) =>
-        // save restore point before a payment is initiated
-        db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Taker, isInitiator, remoteNodeId))
-        payInvoice(nodeParams)(paymentInitiator, request.swapId, invoice)
-        payClaimInvoice(request, agreement, openingTxBroadcasted, invoice, isInitiator)
-      case Success(_) =>
-        sendCoopClose(request, s"Invalid opening tx: $openingTx")
+  def validateOpeningTx(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, openingTx: Transaction, isInitiator: Boolean): Behavior[SwapCommand] =
+    db.find(request.swapId) match {
+      case Some(s: SwapData) => payClaimInvoice(request, agreement, openingTxBroadcasted, s.invoice, isInitiator)
+      case None =>
+        Bolt11Invoice.fromString(openingTxBroadcasted.payreq) match {
+          case Failure(e) => sendCoopClose(request, s"Could not parse payreq: $e")
+          case Success(invoice) if invoice.amount_opt.isDefined && invoice.amount_opt.get > request.amount.sat.toMilliSatoshi =>
+            sendCoopClose(request, s"Invoice amount ${invoice.amount_opt.get} > requested on-chain amount ${request.amount.sat.toMilliSatoshi}")
+          case Success(invoice) if invoice.routingInfo.flatten.exists(hop => hop.shortChannelId != shortChannelId) =>
+            sendCoopClose(request, s"Channel hop other than $shortChannelId found in invoice hints ${invoice.routingInfo}")
+          case Success(invoice) if invoice.isExpired() =>
+            sendCoopClose(request, s"Invoice is expired.")
+          case Success(invoice) if invoice.minFinalCltvExpiryDelta >= CltvExpiryDelta(claimByCsvDelta.toInt / 2) =>
+            sendCoopClose(request, s"Invoice min-final-cltv-expiry delta too long.")
+          case Success(invoice) if validOpeningTx(openingTx, openingTxBroadcasted.scriptOut, (request.amount + agreement.premium).sat, makerPubkey(request, agreement, isInitiator), takerPubkey(request.swapId), invoice.paymentHash) =>
+            // save restore point before a payment is initiated
+            db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Taker, isInitiator, remoteNodeId))
+            payInvoice(nodeParams)(paymentInitiator, request.swapId, invoice)
+            payClaimInvoice(request, agreement, openingTxBroadcasted, invoice, isInitiator)
+          case Success(_) =>
+            sendCoopClose(request, s"Invalid opening tx: $openingTx")
+        }
     }
-  }
 
   def payClaimInvoice(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, invoice: Bolt11Invoice, isInitiator: Boolean): Behavior[SwapCommand] = {
       watchForPayment(watch = true) // subscribe to payment event notifications

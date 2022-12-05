@@ -128,6 +128,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // the swap result has been recorded in the db
     assert(db.list().head.result.contains("Coop close offered to peer: Lightning payment not sent."))
+    db.remove(swapId)
   }
 
   test("send cooperative close after a restore with the payment already marked as failed") { f =>
@@ -153,6 +154,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // the swap result has been recorded in the db
     assert(db.list().head.result.contains("Coop close offered to peer: Lightning payment failed"))
+    db.remove(swapId)
   }
 
   test("claim by invoice after a restore with the payment already marked as paid") { f =>
@@ -189,6 +191,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // the swap result has been recorded in the db
     assert(db.list().head.result.contains("Claimed by paid invoice:"))
+    db.remove(swapId)
   }
 
   test("claim by invoice after a restore with the payment marked as pending and later paid") { f =>
@@ -233,6 +236,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // the swap result has been recorded in the db
     assert(db.list().head.result.contains("Claimed by paid invoice:"))
+    db.remove(swapId)
   }
 
   test("happy path for new swap in") { f =>
@@ -289,6 +293,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // the swap result has been recorded in the db
     assert(db.list().head.result.contains("Claimed by paid invoice:"))
+    db.remove(swapId)
   }
 
   test("invalid invoice, min_final-cltv-expiry of invoice greater than the claim-by-csv delta") { f =>

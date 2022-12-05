@@ -210,35 +210,39 @@ private class SwapMaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     }
   }
 
-  def createOpeningTx(request: SwapRequest, agreement: SwapAgreement, isInitiator: Boolean): Behavior[SwapCommand] = {
-    val receivePayment = ReceiveStandardPayment(Some(toMilliSatoshi(Satoshi(request.amount))), Left("send-swap-in"))
-    val createInvoice = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
-    createInvoice ! CreateInvoiceActor.CreateInvoice(context.messageAdapter[Bolt11Invoice](InvoiceResponse).toClassic, receivePayment)
+  def createOpeningTx(request: SwapRequest, agreement: SwapAgreement, isInitiator: Boolean): Behavior[SwapCommand] =
+    db.find(request.swapId) match {
+      case Some(s: SwapData) =>
+        awaitClaimPayment(request, agreement, s.invoice, s.openingTxBroadcasted, isInitiator)
+      case None =>
+        val receivePayment = ReceiveStandardPayment(Some(toMilliSatoshi(Satoshi(request.amount))), Left("send-swap-in"))
+        val createInvoice = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
+        createInvoice ! CreateInvoiceActor.CreateInvoice(context.messageAdapter[Bolt11Invoice](InvoiceResponse).toClassic, receivePayment)
 
-    receiveSwapMessage[CreateOpeningTxMessages](context, "createOpeningTx") {
-      case InvoiceResponse(invoice: Bolt11Invoice) => fundOpening(wallet, feeRatePerKw)((request.amount + agreement.premium).sat, makerPubkey(request.swapId), takerPubkey(request, agreement, isInitiator), invoice)
-        Behaviors.same
-      case OpeningTxFunded(invoice, fundingResponse) =>
-        commitOpening(wallet)(request.swapId, invoice, fundingResponse, "swap-in-sender-opening")
-        Behaviors.same
-      case OpeningTxCommitted(invoice, openingTxBroadcasted) =>
-        db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Maker, isInitiator, remoteNodeId))
-        awaitClaimPayment(request, agreement, invoice, openingTxBroadcasted, isInitiator)
-      case OpeningTxFailed(error, None) => swapCanceled(InternalError(request.swapId, s"failed to fund swap open tx, error: $error"))
-      case OpeningTxFailed(error, Some(r)) => rollback(wallet)(error, r.fundingTx)
-        Behaviors.same
-      case RollbackSuccess(error, value) => swapCanceled(InternalError(request.swapId, s"rollback: Success($value), error: $error"))
-      case RollbackFailure(error, t) => swapCanceled(InternalError(request.swapId, s"rollback exception: $t, error: $error"))
-      case SwapMessageReceived(_) => Behaviors.same // ignore
-      case StateTimeout =>
-        // TODO: are we sure the opening transaction has not yet been committed? should we rollback locked funding outputs?
-        swapCanceled(InternalError(request.swapId, "timeout during CreateOpeningTx"))
-      case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
-        Behaviors.same // ignore
-      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "createOpeningTx", request, Some(agreement))
-        Behaviors.same
+        receiveSwapMessage[CreateOpeningTxMessages](context, "createOpeningTx") {
+          case InvoiceResponse(invoice: Bolt11Invoice) => fundOpening(wallet, feeRatePerKw)((request.amount + agreement.premium).sat, makerPubkey(request.swapId), takerPubkey(request, agreement, isInitiator), invoice)
+            Behaviors.same
+          case OpeningTxFunded(invoice, fundingResponse) =>
+            commitOpening(wallet)(request.swapId, invoice, fundingResponse, "swap-in-sender-opening")
+            Behaviors.same
+          case OpeningTxCommitted(invoice, openingTxBroadcasted) =>
+            db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Maker, isInitiator, remoteNodeId))
+            awaitClaimPayment(request, agreement, invoice, openingTxBroadcasted, isInitiator)
+          case OpeningTxFailed(error, None) => swapCanceled(InternalError(request.swapId, s"failed to fund swap open tx, error: $error"))
+          case OpeningTxFailed(error, Some(r)) => rollback(wallet)(error, r.fundingTx)
+            Behaviors.same
+          case RollbackSuccess(error, value) => swapCanceled(InternalError(request.swapId, s"rollback: Success($value), error: $error"))
+          case RollbackFailure(error, t) => swapCanceled(InternalError(request.swapId, s"rollback exception: $t, error: $error"))
+          case SwapMessageReceived(_) => Behaviors.same // ignore
+          case StateTimeout =>
+            // TODO: are we sure the opening transaction has not yet been committed? should we rollback locked funding outputs?
+            swapCanceled(InternalError(request.swapId, "timeout during CreateOpeningTx"))
+          case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
+            Behaviors.same // ignore
+          case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "createOpeningTx", request, Some(agreement))
+            Behaviors.same
+        }
     }
-  }
 
   def awaitClaimPayment(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean): Behavior[SwapCommand] =
     nodeParams.db.payments.getIncomingPayment(invoice.paymentHash) match {
