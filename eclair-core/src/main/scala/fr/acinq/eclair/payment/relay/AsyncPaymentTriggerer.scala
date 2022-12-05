@@ -40,7 +40,7 @@ object AsyncPaymentTriggerer {
   sealed trait Command
   case class Start(switchboard: ActorRef[Switchboard.GetPeerInfo]) extends Command
   case class Watch(replyTo: ActorRef[Result], remoteNodeId: PublicKey, paymentHash: ByteVector32, timeout: BlockHeight) extends Command
-  private case class NotifierStopped(remoteNodeId: PublicKey) extends Command
+  private[relay] case class NotifierStopped(remoteNodeId: PublicKey) extends Command
   private case class WrappedPeerReadyResult(result: PeerReadyNotifier.Result) extends Command
   private case class WrappedCurrentBlockHeight(currentBlockHeight: CurrentBlockHeight) extends Command
 

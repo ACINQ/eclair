@@ -157,4 +157,12 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     probe2.expectMessage(AsyncPaymentTriggered)
   }
 
+  test("triggerer treats an unexpected stop of the notifier as a timeout") { f =>
+    import f._
+    triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
+
+    triggerer ! NotifierStopped(remoteNodeId)
+    probe.expectMessage(AsyncPaymentTimeout)
+  }
 }
