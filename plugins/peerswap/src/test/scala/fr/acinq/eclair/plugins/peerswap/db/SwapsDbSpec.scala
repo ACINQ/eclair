@@ -80,7 +80,7 @@ class SwapsDbSpec extends AnyFunSuite {
     new SqliteSwapsDb(connection)
   }
 
-  test("add/list/addResult/restore/remove swaps") {
+  test("add/list/find/addResult/restore/remove swaps") {
     val db = new SqliteSwapsDb(DriverManager.getConnection("jdbc:sqlite::memory:"))
     assert(db.list().isEmpty)
 
@@ -88,6 +88,7 @@ class SwapsDbSpec extends AnyFunSuite {
     val swap_2 = swapData(randomBytes32().toString(),isInitiator = false, Maker, remoteNodeId)
     val swap_3 = swapData(randomBytes32().toString(),isInitiator = true, Taker, remoteNodeId)
     val swap_4 = swapData(randomBytes32().toString(),isInitiator = false, Taker, remoteNodeId)
+    val swap_5 = swapData(randomBytes32().toString(),isInitiator = false, Taker, remoteNodeId)
 
     assert(db.list().toSet == Set.empty)
     db.add(swap_1)
@@ -99,10 +100,12 @@ class SwapsDbSpec extends AnyFunSuite {
     db.add(swap_3)
     db.add(swap_4)
     assert(db.list().toSet == Set(swap_1, swap_2, swap_3, swap_4))
+    assert(Set(swap_1, swap_2, swap_3, swap_4).map( s => db.find(s.swapId).get) == Set(swap_1, swap_2, swap_3, swap_4))
+    assert(db.find(swap_5.swapId).isEmpty)
     db.addResult(paymentCompleteResult(swap_2.request.swapId))
     assert(db.restore().toSet == Set(swap_1, swap_3, swap_4))
     db.remove(swap_3.request.swapId)
-    assert(db.list().size == 3) // include resolved swap_2
+    assert(db.list().toSet == Set(swap_1, db.find(swap_2.swapId).get, swap_4))
     assert(db.restore().toSet == Set(swap_1, swap_4))
   }
 

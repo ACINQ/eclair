@@ -52,4 +52,9 @@ case class DualSwapsDb(primary: SwapsDb, secondary: SwapsDb) extends SwapsDb {
     runAsync(secondary.list())
     primary.list()
   }
+
+  override def find(swapId: String): Option[SwapData] = {
+    runAsync(secondary.find(swapId))
+    primary.find(swapId)
+  }
 }

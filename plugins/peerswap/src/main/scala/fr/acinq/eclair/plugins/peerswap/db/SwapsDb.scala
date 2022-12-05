@@ -40,6 +40,7 @@ trait SwapsDb {
 
   def list(): Seq[SwapData]
 
+  def find(swapId: String): Option[SwapData]
 }
 
 object SwapsDb {

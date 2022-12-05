@@ -82,7 +82,7 @@ class PgSwapsDb(implicit ds: DataSource) extends SwapsDb with Logging {
 
   override def restore(): Seq[SwapData] = withMetrics("swaps/restore", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT swap_id, request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, remote_node_id, result FROM swaps WHERE result=?")) { statement =>
+      using(pg.prepareStatement("SELECT request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, remote_node_id, result FROM swaps WHERE result=?")) { statement =>
         statement.setString(1, "")
         statement.executeQuery().map(rs => getSwapData(rs)).toSeq
       }
@@ -93,6 +93,15 @@ class PgSwapsDb(implicit ds: DataSource) extends SwapsDb with Logging {
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, remote_node_id, result FROM swaps")) { statement =>
         statement.executeQuery().map(rs => getSwapData(rs)).toSeq
+      }
+    }
+  }
+
+  override def find(swapId: String): Option[SwapData] = withMetrics("swaps/find", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT request, agreement, invoice, opening_tx_broadcasted, swap_role, is_initiator, remote_node_id, result FROM swaps WHERE swap_id=?")) { statement =>
+        statement.setString(1, swapId)
+        statement.executeQuery().map(rs => getSwapData(rs)).toSeq.headOption
       }
     }
   }
