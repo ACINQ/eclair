@@ -63,7 +63,6 @@ class SwapsDbSpec extends AnyFunSuite {
   def swapInAgreement(swapId: String): SwapInAgreement = SwapInAgreement(protocolVersion, swapId, takerPubkey(swapId).toHex, premium)
   def swapOutAgreement(swapId: String): SwapOutAgreement = SwapOutAgreement(protocolVersion, swapId, makerPubkey(swapId).toHex, feeInvoice(swapId).toString)
   def openingTxBroadcasted(swapId: String): OpeningTxBroadcasted = OpeningTxBroadcasted(swapId, paymentInvoice(swapId).toString, txid, scriptOut, blindingKey)
-  def paymentCompleteResult(swapId: String): ClaimByInvoicePaid = ClaimByInvoicePaid(swapId, PaymentReceived(paymentInvoice(swapId).paymentHash, Seq(PartialPayment(amount.toMilliSatoshi, randomBytes32()))))
   def swapData(swapId: String, isInitiator: Boolean, swapType: SwapRole, remoteNodeId: PublicKey): SwapData = {
     val (request, agreement) = (isInitiator, swapType == Maker) match {
       case (true, true) => (swapInRequest(swapId), swapInAgreement(swapId))
@@ -102,7 +101,7 @@ class SwapsDbSpec extends AnyFunSuite {
     assert(db.list().toSet == Set(swap_1, swap_2, swap_3, swap_4))
     assert(Set(swap_1, swap_2, swap_3, swap_4).map( s => db.find(s.swapId).get) == Set(swap_1, swap_2, swap_3, swap_4))
     assert(db.find(swap_5.swapId).isEmpty)
-    db.addResult(paymentCompleteResult(swap_2.request.swapId))
+    db.addResult(ClaimByInvoicePaid(swap_2.request.swapId))
     assert(db.restore().toSet == Set(swap_1, swap_3, swap_4))
     db.remove(swap_3.request.swapId)
     assert(db.list().toSet == Set(swap_1, db.find(swap_2.swapId).get, swap_4))

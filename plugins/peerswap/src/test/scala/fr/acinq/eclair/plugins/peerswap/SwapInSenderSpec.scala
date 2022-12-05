@@ -136,7 +136,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     deathWatcher.expectTerminated(swapInSender)
 
     // the swap result has been recorded in the db
-    assert(db.list().head.result.contains("Invoice payment received:"))
+    assert(db.list().head.result.contains("Invoice payment received"))
   }
 
   test("happy path for new swap") { f =>
@@ -176,7 +176,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     testKit.stop(swapInSender)
 
     // the swap result has been recorded in the db
-    assert(db.list().head.result.contains("Invoice payment received:"))
+    assert(db.list().head.result.contains("Invoice payment received"))
   }
 
   test("claim refund by coop close path from restored swap") { f =>

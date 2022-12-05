@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuriedTriggered, WatchTxConfirmedTriggered}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.db.IncomingPaymentStatus.Received
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{CreateInvoiceActor, ReceiveStandardPayment}
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
@@ -239,29 +240,32 @@ private class SwapMaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     }
   }
 
-  def awaitClaimPayment(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean): Behavior[SwapCommand] = {
-    // TODO: query payment database for received payment
-    watchForPayment(watch = true) // subscribe to be notified of payment events
-    send(switchboard, remoteNodeId)(openingTxBroadcasted) // send message to peer about opening tx broadcast
+  def awaitClaimPayment(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean): Behavior[SwapCommand] =
+    nodeParams.db.payments.getIncomingPayment(invoice.paymentHash) match {
+      case Some(payment) if payment.status.isInstanceOf[Received] && payment.status.asInstanceOf[Received].amount >= request.amount.sat =>
+        swapCompleted(ClaimByInvoicePaid(request.swapId))
+      case _ =>
+        watchForPayment(watch = true)
+        send(switchboard, remoteNodeId)(openingTxBroadcasted)
 
-    Behaviors.withTimers { timers =>
-      timers.startSingleTimer(swapInvoiceExpiredTimer(request.swapId), InvoiceExpired, invoice.createdAt + invoice.relativeExpiry.toSeconds - TimestampSecond.now())
-      receiveSwapMessage[AwaitClaimPaymentMessages](context, "awaitClaimPayment") {
-        // TODO: do we need to check that all payment parts were on our given channel? eg. payment.parts.forall(p => p.fromChannelId == channelId)
-        case PaymentEventReceived(payment: PaymentReceived) if payment.paymentHash == invoice.paymentHash && payment.amount >= request.amount.sat =>
-          swapCompleted(ClaimByInvoicePaid(request.swapId, payment))
-        case SwapMessageReceived(coopClose: CoopClose) => claimSwapCoop(request, agreement, invoice, openingTxBroadcasted, coopClose, isInitiator)
-        case PaymentEventReceived(_) => Behaviors.same
-        case SwapMessageReceived(_) => Behaviors.same
-        case InvoiceExpired =>
-          waitCsv(request, agreement, invoice, openingTxBroadcasted, isInitiator)
-        case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
-          Behaviors.same
-        case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "awaitClaimPayment", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
-          Behaviors.same
-      }
+        Behaviors.withTimers { timers =>
+          timers.startSingleTimer(swapInvoiceExpiredTimer(request.swapId), InvoiceExpired, invoice.createdAt + invoice.relativeExpiry.toSeconds - TimestampSecond.now())
+          receiveSwapMessage[AwaitClaimPaymentMessages](context, "awaitClaimPayment") {
+            // TODO: do we need to check that all payment parts were on our given channel? eg. payment.parts.forall(p => p.fromChannelId == channelId)
+            case PaymentEventReceived(payment: PaymentReceived) if payment.paymentHash == invoice.paymentHash && payment.amount >= request.amount.sat =>
+              swapCompleted(ClaimByInvoicePaid(request.swapId))
+            case SwapMessageReceived(coopClose: CoopClose) => claimSwapCoop(request, agreement, invoice, openingTxBroadcasted, coopClose, isInitiator)
+            case PaymentEventReceived(_) => Behaviors.same
+            case SwapMessageReceived(_) => Behaviors.same
+            case InvoiceExpired =>
+              waitCsv(request, agreement, invoice, openingTxBroadcasted, isInitiator)
+            case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after opening tx committed.")
+              Behaviors.same
+            case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "awaitClaimPayment", request, Some(agreement), Some(invoice), Some(openingTxBroadcasted))
+              Behaviors.same
+          }
+        }
     }
-  }
 
   def claimSwapCoop(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, coopClose: CoopClose, isInitiator: Boolean): Behavior[SwapCommand] = {
     val takerPrivkey = PrivateKey(ByteVector.fromValidHex(coopClose.privkey))

@@ -18,7 +18,6 @@ package fr.acinq.eclair.plugins.peerswap
 
 import fr.acinq.bitcoin.scalacompat.Transaction
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
-import fr.acinq.eclair.payment.PaymentReceived
 
 object SwapEvents {
   sealed trait SwapEvent {
@@ -33,8 +32,8 @@ object SwapEvents {
   case class ClaimByCoopOffered(swapId: String, reason: String) extends SwapEvent {
     override def toString: String = s"Coop close offered to peer: $reason"
   }
-  case class ClaimByInvoicePaid(swapId: String, payment: PaymentReceived) extends SwapEvent {
-    override def toString: String = s"Invoice payment received: $payment"
+  case class ClaimByInvoicePaid(swapId: String) extends SwapEvent {
+    override def toString: String = s"Invoice payment received"
   }
   case class ClaimByCoopConfirmed(swapId: String, confirmation: WatchTxConfirmedTriggered) extends SwapEvent {
     override def toString: String = s"Claimed by coop: $confirmation"

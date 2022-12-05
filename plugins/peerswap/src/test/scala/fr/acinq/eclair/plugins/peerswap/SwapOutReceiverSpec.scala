@@ -152,6 +152,6 @@ case class SwapOutReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory
     testKit.stop(swapOutReceiver)
 
     // the swap result has been recorded in the db
-    assert(db.list().head.result.contains("Invoice payment received:"))
+    assert(db.list().head.result.contains("Invoice payment received"))
   }
 }
