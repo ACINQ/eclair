@@ -117,8 +117,9 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
       case NotifierStopped(remoteNodeId) =>
         peers.get(remoteNodeId) match {
           case None => Behaviors.same
-          case Some(peer) => peer.timeout()
+          case Some(peer) =>
             context.log.error(s"PeerReadyNotifier stopped unexpectedly while watching node $remoteNodeId.")
+            peer.timeout()
             watching(peers - remoteNodeId)
         }
     }
