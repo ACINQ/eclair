@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReady, Error, FundingCreated, FundingSigned, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -222,18 +222,6 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     bob ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSED)
-  }
-
-  test("migrate waitingSince to waitingSinceBlocks") { f =>
-    import f._
-    // Before version 0.5.1, eclair used an absolute timestamp instead of a block height for funding timeouts.
-    val beforeMigration = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].copy(waitingSince = BlockHeight(TimestampSecond.now().toLong))
-    bob.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
-    bob ! INPUT_RESTORED(beforeMigration)
-    awaitCond(bob.stateName == OFFLINE)
-    // We reset the waiting period to the current block height when starting up after updating eclair.
-    val currentBlockHeight = bob.underlyingActor.nodeParams.currentBlockHeight
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince == currentBlockHeight)
   }
 
   test("recv WatchFundingSpentTriggered (remote commit)") { f =>
