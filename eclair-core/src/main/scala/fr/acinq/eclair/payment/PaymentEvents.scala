@@ -24,8 +24,8 @@ import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.{ClearRecipient, Recipient}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
-import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
+import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
 import scodec.bits.ByteVector
 
@@ -183,11 +183,15 @@ object PaymentFailure {
       .isDefined
 
   /** Ignore the channel outgoing from the given nodeId in the given route. */
-  private def ignoreNodeOutgoingChannel(nodeId: PublicKey, hops: Seq[Hop], ignore: Ignore): Ignore = {
+  private def ignoreNodeOutgoingEdge(nodeId: PublicKey, hops: Seq[Hop], ignore: Ignore): Ignore = {
     hops.collectFirst {
       case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId)
+      case hop: BlindedHop if hop.nodeId == nodeId => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
+      // The error comes from inside the blinded route: this is a spec violation, errors should always come from the
+      // introduction node, so we definitely want to ignore this blinded route when this happens.
+      case hop: BlindedHop if hop.route.blindedNodeIds.contains(nodeId) => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
     } match {
-      case Some(faultyChannel) => ignore + faultyChannel
+      case Some(faultyEdge) => ignore + faultyEdge
       case None => ignore
     }
   }
@@ -207,7 +211,7 @@ object PaymentFailure {
           case _ => false
         }
         if (shouldIgnore) {
-          ignoreNodeOutgoingChannel(nodeId, hops, ignore)
+          ignoreNodeOutgoingEdge(nodeId, hops, ignore)
         } else {
           // We were using an outdated channel update, we should retry with the new one and nobody should be penalized.
           ignore
@@ -217,10 +221,14 @@ object PaymentFailure {
         ignore + nodeId
       }
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
-      ignoreNodeOutgoingChannel(nodeId, hops, ignore)
+      ignoreNodeOutgoingEdge(nodeId, hops, ignore)
     case UnreadableRemoteFailure(_, hops) =>
-      // We don't know which node is sending garbage, let's blacklist all nodes except the one we are directly connected to and the final recipient.
-      val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1).toSet
+      // We don't know which node is sending garbage, let's blacklist all nodes except:
+      //  - the one we are directly connected to: it would be too restrictive for retries
+      //  - the final recipient: they have no incentive to send garbage since they want that payment
+      //  - the introduction point of a blinded route: we don't want a node before the blinded path to force us to ignore that blinded path
+      //  - the trampoline node: we don't want a node before the trampoline node to force us to ignore that trampoline node
+      val blacklist = hops.collect { case hop: ChannelHop => hop }.map(_.nextNodeId).drop(1).dropRight(1).toSet
       ignore ++ blacklist
     case LocalFailure(_, hops, _) => hops.headOption match {
       case Some(hop: ChannelHop) =>

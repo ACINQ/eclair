@@ -29,10 +29,13 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.payment.send.BlindedRecipient
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -225,9 +228,11 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, watcher)))
     }
   }
+
 }
 
 object BaseRouterSpec {
+
   def channelAnnouncement(shortChannelId: RealShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
     val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, Features.empty)
     val node1_sig = Announcements.signChannelAnnouncement(witness, node1_priv)
@@ -240,4 +245,39 @@ object BaseRouterSpec {
   def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: ChannelUpdate): ChannelHop = {
     ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, HopRelayParams.FromAnnouncement(channelUpdate))
   }
+
+  def blindedRouteFromHops(amount: MilliSatoshi,
+                           expiry: CltvExpiry,
+                           hops: Seq[ChannelHop],
+                           routeExpiry: CltvExpiry,
+                           preimage: ByteVector32 = randomBytes32(),
+                           pathId: ByteVector = randomBytes(32)): (Bolt12Invoice, BlindedHop, BlindedRecipient) = {
+    val (invoice, recipient) = blindedRoutesFromPaths(amount, expiry, Seq(hops), routeExpiry, preimage, pathId)
+    (invoice, recipient.blindedHops.head, recipient)
+  }
+
+  def blindedRoutesFromPaths(amount: MilliSatoshi,
+                             expiry: CltvExpiry,
+                             paths: Seq[Seq[ChannelHop]],
+                             routeExpiry: CltvExpiry,
+                             preimage: ByteVector32 = randomBytes32(),
+                             pathId: ByteVector = randomBytes(32)): (Bolt12Invoice, BlindedRecipient) = {
+    val recipientKey = randomKey()
+    val features = Features[InvoiceFeature](
+      Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+      Features.BasicMultiPartPayment -> FeatureSupport.Optional,
+      Features.RouteBlinding -> FeatureSupport.Mandatory
+    )
+    val offer = Offer(None, "Bolt12 r0cks", recipientKey.publicKey, features, Block.RegtestGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, amount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
+    val blindedRoutes = paths.map(hops => {
+      val blindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(hops, pathId, 1 msat, routeExpiry).route
+      val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops)
+      PaymentBlindedRoute(blindedRoute, paymentInfo)
+    })
+    val invoice = Bolt12Invoice(offer, invoiceRequest, preimage, recipientKey, CltvExpiryDelta(6), features, blindedRoutes)
+    val recipient = BlindedRecipient(invoice, amount, expiry, Nil)
+    (invoice, recipient)
+  }
+
 }

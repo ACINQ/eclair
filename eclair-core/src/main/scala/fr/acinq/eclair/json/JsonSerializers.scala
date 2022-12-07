@@ -31,7 +31,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{HopRelayParams, NodeHop, Route}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
@@ -296,12 +296,14 @@ object ColorSerializer extends MinimalSerializer({
 // @formatter:off
 private sealed trait HopJson
 private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: HopRelayParams) extends HopJson
+private case class BlindedHopJson(nodeId: PublicKey, nextNodeId: PublicKey, paymentInfo: OfferTypes.PaymentInfo) extends HopJson
 private case class NodeHopJson(nodeId: PublicKey, nextNodeId: PublicKey, fee: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta) extends HopJson
 private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[HopJson])
 object RouteFullSerializer extends ConvertClassSerializer[Route](route => {
   val channelHops = route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))
   val finalHop_opt = route.finalHop_opt.map {
     case h: NodeHop => NodeHopJson(h.nodeId, h.nextNodeId, h.fee, h.cltvExpiryDelta)
+    case h: BlindedHop => BlindedHopJson(h.nodeId, h.nextNodeId, h.paymentInfo)
   }
   RouteFullJson(route.amount, channelHops ++ finalHop_opt.toSeq)
 })
@@ -315,6 +317,8 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
   val finalNodeIds = route.finalHop_opt match {
     case Some(hop: NodeHop) if channelNodeIds.nonEmpty => Seq(hop.nextNodeId)
     case Some(hop: NodeHop) => Seq(hop.nodeId, hop.nextNodeId)
+    case Some(hop: BlindedHop) if channelNodeIds.nonEmpty => hop.route.blindedNodeIds.tail
+    case Some(hop: BlindedHop) => hop.route.introductionNodeId +: hop.route.blindedNodeIds.tail
     case None => Nil
   }
   RouteNodeIdsJson(route.amount, channelNodeIds ++ finalNodeIds)
@@ -325,6 +329,7 @@ object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](rout
   val hops = route.hops.map(_.shortChannelId)
   val finalHop = route.finalHop_opt.map {
     case _: NodeHop => "trampoline"
+    case _: BlindedHop => "blinded"  
   }
   RouteShortChannelIdsJson(route.amount, hops, finalHop)
 })

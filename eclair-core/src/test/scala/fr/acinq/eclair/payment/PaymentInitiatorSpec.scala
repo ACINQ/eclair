@@ -32,8 +32,9 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayme
 import fr.acinq.eclair.payment.send.PaymentError.UnsupportedFeatures
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send._
-import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.router.{BlindedRouteCreation, RouteNotFound}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -51,6 +52,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   object Tags {
     val DisableMPP = "mpp_disabled"
+    val DisableRouteBlinding = "route_blinding_disabled"
     val RandomizeFinalExpiry = "random_final_expiry"
   }
 
@@ -58,20 +60,29 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   val featuresWithoutMpp: Features[InvoiceFeature] = Features(
     VariableLengthOnion -> Mandatory,
-    PaymentSecret -> Mandatory
+    PaymentSecret -> Mandatory,
+    RouteBlinding -> Optional,
   )
 
   val featuresWithMpp: Features[InvoiceFeature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
+    RouteBlinding -> Optional,
   )
 
   val featuresWithTrampoline: Features[InvoiceFeature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
+    RouteBlinding -> Optional,
     TrampolinePaymentPrototype -> Optional,
+  )
+
+  val featuresWithoutRouteBlinding: Features[InvoiceFeature] = Features(
+    VariableLengthOnion -> Mandatory,
+    PaymentSecret -> Mandatory,
+    BasicMultiPartPayment -> Optional,
   )
 
   case class FakePaymentFactory(payFsm: TestProbe, multiPartPayFsm: TestProbe) extends PaymentInitiator.MultiPartPaymentFactory {
@@ -88,7 +99,13 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   }
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val features = if (test.tags.contains(Tags.DisableMPP)) featuresWithoutMpp else featuresWithMpp
+    val features = if (test.tags.contains(Tags.DisableMPP)) {
+      featuresWithoutMpp
+    } else if (test.tags.contains(Tags.DisableRouteBlinding)) {
+      featuresWithoutRouteBlinding
+    } else {
+      featuresWithMpp
+    }
     val paymentFinalExpiry = if (test.tags.contains(Tags.RandomizeFinalExpiry)) {
       PaymentFinalExpiryConf(CltvExpiryDelta(50), CltvExpiryDelta(200))
     } else {
@@ -274,6 +291,82 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
     sender.expectMsg(NoPendingPayment(Right(invoice.paymentHash)))
+  }
+
+  def createBolt12Invoice(features: Features[InvoiceFeature]): Bolt12Invoice = {
+    val offer = Offer(None, "Bolt12 r0cks", e, features, Block.RegtestGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
+    val blindedRoute = BlindedRouteCreation.createBlindedRouteWithoutHops(e, hex"2a2a2a2a", 1 msat, CltvExpiry(500_000)).route
+    val paymentInfo = OfferTypes.PaymentInfo(1_000 msat, 0, CltvExpiryDelta(24), 0 msat, finalAmount, Features.empty)
+    Bolt12Invoice(offer, invoiceRequest, paymentPreimage, priv_e.privateKey, CltvExpiryDelta(6), features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+  }
+
+  test("forward single-part blinded payment") { f =>
+    import f._
+    val invoice = createBolt12Invoice(Features(VariableLengthOnion -> Mandatory, RouteBlinding -> Mandatory))
+    val req = SendPaymentToNode(finalAmount, invoice, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, invoice.nodeId, Upstream.Local(id), Some(invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true))
+    val payment = payFsm.expectMsgType[PaymentLifecycle.SendPaymentToNode]
+    assert(payment.amount == finalAmount)
+    assert(payment.recipient.nodeId == invoice.nodeId)
+    assert(payment.recipient.totalAmount == finalAmount)
+    assert(payment.recipient.extraEdges.nonEmpty)
+    assert(payment.recipient.expiry == req.finalExpiry(nodeParams))
+    assert(payment.recipient.isInstanceOf[BlindedRecipient])
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
+    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
+
+    val pf = PaymentFailed(id, invoice.paymentHash, Nil)
+    payFsm.send(initiator, pf)
+    sender.expectMsg(pf)
+    eventListener.expectNoMessage(100 millis)
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(NoPendingPayment(Left(id)))
+  }
+
+  test("forward multi-part blinded payment") { f =>
+    import f._
+    val invoice = createBolt12Invoice(Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional, RouteBlinding -> Mandatory))
+    val req = SendPaymentToNode(finalAmount, invoice, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, invoice.nodeId, Upstream.Local(id), Some(invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true))
+    val payment = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
+    assert(payment.recipient.nodeId == invoice.nodeId)
+    assert(payment.recipient.totalAmount == finalAmount)
+    assert(payment.recipient.extraEdges.nonEmpty)
+    assert(payment.recipient.expiry == req.finalExpiry(nodeParams))
+    assert(payment.recipient.isInstanceOf[BlindedRecipient])
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
+    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
+
+    val ps = PaymentSent(id, invoice.paymentHash, paymentPreimage, finalAmount, invoice.nodeId, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None)))
+    payFsm.send(initiator, ps)
+    sender.expectMsg(ps)
+    eventListener.expectNoMessage(100 millis)
+
+    sender.send(initiator, GetPayment(Left(id)))
+    sender.expectMsg(NoPendingPayment(Left(id)))
+  }
+
+  test("reject blinded payment when route blinding deactivated", Tag(Tags.DisableRouteBlinding)) { f =>
+    import f._
+    val invoice = createBolt12Invoice(Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional, RouteBlinding -> Mandatory))
+    val req = SendPaymentToNode(finalAmount, invoice, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    val fail = sender.expectMsgType[PaymentFailed]
+    assert(fail.id == id)
+    assert(fail.failures == LocalFailure(finalAmount, Nil, UnsupportedFeatures(invoice.features)) :: Nil)
   }
 
   test("forward trampoline payment") { f =>

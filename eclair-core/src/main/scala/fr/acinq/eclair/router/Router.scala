@@ -28,6 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -498,6 +499,24 @@ object Router {
   sealed trait FinalHop extends Hop
 
   /**
+   * A directed hop over a blinded route composed of multiple (blinded) channels.
+   * Since a blinded route has to be used from start to end, we model it as a single virtual hop.
+   *
+   * @param dummyId     dummy identifier to allow indexing in maps: unlike normal scid aliases, this one doesn't exist
+   *                    in our routing tables and should be used carefully.
+   * @param route       blinded route covered by that hop.
+   * @param paymentInfo payment information about the blinded route.
+   */
+  case class BlindedHop(dummyId: Alias, route: BlindedRoute, paymentInfo: OfferTypes.PaymentInfo) extends FinalHop {
+    // @formatter:off
+    override val nodeId = route.introductionNodeId
+    override val nextNodeId = route.blindedNodes.last.blindedPublicKey
+    override val cltvExpiryDelta = paymentInfo.cltvExpiryDelta
+    override def fee(amount: MilliSatoshi): MilliSatoshi = paymentInfo.fee(amount)
+    // @formatter:on
+  }
+
+  /**
    * A directed hop between two trampoline nodes.
    * These nodes need not be connected and we don't need to know a route between them.
    * The start node will compute the route to the end node itself when it receives our payment.
@@ -568,7 +587,19 @@ object Router {
      */
     val trampolineFee: MilliSatoshi = finalHop_opt.collect { case hop: NodeHop => hop.fee(amount) }.getOrElse(0 msat)
 
+    /**
+     * Fee paid for the blinded route, if any.
+     * Note that when we are the introduction node for the blinded route, we cannot easily compute the fee without the
+     * cost for the first local channel.
+     */
+    val blindedFee: MilliSatoshi = finalHop_opt.collect { case hop: BlindedHop => hop.fee(amount) }.getOrElse(0 msat)
+
     /** Fee paid for the channel hops towards the recipient or the source of the final hop, if any. */
+
+    /**
+     * Fee paid for the channel hops towards the recipient or the source of the final hop.
+     * Note that this doesn't include the fees for the final hop, if one exits.
+     */
     def channelFee(includeLocalChannelCost: Boolean): MilliSatoshi = {
       val hopsToPay = if (includeLocalChannelCost) hops else hops.drop(1)
       val amountToSend = hopsToPay.foldRight(amount) { case (hop, amount1) => amount1 + hop.fee(amount1) }

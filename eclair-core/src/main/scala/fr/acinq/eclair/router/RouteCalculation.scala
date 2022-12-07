@@ -22,7 +22,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.payment.send.{ClearRecipient, ClearTrampolineRecipient, Recipient, SpontaneousRecipient}
+import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
@@ -134,6 +134,21 @@ object RouteCalculation {
         val amountToSend = recipient.totalAmount - pendingAmount
         val maxFee = totalMaxFee - pendingChannelFee
         (targetNodeId, amountToSend, maxFee, Set.empty)
+      case recipient: BlindedRecipient =>
+        // Blinded routes all end at a different (blinded) node, so we create graph edges in which they lead to the same node.
+        val targetNodeId = randomKey().publicKey
+        val extraEdges = recipient.extraEdges
+          .map(_.copy(targetNodeId = targetNodeId))
+          .filterNot(e => ignoredEdges.exists(_.shortChannelId == e.shortChannelId))
+          // For blinded routes, the maximum htlc field is used to indicate the maximum amount that can be sent through the route.
+          .map(e => GraphEdge(e).copy(balance_opt = e.htlcMaximum_opt))
+          .toSet
+        val amountToSend = recipient.totalAmount - pendingAmount
+        // When we are the introduction node and includeLocalChannelCost is false, we cannot easily remove the fee for
+        // the first hop in the blinded route (we would need to decrypt the route and fetch the corresponding channel).
+        // In that case, we will slightly over-estimate the fee we're paying, but at least we won't exceed our fee budget.
+        val maxFee = totalMaxFee - pendingChannelFee - r.pendingPayments.map(_.blindedFee).sum
+        (targetNodeId, amountToSend, maxFee, extraEdges)
       case recipient: ClearTrampolineRecipient =>
         // Trampoline payments require finding routes to the trampoline node, not the final recipient.
         // This also ensures that we correctly take the trampoline fee into account only once, even when using MPP to
@@ -146,11 +161,17 @@ object RouteCalculation {
   }
 
   private def addFinalHop(recipient: Recipient, routes: Seq[Route]): Seq[Route] = {
-    routes.map(route => {
+    routes.flatMap(route => {
       recipient match {
-        case _: ClearRecipient => route
-        case _: SpontaneousRecipient => route
-        case recipient: ClearTrampolineRecipient => route.copy(finalHop_opt = Some(recipient.trampolineHop))
+        case _: ClearRecipient => Some(route)
+        case _: SpontaneousRecipient => Some(route)
+        case recipient: ClearTrampolineRecipient => Some(route.copy(finalHop_opt = Some(recipient.trampolineHop)))
+        case recipient: BlindedRecipient =>
+          route.hops.lastOption.flatMap {
+            hop => recipient.blindedHops.find(_.dummyId == hop.shortChannelId)
+          }.map {
+            blindedHop => Route(route.amount, route.hops.dropRight(1), Some(blindedHop))
+          }
       }
     })
   }
