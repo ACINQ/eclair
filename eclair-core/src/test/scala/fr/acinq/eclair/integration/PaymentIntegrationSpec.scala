@@ -159,7 +159,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first we retrieve a payment hash from D
     val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.paymentMetadata.nonEmpty)
 
     // then we make the actual payment
@@ -477,8 +477,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
     assert(paymentSent.recipientNodeId == nodes("F").nodeParams.nodeId, paymentSent)
     assert(paymentSent.recipientAmount == amount, paymentSent)
-    assert(paymentSent.feesPaid == 1210100.msat, paymentSent)
+    assert(paymentSent.trampolineFees == 1210100.msat, paymentSent)
     assert(paymentSent.nonTrampolineFees == 0.msat, paymentSent)
+    assert(paymentSent.feesPaid == 1210100.msat, paymentSent)
 
     awaitCond(nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
@@ -492,12 +493,12 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1210100.msat, relayed)
 
-    val outgoingSuccess = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    outgoingSuccess.collect { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
-      assert(recipientNodeId == nodes("F").nodeParams.nodeId, p)
-      assert(route.lastOption.contains(HopSummary(nodes("G").nodeParams.nodeId, nodes("F").nodeParams.nodeId)), p)
-    }
-    assert(outgoingSuccess.map(_.amount).sum == amount + 1210100.msat, outgoingSuccess)
+    val outgoingSuccess = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]).head
+    assert(outgoingSuccess.recipientNodeId == nodes("F").nodeParams.nodeId, outgoingSuccess)
+    assert(outgoingSuccess.recipientAmount == amount, outgoingSuccess)
+    assert(outgoingSuccess.amount == amount + 1210100.msat, outgoingSuccess)
+    val status = outgoingSuccess.status.asInstanceOf[OutgoingPaymentStatus.Succeeded]
+    assert(status.route.lastOption.contains(HopSummary(nodes("G").nodeParams.nodeId, nodes("F").nodeParams.nodeId)), status)
   }
 
   test("send a trampoline payment D->B (via trampoline C)") {
@@ -506,7 +507,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
     val amount = 2500000000L.msat
     sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(Some(amount), Left("trampoline-MPP is so #reckless")))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
@@ -522,8 +523,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.id == paymentId, paymentSent)
     assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
     assert(paymentSent.recipientAmount == amount, paymentSent)
-    assert(paymentSent.feesPaid == 750000.msat, paymentSent)
+    assert(paymentSent.trampolineFees == 750000.msat, paymentSent)
     assert(paymentSent.nonTrampolineFees == 0.msat, paymentSent)
+    assert(paymentSent.feesPaid == 750000.msat, paymentSent)
 
     awaitCond(nodes("B").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("B").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
@@ -538,12 +540,12 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 750000.msat, relayed)
 
-    val outgoingSuccess = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    outgoingSuccess.collect { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
-      assert(recipientNodeId == nodes("B").nodeParams.nodeId, p)
-      assert(route.lastOption.contains(HopSummary(nodes("C").nodeParams.nodeId, nodes("B").nodeParams.nodeId)), p)
-    }
-    assert(outgoingSuccess.map(_.amount).sum == amount + 750000.msat, outgoingSuccess)
+    val outgoingSuccess = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]).head
+    assert(outgoingSuccess.recipientNodeId == nodes("B").nodeParams.nodeId, outgoingSuccess)
+    assert(outgoingSuccess.recipientAmount == amount, outgoingSuccess)
+    assert(outgoingSuccess.amount == amount + 750000.msat, outgoingSuccess)
+    val status = outgoingSuccess.status.asInstanceOf[OutgoingPaymentStatus.Succeeded]
+    assert(status.route.lastOption.contains(HopSummary(nodes("C").nodeParams.nodeId, nodes("B").nodeParams.nodeId)), status)
 
     awaitCond(nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
     val sent = nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now())
@@ -562,7 +564,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val amount = 3000000000L.msat
     sender.send(nodes("A").paymentHandler, ReceiveStandardPayment(Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
-    val invoice = sender.expectMsgType[Invoice]
+    val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
@@ -575,6 +577,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
     assert(paymentSent.recipientAmount == amount, paymentSent)
     assert(paymentSent.trampolineFees == 1500000.msat, paymentSent)
+    assert(paymentSent.nonTrampolineFees == 0.msat, paymentSent)
 
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
@@ -589,12 +592,12 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1500000.msat, relayed)
 
-    val outgoingSuccess = nodes("F").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    outgoingSuccess.collect { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
-      assert(recipientNodeId == nodes("A").nodeParams.nodeId, p)
-      assert(route.lastOption.contains(HopSummary(nodes("C").nodeParams.nodeId, nodes("A").nodeParams.nodeId)), p)
-    }
-    assert(outgoingSuccess.map(_.amount).sum == amount + 1500000.msat, outgoingSuccess)
+    val outgoingSuccess = nodes("F").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]).head
+    assert(outgoingSuccess.recipientNodeId == nodes("A").nodeParams.nodeId, outgoingSuccess)
+    assert(outgoingSuccess.recipientAmount == amount, outgoingSuccess)
+    assert(outgoingSuccess.amount == amount + 1500000.msat, outgoingSuccess)
+    val status = outgoingSuccess.status.asInstanceOf[OutgoingPaymentStatus.Succeeded]
+    assert(status.route.lastOption.contains(HopSummary(nodes("C").nodeParams.nodeId, nodes("A").nodeParams.nodeId)), status)
   }
 
   test("send a trampoline payment B->D (temporary local failure at trampoline)") {
@@ -646,6 +649,37 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val outgoingPayments = nodes("A").nodeParams.db.payments.listOutgoingPayments(paymentId)
     assert(outgoingPayments.nonEmpty, outgoingPayments)
     assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
+  }
+
+  test("send a trampoline payment A->D (via remote trampoline C)") {
+    val sender = TestProbe()
+    val amount = 500000000L.msat
+    sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(Some(amount), Left("remote trampoline is so #reckless")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
+    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+
+    val payment = SendTrampolinePayment(amount, invoice, nodes("C").nodeParams.nodeId, Seq((500000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
+    sender.send(nodes("A").paymentInitiator, payment)
+    val paymentId = sender.expectMsgType[UUID]
+    val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
+    assert(paymentSent.id == paymentId, paymentSent)
+    assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.trampolineFees == 500000.msat, paymentSent)
+    assert(paymentSent.nonTrampolineFees > 0.msat, paymentSent)
+    assert(paymentSent.feesPaid > 500000.msat, paymentSent)
+
+    awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    assert(receivedAmount == amount)
+
+    val outgoingSuccess = nodes("A").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]).head
+    assert(outgoingSuccess.recipientNodeId == nodes("D").nodeParams.nodeId, outgoingSuccess)
+    assert(outgoingSuccess.recipientAmount == amount, outgoingSuccess)
+    assert(outgoingSuccess.amount == amount + 500000.msat, outgoingSuccess)
+    val status = outgoingSuccess.status.asInstanceOf[OutgoingPaymentStatus.Succeeded]
+    assert(status.route.lastOption.contains(HopSummary(nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId)), status)
   }
 
   test("generate and validate lots of channels") {

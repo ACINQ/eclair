@@ -22,6 +22,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.send.{ClearRecipient, ClearTrampolineRecipient, Recipient, SpontaneousRecipient}
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
@@ -56,22 +57,23 @@ object RouteCalculation {
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val g = fr.extraEdges.map(GraphEdge(_)).foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
+      val extraEdges = fr.extraEdges.map(GraphEdge(_))
+      val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       fr.route match {
-        case PredefinedNodeRoute(hops) =>
+        case PredefinedNodeRoute(amount, hops) =>
           // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
           hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
-              ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
+              ctx.sender() ! RouteResponse(Route(amount, hops, None) :: Nil)
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
               ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
-        case PredefinedChannelRoute(targetNodeId, shortChannelIds) =>
+        case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds) =>
           val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
             case ((currentNode, previousHops), shortChannelId) =>
               val channelDesc_opt = d.resolve(shortChannelId) match {
@@ -85,7 +87,7 @@ object RouteCalculation {
                   case c.nodeId2 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId2, c.nodeId1))
                   case _ => None
                 }
-                case None => fr.extraEdges.map(GraphEdge(_)).find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)
+                case None => extraEdges.find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)
               }
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
                 case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(getEdgeRelayScid(d, localNodeId, edge), edge.desc.a, edge.desc.b, edge.params))
@@ -95,12 +97,51 @@ object RouteCalculation {
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
             ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
-            ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
+            ctx.sender() ! RouteResponse(Route(amount, hops, None) :: Nil)
           }
       }
 
       d
     }
+  }
+
+  private def computeTarget(r: RouteRequest, ignoredEdges: Set[ChannelDesc]): (PublicKey, MilliSatoshi, MilliSatoshi, Set[GraphEdge]) = {
+    val pendingAmount = r.pendingPayments.map(_.amount).sum
+    r.target match {
+      case recipient: ClearRecipient =>
+        val targetNodeId = recipient.nodeId
+        val amountToSend = recipient.totalAmount - pendingAmount
+        val maxFee = r.routeParams.getMaxFee(recipient.totalAmount) - r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
+        val extraEdges = recipient.extraEdges
+          .filter(_.sourceNodeId != r.source) // we ignore routing hints for our own channels, we have more accurate information
+          .map(GraphEdge(_))
+          .filterNot(e => ignoredEdges.contains(e.desc))
+          .toSet
+        (targetNodeId, amountToSend, maxFee, extraEdges)
+      case recipient: SpontaneousRecipient =>
+        val targetNodeId = recipient.nodeId
+        val amountToSend = recipient.totalAmount - pendingAmount
+        val maxFee = r.routeParams.getMaxFee(recipient.totalAmount) - r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
+        (targetNodeId, amountToSend, maxFee, Set.empty)
+      case recipient: ClearTrampolineRecipient =>
+        // Trampoline payments require finding routes to the trampoline node, not the final recipient.
+        // This also ensures that we correctly take the trampoline fee into account only once, even when using MPP to
+        // reach the trampoline node (which will aggregate the incoming MPP payment and re-split as necessary).
+        val targetNodeId = recipient.trampolineHop.nodeId
+        val amountToSend = recipient.trampolineAmount - pendingAmount
+        val maxFee = r.routeParams.getMaxFee(recipient.totalAmount) - recipient.trampolineFee - r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
+        (targetNodeId, amountToSend, maxFee, Set.empty)
+    }
+  }
+
+  private def addFinalHop(recipient: Recipient, routes: Seq[Route]): Seq[Route] = {
+    routes.map(route => {
+      recipient match {
+        case _: ClearRecipient => route
+        case _: SpontaneousRecipient => route
+        case recipient: ClearTrampolineRecipient => route.copy(finalHop_opt = Some(recipient.trampolineHop))
+      }
+    })
   }
 
   def handleRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: RouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
@@ -111,25 +152,27 @@ object RouteCalculation {
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val extraEdges = r.extraEdges.map(GraphEdge(_)).filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels.keySet
-      val params = r.routeParams
-      val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
+      val (targetNodeId, amountToSend, maxFee, extraEdges) = computeTarget(r, ignoredEdges)
+      val routesToFind = if (r.routeParams.randomize) DEFAULT_ROUTES_COUNT else 1
 
-      log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", extraEdges.map(_.desc.shortChannelId).mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
-      log.info("finding routes with params={}, multiPart={}", params, r.allowMultiPart)
-      log.info("local channels to recipient: {}", d.graphWithBalances.graph.getEdgesBetween(r.source, r.target).map(e => s"${e.desc.shortChannelId} (${e.balance_opt}/${e.capacity})").mkString(", "))
-      val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
+      log.info(s"finding routes ${r.source}->$targetNodeId with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", extraEdges.map(_.desc.shortChannelId).mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
+      log.info("finding routes with params={}, multiPart={}", r.routeParams, r.allowMultiPart)
+      log.info("local channels to target node: {}", d.graphWithBalances.graph.getEdgesBetween(r.source, targetNodeId).map(e => s"${e.desc.shortChannelId} (${e.balance_opt}/${e.capacity})").mkString(", "))
+      val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(amountToSend))
       KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
         val result = if (r.allowMultiPart) {
-          findMultiPartRoute(d.graphWithBalances.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, params, currentBlockHeight)
+          findMultiPartRoute(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight)
         } else {
-          findRoute(d.graphWithBalances.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight)
+          findRoute(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight)
         }
-        result match {
+        result.map(routes => addFinalHop(r.target, routes)) match {
           case Success(routes) =>
+            // Note that we don't record the length of the whole route: we ignore the trampoline hop because we only
+            // care about the part that we found ourselves (and we don't even know the length that will be used between
+            // trampoline nodes).
             Metrics.RouteResults.withTags(tags).record(routes.length)
-            routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
+            routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.hops.length))
             ctx.sender() ! RouteResponse(routes)
           case Failure(failure: InfiniteLoop) =>
             log.error(s"found infinite loop ${failure.path.map(edge => edge.desc).mkString(" -> ")}")
@@ -140,7 +183,7 @@ object RouteCalculation {
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
             ctx.sender() ! Status.Failure(failure)
           case Failure(t) =>
-            val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r)) BalanceTooLow else t
+            val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
             ctx.sender() ! Status.Failure(failure)
         }
@@ -199,7 +242,7 @@ object RouteCalculation {
                 routeParams: RouteParams,
                 currentBlockHeight: BlockHeight): Try[Seq[Route]] = Try {
     findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
-      case Right(routes) => routes.map(route => Route(amount, route.path.map(graphEdgeToHop)))
+      case Right(routes) => routes.map(route => Route(amount, route.path.map(graphEdgeToHop), None))
       case Left(ex) => return Failure(ex)
     }
   }
@@ -367,7 +410,7 @@ object RouteCalculation {
       val edgeMaxAmount = edge.maxHtlcAmount(usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat))
       amountMinusFees.min(edgeMaxAmount)
     }
-    Route(amount.max(0 msat), route.map(graphEdgeToHop))
+    Route(amount.max(0 msat), route.map(graphEdgeToHop), None)
   }
 
   /** Initialize known used capacity based on pending HTLCs. */
@@ -389,7 +432,7 @@ object RouteCalculation {
 
   private def validateMultiPartRoute(amount: MilliSatoshi, maxFee: MilliSatoshi, routes: Seq[Route], includeLocalChannelCost: Boolean): Boolean = {
     val amountOk = routes.map(_.amount).sum == amount
-    val feeOk = routes.map(_.fee(includeLocalChannelCost)).sum <= maxFee
+    val feeOk = routes.map(_.channelFee(includeLocalChannelCost)).sum <= maxFee
     amountOk && feeOk
   }
 
@@ -398,9 +441,9 @@ object RouteCalculation {
    * requested amount. We could potentially relay the payment by using indirect routes, but since we're connected to
    * the target node it means we'd like to reach it via direct channels as much as possible.
    */
-  private def isNeighborBalanceTooLow(g: DirectedGraph, r: RouteRequest): Boolean = {
-    val neighborEdges = g.getEdgesBetween(r.source, r.target)
-    neighborEdges.nonEmpty && neighborEdges.map(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)).sum < r.amount
+  private def isNeighborBalanceTooLow(g: DirectedGraph, source: PublicKey, target: PublicKey, amount: MilliSatoshi): Boolean = {
+    val neighborEdges = g.getEdgesBetween(source, target)
+    neighborEdges.nonEmpty && neighborEdges.map(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)).sum < amount
   }
 
 }

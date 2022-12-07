@@ -33,9 +33,10 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
-import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
-import fr.acinq.eclair.router.Router.ChannelHop
+import fr.acinq.eclair.payment.send.SpontaneousRecipient
+import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
+import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -355,10 +356,16 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   }
 
   def makeCmdAdd(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, destination: PublicKey, paymentPreimage: ByteVector32, currentBlockHeight: BlockHeight, upstream: Upstream, replyTo: ActorRef = TestProbe().ref): (ByteVector32, CMD_ADD_HTLC) = {
-    val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
+    val paymentHash = Crypto.sha256(paymentPreimage)
     val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
-    val cmd = OutgoingPaymentPacket.buildCommand(replyTo, upstream, paymentHash, ChannelHop(null, null, destination, null) :: Nil, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), None)).get._1.copy(commit = false)
-    (paymentPreimage, cmd)
+    val recipient = SpontaneousRecipient(destination, amount, expiry, paymentPreimage)
+    val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(replyTo, upstream, paymentHash, makeSingleHopRoute(amount, destination), recipient)
+    (paymentPreimage, payment.cmd.copy(commit = false))
+  }
+
+  def makeSingleHopRoute(amount: MilliSatoshi, destination: PublicKey): Route = {
+    val dummyParams = HopRelayParams.FromHint(Invoice.ExtraEdge(randomKey().publicKey, destination, ShortChannelId(0), 0 msat, 0, CltvExpiryDelta(0), 0 msat, None))
+    Route(amount, Seq(ChannelHop(ShortChannelId(0), dummyParams.extraHop.sourceNodeId, dummyParams.extraHop.targetNodeId, dummyParams)), None)
   }
 
   def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {

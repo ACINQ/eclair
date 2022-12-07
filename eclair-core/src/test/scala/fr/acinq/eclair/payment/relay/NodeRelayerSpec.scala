@@ -32,10 +32,11 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.IncomingPaymentPacket.NodeRelayPacket
-import fr.acinq.eclair.payment.Invoice.BasicEdge
+import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
+import fr.acinq.eclair.payment.send.ClearRecipient
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
@@ -220,7 +221,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // and then one extra
     val extra = IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None),
-      FinalPayload.Standard.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
+      FinalPayload.Standard.createPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
       IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
     nodeRelayer ! NodeRelay.Relay(extra)
@@ -249,7 +250,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive new extraneous multi-part HTLC.
     val i1 = IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None),
-      FinalPayload.Standard.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
+      FinalPayload.Standard.createPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
       IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
     nodeRelayer ! NodeRelay.Relay(i1)
@@ -262,7 +263,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive new HTLC with different details, but for the same payment hash.
     val i2 = IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1500 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None),
-      PaymentOnion.FinalPayload.Standard.createSinglePartPayload(1500 msat, CltvExpiry(499990), incomingSecret, None),
+      PaymentOnion.FinalPayload.Standard.createPayload(1500 msat, 1500 msat, CltvExpiry(499990), incomingSecret, None),
       IntermediatePayload.NodeRelay.Standard(1250 msat, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
     nodeRelayer ! NodeRelay.Relay(i2)
@@ -726,18 +727,15 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
-    assert(outgoingPayment.paymentSecret == invoice.paymentSecret) // we should use the provided secret
-    assert(outgoingPayment.paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
-    assert(outgoingPayment.totalAmount == outgoingAmount)
-    assert(outgoingPayment.targetExpiry == outgoingExpiry)
-    assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.additionalTlvs == Nil)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
+    assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
+    assert(outgoingPayment.recipient.totalAmount == outgoingAmount)
+    assert(outgoingPayment.recipient.expiry == outgoingExpiry)
+    assert(outgoingPayment.recipient.extraEdges.head == ExtraEdge(hints.head.nodeId, outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12), 1 msat, None))
+    assert(outgoingPayment.recipient.isInstanceOf[ClearRecipient])
+    val recipient = outgoingPayment.recipient.asInstanceOf[ClearRecipient]
+    assert(recipient.nextTrampolineOnion_opt.isEmpty)
+    assert(recipient.paymentSecret == invoice.paymentSecret) // we should use the provided secret
+    assert(recipient.paymentMetadata_opt == invoice.paymentMetadata) // we should use the provided metadata
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
 
@@ -773,17 +771,14 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
-    assert(outgoingPayment.finalPayload.isInstanceOf[FinalPayload.Standard])
-    assert(outgoingPayment.finalPayload.amount == outgoingAmount)
-    assert(outgoingPayment.finalPayload.expiry == outgoingExpiry)
-    assert(outgoingPayment.finalPayload.asInstanceOf[FinalPayload.Standard].paymentMetadata == invoice.paymentMetadata) // we should use the provided metadata
-    assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].shortChannelId == ShortChannelId(42))
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].sourceNodeId == hints.head.nodeId)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeBase == 10.msat)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].feeProportionalMillionths == 1)
-    assert(outgoingPayment.extraEdges.head.asInstanceOf[BasicEdge].cltvExpiryDelta == CltvExpiryDelta(12))
+    assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
+    assert(outgoingPayment.amount == outgoingAmount)
+    assert(outgoingPayment.recipient.expiry == outgoingExpiry)
+    assert(outgoingPayment.recipient.extraEdges.head == ExtraEdge(hints.head.nodeId, outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12), 1 msat, None))
+    assert(outgoingPayment.recipient.isInstanceOf[ClearRecipient])
+    val recipient = outgoingPayment.recipient.asInstanceOf[ClearRecipient]
+    assert(recipient.nextTrampolineOnion_opt.isEmpty)
+    assert(recipient.paymentMetadata_opt == invoice.paymentMetadata) // we should use the provided metadata
 
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
@@ -829,18 +824,19 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(!outgoingCfg.storeInDb)
     assert(outgoingCfg.paymentHash == paymentHash)
     assert(outgoingCfg.invoice.isEmpty)
-    assert(outgoingCfg.recipientAmount == outgoingAmount)
     assert(outgoingCfg.recipientNodeId == outgoingNodeId)
     assert(outgoingCfg.upstream == upstream)
   }
 
   def validateOutgoingPayment(outgoingPayment: SendMultiPartPayment): Unit = {
-    assert(outgoingPayment.paymentSecret !== incomingSecret) // we should generate a new outgoing secret
-    assert(outgoingPayment.totalAmount == outgoingAmount)
-    assert(outgoingPayment.targetExpiry == outgoingExpiry)
-    assert(outgoingPayment.targetNodeId == outgoingNodeId)
-    assert(outgoingPayment.additionalTlvs == Seq(OnionPaymentPayloadTlv.TrampolineOnion(nextTrampolinePacket)))
-    assert(outgoingPayment.extraEdges == Nil)
+    assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
+    assert(outgoingPayment.recipient.totalAmount == outgoingAmount)
+    assert(outgoingPayment.recipient.expiry == outgoingExpiry)
+    assert(outgoingPayment.recipient.extraEdges == Nil)
+    assert(outgoingPayment.recipient.isInstanceOf[ClearRecipient])
+    val recipient = outgoingPayment.recipient.asInstanceOf[ClearRecipient]
+    assert(recipient.paymentSecret !== incomingSecret) // we should generate a new outgoing secret
+    assert(recipient.nextTrampolineOnion_opt.contains(nextTrampolinePacket))
   }
 
   def validateRelayEvent(e: TrampolinePaymentRelayed): Unit = {
@@ -887,11 +883,7 @@ object NodeRelayerSpec {
     PaymentSent(relayId, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32(), None)))
 
   def createValidIncomingPacket(amountIn: MilliSatoshi, totalAmountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): IncomingPaymentPacket.NodeRelayPacket = {
-    val outerPayload = if (amountIn == totalAmountIn) {
-      PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amountIn, expiryIn, incomingSecret, None)
-    } else {
-      FinalPayload.Standard.createMultiPartPayload(amountIn, totalAmountIn, expiryIn, incomingSecret, None)
-    }
+    val outerPayload = FinalPayload.Standard.createPayload(amountIn, totalAmountIn, expiryIn, incomingSecret, None)
     IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, None),
       outerPayload,
@@ -904,7 +896,7 @@ object NodeRelayerSpec {
     val amountIn = incomingAmount / 2
     IncomingPaymentPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, None),
-      FinalPayload.Standard.createMultiPartPayload(amountIn, incomingAmount, expiryIn, paymentSecret, None),
+      FinalPayload.Standard.createPayload(amountIn, incomingAmount, expiryIn, paymentSecret, None),
       IntermediatePayload.NodeRelay.Standard(outgoingAmount, expiryOut, outgoingNodeId),
       nextTrampolinePacket)
   }

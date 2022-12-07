@@ -433,7 +433,7 @@ object Graph {
      * @param capacity    channel capacity
      * @param balance_opt (optional) available balance that can be sent through this edge
      */
-    case class GraphEdge private(desc: ChannelDesc, params: ChannelRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
+    case class GraphEdge private(desc: ChannelDesc, params: HopRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
 
       def maxHtlcAmount(reservedCapacity: MilliSatoshi): MilliSatoshi = Seq(
         balance_opt.map(balance => balance - reservedCapacity),
@@ -447,28 +447,26 @@ object Graph {
     object GraphEdge {
       def apply(u: ChannelUpdate, pc: PublicChannel): GraphEdge = GraphEdge(
         desc = ChannelDesc(u, pc.ann),
-        params = ChannelRelayParams.FromAnnouncement(u),
+        params = HopRelayParams.FromAnnouncement(u),
         capacity = pc.capacity,
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
       def apply(u: ChannelUpdate, pc: PrivateChannel): GraphEdge = GraphEdge(
         desc = ChannelDesc(u, pc),
-        params = ChannelRelayParams.FromAnnouncement(u),
+        params = HopRelayParams.FromAnnouncement(u),
         capacity = pc.capacity,
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
-      def apply(e: Invoice.ExtraEdge): GraphEdge = e match {
-        case e@Invoice.BasicEdge(sourceNodeId, targetNodeId, shortChannelId, _, _, _) =>
+      def apply(e: Invoice.ExtraEdge): GraphEdge = {
           val maxBtc = 21e6.btc
           GraphEdge(
-            desc = ChannelDesc(shortChannelId, sourceNodeId, targetNodeId),
-            params = ChannelRelayParams.FromHint(e),
-            // Bolt 11 routing hints don't include the channel's capacity, so we assume it's big enough
+            desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
+            params = HopRelayParams.FromHint(e),
+            // Routing hints don't include the channel's capacity, so we assume it's big enough.
             capacity = maxBtc.toSatoshi,
-            // we assume channels provided as hints have enough balance to handle the payment
-            balance_opt = Some(maxBtc.toMilliSatoshi)
+            balance_opt = None,
           )
       }
     }

@@ -46,7 +46,7 @@ import fr.acinq.eclair.payment.relay.Relayer.ChannelBalance
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.router.Router.{ChannelRelayParams, PredefinedNodeRoute}
+import fr.acinq.eclair.router.Router.{HopRelayParams, PredefinedNodeRoute}
 import fr.acinq.eclair.wire.protocol._
 import org.json4s.{Formats, Serialization}
 import org.mockito.scalatest.IdiomaticMockito
@@ -952,11 +952,11 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val expected = """{"paymentId":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","parentId":"2ad8c6d7-99cb-4238-8f67-89024b8eed0d"}"""
     val externalId = UUID.randomUUID().toString
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey(), Left("Some invoice"), CltvExpiryDelta(24))
-    val expectedRoute = PredefinedNodeRoute(Seq(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28")))
+    val expectedRoute = PredefinedNodeRoute(1234 msat, Seq(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28")))
     val jsonNodes = serialization.write(expectedRoute.nodes)
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
+    eclair.sendToRoute(any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
     Post("/sendtoroute", FormData("nodeIds" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId, "invoice" -> pr.toString).toEntity) ~>
@@ -967,7 +967,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == expected)
-        eclair.sendToRoute(1234 msat, None, Some(externalId), None, pr, expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
+        eclair.sendToRoute(None, Some(externalId), None, pr, expectedRoute, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -975,11 +975,11 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"), None)
     val expected = """{"paymentId":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","parentId":"2ad8c6d7-99cb-4238-8f67-89024b8eed0d"}"""
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey(), Left("Some invoice"), CltvExpiryDelta(24))
-    val expectedRoute = PredefinedNodeRoute(Seq(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28")))
+    val expectedRoute = PredefinedNodeRoute(1234 msat, Seq(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28")))
     val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
+    eclair.sendToRoute(any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
     // this test uses CSV encoded route
@@ -991,7 +991,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == expected)
-        eclair.sendToRoute(1234 msat, None, None, None, pr, expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
+        eclair.sendToRoute(None, None, None, pr, expectedRoute, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -1015,14 +1015,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockChannelUpdate2 = mockChannelUpdate1.copy(shortChannelId = RealShortChannelId(BlockHeight(1), 2, 4))
     val mockChannelUpdate3 = mockChannelUpdate1.copy(shortChannelId = RealShortChannelId(BlockHeight(1), 2, 5))
 
-    val mockHop1 = Router.ChannelHop(mockChannelUpdate1.shortChannelId, PublicKey.fromBin(ByteVector.fromValidHex("03007e67dc5a8fd2b2ef21cb310ab6359ddb51f3f86a8b79b8b1e23bc3a6ea150a")), PublicKey.fromBin(ByteVector.fromValidHex("026105f6cb4862810be989385d16f04b0f748f6f2a14040338b1a534d45b4be1c1")), ChannelRelayParams.FromAnnouncement(mockChannelUpdate1))
-    val mockHop2 = Router.ChannelHop(mockChannelUpdate2.shortChannelId, mockHop1.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("038cfa2b5857843ee90cff91b06f692c0d8fe201921ee6387aee901d64f43699f0")), ChannelRelayParams.FromAnnouncement(mockChannelUpdate2))
-    val mockHop3 = Router.ChannelHop(mockChannelUpdate3.shortChannelId, mockHop2.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("02be60276e294c6921240daae33a361d214d02578656df0e74c61a09c3196e51df")), ChannelRelayParams.FromAnnouncement(mockChannelUpdate3))
+    val mockHop1 = Router.ChannelHop(mockChannelUpdate1.shortChannelId, PublicKey.fromBin(ByteVector.fromValidHex("03007e67dc5a8fd2b2ef21cb310ab6359ddb51f3f86a8b79b8b1e23bc3a6ea150a")), PublicKey.fromBin(ByteVector.fromValidHex("026105f6cb4862810be989385d16f04b0f748f6f2a14040338b1a534d45b4be1c1")), HopRelayParams.FromAnnouncement(mockChannelUpdate1))
+    val mockHop2 = Router.ChannelHop(mockChannelUpdate2.shortChannelId, mockHop1.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("038cfa2b5857843ee90cff91b06f692c0d8fe201921ee6387aee901d64f43699f0")), HopRelayParams.FromAnnouncement(mockChannelUpdate2))
+    val mockHop3 = Router.ChannelHop(mockChannelUpdate3.shortChannelId, mockHop2.nextNodeId, PublicKey.fromBin(ByteVector.fromValidHex("02be60276e294c6921240daae33a361d214d02578656df0e74c61a09c3196e51df")), HopRelayParams.FromAnnouncement(mockChannelUpdate3))
     val mockHops = Seq(mockHop1, mockHop2, mockHop3)
 
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.findRoute(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops))))
+    eclair.findRoute(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops, None))))
 
     // invalid format
     Post("/findroute", FormData("format" -> "invalid-output-format", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>

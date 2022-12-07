@@ -22,16 +22,19 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.IncomingPaymentPacket.FinalPacket
-import fr.acinq.eclair.payment.OutgoingPaymentPacket.{Upstream, buildCommand}
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.{NodePayload, Upstream, buildOnion, buildOutgoingPayment}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.payment.{OutgoingPaymentPacket, PaymentPacketSpec}
+import fr.acinq.eclair.payment.send.{ClearRecipient, ClearTrampolineRecipient}
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
-import fr.acinq.eclair.router.Router.NodeHop
+import fr.acinq.eclair.router.Router.{NodeHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
@@ -41,7 +44,6 @@ import org.scalatest.{Outcome, Tag}
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
-import scala.util.Success
 
 class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
@@ -88,9 +90,9 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     }
 
     // we use this to build a valid onion
-    val Success((cmd, _)) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, None))
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops, None), ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret))
     // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, None)
+    val add_ab = UpdateAddHtlc(randomBytes32(), 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
     relayer ! RelayForward(add_ab)
     register.expectMessageType[Register.Forward[CMD_ADD_HTLC]]
   }
@@ -98,34 +100,29 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   test("relay an htlc-add at the final node to the payment handler") { f =>
     import f._
 
-    val Success((cmd, _)) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops.take(1), FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, None))
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, None)
-
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops.take(1), None), ClearRecipient(b, Features.empty, finalAmount, finalExpiry, paymentSecret))
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
     relayer ! RelayForward(add_ab)
 
     val fp = paymentHandler.expectMessageType[FinalPacket]
     assert(fp.add == add_ab)
-    assert(fp.payload == FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, None))
+    assert(fp.payload == FinalPayload.Standard.createPayload(finalAmount, finalAmount, finalExpiry, paymentSecret))
 
     register.expectNoMessage(50 millis)
   }
 
   test("relay a trampoline htlc-add at the final node to the payment handler") { f =>
-    import PaymentPacketSpec._
     import f._
-    val a = PaymentPacketSpec.a
 
     // We simulate a payment split between multiple trampoline routes.
     val totalAmount = finalAmount * 3
-    val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: Nil
-    val Success((trampolineAmount, trampolineExpiry, trampolineOnion)) = OutgoingPaymentPacket.buildTrampolinePacket(paymentHash, trampolineHops, FinalPayload.Standard.createMultiPartPayload(finalAmount, totalAmount, finalExpiry, paymentSecret, None))
-    assert(trampolineAmount == finalAmount)
-    assert(trampolineExpiry == finalExpiry)
-    val Success((cmd, _)) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, channelHopFromUpdate(a, b, channelUpdate_ab) :: Nil, FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32(), trampolineOnion.packet))
-    assert(cmd.amount == finalAmount)
-    assert(cmd.cltvExpiry == finalExpiry)
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, None)
-
+    val finalTrampolinePayload = NodePayload(b, FinalPayload.Standard.createPayload(finalAmount, totalAmount, finalExpiry, paymentSecret))
+    val Right(trampolineOnion) = buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, Seq(finalTrampolinePayload), paymentHash)
+    val recipient = ClearRecipient(b, nodeParams.features.invoiceFeatures(), finalAmount, finalExpiry, randomBytes32(), nextTrampolineOnion_opt = Some(trampolineOnion.packet))
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), None), recipient)
+    assert(payment.cmd.amount == finalAmount)
+    assert(payment.cmd.cltvExpiry == finalExpiry)
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
     relayer ! RelayForward(add_ab)
 
     val fp = paymentHandler.expectMessageType[FinalPacket]
@@ -143,10 +140,9 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     import f._
 
     // we use this to build a valid onion
-    val Success((cmd, _)) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, None))
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops, None), ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret))
     // and then manually build an htlc with an invalid onion (hmac)
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion.copy(hmac = cmd.onion.hmac.reverse), None)
-
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion.copy(hmac = payment.cmd.onion.hmac.reverse), None)
     relayer ! RelayForward(add_ab)
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
@@ -158,18 +154,17 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   }
 
   test("fail to relay a trampoline htlc-add when trampoline is disabled", Tag("trampoline-disabled")) { f =>
-    import PaymentPacketSpec._
     import f._
-    val a = PaymentPacketSpec.a
 
     // we use this to build a valid trampoline onion inside a normal onion
-    val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: NodeHop(b, c, channelUpdate_bc.cltvExpiryDelta, fee_b) :: Nil
-    val Success((trampolineAmount, trampolineExpiry, trampolineOnion)) = OutgoingPaymentPacket.buildTrampolinePacket(paymentHash, trampolineHops, FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, None))
-    val Success((cmd, _)) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, channelHopFromUpdate(a, b, channelUpdate_ab) :: Nil, FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32(), trampolineOnion.packet))
+    val invoiceFeatures = Features[InvoiceFeature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, TrampolinePaymentPrototype -> Optional)
+    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_c.privateKey, Left("invoice"), CltvExpiryDelta(6), paymentSecret = paymentSecret, features = invoiceFeatures)
+    val trampolineHop = NodeHop(b, c, channelUpdate_bc.cltvExpiryDelta, fee_b)
+    val recipient = ClearTrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHop, randomBytes32())
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, Route(recipient.trampolineAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), Some(trampolineHop)), recipient)
 
     // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, None)
-
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
     relayer ! RelayForward(add_ab)
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]].message

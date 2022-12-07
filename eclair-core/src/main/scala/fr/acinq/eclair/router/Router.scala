@@ -33,6 +33,7 @@ import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
@@ -428,7 +429,7 @@ object Router {
   }
   // @formatter:on
 
-  trait Hop {
+  sealed trait Hop {
     /** @return the id of the start node. */
     def nodeId: PublicKey
 
@@ -445,53 +446,56 @@ object Router {
     def cltvExpiryDelta: CltvExpiryDelta
   }
 
-  // @formatter:off
-  /** Channel routing parameters */
-  sealed trait ChannelRelayParams {
+  /** Routing parameters for relaying payments over a given hop. */
+  sealed trait HopRelayParams {
+    // @formatter:off
     def cltvExpiryDelta: CltvExpiryDelta
     def relayFees: Relayer.RelayFees
     final def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees, amount)
     def htlcMinimum: MilliSatoshi
     def htlcMaximum_opt: Option[MilliSatoshi]
+    // @formatter:on
   }
 
-  object ChannelRelayParams {
-    /** We learnt about this channel from a channel_update */
-    case class FromAnnouncement(channelUpdate: ChannelUpdate) extends ChannelRelayParams {
-      override def cltvExpiryDelta: CltvExpiryDelta = channelUpdate.cltvExpiryDelta
-      override def relayFees: Relayer.RelayFees = channelUpdate.relayFees
-      override def htlcMinimum: MilliSatoshi = channelUpdate.htlcMinimumMsat
-      override def htlcMaximum_opt: Option[MilliSatoshi] = Some(channelUpdate.htlcMaximumMsat)
-    }
-    /** We learnt about this channel from hints in an invoice */
-    case class FromHint(extraHop: Invoice.ExtraEdge) extends ChannelRelayParams {
-      override def cltvExpiryDelta: CltvExpiryDelta = extraHop.cltvExpiryDelta
-      override def relayFees: Relayer.RelayFees = extraHop.relayFees
-      override def htlcMinimum: MilliSatoshi = extraHop.htlcMinimum
-      override def htlcMaximum_opt: Option[MilliSatoshi] = extraHop.htlcMaximum_opt
+  object HopRelayParams {
+    /** We learnt about this channel from a channel_update. */
+    case class FromAnnouncement(channelUpdate: ChannelUpdate) extends HopRelayParams {
+      override val cltvExpiryDelta = channelUpdate.cltvExpiryDelta
+      override val relayFees = channelUpdate.relayFees
+      override val htlcMinimum = channelUpdate.htlcMinimumMsat
+      override val htlcMaximum_opt = Some(channelUpdate.htlcMaximumMsat)
     }
 
-    def areSame(a: ChannelRelayParams, b: ChannelRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
+    /** We learnt about this hop from hints in an invoice. */
+    case class FromHint(extraHop: Invoice.ExtraEdge) extends HopRelayParams {
+      override val cltvExpiryDelta = extraHop.cltvExpiryDelta
+      override val relayFees = extraHop.relayFees
+      override val htlcMinimum = extraHop.htlcMinimum
+      override val htlcMaximum_opt = extraHop.htlcMaximum_opt
+    }
+
+    def areSame(a: HopRelayParams, b: HopRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&
         a.relayFees == b.relayFees &&
         (ignoreHtlcSize || (a.htlcMinimum == b.htlcMinimum && a.htlcMaximum_opt == b.htlcMaximum_opt))
   }
-  // @formatter:on
 
   /**
-   * A directed hop between two connected nodes using a specific channel.
+   * A directed hop between two nodes connected by a channel.
    *
+   * @param shortChannelId scid of the channel.
    * @param nodeId         id of the start node.
    * @param nextNodeId     id of the end node.
-   * @param shortChannelId scid that will be used to build the payment onion.
    * @param params         source for the channel parameters.
    */
-  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, params: ChannelRelayParams) extends Hop {
+  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, params: HopRelayParams) extends Hop {
     // @formatter:off
-    override def cltvExpiryDelta: CltvExpiryDelta = params.cltvExpiryDelta
+    override val cltvExpiryDelta = params.cltvExpiryDelta
     override def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
     // @formatter:on
   }
+
+  sealed trait FinalHop extends Hop
 
   /**
    * A directed hop between two trampoline nodes.
@@ -503,7 +507,7 @@ object Router {
    * @param cltvExpiryDelta cltv expiry delta.
    * @param fee             total fee for that hop.
    */
-  case class NodeHop(nodeId: PublicKey, nextNodeId: PublicKey, cltvExpiryDelta: CltvExpiryDelta, fee: MilliSatoshi) extends Hop {
+  case class NodeHop(nodeId: PublicKey, nextNodeId: PublicKey, cltvExpiryDelta: CltvExpiryDelta, fee: MilliSatoshi) extends FinalHop {
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
@@ -536,18 +540,14 @@ object Router {
   }
 
   case class RouteRequest(source: PublicKey,
-                          target: PublicKey,
-                          amount: MilliSatoshi,
-                          maxFee: MilliSatoshi,
-                          extraEdges: Seq[ExtraEdge] = Nil,
-                          ignore: Ignore = Ignore.empty,
+                          target: Recipient,
                           routeParams: RouteParams,
+                          ignore: Ignore = Ignore.empty,
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None)
 
-  case class FinalizeRoute(amount: MilliSatoshi,
-                           route: PredefinedRoute,
+  case class FinalizeRoute(route: PredefinedRoute,
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
@@ -556,13 +556,21 @@ object Router {
    */
   case class PaymentContext(id: UUID, parentId: UUID, paymentHash: ByteVector32)
 
-  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop]) {
-    require(hops.nonEmpty, "route cannot be empty")
+  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop], finalHop_opt: Option[FinalHop]) {
+    require(hops.nonEmpty || finalHop_opt.nonEmpty, "route cannot be empty")
 
-    val length = hops.length
+    /** Full route including the final hop, if any. */
+    val fullRoute: Seq[Hop] = hops ++ finalHop_opt.toSeq
 
-    def fee(includeLocalChannelCost: Boolean): MilliSatoshi = {
-      val hopsToPay = if (includeLocalChannelCost) hops else hops.drop(1)
+    /**
+     * Fee paid for the trampoline hop, if any.
+     * Note that when using MPP to reach the trampoline node, the trampoline fee must be counted only once.
+     */
+    val trampolineFee: MilliSatoshi = finalHop_opt.collect { case hop: NodeHop => hop.fee(amount) }.getOrElse(0 msat)
+
+    /** Fee paid for the channel hops towards the recipient or the source of the final hop, if any. */
+    def channelFee(includeLocalChannelCost: Boolean): MilliSatoshi = {
+      val hopsToPay = if (includeLocalChannelCost) hops else hops.headOption.map(_ => hops.tail).getOrElse(Nil)
       val amountToSend = hopsToPay.reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
       amountToSend - amount
     }
@@ -573,7 +581,7 @@ object Router {
 
     def stopAt(nodeId: PublicKey): Route = {
       val amountAtStop = hops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
-      Route(amountAtStop, hops.takeWhile(_.nodeId != nodeId))
+      Route(amountAtStop, hops.takeWhile(_.nodeId != nodeId), finalHop_opt)
     }
   }
 
@@ -585,13 +593,14 @@ object Router {
   /** A pre-defined route chosen outside of eclair (e.g. manually by a user to do some re-balancing). */
   sealed trait PredefinedRoute {
     def isEmpty: Boolean
+    def amount: MilliSatoshi
     def targetNodeId: PublicKey
   }
-  case class PredefinedNodeRoute(nodes: Seq[PublicKey]) extends PredefinedRoute {
+  case class PredefinedNodeRoute(amount: MilliSatoshi, nodes: Seq[PublicKey]) extends PredefinedRoute {
     override def isEmpty = nodes.isEmpty
     override def targetNodeId: PublicKey = nodes.last
   }
-  case class PredefinedChannelRoute(targetNodeId: PublicKey, channels: Seq[ShortChannelId]) extends PredefinedRoute {
+  case class PredefinedChannelRoute(amount: MilliSatoshi, targetNodeId: PublicKey, channels: Seq[ShortChannelId]) extends PredefinedRoute {
     override def isEmpty = channels.isEmpty
   }
   // @formatter:on
@@ -616,7 +625,6 @@ object Router {
   case object RoutingStateStreamingUpToDate extends RemoteTypes
   case object GetRouterData
   case object GetNodes
-  case object GetLocalChannels
   case object GetChannels
   case object GetChannelsMap
   case object GetChannelUpdates

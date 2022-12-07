@@ -31,7 +31,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.{ChannelRelayParams, Route}
+import fr.acinq.eclair.router.Router.{HopRelayParams, NodeHop, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
@@ -294,30 +294,48 @@ object ColorSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: ChannelRelayParams)
-private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHopJson])
-object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))))
+private sealed trait HopJson
+private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: HopRelayParams) extends HopJson
+private case class NodeHopJson(nodeId: PublicKey, nextNodeId: PublicKey, fee: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta) extends HopJson
+private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[HopJson])
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => {
+  val channelHops = route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))
+  val finalHop_opt = route.finalHop_opt.map {
+    case h: NodeHop => NodeHopJson(h.nodeId, h.nextNodeId, h.fee, h.cltvExpiryDelta)
+  }
+  RouteFullJson(route.amount, channelHops ++ finalHop_opt.toSeq)
+})
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
 object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
-  val nodeIds = route.hops match {
-    case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
-    case Nil => Nil
+  val channelNodeIds = route.hops.headOption match {
+    case Some(hop) => Seq(hop.nodeId, hop.nextNodeId) ++ route.hops.tail.map(_.nextNodeId)
+    case None => Nil
   }
-  RouteNodeIdsJson(route.amount, nodeIds)
+  val finalNodeIds = route.finalHop_opt match {
+    case Some(hop: NodeHop) if channelNodeIds.nonEmpty => Seq(hop.nextNodeId)
+    case Some(hop: NodeHop) => Seq(hop.nodeId, hop.nextNodeId)
+    case None => Nil
+  }
+  RouteNodeIdsJson(route.amount, channelNodeIds ++ finalNodeIds)
 })
 
-private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
-object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.shortChannelId)))
+private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId], finalHop: Option[String])
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => {
+  val hops = route.hops.map(_.shortChannelId)
+  val finalHop = route.finalHop_opt.map {
+    case _: NodeHop => "trampoline"
+  }
+  RouteShortChannelIdsJson(route.amount, hops, finalHop)
+})
 // @formatter:on
 
 // @formatter:off
 private case class PaymentFailureSummaryJson(amount: MilliSatoshi, route: Seq[PublicKey], message: String)
-private case class PaymentFailedSummaryJson(paymentHash: ByteVector32, destination: PublicKey, totalAmount: MilliSatoshi, pathFindingExperiment: String, failures: Seq[PaymentFailureSummaryJson])
+private case class PaymentFailedSummaryJson(paymentHash: ByteVector32, destination: PublicKey, pathFindingExperiment: String, failures: Seq[PaymentFailureSummaryJson])
 object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFailedSummary](p => PaymentFailedSummaryJson(
   p.cfg.paymentHash,
   p.cfg.recipientNodeId,
-  p.cfg.recipientAmount,
   p.pathFindingExperiment,
   p.paymentFailed.failures.map(f => {
     val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)
@@ -512,8 +530,8 @@ object CustomTypeHints {
   ))
 
   val channelSources: CustomTypeHints = CustomTypeHints(Map(
-    classOf[ChannelRelayParams.FromAnnouncement] -> "announcement",
-    classOf[ChannelRelayParams.FromHint] -> "hint"
+    classOf[HopRelayParams.FromAnnouncement] -> "announcement",
+    classOf[HopRelayParams.FromHint] -> "hint"
   ))
 
   val channelStates: ShortTypeHints = ShortTypeHints(

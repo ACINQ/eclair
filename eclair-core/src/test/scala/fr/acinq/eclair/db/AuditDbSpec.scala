@@ -785,7 +785,6 @@ class AuditDbSpec extends AnyFunSuite {
           dbName = PgAuditDb.DB_NAME,
           targetVersion = PgAuditDb.CURRENT_VERSION,
           postCheck = connection => {
-            val migratedDb = dbs.audit
             using(connection.createStatement()) { statement => assert(getVersion(statement, "audit").contains(PgAuditDb.CURRENT_VERSION)) }
             using(connection.prepareStatement(s"SELECT amount_msat, status, experiment_name, recipient_node_id FROM audit.path_finding_metrics ORDER BY timestamp")) { statement =>
               val result = statement.executeQuery()
@@ -899,7 +898,7 @@ class AuditDbSpec extends AnyFunSuite {
         assert(result.getString(5) == "my-test-experiment")
         if (isPg) {
           assert(result.getString(6) == recipientNodeId.toHex)
-          assert(result.getString(7) == "[{\"feeBase\": 1000, \"sourceNodeId\": \"033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e\", \"targetNodeId\": \"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7\", \"shortChannelId\": \"0x0x1\", \"cltvExpiryDelta\": 144, \"feeProportionalMillionths\": 100}, {\"feeBase\": 900, \"sourceNodeId\": \"02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7\", \"targetNodeId\": \"03f5b1f2768140178e1daac0fec11fce2eec6beec3ed64862bfb1114f7bc535b48\", \"shortChannelId\": \"0x0x2\", \"cltvExpiryDelta\": 12, \"feeProportionalMillionths\": 200}, {\"feeBase\": 800, \"sourceNodeId\": \"026ec3e3438308519a75ca4496822a6c1e229174fbcaadeeb174704c377112c331\", \"targetNodeId\": \"03f5b1f2768140178e1daac0fec11fce2eec6beec3ed64862bfb1114f7bc535b48\", \"shortChannelId\": \"0x0x3\", \"cltvExpiryDelta\": 78, \"feeProportionalMillionths\": 300}]")
+          assert(result.getString(7) == """[{"feeBase": 1000, "htlcMinimum": 1, "sourceNodeId": "033f2d90d6ba1f771e4b3586b35cc9f825cfcb7cdd7edaa2bfd63f0cb81b17580e", "targetNodeId": "02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7", "shortChannelId": "0x0x1", "cltvExpiryDelta": 144, "feeProportionalMillionths": 100}, {"feeBase": 900, "htlcMinimum": 1, "sourceNodeId": "02c15a88ff263cec5bf79c315b17b7f2e083f71d62a880e30281faaac0898cb2b7", "targetNodeId": "03f5b1f2768140178e1daac0fec11fce2eec6beec3ed64862bfb1114f7bc535b48", "shortChannelId": "0x0x2", "cltvExpiryDelta": 12, "feeProportionalMillionths": 200}, {"feeBase": 800, "htlcMinimum": 1, "sourceNodeId": "026ec3e3438308519a75ca4496822a6c1e229174fbcaadeeb174704c377112c331", "targetNodeId": "03f5b1f2768140178e1daac0fec11fce2eec6beec3ed64862bfb1114f7bc535b48", "shortChannelId": "0x0x3", "cltvExpiryDelta": 78, "feeProportionalMillionths": 300}]""")
         }
         assert(!result.next())
       }

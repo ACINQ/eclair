@@ -20,7 +20,6 @@ import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
@@ -34,7 +33,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.router.Router.ChannelHop
+import fr.acinq.eclair.payment.send.ClearRecipient
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -118,19 +117,20 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     // we don't want to be below htlcMinimumMsat
     val requiredAmount = 1000000 msat
 
-    def buildCmdAdd(paymentHash: ByteVector32, dest: PublicKey, paymentSecret: ByteVector32): CMD_ADD_HTLC = {
+    def buildCmdAdd(invoice: Bolt11Invoice): CMD_ADD_HTLC = {
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight = BlockHeight(400000))
-      OutgoingPaymentPacket.buildCommand(self, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, null, dest, null) :: Nil, PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, paymentSecret, None)).get._1
+      val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(self, Upstream.Local(UUID.randomUUID()), invoice.paymentHash, makeSingleHopRoute(amount, invoice.nodeId), ClearRecipient(invoice, amount, expiry, Nil))
+      payment.cmd
     }
 
     def initiatePaymentOrStop(remaining: Int): Unit =
       if (remaining > 0) {
         paymentHandler ! ReceiveStandardPayment(Some(requiredAmount), Left("One coffee"))
         context become {
-          case req: Invoice =>
-            sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId, req.paymentSecret)
+          case invoice: Bolt11Invoice =>
+            sendChannel ! buildCmdAdd(invoice)
             context become {
               case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()
               case RES_ADD_SETTLED(_, htlc, _: HtlcResult.Fulfill) =>
