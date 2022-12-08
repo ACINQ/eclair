@@ -37,6 +37,7 @@ object PeerReadyNotifier {
   case class NotifyWhenPeerReady(replyTo: ActorRef[Result]) extends Command
   private case object PeerNotConnected extends Command
   private case class SomePeerConnected(nodeId: PublicKey) extends Command
+  private case class SomePeerDisconnected(nodeId: PublicKey) extends Command
   private case class PeerChannels(channels: Set[akka.actor.ActorRef]) extends Command
   private case class NewBlockNotTimedOut(currentBlockHeight: BlockHeight) extends Command
   private case object CheckChannelsReady extends Command
@@ -46,6 +47,8 @@ object PeerReadyNotifier {
   sealed trait Result
   case class PeerReady(remoteNodeId: PublicKey, channelsCount: Int) extends Result
   case class PeerUnavailable(remoteNodeId: PublicKey) extends Result
+
+  private case object ChannelsReadyTimerKey
   // @formatter:on
 
   def apply(remoteNodeId: PublicKey, switchboard: ActorRef[Switchboard.GetPeerInfo], timeout_opt: Option[Either[FiniteDuration, BlockHeight]]): Behavior[Command] = {
@@ -61,6 +64,10 @@ object PeerReadyNotifier {
                   case cbc => NewBlockNotTimedOut(cbc.blockHeight)
                 })
               }
+              // In case the peer is not currently connected, we will wait for them to connect instead of regularly
+              // polling the switchboard. This makes more sense for long timeouts such as the ones used for async payments.
+              context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => SomePeerConnected(e.nodeId)))
+              context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](e => SomePeerDisconnected(e.nodeId)))
               waitForPeerConnected(replyTo, remoteNodeId, switchboard, context, timers)
           }
         }
@@ -68,11 +75,7 @@ object PeerReadyNotifier {
     }
   }
 
-  def waitForPeerConnected(replyTo: ActorRef[Result], remoteNodeId: PublicKey, switchboard: ActorRef[Switchboard.GetPeerInfo], context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
-    // In case the peer is not currently connected, we will wait for them to connect instead of regularly polling the
-    // switchboard. This makes more sense for long timeouts such as the ones used for async payments.
-    val peerConnectedAdapter = context.messageAdapter[PeerConnected](pc => SomePeerConnected(pc.nodeId))
-    context.system.eventStream ! EventStream.Subscribe(peerConnectedAdapter)
+  private def waitForPeerConnected(replyTo: ActorRef[Result], remoteNodeId: PublicKey, switchboard: ActorRef[Switchboard.GetPeerInfo], context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
     val peerInfoAdapter = context.messageAdapter[Peer.PeerInfoResponse] {
       // We receive this when we don't have any channel to the given peer and are not currently connected to them.
       // In that case we still want to wait for a connection, because we may want to open a channel to them.
@@ -91,14 +94,16 @@ object PeerReadyNotifier {
           switchboard ! Switchboard.GetPeerInfo(peerInfoAdapter, remoteNodeId)
         }
         Behaviors.same
+      case SomePeerDisconnected(_) =>
+        Behaviors.same
       case PeerChannels(channels) =>
         if (channels.isEmpty) {
-          context.log.info("peer is ready with {} channels", channels.size)
+          context.log.info("peer is ready with no channels")
           replyTo ! PeerReady(remoteNodeId, 0)
           Behaviors.stopped
         } else {
           context.log.debug("peer is connected with {} channels", channels.size)
-          waitForChannelsReady(replyTo, remoteNodeId, channels, context, timers)
+          waitForChannelsReady(replyTo, remoteNodeId, channels, switchboard, context, timers)
         }
       case NewBlockNotTimedOut(currentBlockHeight) =>
         context.log.debug("waiting for peer to connect at block {}", currentBlockHeight)
@@ -110,11 +115,13 @@ object PeerReadyNotifier {
     }
   }
 
-  def waitForChannelsReady(replyTo: ActorRef[Result], remoteNodeId: PublicKey, channels: Set[akka.actor.ActorRef], context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
-    timers.startTimerWithFixedDelay(CheckChannelsReady, initialDelay = 50 millis, delay = 1 second)
+  private def waitForChannelsReady(replyTo: ActorRef[Result], remoteNodeId: PublicKey, channels: Set[akka.actor.ActorRef], switchboard: ActorRef[Switchboard.GetPeerInfo], context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
+    var channelCollector_opt = Option.empty[ActorRef[ChannelStatesCollector.Command]]
+    timers.startTimerWithFixedDelay(ChannelsReadyTimerKey, CheckChannelsReady, initialDelay = 50 millis, delay = 1 second)
     Behaviors.receiveMessagePartial {
       case CheckChannelsReady =>
-        context.spawnAnonymous(ChannelStatesCollector(context.self, channels))
+        channelCollector_opt.foreach(ref => context.stop(ref))
+        channelCollector_opt = Some(context.spawnAnonymous(ChannelStatesCollector(context.self, channels)))
         Behaviors.same
       case ChannelStates(states) =>
         if (states.forall(isChannelReady)) {
@@ -129,6 +136,14 @@ object PeerReadyNotifier {
         Behaviors.same
       case SomePeerConnected(_) =>
         Behaviors.same
+      case SomePeerDisconnected(nodeId) =>
+        if (nodeId == remoteNodeId) {
+          context.log.debug("peer disconnected, waiting for them to reconnect")
+          timers.cancel(ChannelsReadyTimerKey)
+          waitForPeerConnected(replyTo, remoteNodeId, switchboard, context, timers)
+        } else {
+          Behaviors.same
+        }
       case Timeout =>
         context.log.info("timed out waiting for channels to be ready")
         replyTo ! PeerUnavailable(remoteNodeId)
@@ -137,6 +152,8 @@ object PeerReadyNotifier {
   }
 
   // We use an exhaustive pattern matching here to ensure we explicitly handle future new channel states.
+  // We only want to test that channels are not in an uninitialized state, we don't need them to be available to relay
+  // payments (channels closing or waiting to confirm are "ready" for our purposes).
   private def isChannelReady(state: channel.ChannelState): Boolean = state match {
     case channel.WAIT_FOR_INIT_INTERNAL => false
     case channel.WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL => false
@@ -164,7 +181,7 @@ object PeerReadyNotifier {
     case channel.ERR_INFORMATION_LEAK => true
   }
 
-  object ChannelStatesCollector {
+  private object ChannelStatesCollector {
 
     // @formatter:off
     sealed trait Command
