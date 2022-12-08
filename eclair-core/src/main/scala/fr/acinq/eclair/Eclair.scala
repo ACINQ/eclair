@@ -556,11 +556,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     } else {
       for {
         (localChannelDescs, nonLocalChannelIds) <- getLocalChannelDescs
-        channelsMap <- (appKit.router ? GetChannelsMap).mapTo[SortedMap[ShortChannelId, PublicChannel]]
+        routerData <- (appKit.router ? GetRouterData).mapTo[Router.Data]
       } yield {
         localChannelDescs ++ nonLocalChannelIds.flatMap { id =>
-          val ann = channelsMap.getOrElse(id, throw new IllegalArgumentException(s"unknown channel: $id")).ann
-          toChannelDesc(ann.shortChannelId, ann.nodeId1, ann.nodeId2)
+          val channel = routerData.resolve(id).getOrElse(throw new IllegalArgumentException(s"unknown channel: $id"))
+          toChannelDesc(id, channel.nodeId1, channel.nodeId2)
         }
       }
     }
