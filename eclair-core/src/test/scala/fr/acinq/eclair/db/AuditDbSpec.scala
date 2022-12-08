@@ -101,18 +101,18 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(e11)
       db.add(e12)
 
-      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, None).toList == List(e5, e1, e6))
-      assert(db.listSent(from = TimestampMilli(100000L), to = TimestampMilli.now() + 1.minute, None).toList == List(e1))
+      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute).toList == List(e5, e1, e6))
+      assert(db.listSent(from = TimestampMilli(100000L), to = TimestampMilli.now() + 1.minute).toList == List(e1))
       assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
       assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e5, e1))
       assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e1, e6))
       assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 2))).toList == List(e6))
       assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 3))).toList == List())
-      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, None).toList == List(e2))
+      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).toList == List(e2))
       assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
       assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e2))
       assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List())
-      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, None).toList == List(e3, e10, e11, e12))
+      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).toList == List(e3, e10, e11, e12))
       assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
       assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e3, e10))
       assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e10, e11))
@@ -261,7 +261,7 @@ class AuditDbSpec extends AnyFunSuite {
       targetVersion = SqliteAuditDb.CURRENT_VERSION,
       postCheck = connection => {
         // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
-        assert(dbs.audit.listSent(0 unixms, TimestampMilli.now() + 1.minute, None) == Seq(ps.copy(id = ZERO_UUID, parts = Seq(ps.parts.head.copy(id = ZERO_UUID)))))
+        assert(dbs.audit.listSent(0 unixms, TimestampMilli.now() + 1.minute) == Seq(ps.copy(id = ZERO_UUID, parts = Seq(ps.parts.head.copy(id = ZERO_UUID)))))
 
         val postMigrationDb = new SqliteAuditDb(connection)
 
@@ -393,11 +393,11 @@ class AuditDbSpec extends AnyFunSuite {
         using(connection.createStatement()) { statement =>
           assert(getVersion(statement, "audit").contains(SqliteAuditDb.CURRENT_VERSION))
         }
-        assert(migratedDb.listSent(50 unixms, 150 unixms, None).toSet == Set(
+        assert(migratedDb.listSent(50 unixms, 150 unixms).toSet == Set(
           ps1.copy(id = pp1.id, recipientAmount = pp1.amount, parts = pp1 :: Nil),
           ps1.copy(id = pp2.id, recipientAmount = pp2.amount, parts = pp2 :: Nil)
         ))
-        assert(migratedDb.listRelayed(100 unixms, 120 unixms, None) == Seq(relayed1, relayed2))
+        assert(migratedDb.listRelayed(100 unixms, 120 unixms) == Seq(relayed1, relayed2))
 
         val postMigrationDb = new SqliteAuditDb(connection)
         using(connection.createStatement()) { statement =>
@@ -492,7 +492,7 @@ class AuditDbSpec extends AnyFunSuite {
           postCheck = connection => {
             val migratedDb = dbs.audit
 
-            assert(migratedDb.listRelayed(100 unixms, 120 unixms, None) == Seq(relayed1, relayed2))
+            assert(migratedDb.listRelayed(100 unixms, 120 unixms) == Seq(relayed1, relayed2))
 
             val postMigrationDb = new PgAuditDb()(dbs.datasource)
             using(connection.createStatement()) { statement =>
@@ -500,7 +500,7 @@ class AuditDbSpec extends AnyFunSuite {
             }
             val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150 unixms)
             postMigrationDb.add(relayed3)
-            assert(postMigrationDb.listRelayed(100 unixms, 160 unixms, None) == Seq(relayed1, relayed2, relayed3))
+            assert(postMigrationDb.listRelayed(100 unixms, 160 unixms) == Seq(relayed1, relayed2, relayed3))
           }
         )
       case dbs: TestSqliteDatabases =>
@@ -575,7 +575,7 @@ class AuditDbSpec extends AnyFunSuite {
             using(connection.createStatement()) { statement =>
               assert(getVersion(statement, "audit").contains(SqliteAuditDb.CURRENT_VERSION))
             }
-            assert(migratedDb.listRelayed(100 unixms, 120 unixms, None) == Seq(relayed1, relayed2))
+            assert(migratedDb.listRelayed(100 unixms, 120 unixms) == Seq(relayed1, relayed2))
 
             val postMigrationDb = new SqliteAuditDb(connection)
             using(connection.createStatement()) { statement =>
@@ -583,7 +583,7 @@ class AuditDbSpec extends AnyFunSuite {
             }
             val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150 unixms)
             postMigrationDb.add(relayed3)
-            assert(postMigrationDb.listRelayed(100 unixms, 160 unixms, None) == Seq(relayed1, relayed2, relayed3))
+            assert(postMigrationDb.listRelayed(100 unixms, 160 unixms) == Seq(relayed1, relayed2, relayed3))
           }
         )
     }

@@ -44,11 +44,11 @@ trait AuditDb {
 
   def addPathFindingExperimentMetrics(metrics: PathFindingExperimentMetrics): Unit
 
-  def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentSent]
+  def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentSent]
 
-  def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentReceived]
+  def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentReceived]
 
-  def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentRelayed]
+  def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed]
 
   def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee]
 
