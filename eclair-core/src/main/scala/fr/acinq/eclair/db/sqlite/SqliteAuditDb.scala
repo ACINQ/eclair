@@ -310,7 +310,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentSent] =
+  override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentSent] =
     using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
@@ -342,7 +342,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       }
     }
 
-  override def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentReceived] =
+  override def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentReceived] =
     using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
@@ -365,7 +365,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       }
     }
 
-  override def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentRelayed] = {
+  override def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed] = {
     val trampolineByHash = using(sqlite.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
@@ -436,7 +436,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
     }
     case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
-    val relayed = listRelayed(from, to, None).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { (previous, e) =>
+    val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { (previous, e) =>
       // NB: we must avoid counting the fee twice: we associate it to the outgoing channels rather than the incoming ones.
       val current = e match {
         case c: ChannelPaymentRelayed => Map(

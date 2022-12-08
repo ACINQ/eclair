@@ -275,7 +275,7 @@ class AuditDbSpec extends AnyFunSuite {
 
         // the old record will have the UNKNOWN_UUID but the new ones will have their actual id
         val expected = Seq(ps.copy(id = ZERO_UUID, parts = Seq(ps.parts.head.copy(id = ZERO_UUID))), ps1)
-        assert(postMigrationDb.listSent(0 unixms, TimestampMilli.now() + 1.minute, None) == expected)
+        assert(postMigrationDb.listSent(0 unixms, TimestampMilli.now() + 1.minute) == expected)
       }
     )
   }
@@ -409,9 +409,9 @@ class AuditDbSpec extends AnyFunSuite {
         ))
         val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150 unixms)
         postMigrationDb.add(ps2)
-        assert(postMigrationDb.listSent(155 unixms, 200 unixms, None) == Seq(ps2))
+        assert(postMigrationDb.listSent(155 unixms, 200 unixms) == Seq(ps2))
         postMigrationDb.add(relayed3)
-        assert(postMigrationDb.listRelayed(100 unixms, 160 unixms, None) == Seq(relayed1, relayed2, relayed3))
+        assert(postMigrationDb.listRelayed(100 unixms, 160 unixms) == Seq(relayed1, relayed2, relayed3))
       }
     )
   }
