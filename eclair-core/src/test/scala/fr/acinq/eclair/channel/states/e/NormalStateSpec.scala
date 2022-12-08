@@ -2743,10 +2743,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val aliceCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! CurrentBlockHeight(BlockHeight(400145))
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
-
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx.txid)
+    channelUpdateListener.expectMsgType[LocalChannelDown]
   }
 
   test("recv CurrentBlockCount (fulfilled signed htlc ignored by upstream peer)") { f =>
@@ -2779,6 +2779,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txOut == htlcSuccessTx.txOut)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
+    channelUpdateListener.expectMsgType[LocalChannelDown]
     alice2blockchain.expectNoMessage(500 millis)
   }
 
@@ -2812,6 +2813,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txOut == htlcSuccessTx.txOut)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
+    channelUpdateListener.expectMsgType[LocalChannelDown]
     alice2blockchain.expectNoMessage(500 millis)
   }
 
@@ -2849,6 +2851,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txOut == htlcSuccessTx.txOut)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
+    channelUpdateListener.expectMsgType[LocalChannelDown]
     alice2blockchain.expectNoMessage(500 millis)
   }
 
