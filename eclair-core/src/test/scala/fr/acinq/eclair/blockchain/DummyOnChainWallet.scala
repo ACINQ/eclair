@@ -36,6 +36,7 @@ class DummyOnChainWallet extends OnChainWallet {
   import DummyOnChainWallet._
 
   val funded = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
+  val published = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
   var rolledback = Set.empty[Transaction]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
@@ -44,11 +45,17 @@ class DummyOnChainWallet extends OnChainWallet {
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Future.successful(FundTransactionResponse(tx, 0 sat, None))
+  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+    funded += (tx.txid -> tx)
+    Future.successful(FundTransactionResponse(tx, 0 sat, None))
+  }
 
   override def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = Future.successful(SignTransactionResponse(tx, complete = true))
 
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = Future.successful(tx.txid)
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+    published += (tx.txid -> tx)
+    Future.successful(tx.txid)
+  }
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
     val tx = DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, amount)
@@ -56,7 +63,7 @@ class DummyOnChainWallet extends OnChainWallet {
     Future.successful(tx)
   }
 
-  override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+  override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).map(_ => true)
 
   override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("transaction not found"))
 

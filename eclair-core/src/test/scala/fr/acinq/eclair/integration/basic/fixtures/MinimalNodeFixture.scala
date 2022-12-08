@@ -1,6 +1,8 @@
 package fr.acinq.eclair.integration.basic.fixtures
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
+import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps}
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
@@ -33,7 +35,7 @@ import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration.DurationInt
-import scala.util.{Random, Try}
+import scala.util.Random
 
 /**
  * A minimal node setup, with real actors.
@@ -253,33 +255,64 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   }
 
   /** All known funding txs (we don't evaluate immediately because new ones could be created) */
-  def knownFundingTxs(nodes: MinimalNodeFixture*): () => Iterable[Transaction] = () => nodes.map(_.wallet.funded.values).reduce(_ ++ _)
+  def knownFundingTxs(nodes: MinimalNodeFixture*): () => Iterable[Transaction] = () => nodes.flatMap(_.wallet.published.values)
 
   /**
    * An autopilot method for the watcher, that handled funding confirmation requests from the channel and channel
    * validation requests from the router
    */
-  def watcherAutopilot(knownFundingTxs: () => Iterable[Transaction], deepConfirm: Boolean = true): TestActor.AutoPilot = (_, msg) => msg match {
-    case watch: ZmqWatcher.WatchFundingConfirmed =>
-      val realScid = deterministicShortId(watch.txId)
-      val fundingTx = knownFundingTxs().find(_.txid == watch.txId)
-        .getOrElse(throw new RuntimeException(s"unknown fundingTxId=${watch.txId}, known=${knownFundingTxs().map(_.txid).mkString(",")}"))
-      watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
-      TestActor.KeepRunning
-    case watch: ZmqWatcher.WatchFundingDeeplyBuried if deepConfirm =>
-      val realScid = deterministicShortId(watch.txId)
-      val fundingTx = knownFundingTxs().find(_.txid == watch.txId).get
-      watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
-      TestActor.KeepRunning
-    case vr: ZmqWatcher.ValidateRequest =>
-      val res = Try {
-        val fundingTx = knownFundingTxs().find(tx => deterministicShortId(tx.txid) == vr.ann.shortChannelId)
-          .getOrElse(throw new RuntimeException(s"unknown realScid=${vr.ann.shortChannelId}, known=${knownFundingTxs().map(tx => deterministicShortId(tx.txid)).mkString(",")}"))
-        (fundingTx, ZmqWatcher.UtxoStatus.Unspent)
-      }.toEither
-      vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
-      TestActor.KeepRunning
-    case _ => TestActor.KeepRunning
+  def watcherAutopilot(knownFundingTxs: () => Iterable[Transaction], deepConfirm: Boolean = true)(implicit system: ActorSystem): TestActor.AutoPilot = {
+    val fundingTxWatcher = system.spawnAnonymous(FundingTxWatcher(knownFundingTxs))
+    (_, msg) =>
+      msg match {
+        case watch: ZmqWatcher.WatchFundingConfirmed =>
+          fundingTxWatcher ! FundingTxWatcher.WrappedWatchFundingConfirmed(watch.replyTo, watch.txId)
+          TestActor.KeepRunning
+        case watch: ZmqWatcher.WatchFundingDeeplyBuried if deepConfirm =>
+          fundingTxWatcher ! FundingTxWatcher.WrappedWatchFundingDeeplyBuried(watch.replyTo, watch.txId)
+          TestActor.KeepRunning
+        case vr: ZmqWatcher.ValidateRequest =>
+          val res = knownFundingTxs().find(tx => deterministicShortId(tx.txid) == vr.ann.shortChannelId) match {
+            case Some(fundingTx) => Right(fundingTx, ZmqWatcher.UtxoStatus.Unspent)
+            case None => Left(new RuntimeException(s"unknown realScid=${vr.ann.shortChannelId}, known=${knownFundingTxs().map(tx => deterministicShortId(tx.txid)).mkString(",")}"))
+          }
+          vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
+          TestActor.KeepRunning
+        case _ => TestActor.KeepRunning
+      }
+  }
+
+  // When opening a channel, only one of the two nodes publishes the funding transaction, which creates a race when the
+  // other node sets a watch before that happens. We simply retry until the funding transaction is published.
+  private object FundingTxWatcher {
+    // @formatter:off
+    sealed trait Command
+    case class WrappedWatchFundingConfirmed(replyTo: akka.actor.typed.ActorRef[ZmqWatcher.WatchFundingConfirmedTriggered], txId: ByteVector32) extends Command
+    case class WrappedWatchFundingDeeplyBuried(replyTo: akka.actor.typed.ActorRef[ZmqWatcher.WatchFundingDeeplyBuriedTriggered], txId: ByteVector32) extends Command
+    // @formatter:on
+
+    def apply(knownFundingTxs: () => Iterable[Transaction]): Behavior[Command] = {
+      Behaviors.setup { _ =>
+        Behaviors.withTimers { timers =>
+          Behaviors.receiveMessage {
+            case watch: WrappedWatchFundingConfirmed =>
+              val realScid = deterministicShortId(watch.txId)
+              knownFundingTxs().find(_.txid == watch.txId) match {
+                case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
+                case None => timers.startSingleTimer(watch, 10 millis)
+              }
+              Behaviors.same
+            case watch: WrappedWatchFundingDeeplyBuried =>
+              val realScid = deterministicShortId(watch.txId)
+              knownFundingTxs().find(_.txid == watch.txId) match {
+                case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
+                case None => timers.startSingleTimer(watch, 10 millis)
+              }
+              Behaviors.same
+          }
+        }
+      }
+    }
   }
 
   def sendPayment(node1: MinimalNodeFixture, amount: MilliSatoshi, invoice: Invoice)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
