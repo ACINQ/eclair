@@ -38,11 +38,11 @@ object FormParamExtractors {
 
   implicit val publicKeyUnmarshaller: Unmarshaller[String, PublicKey] = Unmarshaller.strict { rawPubKey => PublicKey(ByteVector.fromValidHex(rawPubKey)) }
 
-  implicit val binaryDataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidHex(str) }
+  implicit val bytesUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidHex(str) }
 
-  implicit val sha256HashUnmarshaller: Unmarshaller[String, ByteVector32] = Unmarshaller.strict { bin => ByteVector32.fromValidHex(bin) }
+  implicit val bytes32Unmarshaller: Unmarshaller[String, ByteVector32] = Unmarshaller.strict { bin => ByteVector32.fromValidHex(bin) }
 
-  implicit val sha256HashesUnmarshaller: Unmarshaller[String, List[ByteVector32]] = listUnmarshaller(bin => ByteVector32.fromValidHex(bin))
+  implicit val bytes32ListUnmarshaller: Unmarshaller[String, List[ByteVector32]] = listUnmarshaller(bin => ByteVector32.fromValidHex(bin))
 
   implicit val bolt11Unmarshaller: Unmarshaller[String, Bolt11Invoice] = Unmarshaller.strict { rawRequest => Bolt11Invoice.fromString(rawRequest).get }
 
