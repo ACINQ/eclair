@@ -4,182 +4,15 @@
 
 ## Major changes
 
-### Bitcoin Core 23 or higher required
-
-This release adds support for Bitcoin Core 23.x and removes support for previous Bitcoin Core versions.
-Please make sure you have updated your Bitcoin Core node before updating eclair, as eclair won't start when connected to older versions of `bitcoind`.
-
-### Add support for channel aliases and zeroconf channels
-
-#### Channel aliases
-
-Channel aliases offer a way to use arbitrary channel identifiers for routing. This feature improves privacy by not
-leaking the funding transaction of the channel during payments.
-
-This feature is enabled by default, but your peer has to support it too, and it is not compatible with public channels.
-
-#### Zeroconf channels
-
-Zeroconf channels make it possible to use a newly created channel before the funding tx is confirmed on the blockchain.
-
-:warning: Zeroconf requires the fundee to trust the funder. For this reason it is disabled by default, and you can
-only enable it on a peer-by-peer basis.
-
-##### Enabling through features
-
-Below is how to enable zeroconf with a given peer in `eclair.conf`. With this config, your node will _accept_ zeroconf
-channels from node `03864e...`.
-
-```eclair.conf
-override-init-features = [
-  {
-    nodeid = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-    features = {
-      // dependencies of zeroconf
-      option_static_remotekey = optional
-      option_anchors_zero_fee_htlc_tx = optional
-      option_scid_alias = optional
-      // enable zeroconf
-      option_zeroconf = optional
-    }
-  }
-]
-```
-
-Note that, as funder, Eclair will happily use an unconfirmed channel if the peer sends an early `channel_ready`, even if
-the `option_zeroconf` feature isn't enabled, as long as the peer provides a channel alias.
-
-##### Enabling through channel type
-
-You can enable `option_scid_alias` and `option_zeroconf` features by requesting them in the channel type, even if those
-options aren't enabled in your features.
-
-The new channel types variations are:
-
-- `anchor_outputs_zero_fee_htlc_tx+scid_alias`
-- `anchor_outputs_zero_fee_htlc_tx+zeroconf`
-- `anchor_outputs_zero_fee_htlc_tx+scid_alias+zeroconf`
-
-Examples using the command-line interface:
-
-- open a public zeroconf channel:
-
-```shell
-$ ./eclair-cli open --nodeId=03864e... --fundingSatoshis=100000 --channelType=anchor_outputs_zero_fee_htlc_tx+zeroconf --announceChannel=true
-```
-
-- open a private zeroconf channel with aliases:
-
-```shell
-$ ./eclair-cli open --nodeId=03864e... --fundingSatoshis=100000 --channelType=anchor_outputs_zero_fee_htlc_tx+scid_alias+zeroconf --announceChannel=false
-```
-
-### Experimental support for dual-funding
-
-This release adds experimental support for dual-funded channels, as specified [here](https://github.com/lightning/bolts/pull/851).
-Dual-funded channels have many benefits:
-
-- both peers can contribute to channel funding
-- the funding transaction can be RBF-ed
-
-This feature is turned off by default, because there may still be breaking changes in the specification.
-To turn it on, simply enable the feature in your `eclair.conf`:
-
-```conf
-eclair.features.option_dual_fund = optional
-```
-
-If your peer also supports the feature, eclair will automatically use dual-funding when opening a channel.
-If the channel doesn't confirm, you can use the `rbfopen` RPC to initiate an RBF attempt and speed up confirmation.
-
-In this first version, the non-initiator cannot yet contribute funds to the channel.
-This will be added in future updates.
-
-### Changes to features override
-
-Eclair supports overriding features on a per-peer basis, using the `eclair.override-init-features` field in `eclair.conf`.
-These overrides will now be applied on top of the default features, whereas the previous behavior was to completely ignore default features.
-We provide detailed examples in the [documentation](../Configure.md#customize-features).
-
-### Remove support for Tor v2
-
-Dropped support for version 2 of Tor protocol. That means:
-
-- Eclair can't open control connection to Tor daemon version 0.3.3.5 and earlier anymore
-- Eclair can't create hidden services for Tor protocol v2 with newer versions of Tor daemon
-
-IMPORTANT: You'll need to upgrade your Tor daemon if for some reason you still use Tor v0.3.3.5 or earlier before
-upgrading to this release.
+<insert changes>
 
 ### API changes
 
-- `channelbalances` retrieves information about the balances of all local channels (#2196)
-- `channelbalances` and `usablebalances` return a `shortIds` object instead of a single `shortChannelId` (#2323)
-- `stop` stops eclair: please note that the recommended way of stopping eclair is simply to kill its process (#2233)
-- `rbfopen` lets the initiator of a dual-funded channel RBF the funding transaction (#2275)
-- `listinvoices` and `audit` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474, #2487)
+- `audit` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474, #2487)
 
 ### Miscellaneous improvements and bug fixes
 
-#### Delay enforcement of new channel fees
-
-When updating the relay fees for a channel, eclair can now continue accepting to relay payments using the old fee even
-if they would be rejected with the new fee.
-By default, eclair will still accept the old fee for 10 minutes, you can change it by
-setting `eclair.relay.fees.enforcement-delay` to a different value.
-
-If you want a specific fee update to ignore this delay, you can update the fee twice to make eclair forget about the
-previous fee.
-
-#### New minimum funding setting for private channels
-
-New settings have been added to independently control the minimum funding required to open public and private channels
-to your node.
-
-The `eclair.channel.min-funding-satoshis` setting has been deprecated and replaced with the following two new settings
-and defaults:
-
-- `eclair.channel.min-public-funding-satoshis = 100000`
-- `eclair.channel.min-private-funding-satoshis = 100000`
-
-If your configuration file changes `eclair.channel.min-funding-satoshis` then you should replace it with both of these
-new settings.
-
-#### Expired incoming invoices now purged if unpaid
-
-Expired incoming invoices that are unpaid will be searched for and purged from the database when Eclair starts up.
-Thereafter searches for expired unpaid invoices to purge will run once every 24 hours. You can disable this feature, or
-change the search interval with two new settings:
-
-- `eclair.purge-expired-invoices.enabled = true`
-- `eclair.purge-expired-invoices.interval = 24 hours`
-
-#### Skip anchor CPFP for empty commitment
-
-When using anchor outputs and a channel force-closes without HTLCs in the commitment transaction, funds cannot be stolen by your counterparty.
-In that case eclair can skip spending the anchor output to save on-chain fees, even if the transaction doesn't confirm.
-This can be activated by setting the following value in your `eclair.conf`:
-
-```conf
-eclair.on-chain-fees.spend-anchor-without-htlcs = false
-```
-
-This is disabled by default, because there is still a risk of losing funds until bitcoin adds support for package relay.
-If the mempool becomes congested and the feerate is too low, the commitment transaction may never reach miners' mempools because it's below the minimum relay feerate.
-
-#### Public IP addresses can be DNS host names
-
-You can now specify a DNS host name as one of your `server.public-ips` addresses (see PR [#911](https://github.com/lightning/bolts/pull/911)).
-Note: you can not specify more than one DNS host name.
-
-#### Support for testing on the signet network
-
-To test Eclair with bitcoind configured for signet, set the following values in `eclair.conf`:
-
-```conf
-eclair.chain = "signet"
-eclair.bitcoind.rpcport=38332
-```
+<insert changes>
 
 ## Verifying signatures
 
@@ -215,17 +48,14 @@ Use the following command to generate the eclair-node package:
 mvn clean install -DskipTests
 ```
 
-That should generate `eclair-node/target/eclair-node-<version>-XXXXXXX-bin.zip` with sha256 checksums that match the one
-we provide and sign in `SHA256SUMS.asc`
+That should generate `eclair-node/target/eclair-node-<version>-XXXXXXX-bin.zip` with sha256 checksums that match the one we provide and sign in `SHA256SUMS.asc`
 
-(*) You may be able to build the exact same artefacts with other operating systems or versions of JDK 11, we have not
-tried everything.
+(*) You may be able to build the exact same artefacts with other operating systems or versions of JDK 11, we have not tried everything.
 
 ## Upgrading
 
-This release is fully compatible with previous eclair versions. You don't need to close your channels, just stop eclair,
-upgrade and restart.
+This release is fully compatible with previous eclair versions. You don't need to close your channels, just stop eclair, upgrade and restart.
 
 ## Changelog
 
-<fill this section when publishing the release with `git log v0.7.0... --format=oneline --reverse`>
+<fill this section when publishing the release with `git log v0.8.0... --format=oneline --reverse`>

@@ -1,12 +1,12 @@
 package fr.acinq.eclair.db
 
 import akka.actor.ActorSystem
-import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.zaxxer.hikari.HikariConfig
 import fr.acinq.eclair.db.Databases.{PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.migration._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.db.pg._
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.scalatest.Ignore
 import org.scalatest.funsuite.AnyFunSuite
 import org.sqlite.SQLiteConfig

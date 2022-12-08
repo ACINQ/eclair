@@ -33,7 +33,6 @@ kamon {
 }
 ```
 
-
 When starting eclair, you should enable the Kanela agent:
 
 ```sh
@@ -72,9 +71,10 @@ kamon {
 }
 ```
 
-You should then configure your Prometheus process to scrape metrics from the exposed http server. 
+You should then configure your Prometheus process to scrape metrics from the exposed http server.
+
 * Download Prometheus [here](https://prometheus.io/download/).
-* Add the following configuration to the `prometheus.yml` file (see the [Prometheus documentation](https://prometheus.io/docs/prometheus/latest/configuration/configuration/) for more details)
+* Add the following configuration to the `prometheus.yml` file (see the [Prometheus documentation](https://prometheus.io/docs/prometheus/latest/configuration/configuration/) for more details).
 
 ```prometheus.yml
 global:
@@ -86,10 +86,10 @@ scrape_configs:
       - targets: ['<url of the eclair http embedded server>']
  ```
 
-Eclair provides many [Grafana](https://grafana.com/) dashboards to help you monitor your lightning node, which you can find in the `monitoring` folder of this repository. Follow the [Grafana documentation](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard) to import these dashboards and create new ones if necessary.
+Eclair provides [Grafana](https://grafana.com/) dashboards to help you monitor your lightning node, which you can find in the `monitoring` folder of this repository.
+Follow the [Grafana documentation](https://grafana.com/docs/grafana/latest/dashboards/export-import/#import-dashboard) to import these dashboards and create new ones if necessary.
 
 Note: do not forget to add `Prometheus` as a data source in grafana (see [grafana documentation](https://prometheus.io/docs/visualization/grafana/#creating-a-prometheus-data-source) for more details)
-
 
 ## Example metrics
 
@@ -101,4 +101,3 @@ metrics are just a small sample of all the metrics we provide:
 * Number of connected peers
 * Bitcoin wallet balance
 * Various metrics about the public graph (nodes, channels, updates, etc)
-

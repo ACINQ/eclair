@@ -1,9 +1,9 @@
 package fr.acinq.eclair.db
 
-import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.io.File

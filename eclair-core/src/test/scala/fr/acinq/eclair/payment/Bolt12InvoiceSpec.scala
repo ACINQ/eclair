@@ -50,16 +50,16 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     signedInvoice
   }
 
-  def createDirectPath(sessionKey: PrivateKey, nodeId: PublicKey, pathId: ByteVector): BlindedRoute = {
+  def createPaymentBlindedRoute(nodeId: PublicKey, sessionKey: PrivateKey = randomKey(), pathId: ByteVector = randomBytes32()): PaymentBlindedRoute = {
     val selfPayload = blindedRouteDataCodec.encode(TlvStream(Seq(RouteBlindingEncryptedDataTlv.PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty)))).require.bytes
-    Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route
+    PaymentBlindedRoute(Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route, PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
   }
 
   test("check invoice signature") {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
     val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
-    val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features.empty, Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32())))
+    val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.isValidFor(offer, request))
     assert(invoice.checkSignature())
     assert(!invoice.checkRefundSignature())
@@ -84,7 +84,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
     val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
-    val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features.empty, Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32())))
+    val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.isValidFor(offer, request))
     assert(!invoice.isValidFor(Offer(None, "test offer", randomKey().publicKey, Features.empty, chain), request))
     // amount must match the offer
@@ -112,7 +112,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val offer = Offer(Some(15000 msat), "test offer", nodeKey.publicKey, Features(VariableLengthOnion -> Mandatory), chain)
     val request = InvoiceRequest(offer, 15000 msat, 1, Features(VariableLengthOnion -> Mandatory), payerKey, chain)
     assert(request.quantity_opt.isEmpty) // when paying for a single item, the quantity field must not be present
-    val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional), Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32())))
+    val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional), Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.isValidFor(offer, request))
     val withInvalidFeatures = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case FeaturesTlv(_) => FeaturesTlv(Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Mandatory)) case x => x }.toSeq)), nodeKey)
     assert(!withInvalidFeatures.isValidFor(offer, request))
@@ -139,7 +139,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
       val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
       InvoiceRequest(TlvStream(tlvs :+ Signature(signature)))
     }
-    val withPayerDetails = Bolt12Invoice(offer, requestWithPayerDetails, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features.empty, Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32())))
+    val withPayerDetails = Bolt12Invoice(offer, requestWithPayerDetails, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(withPayerDetails.isValidFor(offer, requestWithPayerDetails))
     assert(!withPayerDetails.isValidFor(offer, request))
     val withOtherPayerInfo = signInvoice(Bolt12Invoice(TlvStream(withPayerDetails.records.records.map { case PayerInfo(_) => PayerInfo(hex"deadbeef") case x => x }.toSeq)), nodeKey)
@@ -154,7 +154,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
     val offer = Offer(Some(5000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 5000 msat, 1, Features.empty, payerKey, chain)
-    val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features.empty, Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32())))
+    val invoice = Bolt12Invoice(offer, request, randomBytes32(), nodeKey, CltvExpiryDelta(20), Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(!invoice.isExpired())
     assert(invoice.isValidFor(offer, request))
     val expiredInvoice1 = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case CreatedAt(_) => CreatedAt(0 unixsec) case x => x })), nodeKey)
@@ -171,14 +171,15 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val (chain1, chain2) = (randomBytes32(), randomBytes32())
     val offerBtc = Offer(Some(amount), "bitcoin offer", nodeKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val requestBtc = InvoiceRequest(offerBtc, amount, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+    val paymentBlindedRoute = createPaymentBlindedRoute(nodeKey.publicKey)
     val invoiceImplicitBtc = {
       val tlvs: Seq[InvoiceTlv] = Seq(
         CreatedAt(TimestampSecond.now()),
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerBtc.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32()))),
-        PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
+        Paths(Seq(paymentBlindedRoute.route)),
+        PaymentPathsInfo(Seq(paymentBlindedRoute.paymentInfo)),
         Amount(amount),
         Description(offerBtc.description),
         PayerKey(payerKey.publicKey)
@@ -194,8 +195,8 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerBtc.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32()))),
-        PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
+        Paths(Seq(paymentBlindedRoute.route)),
+        PaymentPathsInfo(Seq(paymentBlindedRoute.paymentInfo)),
         Amount(amount),
         Description(offerBtc.description),
         PayerKey(payerKey.publicKey)
@@ -211,8 +212,8 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerBtc.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32()))),
-        PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
+        Paths(Seq(paymentBlindedRoute.route)),
+        PaymentPathsInfo(Seq(paymentBlindedRoute.paymentInfo)),
         Amount(amount),
         Description(offerBtc.description),
         PayerKey(payerKey.publicKey)
@@ -230,8 +231,8 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerOtherChains.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32()))),
-        PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
+        Paths(Seq(paymentBlindedRoute.route)),
+        PaymentPathsInfo(Seq(paymentBlindedRoute.paymentInfo)),
         Amount(amount),
         Description(offerOtherChains.description),
         PayerKey(payerKey.publicKey)
@@ -247,8 +248,8 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         PaymentHash(Crypto.sha256(randomBytes32())),
         OfferId(offerOtherChains.offerId),
         NodeId(nodeKey.publicKey),
-        Paths(Seq(createDirectPath(randomKey(), nodeKey.publicKey, randomBytes32()))),
-        PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, amount, Features.empty))),
+        Paths(Seq(paymentBlindedRoute.route)),
+        PaymentPathsInfo(Seq(paymentBlindedRoute.paymentInfo)),
         Amount(amount),
         Description(offerOtherChains.description),
         PayerKey(payerKey.publicKey)
@@ -267,7 +268,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
       Amount(765432 msat),
       Description("minimal invoice"),
       NodeId(nodeKey.publicKey),
-      Paths(Seq(createDirectPath(randomKey(), randomKey().publicKey, randomBytes32()))),
+      Paths(Seq(createPaymentBlindedRoute(randomKey().publicKey).route)),
       PaymentPathsInfo(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 765432 msat, Features.empty))),
       CreatedAt(TimestampSecond(123456789L)),
       PaymentHash(randomBytes32()),
@@ -296,7 +297,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val features = Features[Feature](Features.VariableLengthOnion -> FeatureSupport.Mandatory)
     val issuer = "alice"
     val nodeKey = PrivateKey(hex"998cf8ecab46f949bb960813b79d3317cabf4193452a211795cd8af1b9a25d90")
-    val path = createDirectPath(PrivateKey(hex"f0442c17bdd2cefe4a4ede210f163b068bb3fea6113ffacea4f322de7aa9737b"), nodeKey.publicKey, hex"76030536ba732cdc4e7bb0a883750bab2e88cb3dddd042b1952c44b4849c86bb")
+    val path = createPaymentBlindedRoute(nodeKey.publicKey, PrivateKey(hex"f0442c17bdd2cefe4a4ede210f163b068bb3fea6113ffacea4f322de7aa9737b"), hex"76030536ba732cdc4e7bb0a883750bab2e88cb3dddd042b1952c44b4849c86bb").route
     val payInfo = PaymentInfo(2345 msat, 765, CltvExpiryDelta(324), 1000 msat, amount, Features.empty)
     val quantity = 57
     val payerKey = ByteVector32.fromValidHex("8faadd71b1f78b16265e5b061b9d2b88891012dc7ad38626eeaaa2a271615a65")
@@ -369,7 +370,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(request.toString == encodedRequest)
     assert(InvoiceRequest.decode(encodedRequest).get == request)
     assert(request.isValidFor(offer))
-    val invoice = Bolt12Invoice(offer, request, preimage, nodeKey, CltvExpiryDelta(22), Features.empty, Seq(createDirectPath(randomKey(), nodeKey.publicKey, hex"")))
+    val invoice = Bolt12Invoice(offer, request, preimage, nodeKey, CltvExpiryDelta(22), Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(Bolt12Invoice.fromString(invoice.toString).get.records == invoice.records)
     assert(invoice.isValidFor(offer, request))
     // Invoice generation is not reproducible as the timestamp and blinding point will change but all other fields should be the same.
@@ -398,7 +399,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(request.toString == encodedRequest)
     assert(InvoiceRequest.decode(encodedRequest).get == request)
     assert(request.isValidFor(offer))
-    val invoice = Bolt12Invoice(offer, request, preimage, nodeKey, CltvExpiryDelta(22), Features.empty, Seq(createDirectPath(randomKey(), nodeKey.publicKey, hex"747e01a7152169b058a1fbc0024c254077db7e399308483e0c30e2352ba1d6cc")))
+    val invoice = Bolt12Invoice(offer, request, preimage, nodeKey, CltvExpiryDelta(22), Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(Bolt12Invoice.fromString(invoice.toString).get.records == invoice.records)
     assert(invoice.isValidFor(offer, request))
     // Invoice generation is not reproducible as the timestamp and blinding point will change but all other fields should be the same.
@@ -434,7 +435,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(request.toString == encodedRequest)
     assert(InvoiceRequest.decode(encodedRequest).get == request)
     assert(request.isValidFor(offer))
-    val invoice = Bolt12Invoice(offer, request, preimage, nodeKey, CltvExpiryDelta(34), Features.empty, Seq(createDirectPath(randomKey(), nodeKey.publicKey, hex"9134d86e269a13203bd85bb3fd05bf396b72fcb9fd5206e3a392f6a0ab94011d")))
+    val invoice = Bolt12Invoice(offer, request, preimage, nodeKey, CltvExpiryDelta(34), Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(Bolt12Invoice.fromString(invoice.toString).get.records == invoice.records)
     assert(invoice.isValidFor(offer, request))
     // Invoice generation is not reproducible as the timestamp and blinding point will change but all other fields should be the same.

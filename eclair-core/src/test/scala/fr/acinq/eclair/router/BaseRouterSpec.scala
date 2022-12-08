@@ -83,10 +83,12 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val channelId_ag_private = randomBytes32()
 
   val alias_ab = ShortChannelId.generateLocalAlias()
+  val alias_ba = ShortChannelId.generateLocalAlias()
   val alias_ag_private = ShortChannelId.generateLocalAlias()
+  val alias_ga_private = ShortChannelId.generateLocalAlias()
 
-  val scids_ab = ShortIds(RealScidStatus.Final(scid_ab), alias_ab, None)
-  val scids_ag_private = ShortIds(RealScidStatus.Final(scid_ag_private),  alias_ag_private, None)
+  val scids_ab = ShortIds(RealScidStatus.Final(scid_ab), alias_ab, Some(alias_ba))
+  val scids_ag_private = ShortIds(RealScidStatus.Final(scid_ag_private),  alias_ag_private, Some(alias_ga_private))
 
   val chan_ab = channelAnnouncement(scid_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
   val chan_bc = channelAnnouncement(scid_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
@@ -102,8 +104,10 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val update_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, scid_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = htlcMaximum)
   val update_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, scid_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = htlcMaximum)
   val update_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, scid_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = htlcMaximum)
-  val update_ag_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, scids_ag_private.localAlias, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
-  val update_ga_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, a, scids_ag_private.localAlias, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  // We use our local alias for private channel updates that we store internally.
+  val update_ag_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, alias_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  // Our peer uses our local alias to send us a private channel update.
+  val update_ga_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, a, alias_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
   val update_gh = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, h, scid_gh, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
   val update_hg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_h, g, scid_gh, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
 
@@ -160,6 +164,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       // then private channels
       sender.send(router, ShortChannelIdAssigned(sender.ref, channelId_ag_private, scids_ag_private, remoteNodeId = g))
       sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, scids_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
+      sender.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ga_private))
       // watcher receives the get tx requests
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_ab)
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_bc)
@@ -198,6 +203,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         GossipDecision.Accepted(update_fe),
         GossipDecision.Accepted(update_gh),
         GossipDecision.Accepted(update_hg),
+        GossipDecision.Accepted(update_ga_private),
         GossipDecision.Accepted(node_b),
         GossipDecision.Accepted(node_c),
         GossipDecision.Accepted(node_d),
@@ -213,7 +219,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
         sender.send(router, GetChannelUpdates)
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
-        nodes.size == 8 && channels.size == 5 && updates.size == 11
+        nodes.size == 8 && channels.size == 5 && updates.size == 12
       }, max = 10 seconds, interval = 1 second)
 
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, watcher)))

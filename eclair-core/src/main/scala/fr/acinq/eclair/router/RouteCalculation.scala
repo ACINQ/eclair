@@ -35,6 +35,19 @@ import scala.util.{Failure, Random, Success, Try}
 
 object RouteCalculation {
 
+  private def getEdgeRelayScid(d: Data, localNodeId: PublicKey, e: GraphEdge): ShortChannelId = {
+    if (e.desc.b == localNodeId) {
+      // We are the destination of that edge: local graph edges always use either the local alias or the real scid.
+      // We want to use the remote alias when available, because our peer won't understand our local alias.
+      d.resolve(e.desc.shortChannelId) match {
+        case Some(c: PrivateChannel) => c.shortIds.remoteAlias_opt.getOrElse(e.desc.shortChannelId)
+        case _ => e.desc.shortChannelId
+      }
+    } else {
+      e.desc.shortChannelId
+    }
+  }
+
   def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
@@ -52,7 +65,7 @@ object RouteCalculation {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
-              val hops = selectedEdges.map(d => ChannelHop(d.desc.shortChannelId, d.desc.a, d.desc.b, d.params))
+              val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
               ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
@@ -75,7 +88,7 @@ object RouteCalculation {
                 case None => fr.extraEdges.map(GraphEdge(_)).find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)
               }
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
-                case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.params))
+                case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(getEdgeRelayScid(d, localNodeId, edge), edge.desc.a, edge.desc.b, edge.params))
                 case None => (currentNode, previousHops)
               }
           }
@@ -99,7 +112,7 @@ object RouteCalculation {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
       val extraEdges = r.extraEdges.map(GraphEdge(_)).filterNot(_.desc.a == r.source).toSet // we ignore routing hints for our own channels, we have more accurate information
-      val ignoredEdges = r.ignore.channels ++ d.excludedChannels
+      val ignoredEdges = r.ignore.channels ++ d.excludedChannels.keySet
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 

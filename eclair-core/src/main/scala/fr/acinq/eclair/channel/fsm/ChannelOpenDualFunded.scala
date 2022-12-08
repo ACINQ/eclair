@@ -357,7 +357,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         }
       case f: InteractiveTxBuilder.Failed =>
         channelOpenReplyToUser(Left(LocalError(f.cause)))
-        goto(CLOSED) sending TxAbort(d.channelId, f.cause.getMessage)
+        goto(CLOSED) sending Error(d.channelId, f.cause.getMessage)
     }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>

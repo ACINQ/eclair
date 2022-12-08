@@ -22,21 +22,27 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import akka.pattern.{ask, pipe}
+import akka.util.Timeout
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.router.BlindedRouteCreation.{aggregatePaymentInfo, createBlindedRouteFromHops, createBlindedRouteWithoutHops}
+import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.Router.{ChannelHop, ChannelRelayParams}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, ShortChannelId, TimestampMilli, randomBytes32}
 import scodec.bits.HexStringSyntax
 
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -245,18 +251,42 @@ object MultiPartHandler {
                                     paymentType: String = PaymentType.Standard) extends ReceivePayment
 
   /**
+   * A dummy blinded hop that will be added at the end of a blinded route.
+   * The fees and expiry delta should match those of real channels, otherwise it will be obvious that dummy hops are used.
+   */
+  case class DummyBlindedHop(feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta)
+
+  /**
+   * A route that will be blinded and included in a Bolt 12 invoice.
+   *
+   * @param nodes               a valid route ending at our nodeId.
+   * @param maxFinalExpiryDelta maximum expiry delta that senders can use: the route expiry will be computed based on this value.
+   * @param dummyHops           (optional) dummy hops to add to the blinded route.
+   */
+  case class ReceivingRoute(nodes: Seq[PublicKey], maxFinalExpiryDelta: CltvExpiryDelta, dummyHops: Seq[DummyBlindedHop] = Nil)
+
+  /**
    * Use this message to create a Bolt 12 invoice to receive a payment for a given offer.
    *
    * @param nodeKey             the key that will be used to sign the invoice, which may be different from our public nodeId.
    * @param offer               the offer this invoice corresponds to.
    * @param invoiceRequest      the request this invoice responds to.
+   * @param routes              routes that must be blinded and provided in the invoice.
+   * @param router              router actor.
    * @param paymentPreimage_opt payment preimage.
    */
   case class ReceiveOfferPayment(nodeKey: PrivateKey,
                                  offer: Offer,
                                  invoiceRequest: InvoiceRequest,
+                                 routes: Seq[ReceivingRoute],
+                                 router: ActorRef,
                                  paymentPreimage_opt: Option[ByteVector32] = None,
-                                 paymentType: String = PaymentType.Blinded) extends ReceivePayment
+                                 paymentType: String = PaymentType.Blinded) extends ReceivePayment {
+    require(routes.forall(_.nodes.nonEmpty), "each route must have at least one node")
+    require(offer.amount.nonEmpty || invoiceRequest.amount.nonEmpty, "an amount must be specified in the offer or in the invoice request")
+
+    val amount = invoiceRequest.amount.orElse(offer.amount.map(_ * invoiceRequest.quantity)).get
+  }
 
   object CreateInvoiceActor {
 
@@ -269,16 +299,16 @@ object MultiPartHandler {
       Behaviors.setup { context =>
         Behaviors.receiveMessage {
           case CreateInvoice(replyTo, receivePayment) =>
-            Try {
-              val paymentPreimage = receivePayment.paymentPreimage_opt.getOrElse(randomBytes32())
-              val paymentHash = Crypto.sha256(paymentPreimage)
-              val featuresTrampolineOpt = if (nodeParams.enableTrampolinePayment) {
-                nodeParams.features.invoiceFeatures().add(Features.TrampolinePaymentPrototype, FeatureSupport.Optional)
-              } else {
-                nodeParams.features.invoiceFeatures()
-              }
-              receivePayment match {
-                case r: ReceiveStandardPayment =>
+            val paymentPreimage = receivePayment.paymentPreimage_opt.getOrElse(randomBytes32())
+            val paymentHash = Crypto.sha256(paymentPreimage)
+            val featuresTrampolineOpt = if (nodeParams.enableTrampolinePayment) {
+              nodeParams.features.invoiceFeatures().add(Features.TrampolinePaymentPrototype, FeatureSupport.Optional)
+            } else {
+              nodeParams.features.invoiceFeatures()
+            }
+            receivePayment match {
+              case r: ReceiveStandardPayment =>
+                Try {
                   val expirySeconds = r.expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
                   val paymentMetadata = hex"2a"
                   val invoice = Bolt11Invoice(
@@ -297,26 +327,45 @@ object MultiPartHandler {
                   context.log.debug("generated invoice={} from amount={}", invoice.toString, r.amount_opt)
                   nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)
                   invoice
-                case r: ReceiveOfferPayment =>
-                  // TODO: get blinded paths from the router instead
-                  val pathId = RouteBlindingEncryptedDataTlv.PathId(randomBytes32())
-                  val dummyConstraints = RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(nodeParams.currentBlockHeight + 144), 1 msat)
-                  val dummyRelay = RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(0), 0, 0 msat)
-                  val dummyScid = RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId.toSelf)
-                  val dummyPath = Seq(
-                    (nodeParams.nodeId, RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(dummyScid, dummyRelay, dummyConstraints)).require.bytes),
-                    (nodeParams.nodeId, RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(dummyConstraints, pathId)).require.bytes),
-                  )
-                  val blindedRoute = Sphinx.RouteBlinding.create(randomKey(), dummyPath.map(_._1), dummyPath.map(_._2))
+                } match {
+                  case Success(invoice) => replyTo ! invoice
+                  case Failure(exception) => replyTo ! Status.Failure(exception)
+                }
+              case r: ReceiveOfferPayment if r.routes.exists(!_.nodes.lastOption.contains(nodeParams.nodeId)) =>
+                replyTo ! Status.Failure(new IllegalArgumentException("receiving routes must end at our node"))
+              case r: ReceiveOfferPayment =>
+                implicit val ec: ExecutionContextExecutor = context.executionContext
+                val log = context.log
+                Future.sequence(r.routes.map(route => {
+                  val pathId = randomBytes32()
+                  val dummyHops = route.dummyHops.map(h => {
+                    val edge = Invoice.BasicEdge(nodeParams.nodeId, nodeParams.nodeId, ShortChannelId.toSelf, h.feeBase, h.feeProportionalMillionths, h.cltvExpiryDelta)
+                    ChannelHop(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId, ChannelRelayParams.FromHint(edge))
+                  })
+                  if (route.nodes.length == 1) {
+                    val blindedRoute = if (dummyHops.isEmpty) {
+                      createBlindedRouteWithoutHops(route.nodes.last, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
+                    } else {
+                      createBlindedRouteFromHops(dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
+                    }
+                    val paymentInfo = aggregatePaymentInfo(r.amount, dummyHops)
+                    Future.successful((blindedRoute, paymentInfo, pathId))
+                  } else {
+                    implicit val timeout: Timeout = 10.seconds
+                    r.router.ask(Router.FinalizeRoute(r.amount, Router.PredefinedNodeRoute(route.nodes))).mapTo[Router.RouteResponse].map(routeResponse => {
+                      val clearRoute = routeResponse.routes.head
+                      val blindedRoute = createBlindedRouteFromHops(clearRoute.hops ++ dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
+                      val paymentInfo = aggregatePaymentInfo(r.amount, clearRoute.hops ++ dummyHops)
+                      (blindedRoute, paymentInfo, pathId)
+                    })
+                  }
+                })).map(paths => {
                   val invoiceFeatures = featuresTrampolineOpt.remove(Features.RouteBlinding).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-                  val invoice = Bolt12Invoice(r.offer, r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.channelConf.minFinalExpiryDelta, invoiceFeatures, Seq(blindedRoute.route))
-                  context.log.debug("generated invoice={} for offerId={}", invoice.toString, r.offer.offerId)
-                  nodeParams.db.payments.addIncomingBlindedPayment(invoice, paymentPreimage, Map(blindedRoute.lastBlinding -> pathId.data), r.paymentType)
+                  val invoice = Bolt12Invoice(r.offer, r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.channelConf.minFinalExpiryDelta, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) })
+                  log.debug("generated invoice={} for offerId={}", invoice.toString, r.offer.offerId)
+                  nodeParams.db.payments.addIncomingBlindedPayment(invoice, paymentPreimage, paths.map { case (blindedRoute, _, pathId) => blindedRoute.lastBlinding -> pathId.bytes }.toMap, r.paymentType)
                   invoice
-              }
-            } match {
-              case Success(invoice) => replyTo ! invoice
-              case Failure(exception) => replyTo ! Status.Failure(exception)
+                }).recover(exception => Status.Failure(exception)).pipeTo(replyTo)
             }
             Behaviors.stopped
         }
@@ -421,14 +470,14 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePathId(add: UpdateAddHtlc, payload: FinalPayload.Blinded, record: IncomingBlindedPayment)(implicit log: LoggingAdapter): Boolean = {
-    add.blinding_opt.flatMap(record.pathIds.get) match {
+  private def validatePathId(blinding_opt: Option[PublicKey], payload: FinalPayload.Blinded, record: IncomingBlindedPayment)(implicit log: LoggingAdapter): Boolean = {
+    blinding_opt.flatMap(record.pathIds.get) match {
       case Some(pathId) if pathId == payload.pathId => true
       case Some(pathId) =>
         log.warning("received blinded payment with invalid pathId={} (expected {})", payload.pathId, pathId)
         false
       case None =>
-        log.warning("received blinded payment with an invalid blinding={}", add.blinding_opt.map(_.toHex).getOrElse("none"))
+        log.warning("received blinded payment with an invalid blinding={}", blinding_opt.map(_.toHex).getOrElse("none"))
         false
     }
   }
@@ -453,7 +502,7 @@ object MultiPartHandler {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
     val commonOk = validateCommon(nodeParams, add, payload, record)
-    val secretOk = validatePathId(add, payload, record)
+    val secretOk = validatePathId(add.blinding_opt.orElse(payload.blinding_opt), payload, record)
     if (commonOk && secretOk) None else Some(cmdFail)
   }
 

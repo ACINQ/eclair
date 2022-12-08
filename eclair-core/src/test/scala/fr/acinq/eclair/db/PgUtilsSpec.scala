@@ -1,6 +1,5 @@
 package fr.acinq.eclair.db
 
-import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.db.Databases.JdbcUrlChanged
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -13,6 +12,7 @@ import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.Color
 import fr.acinq.eclair.{Features, MilliSatoshiLong, TestKitBaseClass, TestUtils, TimestampMilli, TimestampSecond, randomBytes32, randomKey}
 import grizzled.slf4j.{Logger, Logging}
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import org.postgresql.jdbc.PgConnection
 import org.postgresql.util.PGInterval
 import org.scalatest.concurrent.Eventually
