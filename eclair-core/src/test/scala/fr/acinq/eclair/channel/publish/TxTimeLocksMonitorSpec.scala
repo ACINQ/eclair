@@ -20,10 +20,9 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
-import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, TimeLocksOk}
+import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, TimeLocksOk, WrappedCurrentBlockHeight}
 import fr.acinq.eclair.{BlockHeight, NodeParams, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -52,10 +51,10 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     monitor ! CheckTx(probe.ref, tx, "absolute-delay")
     probe.expectNoMessage(100 millis)
 
-    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 1))
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 1)
     probe.expectNoMessage(100 millis)
 
-    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 3))
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 3)
     probe.expectMsg(TimeLocksOk())
   }
 
@@ -117,7 +116,7 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // We set watches on parent txs only once the absolute delay is over.
     watcher.expectNoMessage(100 millis)
-    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 3))
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 3)
     val w1 = watcher.expectMsgType[WatchParentTxConfirmed]
     val w2 = watcher.expectMsgType[WatchParentTxConfirmed]
     watcher.expectNoMessage(100 millis)
