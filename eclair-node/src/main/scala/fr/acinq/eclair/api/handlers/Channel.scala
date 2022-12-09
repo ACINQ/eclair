@@ -77,7 +77,7 @@ trait Channel {
 
   val close: Route = postRequest("close") { implicit t =>
     withChannelsIdentifier { channels =>
-      formFields("scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
+      formFields("scriptPubKey".as[ByteVector](bytesUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
         (scriptPubKey_opt, preferredFeerate_opt, minFeerate_opt, maxFeerate_opt) =>
           val closingFeerates = preferredFeerate_opt.map(preferredPerByte => {
             val preferredFeerate = FeeratePerKw(preferredPerByte)

@@ -38,11 +38,11 @@ trait ExtraDirectives extends Directives {
   // named and typed URL parameters used across several routes
   val shortChannelIdFormParam: NameUnmarshallerReceptacle[ShortChannelId] = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
   val shortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "shortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
-  val channelIdFormParam: NameUnmarshallerReceptacle[ByteVector32] = "channelId".as[ByteVector32](sha256HashUnmarshaller)
-  val channelIdsFormParam: NameUnmarshallerReceptacle[List[ByteVector32]] = "channelIds".as[List[ByteVector32]](sha256HashesUnmarshaller)
+  val channelIdFormParam: NameUnmarshallerReceptacle[ByteVector32] = "channelId".as[ByteVector32](bytes32Unmarshaller)
+  val channelIdsFormParam: NameUnmarshallerReceptacle[List[ByteVector32]] = "channelIds".as[List[ByteVector32]](bytes32ListUnmarshaller)
   val nodeIdFormParam: NameReceptacle[PublicKey] = "nodeId".as[PublicKey]
   val nodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "nodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
-  val paymentHashFormParam: NameUnmarshallerReceptacle[ByteVector32] = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
+  val paymentHashFormParam: NameUnmarshallerReceptacle[ByteVector32] = "paymentHash".as[ByteVector32](bytes32Unmarshaller)
   val amountMsatFormParam: NameReceptacle[MilliSatoshi] = "amountMsat".as[MilliSatoshi]
   val invoiceFormParam: NameReceptacle[Bolt11Invoice] = "invoice".as[Bolt11Invoice]
   val routeFormatFormParam: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)

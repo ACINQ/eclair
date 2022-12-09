@@ -36,7 +36,7 @@ trait Message {
   }
 
   val verifyMessage: Route = postRequest("verifymessage") { implicit t =>
-    formFields("msg".as[ByteVector](base64DataUnmarshaller), "sig".as[ByteVector](binaryDataUnmarshaller)) { (message, signature) =>
+    formFields("msg".as[ByteVector](base64DataUnmarshaller), "sig".as[ByteVector](bytesUnmarshaller)) { (message, signature) =>
       complete(eclairApi.verifyMessage(message, signature))
     }
   }
@@ -47,7 +47,7 @@ trait Message {
       "recipientBlindedRoute".as[Sphinx.RouteBlinding.BlindedRoute](blindedRouteUnmarshaller).?,
       "intermediateNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?,
       "replyPath".as[List[PublicKey]](pubkeyListUnmarshaller).?,
-      "content".as[ByteVector](binaryDataUnmarshaller)) {
+      "content".as[ByteVector](bytesUnmarshaller)) {
       case (Some(recipientNode), None, intermediateNodes, replyPath, userCustomContent) =>
         complete(
           eclairApi.sendOnionMessage(intermediateNodes.getOrElse(Nil),
