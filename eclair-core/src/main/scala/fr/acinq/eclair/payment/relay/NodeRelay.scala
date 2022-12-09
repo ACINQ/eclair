@@ -75,7 +75,7 @@ object NodeRelay {
 
     override def spawnOutgoingPayFSM(context: ActorContext[Command], cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
       if (multiPart) {
-        context.toClassic.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, router, paymentFactory))
+        context.toClassic.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, publishPreimage = true, router, paymentFactory))
       } else {
         context.toClassic.actorOf(PaymentLifecycle.props(nodeParams, cfg, router, register))
       }
@@ -107,7 +107,7 @@ object NodeRelay {
       }
     }
 
-  def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: IntermediatePayload.NodeRelay.Standard): Option[FailureMessage] = {
+  private def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: IntermediatePayload.NodeRelay.Standard): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.relayParams.minTrampolineFees, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
       Some(TrampolineFeeInsufficient)
@@ -125,7 +125,7 @@ object NodeRelay {
   }
 
   /** Compute route params that honor our fee and cltv requirements. */
-  def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
+  private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
     nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
       .modify(_.boundaries.maxFeeProportional).setTo(0) // we disable percent-based max fee calculation, we're only interested in collecting our node fee
       .modify(_.boundaries.maxCltv).setTo(expiryIn - expiryOut)
@@ -137,7 +137,7 @@ object NodeRelay {
    * This helper method translates relaying errors (returned by the downstream nodes) to a BOLT 4 standard error that we
    * should return upstream.
    */
-  def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard): Option[FailureMessage] = {
+  private def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard): Option[FailureMessage] = {
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, _, RouteNotFound) => f }.nonEmpty
     val routingFeeHigh = upstream.amountIn - nextPayload.amountToForward >= nodeFee(nodeParams.relayParams.minTrampolineFees, nextPayload.amountToForward) * 5
     failures match {

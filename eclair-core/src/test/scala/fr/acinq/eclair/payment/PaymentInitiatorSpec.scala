@@ -90,7 +90,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       payFsm.ref ! cfg
       payFsm.ref
     }
-    override def spawnOutgoingMultiPartPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef = {
+    override def spawnOutgoingMultiPartPayment(context: ActorContext, cfg: SendPaymentConfig, publishPreimage: Boolean): ActorRef = {
       multiPartPayFsm.ref ! cfg
       multiPartPayFsm.ref
     }

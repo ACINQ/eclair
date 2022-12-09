@@ -42,7 +42,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.ClearRecipient
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
@@ -114,7 +113,7 @@ trait Eclair {
 
   def send(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
 
-  def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[Either[PreimageReceived, PaymentEvent]]
+  def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[PaymentEvent]
 
   def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32 = randomBytes32(), maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
 
@@ -370,13 +369,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[Either[PreimageReceived, PaymentEvent]] = {
+  override def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[PaymentEvent] = {
     createSendPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt) match {
       case Left(ex) => Future.failed(ex)
-      case Right(req) => (appKit.paymentInitiator ? req.copy(blockUntilComplete = true)).map {
-        case e: PreimageReceived => Left(e)
-        case e: PaymentEvent => Right(e)
-      }
+      case Right(req) => (appKit.paymentInitiator ? req.copy(blockUntilComplete = true)).mapTo[PaymentEvent]
     }
   }
 
