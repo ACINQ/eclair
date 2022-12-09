@@ -315,7 +315,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat == UInt64(150000000))
     val add = CMD_ADD_HTLC(sender.ref, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
     bob ! add
-    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000 msat)
+    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000 msat, actual = 151000000 msat)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     bob2alice.expectNoMessage(200 millis)
   }
@@ -332,7 +332,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[UpdateAddHtlc]
     val add1 = CMD_ADD_HTLC(sender.ref, 75500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
     bob ! add1
-    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000 msat)
+    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000 msat, actual = 151000000 msat)
     sender.expectMsg(RES_ADD_FAILED(add1, error, Some(initialState.channelUpdate)))
     bob2alice.expectNoMessage(200 millis)
   }
@@ -345,7 +345,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat == UInt64(initialState.commitments.capacity.toMilliSatoshi.toLong))
     val add = CMD_ADD_HTLC(sender.ref, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
     alice ! add
-    val error = HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000 msat)
+    val error = HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000 msat, actual = 151000000 msat)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     alice2bob.expectNoMessage(200 millis)
   }
@@ -694,7 +694,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice2bob.forward(alice, UpdateAddHtlc(ByteVector32.Zeroes, 0, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None))
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data.toArray) == HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000 msat).getMessage)
+    assert(new String(error.data.toArray) == HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000 msat, actual = 151000000 msat).getMessage)
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId == alice.stateData.asInstanceOf[DATA_CLOSING].channelId)

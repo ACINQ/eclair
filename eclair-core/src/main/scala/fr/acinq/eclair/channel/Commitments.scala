@@ -216,12 +216,8 @@ case class Commitments(channelId: ByteVector32,
 
   val capacity: Satoshi = commitInput.txOut.amount
 
-  val maxHtlcAmount: MilliSatoshi = if (remoteParams.maxHtlcValueInFlightMsat < localParams.maxHtlcValueInFlightMsat) {
-    // We can safely cast to millisatoshis since we just verified that it's less than a valid millisatoshi amount.
-    remoteParams.maxHtlcValueInFlightMsat.toBigInt.toLong.msat
-  } else {
-    localParams.maxHtlcValueInFlightMsat
-  }
+  // We can safely cast to millisatoshis since we verify that it's less than a valid millisatoshi amount.
+  val maxHtlcAmount: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toBigInt.min(localParams.maxHtlcValueInFlightMsat.toLong).toLong.msat
 
   /** Channel reserve that applies to our funds. */
   val localChannelReserve: Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
@@ -413,7 +409,7 @@ object Commitments {
     // We apply local *and* remote restrictions, to ensure both peers are happy with the resulting number of HTLCs.
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
     val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
-    val allowedHtlcValueInFlight = Seq(UInt64(commitments1.localParams.maxHtlcValueInFlightMsat.toLong), commitments1.remoteParams.maxHtlcValueInFlightMsat).min
+    val allowedHtlcValueInFlight = commitments1.maxHtlcAmount
     if (allowedHtlcValueInFlight < htlcValueInFlight) {
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
     }
@@ -482,7 +478,7 @@ object Commitments {
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
     val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
     if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = UInt64(commitments1.localParams.maxHtlcValueInFlightMsat.toLong), actual = htlcValueInFlight))
+      return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
     if (incomingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {
