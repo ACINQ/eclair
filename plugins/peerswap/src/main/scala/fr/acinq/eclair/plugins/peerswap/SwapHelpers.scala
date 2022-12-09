@@ -46,7 +46,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
-object SwapHelpers {
+private object SwapHelpers {
 
   def receiveSwapMessage[B <: SwapCommand : ClassTag](context: ActorContext[SwapCommand], stateName: String)(f: B => Behavior[SwapCommand]): Behavior[SwapCommand] = {
     context.log.debug(s"$stateName: waiting for messages, context: ${context.self.toString}")
@@ -75,14 +75,14 @@ object SwapHelpers {
     if (watch) context.system.classicSystem.eventStream.subscribe(paymentEventAdapter(context).toClassic, classOf[PaymentEvent])
     else context.system.classicSystem.eventStream.unsubscribe(paymentEventAdapter(context).toClassic, classOf[PaymentEvent])
 
-  def paymentEventAdapter(context: ActorContext[SwapCommand]): ActorRef[PaymentEvent] = context.messageAdapter[PaymentEvent](PaymentEventReceived)
+  private def paymentEventAdapter(context: ActorContext[SwapCommand]): ActorRef[PaymentEvent] = context.messageAdapter[PaymentEvent](PaymentEventReceived)
 
   def makeUnknownMessage(message: HasSwapId): UnknownMessage = {
     val encoded = peerSwapMessageCodecWithFallback.encode(message).require
     UnknownMessage(encoded.sliceToInt(0, 16, signed = false), encoded.drop(16).toByteVector)
   }
 
-  def send(switchboard: actor.ActorRef, remoteNodeId: PublicKey)(message: HasSwapId)(implicit context: ActorContext[SwapCommand]): Unit =
+  def send(switchboard: actor.ActorRef, remoteNodeId: PublicKey)(message: HasSwapId): Unit =
     switchboard ! ForwardUnknownMessage(remoteNodeId, makeUnknownMessage(message))
 
   def fundOpening(wallet: OnChainWallet, feeRatePerKw: FeeratePerKw)(amount: Satoshi, makerPubkey: PublicKey, takerPubkey: PublicKey, invoice: Bolt11Invoice)(implicit context: ActorContext[SwapCommand]): Unit = {
@@ -91,17 +91,20 @@ object SwapHelpers {
     // funding successful, commit the opening tx
     context.pipeToSelf(wallet.makeFundingTx(openingTx.publicKeyScript, amount, feeRatePerKw)) {
       case Success(r) => OpeningTxFunded(invoice, r)
-      case Failure(cause) => OpeningTxFailed(s"error while funding swap open tx: $cause")
+      case Failure(cause) => OpeningTxFundingFailed(cause)
     }
   }
 
   def commitOpening(wallet: OnChainWallet)(swapId: String, invoice: Bolt11Invoice, fundingResponse: MakeFundingTxResponse, desc: String)(implicit context: ActorContext[SwapCommand]): Unit = {
     context.system.eventStream ! EventStream.Publish(TransactionPublished(swapId, fundingResponse.fundingTx, desc))
     context.pipeToSelf(wallet.commit(fundingResponse.fundingTx)) {
-      case Success(true) => context.log.debug(s"opening tx ${fundingResponse.fundingTx.txid} published for swap $swapId")
+      case Success(true) =>
+        context.log.debug(s"opening tx ${fundingResponse.fundingTx.txid} published for swap $swapId")
         OpeningTxCommitted(invoice, OpeningTxBroadcasted(swapId, invoice.toString, fundingResponse.fundingTx.txid.toHex, fundingResponse.fundingTxOutputIndex, ""))
-      case Success(false) => OpeningTxFailed("could not publish swap open tx", Some(fundingResponse))
-      case Failure(t) => OpeningTxFailed(s"failed to commit swap open tx, exception: $t", Some(fundingResponse))
+      case Success(false) => OpeningTxCommitFailed(fundingResponse)
+      case Failure(t) =>
+        context.log.debug(s"opening tx ${fundingResponse.fundingTx.txid} *possibly* published for swap $swapId, exception: $t ")
+        OpeningTxCommitted(invoice, OpeningTxBroadcasted(swapId, invoice.toString, fundingResponse.fundingTx.txid.toHex, fundingResponse.fundingTxOutputIndex, ""))
     }
   }
 
@@ -117,19 +120,19 @@ object SwapHelpers {
         context.system.eventStream ! EventStream.Publish(TransactionPublished(swapId, txInfo.tx, desc))
         context.pipeToSelf(wallet.commit(txInfo.tx)) {
           case Success(true) => ClaimTxCommitted
-          case Success(false) => context.log.error(s"swap $swapId claim tx commit did not succeed, $txInfo")
-            ClaimTxFailed(s"publish did not succeed $txInfo")
-          case Failure(t) => context.log.error(s"swap $swapId claim tx commit failed, $txInfo")
-            ClaimTxFailed(s"failed to commit $txInfo, exception: $t")
+          case Success(false) => context.log.error(s"swap $swapId claim tx commit did not succeed with $txInfo")
+            ClaimTxFailed
+          case Failure(t) => context.log.error(s"swap $swapId claim tx commit *possibly* failed with $txInfo, exception: $t")
+            ClaimTxFailed
         }
       case Failure(e) => context.log.error(s"swap $swapId claim tx is invalid: $e")
-        context.self ! ClaimTxInvalid(e)
+        context.self ! ClaimTxInvalid
     }
 
-  def rollback(wallet: OnChainWallet)(error: String, tx: Transaction)(implicit context: ActorContext[SwapCommand]): Unit =
-    context.pipeToSelf(wallet.rollback(tx)) {
-      case Success(status) => RollbackSuccess(error, status)
-      case Failure(t) => RollbackFailure(error, t)
+  def rollback(wallet: OnChainWallet)(fundingResponse: MakeFundingTxResponse)(implicit context: ActorContext[SwapCommand]): Unit =
+    context.pipeToSelf(wallet.rollback(fundingResponse.fundingTx)) {
+      case Success(status) => RollbackSuccess(status, fundingResponse)
+      case Failure(t) => RollbackFailure(t, fundingResponse)
     }
 
   def createInvoice(nodeParams: NodeParams, amount: Satoshi, description: String)(implicit context: ActorContext[SwapCommand]): Try[Bolt11Invoice] =

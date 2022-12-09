@@ -28,17 +28,17 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.db.OutgoingPaymentStatus.{Failed, Pending, Succeeded}
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents._
 import fr.acinq.eclair.plugins.peerswap.SwapHelpers._
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{CreateFailed, Error, Fail, InternalError, InvalidMessage, PeerCanceled, SwapError, SwapStatus, UserCanceled}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses._
 import fr.acinq.eclair.plugins.peerswap.SwapRole.Taker
 import fr.acinq.eclair.plugins.peerswap.db.SwapsDb
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions._
 import fr.acinq.eclair.plugins.peerswap.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, NodeParams, ShortChannelId, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiryDelta, NodeParams, ShortChannelId}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
@@ -124,11 +124,11 @@ object SwapTaker {
               // handle a payment that has already succeeded, failed or is still pending
               nodeParams.db.payments.listOutgoingPayments(d.invoice.paymentHash).collectFirst {
                 case p if p.status.isInstanceOf[Succeeded] => swap.claimSwap(d.request, d.agreement, d.openingTxBroadcasted, d.invoice, p.status.asInstanceOf[Succeeded].paymentPreimage, d.isInitiator)
-                case p if p.status.isInstanceOf[Failed] => swap.sendCoopClose(d.request, s"Lightning payment failed: ${p.status.asInstanceOf[Failed].failures}")
+                case p if p.status.isInstanceOf[Failed] => swap.sendCoopClose(LightningPaymentFailed(d.request.swapId, Right(p.status.asInstanceOf[Failed]), "swap"))
                 case p if p.status == Pending => swap.payClaimInvoice(d.request, d.agreement, d.openingTxBroadcasted, d.invoice, d.isInitiator)
               }.getOrElse(
                 // if payment was not yet sent, fail the swap
-                swap.sendCoopClose(d.request, s"Lightning payment not sent.")
+                swap.sendCoopClose(SwapPaymentNotSent(d.request.swapId))
               )
             case Failure(e) => context.log.error(s"Could not restore from a checkpoint with an invalid shortChannelId: $d, $e")
               db.addResult(CouldNotRestore(d.swapId, d))
@@ -167,11 +167,9 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
 
     receiveSwapMessage[AwaitAgreementMessages](context, "awaitAgreement") {
       case SwapMessageReceived(agreement: SwapOutAgreement) if agreement.protocolVersion != protocolVersion =>
-        swapCanceled(InternalError(request.swapId, s"protocol version must be $protocolVersion."))
+        swapCanceled(WrongVersion(request.swapId, protocolVersion))
       case SwapMessageReceived(agreement: SwapOutAgreement) => validateFeeInvoice(request, agreement)
       case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
-      case StateTimeout => swapCanceled(InternalError(request.swapId, "timeout during awaitAgreement"))
-      case ForwardFailureAdapter(_) => swapCanceled(InternalError(request.swapId, s"could not forward swap request to peer."))
       case SwapMessageReceived(m) => swapCanceled(InvalidMessage(request.swapId, "awaitAgreement", m))
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
         swapCanceled(UserCanceled(request.swapId))
@@ -180,46 +178,41 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     }
   }
 
-  def validateFeeInvoice(request: SwapOutRequest, agreement: SwapOutAgreement): Behavior[SwapCommand] = {
+  private def validateFeeInvoice(request: SwapOutRequest, agreement: SwapOutAgreement): Behavior[SwapCommand] = {
     Bolt11Invoice.fromString(agreement.payreq) match {
-      case Success(i) if i.amount_opt.isDefined && i.amount_opt.get > maxOpeningFee =>
-        swapCanceled(CreateFailed(request.swapId, s"invalid invoice: Invoice amount ${i.amount_opt} > estimated opening tx fee $maxOpeningFee"))
-      case Success(i) if i.routingInfo.flatten.exists(hop => hop.shortChannelId != shortChannelId) =>
-        swapCanceled(CreateFailed(request.swapId, s"invalid invoice: Channel hop other than $shortChannelId found in invoice hints ${i.routingInfo}"))
-      case Success(i) if i.isExpired() =>
-        swapCanceled(CreateFailed(request.swapId, s"invalid invoice: Invoice is expired."))
       case Success(i) if i.amount_opt.isEmpty || i.amount_opt.get > maxOpeningFee =>
-        swapCanceled(CreateFailed(request.swapId, s"invalid invoice: unacceptable opening fee requested."))
+        swapCanceled(InvalidFeeInvoiceAmount(request.swapId, i.amount_opt, maxOpeningFee))
+      case Success(i) if i.routingInfo.flatten.exists(hop => hop.shortChannelId != shortChannelId) =>
+        swapCanceled(InvalidInvoiceChannel(request.swapId, shortChannelId, i.routingInfo, "fee"))
+      case Success(i) if i.isExpired() =>
+        swapCanceled(FeePaymentInvoiceExpired(request.swapId))
       case Success(feeInvoice) => payFeeInvoice(request, agreement, feeInvoice)
-      case Failure(e) => swapCanceled(CreateFailed(request.swapId, s"invalid invoice: Could not parse payreq: $e"))
+      case Failure(e) => swapCanceled(FeeInvoiceInvalid(request.swapId, e))
     }
   }
 
-  def payFeeInvoice(request: SwapOutRequest, agreement: SwapOutAgreement, feeInvoice: Bolt11Invoice): Behavior[SwapCommand] = {
+  private def payFeeInvoice(request: SwapOutRequest, agreement: SwapOutAgreement, feeInvoice: Bolt11Invoice): Behavior[SwapCommand] = {
     watchForPayment(watch = true) // subscribe to payment event notifications
     payInvoice(nodeParams)(paymentInitiator, request.swapId, feeInvoice)
 
-    receiveSwapMessage[PayFeeInvoiceMessages](context, "payOpeningTxFeeInvoice") {
+    receiveSwapMessage[PayFeeInvoiceMessages](context, "payFeeInvoice") {
       // TODO: add counter party to naughty list if they do not send openingTxBroadcasted and publish a valid opening tx after we pay the fee invoice
       case PaymentEventReceived(p: PaymentEvent) if p.paymentHash != feeInvoice.paymentHash => Behaviors.same
       case PaymentEventReceived(_: PaymentSent) => Behaviors.same
-      case PaymentEventReceived(p: PaymentFailed) => swapCanceled(CreateFailed(request.swapId, s"Lightning payment failed: $p"))
-      case PaymentEventReceived(p: PaymentEvent) => swapCanceled(CreateFailed(request.swapId, s"Lightning payment failed, invalid PaymentEvent received: $p."))
+      case PaymentEventReceived(p: PaymentEvent) => swapCanceled(LightningPaymentFailed(request.swapId, Left(p), "fee"))
       case SwapMessageReceived(openingTxBroadcasted: OpeningTxBroadcasted) => awaitOpeningTxConfirmed(request, agreement, openingTxBroadcasted, isInitiator = true)
       case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
-      case SwapMessageReceived(m) => swapCanceled(CreateFailed(request.swapId, s"Invalid message received during payOpeningTxFeeInvoice: $m"))
-      case StateTimeout => swapCanceled(InternalError(request.swapId, "timeout during payFeeInvoice"))
+      case SwapMessageReceived(m) => swapCanceled(InvalidMessage(request.swapId, "payFeeInvoice", m))
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
-        swapCanceled(CreateFailed(request.swapId, s"Cancel requested by user while validating opening tx."))
+        swapCanceled(UserCanceled(request.swapId))
       case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "payFeeInvoice", request, Some(agreement), None, None)
         Behaviors.same
     }
   }
 
-  def validateRequest(request: SwapInRequest): Behavior[SwapCommand] = {
-    // fail if swap request is invalid, otherwise respond with agreement
+  private def validateRequest(request: SwapInRequest): Behavior[SwapCommand] = {
     if (request.protocolVersion != protocolVersion || request.asset != noAsset || request.network != NodeParams.chainFromHash(nodeParams.chainHash)) {
-      swapCanceled(InternalError(request.swapId, s"incompatible request: $request."))
+      swapCanceled(IncompatibleRequest(request.swapId, request))
     } else {
       sendAgreement(request, SwapInAgreement(protocolVersion, request.swapId, takerPubkey(request.swapId).toHex, premium.toLong))
     }
@@ -232,17 +225,15 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     receiveSwapMessage[SendAgreementMessages](context, "sendAgreement") {
       case SwapMessageReceived(openingTxBroadcasted: OpeningTxBroadcasted) => awaitOpeningTxConfirmed(request, agreement, openingTxBroadcasted, isInitiator = false)
       case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
-      case SwapMessageReceived(m) => sendCoopClose(request, s"Invalid message received during sendAgreement: $m")
-      case StateTimeout => swapCanceled(InternalError(request.swapId, "timeout during sendAgreement"))
-      case ForwardShortIdFailureAdapter(_) => swapCanceled(InternalError(request.swapId, s"could not forward swap agreement to peer."))
+      case SwapMessageReceived(m) => sendCoopClose(InvalidMessage(request.swapId, "sendAgreement", m))
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
-        sendCoopClose(request, s"Cancel requested by user after sending agreement.")
+        sendCoopClose(UserRequestedCancel(request.swapId))
       case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "sendAgreement", request, Some(agreement))
         Behaviors.same
     }
   }
 
-  def awaitOpeningTxConfirmed(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean): Behavior[SwapCommand] = {
+  private def awaitOpeningTxConfirmed(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean): Behavior[SwapCommand] = {
     def openingConfirmedAdapter: ActorRef[WatchTxConfirmedTriggered] = context.messageAdapter[WatchTxConfirmedTriggered](OpeningTxConfirmed)
     watchForTxConfirmation(watcher)(openingConfirmedAdapter, ByteVector32(ByteVector.fromValidHex(openingTxBroadcasted.txId)), 3) // watch for opening tx to be confirmed
 
@@ -250,103 +241,90 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
       case OpeningTxConfirmed(opening) => validateOpeningTx(request, agreement, openingTxBroadcasted, opening.tx, isInitiator)
       case SwapMessageReceived(resend: OpeningTxBroadcasted) if resend == openingTxBroadcasted =>
         Behaviors.same
-      case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
-      case SwapMessageReceived(m) => sendCoopClose(request, s"Invalid message received during awaitOpeningTxConfirmed: $m")
-      case InvoiceExpired => sendCoopClose(request, "Timeout waiting for opening tx to confirm.")
+      case SwapMessageReceived(cancel: CancelSwap) => sendCoopClose(PeerCanceled(request.swapId, cancel.message))
+      case SwapMessageReceived(m) => sendCoopClose(InvalidMessage(request.swapId, "awaitOpeningTxConfirmed", m))
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
-        sendCoopClose(request, s"Cancel requested by user while waiting for opening tx to confirm.")
+        sendCoopClose(UserRequestedCancel(request.swapId))
       case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "awaitOpeningTxConfirmed", request, Some(agreement), None, Some(openingTxBroadcasted))
         Behaviors.same
     }
   }
 
-  def validateOpeningTx(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, openingTx: Transaction, isInitiator: Boolean): Behavior[SwapCommand] =
+  private def validateOpeningTx(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, openingTx: Transaction, isInitiator: Boolean): Behavior[SwapCommand] =
     db.find(request.swapId) match {
       case Some(s: SwapData) => payClaimInvoice(request, agreement, openingTxBroadcasted, s.invoice, isInitiator)
       case None =>
         Bolt11Invoice.fromString(openingTxBroadcasted.payreq) match {
-          case Failure(e) => sendCoopClose(request, s"Could not parse payreq: $e")
-          case Success(invoice) if invoice.amount_opt.isDefined && invoice.amount_opt.get > request.amount.sat.toMilliSatoshi =>
-            sendCoopClose(request, s"Invoice amount ${invoice.amount_opt.get} > requested on-chain amount ${request.amount.sat.toMilliSatoshi}")
+          case Failure(e) => sendCoopClose(SwapInvoiceInvalid(request.swapId, e))
+          case Success(invoice) if invoice.amount_opt.isEmpty || invoice.amount_opt.get > request.amount.sat =>
+            sendCoopClose(InvalidSwapInvoiceAmount(request.swapId, invoice.amount_opt, request.amount.sat))
           case Success(invoice) if invoice.routingInfo.flatten.exists(hop => hop.shortChannelId != shortChannelId) =>
-            sendCoopClose(request, s"Channel hop other than $shortChannelId found in invoice hints ${invoice.routingInfo}")
+            sendCoopClose(InvalidInvoiceChannel(request.swapId, shortChannelId, invoice.routingInfo, "swap"))
           case Success(invoice) if invoice.isExpired() =>
-            sendCoopClose(request, s"Invoice is expired.")
+            sendCoopClose(SwapPaymentInvoiceExpired(request.swapId))
           case Success(invoice) if invoice.minFinalCltvExpiryDelta >= CltvExpiryDelta(claimByCsvDelta.toInt / 2) =>
-            sendCoopClose(request, s"Invoice min-final-cltv-expiry delta too long.")
+            sendCoopClose(InvalidSwapInvoiceExpiryDelta(request.swapId))
           case Success(invoice) if validOpeningTx(openingTx, openingTxBroadcasted.scriptOut, (request.amount + agreement.premium).sat, makerPubkey(request, agreement, isInitiator), takerPubkey(request.swapId), invoice.paymentHash) =>
-            // save restore point before a payment is initiated
             db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Taker, isInitiator, remoteNodeId))
             payInvoice(nodeParams)(paymentInitiator, request.swapId, invoice)
             payClaimInvoice(request, agreement, openingTxBroadcasted, invoice, isInitiator)
-          case Success(_) =>
-            sendCoopClose(request, s"Invalid opening tx: $openingTx")
+          case Success(_) => sendCoopClose(OpeningTxInvalid(request.swapId, openingTx))
         }
     }
 
-  def payClaimInvoice(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, invoice: Bolt11Invoice, isInitiator: Boolean): Behavior[SwapCommand] = {
+  private def payClaimInvoice(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, invoice: Bolt11Invoice, isInitiator: Boolean): Behavior[SwapCommand] = {
       watchForPayment(watch = true) // subscribe to payment event notifications
       receiveSwapMessage[PayClaimInvoiceMessages](context, "payClaimInvoice") {
         case PaymentEventReceived(p: PaymentEvent) if p.paymentHash != invoice.paymentHash => Behaviors.same
         case PaymentEventReceived(p: PaymentSent) => claimSwap(request, agreement, openingTxBroadcasted, invoice, p.paymentPreimage, isInitiator)
-        case PaymentEventReceived(p: PaymentFailed) => sendCoopClose(request, s"Lightning payment failed: $p")
-        case PaymentEventReceived(p: PaymentEvent) => sendCoopClose(request, s"Lightning payment failed (invalid PaymentEvent received: $p).")
+        case PaymentEventReceived(p: PaymentEvent) => sendCoopClose(LightningPaymentFailed(request.swapId, Left(p), "swap"))
         case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
-          sendCoopClose(request, s"Cancel requested by user while paying claim invoice.")
+          sendCoopClose(UserCanceled(request.swapId))
         case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "payClaimInvoice", request, Some(agreement), None, Some(openingTxBroadcasted))
           Behaviors.same
       }
   }
 
-  def claimSwap(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, invoice: Bolt11Invoice, paymentPreimage: ByteVector32, isInitiator: Boolean): Behavior[SwapCommand] = {
+  private def claimSwap(request: SwapRequest, agreement: SwapAgreement, openingTxBroadcasted: OpeningTxBroadcasted, invoice: Bolt11Invoice, paymentPreimage: ByteVector32, isInitiator: Boolean): Behavior[SwapCommand] = {
     val inputInfo = makeSwapOpeningInputInfo(openingTxBroadcasted.txid, openingTxBroadcasted.scriptOut.toInt, (request.amount + agreement.premium).sat, makerPubkey(request, agreement, isInitiator), takerPubkey(request.swapId), invoice.paymentHash)
     val claimByInvoiceTx = makeSwapClaimByInvoiceTx((request.amount + agreement.premium).sat, makerPubkey(request, agreement, isInitiator), takerPrivkey(request.swapId), paymentPreimage, feeRatePerKw, openingTxBroadcasted.txid, openingTxBroadcasted.scriptOut.toInt)
     def claimByInvoiceConfirmedAdapter: ActorRef[WatchTxConfirmedTriggered] = context.messageAdapter[WatchTxConfirmedTriggered](ClaimTxConfirmed)
 
     watchForTxConfirmation(watcher)(claimByInvoiceConfirmedAdapter, claimByInvoiceTx.txid, nodeParams.channelConf.minDepthBlocks)
-    watchForPayment(watch = false) // unsubscribe from payment event notifications
-    commitClaim(wallet)(request.swapId, SwapClaimByInvoiceTx(inputInfo, claimByInvoiceTx), "swap-in-receiver-claimbyinvoice")
+    watchForPayment(watch = false)
+    commitClaim(wallet)(request.swapId, SwapClaimByInvoiceTx(inputInfo, claimByInvoiceTx), "claim_by_invoice")
 
     receiveSwapMessage[ClaimSwapMessages](context, "claimSwap") {
       case ClaimTxCommitted => Behaviors.same
       case ClaimTxConfirmed(confirmedTriggered) => swapCompleted(ClaimByInvoiceConfirmed(request.swapId, confirmedTriggered))
       case SwapMessageReceived(m) => context.log.warn(s"received swap unhandled message while in state claimSwap: $m")
         Behaviors.same
-      case ClaimTxFailed(error) => context.log.error(s"swap $request.swapId claim by invoice tx failed, error: $error")
-        Behaviors.same // TODO: handle when claim tx not confirmed, retry the tx?
-      case ClaimTxInvalid(e) => context.log.error(s"swap $request.swapId claim by invoice tx is invalid: $e, tx: $claimByInvoiceTx")
-        Behaviors.same // TODO: handle when claim tx not confirmed, retry the tx?
-      case StateTimeout => Behaviors.same // TODO: handle when claim tx not confirmed, retry or RBF the tx? can SwapInSender pin this tx with a low fee?
-      case CancelRequested(replyTo) => replyTo ! SwapError(request.swapId, "Can not cancel swap after claim tx committed.")
-        Behaviors.same // ignore
+      case ClaimTxFailed => Behaviors.same // TODO: handle when claim tx not confirmed, retry the tx?
+      case ClaimTxInvalid => Behaviors.same // TODO: handle when claim tx not confirmed, retry the tx?
+      case CancelRequested(replyTo) => replyTo ! CancelAfterClaimCommit(request.swapId)
+        Behaviors.same
       case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "claimSwap", request, Some(agreement), None, Some(openingTxBroadcasted))
         Behaviors.same
     }
   }
 
-  def sendCoopClose(request: SwapRequest, reason: String): Behavior[SwapCommand] = {
-    context.log.error(s"swap ${request.swapId} sent coop close, reason: $reason")
-    send(switchboard, remoteNodeId)(CoopClose(request.swapId, reason, takerPrivkey(request.swapId).toHex))
-    swapCompleted(ClaimByCoopOffered(request.swapId, reason))
+  private def sendCoopClose(error: Error): Behavior[SwapCommand] = {
+    context.log.error(s"swap ${error.swapId} sent coop close, reason: ${error.toString}")
+    send(switchboard, remoteNodeId)(CoopClose(error.swapId, error.toString, takerPrivkey(error.swapId).toHex))
+    swapCompleted(ClaimByCoopOffered(error.swapId, error.toString))
   }
 
-  def swapCompleted(event: SwapEvent): Behavior[SwapCommand] = {
+  private def swapCompleted(event: SwapEvent): Behavior[SwapCommand] = {
     context.system.eventStream ! Publish(event)
     context.log.info(s"completed swap: $event.")
     db.addResult(event)
     Behaviors.stopped
   }
 
-  def swapCanceled(failure: Fail): Behavior[SwapCommand] = {
-    val swapEvent = Canceled(failure.swapId, failure.toString)
-    context.system.eventStream ! Publish(swapEvent)
-    failure match {
-      case e: Error => context.log.error(s"canceled swap: $e")
-      case s: CreateFailed => send(switchboard, remoteNodeId)(CancelSwap(s.swapId, s.toString))
-        context.log.info(s"canceled swap: $s")
-      case s: Fail => context.log.info(s"canceled swap: $s")
-      case _ => context.log.error(s"canceled swap ${failure.swapId}, reason: unknown.")
-    }
+  private def swapCanceled(failure: Fail): Behavior[SwapCommand] = {
+    context.system.eventStream ! Publish(Canceled(failure.swapId, failure.toString))
+    context.log.error(s"canceled swap: $failure")
+    if (!failure.isInstanceOf[PeerCanceled]) send(switchboard, remoteNodeId)(CancelSwap(failure.swapId, failure.toString))
     Behaviors.stopped
   }
 

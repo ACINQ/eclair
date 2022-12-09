@@ -30,15 +30,15 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
 import fr.acinq.eclair.channel.DATA_NORMAL
-import fr.acinq.eclair.db.OutgoingPaymentStatus.Pending
+import fr.acinq.eclair.db.OutgoingPaymentStatus.{Failed, Pending}
 import fr.acinq.eclair.db.PaymentsDbSpec.alice
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.io.Switchboard.ForwardUnknownMessage
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
-import fr.acinq.eclair.plugins.peerswap.SwapEvents.{ClaimByInvoiceConfirmed, SwapEvent, TransactionPublished}
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Status, SwapStatus}
+import fr.acinq.eclair.plugins.peerswap.SwapEvents.{ClaimByCoopOffered, ClaimByInvoiceConfirmed, SwapEvent, TransactionPublished}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.{LightningPaymentFailed, Status, SwapPaymentNotSent, SwapStatus}
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{claimByInvoiceTxWeight, makeSwapClaimByInvoiceTx, makeSwapOpeningTxOut}
@@ -127,7 +127,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     deathWatcher.expectTerminated(swapInReceiver)
 
     // the swap result has been recorded in the db
-    assert(db.list().head.result.contains("Coop close offered to peer: Lightning payment not sent."))
+    assert(db.list().head.result == ClaimByCoopOffered(swapId, SwapPaymentNotSent(swapId).toString()).toString)
     db.remove(swapId)
   }
 
@@ -143,7 +143,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // add failed outgoing payment to the payments databases
     val paymentId = UUID.randomUUID()
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(paymentId, UUID.randomUUID(), Some("1"), invoice.paymentHash, PaymentType.Standard, 123 msat, 123 msat, alice, 1100 unixms, Some(invoice), Pending))
-    nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(paymentId, invoice.paymentHash, Seq()))
+    nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(paymentId, invoice.paymentHash, Seq(), 0 unixms))
     assert(nodeParams.db.payments.listOutgoingPayments(invoice.paymentHash).nonEmpty)
 
     swapInReceiver ! RestoreSwap(swapData)
@@ -153,7 +153,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     deathWatcher.expectTerminated(swapInReceiver)
 
     // the swap result has been recorded in the db
-    assert(db.list().head.result.contains("Coop close offered to peer: Lightning payment failed"))
+    assert(db.list().head.result == ClaimByCoopOffered(swapId, LightningPaymentFailed(swapId, Right(Failed(Seq(), 0 unixms)), "swap").toString()).toString)
     db.remove(swapId)
   }
 

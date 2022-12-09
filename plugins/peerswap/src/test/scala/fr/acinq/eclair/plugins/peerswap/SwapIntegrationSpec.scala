@@ -16,7 +16,7 @@ import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapEvents._
 import fr.acinq.eclair.plugins.peerswap.SwapIntegrationFixture.swapRegister
 import fr.acinq.eclair.plugins.peerswap.SwapRegister.{CancelSwapRequested, ListPendingSwaps, SwapRequested}
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Status, SwapOpened}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.{OpeningFundingFailed, PeerCanceled, Status, SwapOpened}
 import fr.acinq.eclair.plugins.peerswap.SwapRole.{Maker, Taker}
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.openingTxWeight
@@ -55,7 +55,7 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
     fixture.cleanup()
   }
 
-  def swapActors(alice: MinimalNodeFixture, bob: MinimalNodeFixture)(implicit system: ActorSystem): (SwapActors, SwapActors) = {
+  def swapActors(alice: MinimalNodeFixture, bob: MinimalNodeFixture): (SwapActors, SwapActors) = {
     val aliceSwap = SwapActors(TestProbe()(alice.system), TestProbe()(alice.system), TestProbe()(alice.system), swapRegister(alice))
     val bobSwap = SwapActors(TestProbe()(bob.system), TestProbe()(bob.system), TestProbe()(bob.system), swapRegister(bob))
     alice.system.eventStream.subscribe(aliceSwap.paymentEvents.ref, classOf[PaymentEvent])
@@ -325,11 +325,11 @@ class SwapIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
     // swap in sender (bob) requests a swap in with swap in receiver (alice)
     bobSwap.swapRegister ! SwapRequested(bobSwap.cli.ref.toTyped, Maker, amount, shortChannelId, None)
-    bobSwap.cli.expectMsgType[SwapOpened]
+    val swap = bobSwap.cli.expectMsgType[SwapOpened]
 
     // both parties publish that the swap was canceled because bob could not fund the opening tx
-    assert(aliceSwap.swapEvents.expectMsgType[Canceled].reason.contains("error while funding swap open tx"))
-    assert(bobSwap.swapEvents.expectMsgType[Canceled].reason.contains("error while funding swap open tx"))
+    assert(aliceSwap.swapEvents.expectMsgType[Canceled].reason == PeerCanceled(swap.swapId,OpeningFundingFailed(swap.swapId, new RuntimeException("insufficient funds")).toString).toString)
+    assert(bobSwap.swapEvents.expectMsgType[Canceled].reason == OpeningFundingFailed(swap.swapId, new RuntimeException("insufficient funds")).toString)
 
     // both parties have no pending swaps
     bobSwap.swapRegister ! ListPendingSwaps(bobSwap.cli.ref.toTyped)
