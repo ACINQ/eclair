@@ -217,7 +217,8 @@ object TestConstants {
       None,
       isInitiator = true,
       dualFunded = false,
-      fundingSatoshis
+      fundingSatoshis,
+      disableMaxHtlcValueInFlight = false,
     ).copy(
       requestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
     )
@@ -364,7 +365,8 @@ object TestConstants {
       None,
       isInitiator = false,
       dualFunded = false,
-      fundingSatoshis
+      fundingSatoshis,
+      disableMaxHtlcValueInFlight = false,
     ).copy(
       requestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance
     )
