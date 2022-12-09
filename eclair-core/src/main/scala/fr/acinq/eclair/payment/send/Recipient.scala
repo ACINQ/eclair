@@ -22,7 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.payment.{Bolt11Invoice, OutgoingPaymentPacket}
-import fr.acinq.eclair.router.Router.{NodeHop, Route}
+import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket, PaymentOnionCodecs}
 import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId}
@@ -52,6 +52,18 @@ sealed trait Recipient {
   def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads]
 }
 
+object Recipient {
+  /** Iteratively build all the payloads for a payment relayed through channel hops. */
+  def buildPayloads(finalAmount: MilliSatoshi, finalExpiry: CltvExpiry, finalPayload: NodePayload, hops: Seq[ChannelHop]): PaymentPayloads = {
+    // We ignore the first hop since the route starts at our node.
+    hops.tail.reverse.foldLeft(PaymentPayloads(finalAmount, finalExpiry, Seq(finalPayload))) {
+      case (current, hop) =>
+        val payload = NodePayload(hop.nodeId, IntermediatePayload.ChannelRelay.Standard(hop.shortChannelId, current.amount, current.expiry))
+        PaymentPayloads(current.amount + hop.fee(current.amount), current.expiry + hop.cltvExpiryDelta, payload +: current.payloads)
+    }
+  }
+}
+
 /** A payment recipient that can directly be found in the routing graph. */
 case class ClearRecipient(nodeId: PublicKey,
                           features: Features[InvoiceFeature],
@@ -76,7 +88,7 @@ case class ClearRecipient(nodeId: PublicKey,
         case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket))
         case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, customTlvs))
       }
-      OutgoingPaymentPacket.buildPayloads(route.amount, expiry, finalPayload, route.hops)
+      Recipient.buildPayloads(route.amount, expiry, finalPayload, route.hops)
     })
   }
 }
@@ -107,7 +119,7 @@ case class SpontaneousRecipient(nodeId: PublicKey,
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     validateRoute(route).map(_ => {
       val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createKeySendPayload(route.amount, totalAmount, expiry, preimage, customTlvs))
-      OutgoingPaymentPacket.buildPayloads(totalAmount, expiry, finalPayload, route.hops)
+      Recipient.buildPayloads(totalAmount, expiry, finalPayload, route.hops)
     })
   }
 }
@@ -143,11 +155,11 @@ case class ClearTrampolineRecipient(invoice: Bolt11Invoice,
       trampolineOnion <- createTrampolinePacket(paymentHash, trampolineHop)
     } yield {
       val trampolinePayload = NodePayload(trampolineHop.nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet))
-      OutgoingPaymentPacket.buildPayloads(route.amount, trampolineExpiry, trampolinePayload, route.hops)
+      Recipient.buildPayloads(route.amount, trampolineExpiry, trampolinePayload, route.hops)
     }
   }
 
-  def createTrampolinePacket(paymentHash: ByteVector32, trampolineHop: NodeHop): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
+  private def createTrampolinePacket(paymentHash: ByteVector32, trampolineHop: NodeHop): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
     if (invoice.features.hasFeature(Features.TrampolinePaymentPrototype)) {
       // This is the payload the final recipient will receive, so we use the invoice's payment secret.
       val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createPayload(totalAmount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata, customTlvs))

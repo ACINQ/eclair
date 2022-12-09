@@ -570,7 +570,7 @@ object Router {
 
     /** Fee paid for the channel hops towards the recipient or the source of the final hop, if any. */
     def channelFee(includeLocalChannelCost: Boolean): MilliSatoshi = {
-      val hopsToPay = if (includeLocalChannelCost) hops else hops.headOption.map(_ => hops.tail).getOrElse(Nil)
+      val hopsToPay = if (includeLocalChannelCost) hops else hops.drop(1)
       val amountToSend = hopsToPay.reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
       amountToSend - amount
     }
@@ -581,7 +581,7 @@ object Router {
 
     def stopAt(nodeId: PublicKey): Route = {
       val amountAtStop = hops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
-      Route(amountAtStop, hops.takeWhile(_.nodeId != nodeId), finalHop_opt)
+      Route(amountAtStop, hops.takeWhile(_.nodeId != nodeId), None)
     }
   }
 

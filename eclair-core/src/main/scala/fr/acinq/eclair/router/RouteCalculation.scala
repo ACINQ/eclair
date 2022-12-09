@@ -105,13 +105,24 @@ object RouteCalculation {
     }
   }
 
+  /**
+   * Based on the type of recipient for the payment, this function returns:
+   *  - the node to which routes should be found
+   *  - the amount that should be sent to that node
+   *  - the maximum allowed fee for routes to that node
+   *  - an optional set of additional graph edges
+   *
+   * The routes found must then be post-processed by calling [[addFinalHop]].
+   */
   private def computeTarget(r: RouteRequest, ignoredEdges: Set[ChannelDesc]): (PublicKey, MilliSatoshi, MilliSatoshi, Set[GraphEdge]) = {
     val pendingAmount = r.pendingPayments.map(_.amount).sum
+    val totalMaxFee = r.routeParams.getMaxFee(r.target.totalAmount)
+    val pendingChannelFee = r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
     r.target match {
       case recipient: ClearRecipient =>
         val targetNodeId = recipient.nodeId
         val amountToSend = recipient.totalAmount - pendingAmount
-        val maxFee = r.routeParams.getMaxFee(recipient.totalAmount) - r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
+        val maxFee = totalMaxFee - pendingChannelFee
         val extraEdges = recipient.extraEdges
           .filter(_.sourceNodeId != r.source) // we ignore routing hints for our own channels, we have more accurate information
           .map(GraphEdge(_))
@@ -121,7 +132,7 @@ object RouteCalculation {
       case recipient: SpontaneousRecipient =>
         val targetNodeId = recipient.nodeId
         val amountToSend = recipient.totalAmount - pendingAmount
-        val maxFee = r.routeParams.getMaxFee(recipient.totalAmount) - r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
+        val maxFee = totalMaxFee - pendingChannelFee
         (targetNodeId, amountToSend, maxFee, Set.empty)
       case recipient: ClearTrampolineRecipient =>
         // Trampoline payments require finding routes to the trampoline node, not the final recipient.
@@ -129,7 +140,7 @@ object RouteCalculation {
         // reach the trampoline node (which will aggregate the incoming MPP payment and re-split as necessary).
         val targetNodeId = recipient.trampolineHop.nodeId
         val amountToSend = recipient.trampolineAmount - pendingAmount
-        val maxFee = r.routeParams.getMaxFee(recipient.totalAmount) - recipient.trampolineFee - r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
+        val maxFee = totalMaxFee - pendingChannelFee - recipient.trampolineFee
         (targetNodeId, amountToSend, maxFee, Set.empty)
     }
   }

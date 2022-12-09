@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractSharedSecret, Origin}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
-import fr.acinq.eclair.router.Router.{ChannelHop, Route}
+import fr.acinq.eclair.router.Router.Route
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomKey}
@@ -258,16 +258,6 @@ object OutgoingPaymentPacket {
     Sphinx.create(sessionKey, packetPayloadLength, nodeIds, payloadsBin, Some(associatedData)) match {
       case Failure(f) => Left(CannotCreateOnion(f.getMessage))
       case Success(packet) => Right(packet)
-    }
-  }
-
-  /** Iteratively build all the payloads for a payment relayed through channel hops. */
-  def buildPayloads(finalAmount: MilliSatoshi, finalExpiry: CltvExpiry, finalPayload: NodePayload, hops: Seq[ChannelHop]): PaymentPayloads = {
-    // We ignore the first hop since the route starts at our node.
-    hops.tail.reverse.foldLeft(PaymentPayloads(finalAmount, finalExpiry, Seq(finalPayload))) {
-      case (current, hop) =>
-        val payload = NodePayload(hop.nodeId, IntermediatePayload.ChannelRelay.Standard(hop.shortChannelId, current.amount, current.expiry))
-        PaymentPayloads(current.amount + hop.fee(current.amount), current.expiry + hop.cltvExpiryDelta, payload +: current.payloads)
     }
   }
 

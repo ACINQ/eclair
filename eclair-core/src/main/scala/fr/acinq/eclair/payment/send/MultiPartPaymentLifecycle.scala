@@ -379,17 +379,14 @@ object MultiPartPaymentLifecycle {
 
   /** When we receive a final error or the payment gets settled on chain, we should fail the whole payment, it's useless to retry. */
   private def abortPayment(pf: PaymentFailed, d: PaymentProgress): Boolean = pf.failures.exists {
-    case f: RemoteFailure => abortPayment(f, d)
+    case f: RemoteFailure =>
+      val isRecipientFailure = f.e.originNode == d.request.recipient.nodeId
+      val isTrampolineFailure = f.route.lastOption.collect { case h: NodeHop if f.e.originNode == h.nodeId => h }.nonEmpty
+      isRecipientFailure || isTrampolineFailure
     case LocalFailure(_, _, _: HtlcOverriddenByLocalCommit) => true
     case LocalFailure(_, _, _: HtlcsWillTimeoutUpstream) => true
     case LocalFailure(_, _, _: HtlcsTimedoutDownstream) => true
     case _ => false
-  }
-
-  private def abortPayment(f: RemoteFailure, d: PaymentProgress): Boolean = {
-    val isRecipientFailure = f.e.originNode == d.request.recipient.nodeId
-    val isTrampolineFailure = f.route.lastOption.collect { case h: NodeHop if f.e.originNode == h.nodeId => h }.nonEmpty
-    isRecipientFailure || isTrampolineFailure
   }
 
 }
