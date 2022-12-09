@@ -36,9 +36,10 @@ import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed}
+import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
-import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PublicChannel}
-import fr.acinq.eclair.router.{Announcements, Router}
+import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PrivateChannel, PublicChannel, RouteRequest}
+import fr.acinq.eclair.router.{Announcements, GraphWithBalanceEstimates, Router}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAnnouncement}
 import org.mockito.scalatest.IdiomaticMockito
@@ -315,6 +316,54 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
     paymentInitiator.expectMsg(SendPaymentToRoute(1000 msat, 1200 msat, pr, route, Some("42"), Some(parentId), Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
+  }
+
+  test("find routes") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+    val (a, b, c) = (randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
+    val channel1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(1), a, b, a, b, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val channel2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(2), b, c, b, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val publicChannels = SortedMap(
+      channel1.shortChannelId -> PublicChannel(channel1, ByteVector32.Zeroes, 100_000 sat, None, None, None),
+      channel2.shortChannelId -> PublicChannel(channel2, ByteVector32.Zeroes, 150_000 sat, None, None, None),
+    )
+    val (channelId3, shortIds3) = (randomBytes32(), ShortIds(RealScidStatus.Unknown, Alias(13), None))
+    val (channelId4, shortIds4) = (randomBytes32(), ShortIds(RealScidStatus.Final(RealShortChannelId(4)), Alias(14), None))
+    val privateChannels = Map(
+      channelId3 -> PrivateChannel(channelId3, shortIds3, a, b, None, None, Router.ChannelMeta(25_000 msat, 50_000 msat)),
+      channelId4 -> PrivateChannel(channelId4, shortIds4, a, c, None, None, Router.ChannelMeta(75_000 msat, 10_000 msat)),
+    )
+    val scidMapping = Map(
+      shortIds3.localAlias.toLong -> channelId3,
+      shortIds4.localAlias.toLong -> channelId4,
+      shortIds4.real.toOption.get.toLong -> channelId4,
+    )
+    val g = GraphWithBalanceEstimates(DirectedGraph(Nil), 1 hour)
+    val routerData = Router.Data(Map.empty, publicChannels, SortedMap.empty, Router.Stash(Map.empty, Map.empty), Router.Rebroadcast(Map.empty, Map.empty, Map.empty), Map.empty, privateChannels, scidMapping, Map.empty, g, Map.empty)
+
+    eclair.findRoute(c, 250_000 msat, None)
+    val routeRequest1 = router.expectMsgType[RouteRequest]
+    assert(routeRequest1.target == c)
+    assert(routeRequest1.ignore == Router.Ignore.empty)
+
+    val unknownNodeId = randomKey().publicKey
+    val unknownScid = Alias(42)
+    eclair.findRoute(c, 250_000 msat, None, ignoreNodeIds = Seq(b, unknownNodeId), ignoreShortChannelIds = Seq(channel1.shortChannelId, shortIds3.localAlias, shortIds4.real.toOption.get, unknownScid))
+    router.expectMsg(Router.GetRouterData)
+    router.reply(routerData)
+    val routeRequest2 = router.expectMsgType[RouteRequest]
+    assert(routeRequest2.target == c)
+    assert(routeRequest2.ignore.nodes == Set(b, unknownNodeId))
+    assert(routeRequest2.ignore.channels == Set(
+      Router.ChannelDesc(channel1.shortChannelId, a, b),
+      Router.ChannelDesc(channel1.shortChannelId, b, a),
+      Router.ChannelDesc(shortIds3.localAlias, a, b),
+      Router.ChannelDesc(shortIds3.localAlias, b, a),
+      Router.ChannelDesc(shortIds4.real.toOption.get, a, c),
+      Router.ChannelDesc(shortIds4.real.toOption.get, c, a),
+    ))
   }
 
   test("call sendWithPreimage, which generates a random preimage, to perform a KeySend payment") { f =>
