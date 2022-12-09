@@ -48,16 +48,20 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     stopBitcoind()
   }
 
-  case class Fixture(priv: PrivateKey, address: String, parentTx: Transaction, monitor: ActorRef[MempoolTxMonitor.Command], bitcoinClient: BitcoinCoreClient, probe: TestProbe)
+  case class Fixture(priv: PrivateKey, address: String, parentTx: Transaction, monitor: ActorRef[MempoolTxMonitor.Command], bitcoinClient: BitcoinCoreClient, probe: TestProbe, eventListener: TestProbe)
 
   def createFixture(): Fixture = {
     val probe = TestProbe()
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+    system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     val monitor = system.spawnAnonymous(MempoolTxMonitor(TestConstants.Alice.nodeParams, bitcoinClient, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
 
     val (priv, address) = createExternalAddress()
     val parentTx = sendToAddress(address, 125_000 sat, probe)
-    Fixture(priv, address, parentTx, monitor, bitcoinClient, probe)
+    Fixture(priv, address, parentTx, monitor, bitcoinClient, probe, eventListener)
   }
 
   def getMempool(bitcoinClient: BitcoinCoreClient, probe: TestProbe): Seq[Transaction] = {
@@ -75,6 +79,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
     monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 50 sat)
+    assert(eventListener.expectMsgType[TransactionPublished].tx == tx)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
     // NB: we don't really generate a block, we're testing the case where both txs are still in the mempool.
@@ -92,6 +97,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
     monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 50 sat)
+    assert(eventListener.expectMsgType[TransactionPublished].tx == tx)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
     // NB: we don't really generate a block, we're testing the case where the tx is still in the mempool.
@@ -254,10 +260,6 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
   test("emit transaction events") {
     val f = createFixture()
     import f._
-
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-    system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
 
     // Ensure parent tx is confirmed.
     generateBlocks(1)
