@@ -260,12 +260,12 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
       // We should still find tx2 if the provided hint is wrong
       watcher ! WatchOutputSpent(listener.ref, tx1.txid, 0, Set(randomBytes32()))
-      listener.expectMsg(WatchOutputSpentTriggered(tx2))
+      listener.fishForMessage() { case m: WatchOutputSpentTriggered => m.spendingTx.txid == tx2.txid }
       watcher ! StopWatching(listener.ref)
 
       // We should find txs that have already been confirmed
       watcher ! WatchOutputSpent(listener.ref, tx.txid, outputIndex, Set.empty)
-      listener.expectMsg(WatchOutputSpentTriggered(tx1))
+      listener.fishForMessage() { case m: WatchOutputSpentTriggered => m.spendingTx.txid == tx1.txid }
       watcher ! StopWatching(listener.ref)
 
       watcher ! WatchExternalChannelSpent(listener.ref, tx1.txid, 0, RealShortChannelId(1))
@@ -314,25 +314,20 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
     // we receive txs when they enter the mempool
     val tx1 = sendToAddress(getNewAddress(probe), 50 millibtc, probe)
-    listener.expectMsg(NewTransaction(tx1))
+    listener.fishForMessage() { case m: NewTransaction => m.tx.txid == tx1.txid }
     val tx2 = sendToAddress(getNewAddress(probe), 25 millibtc, probe)
-    listener.expectMsg(NewTransaction(tx2))
-    listener.expectNoMessage(100 millis)
+    listener.fishForMessage() { case m: NewTransaction => m.tx.txid == tx2.txid }
 
     // It may happen that transactions get included in a block without getting into our mempool first (e.g. a miner could
     // try to hide a revoked commit tx from the network until it gets confirmed, in an attempt to steal funds).
     // When we receive that block, we must send an event for every transaction inside it to analyze them and potentially
     // trigger `WatchSpent` / `WatchSpentBasic`.
     generateBlocks(1)
-    // NB: a miner coinbase transaction is also included in the block
-    val txs = Set(
-      listener.expectMsgType[NewTransaction],
-      listener.expectMsgType[NewTransaction],
-      listener.expectMsgType[NewTransaction]
-    ).map(_.tx)
-    listener.expectNoMessage(100 millis)
-    assert(txs.contains(tx1))
-    assert(txs.contains(tx2))
+    val txs = Seq(
+      listener.fishForMessage() { case m: NewTransaction => Set(tx1.txid, tx2.txid).contains(m.tx.txid) },
+      listener.fishForMessage() { case m: NewTransaction => Set(tx1.txid, tx2.txid).contains(m.tx.txid) },
+    ).map(_.asInstanceOf[NewTransaction].tx)
+    assert(txs.toSet == Set(tx1, tx2))
   }
 
   test("stop watching when requesting actor dies") {
