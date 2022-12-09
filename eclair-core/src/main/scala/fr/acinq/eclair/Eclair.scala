@@ -127,7 +127,7 @@ trait Eclair {
 
   def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32] = None, trampolineFees_opt: Option[MilliSatoshi] = None, trampolineExpiryDelta_opt: Option[CltvExpiryDelta] = None, trampolineNodes_opt: Seq[PublicKey] = Nil)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
 
-  def audit(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[AuditResponse]
+  def audit(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[AuditResponse]
 
   def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]]
 
@@ -419,11 +419,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     appKit.nodeParams.db.payments.getIncomingPayment(paymentHash)
   }
 
-  override def audit(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[AuditResponse] = {
+  override def audit(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[AuditResponse] = {
     Future(AuditResponse(
-      sent = appKit.nodeParams.db.audit.listSent(from.toTimestampMilli, to.toTimestampMilli),
-      received = appKit.nodeParams.db.audit.listReceived(from.toTimestampMilli, to.toTimestampMilli),
-      relayed = appKit.nodeParams.db.audit.listRelayed(from.toTimestampMilli, to.toTimestampMilli)
+      sent = appKit.nodeParams.db.audit.listSent(from.toTimestampMilli, to.toTimestampMilli, paginated_opt),
+      received = appKit.nodeParams.db.audit.listReceived(from.toTimestampMilli, to.toTimestampMilli, paginated_opt),
+      relayed = appKit.nodeParams.db.audit.listRelayed(from.toTimestampMilli, to.toTimestampMilli, paginated_opt)
     ))
   }
 

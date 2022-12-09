@@ -1089,7 +1089,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
     val auditResponse = AuditResponse(Seq.empty, Seq.empty, Seq.empty)
-    eclair.audit(any, any)(any[Timeout]) returns Future.successful(auditResponse)
+    eclair.audit(any, any, any)(any[Timeout]) returns Future.successful(auditResponse)
 
     Post("/audit") ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -1100,7 +1100,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         // The default is to get data for the last day.
         val from = TimestampSecond.now() - 1.day
         val to = TimestampSecond.now()
-        eclair.audit(argThat[TimestampSecond](t => from - 1.minute <= t && t <= from + 1.minute), argThat[TimestampSecond](t => to - 1.minute <= t && t <= to + 1.minute))(any[Timeout]).wasCalled(once)
+        eclair.audit(argThat[TimestampSecond](t => from - 1.minute <= t && t <= from + 1.minute), argThat[TimestampSecond](t => to - 1.minute <= t && t <= to + 1.minute), None)(any[Timeout]).wasCalled(once)
       }
 
     Post("/audit", FormData("from" -> TimestampSecond.min.toLong.toString, "to" -> TimestampSecond.max.toLong.toString)) ~>
@@ -1109,7 +1109,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.audit(TimestampSecond.min, TimestampSecond.max)(any[Timeout]).wasCalled(once)
+        eclair.audit(TimestampSecond.min, TimestampSecond.max, None)(any[Timeout]).wasCalled(once)
       }
 
     Post("/audit", FormData("from" -> 123456.toString, "to" -> 654321.toString)) ~>
@@ -1118,8 +1118,18 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.audit(123456 unixsec, 654321 unixsec)(any[Timeout]).wasCalled(once)
+        eclair.audit(123456 unixsec, 654321 unixsec, None)(any[Timeout]).wasCalled(once)
       }
+
+    Post("/audit", FormData("from" -> 123456.toString, "to" -> 654321.toString, "count" -> 1.toString, "skip" -> 2.toString)) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.audit) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.audit(123456 unixsec, 654321 unixsec, Some(Paginated(count = 1, skip = 2)))(any[Timeout]).wasCalled(once)
+      }
+
   }
 
   test("the websocket should return typed objects") {

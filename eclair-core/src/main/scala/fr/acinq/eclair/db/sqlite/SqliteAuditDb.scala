@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TimestampMilli}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
@@ -310,11 +310,11 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent] =
+  override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentSent] =
     using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
-      statement.executeQuery()
+      val result = statement.executeQuery()
         .foldLeft(Map.empty[UUID, PaymentSent]) { (sentByParentId, rs) =>
           val parentId = UUID.fromString(rs.getString("parent_payment_id"))
           val part = PaymentSent.PartialPayment(
@@ -336,13 +336,17 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           }
           sentByParentId + (parentId -> sent)
         }.values.toSeq.sortBy(_.timestamp)
+      paginated_opt match {
+        case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
+        case None => result
+      }
     }
 
-  override def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived] =
+  override def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentReceived] =
     using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
-      statement.executeQuery()
+      val result = statement.executeQuery()
         .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
           val paymentHash = rs.getByteVector32("payment_hash")
           val part = PaymentReceived.PartialPayment(
@@ -355,9 +359,13 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           }
           receivedByHash + (paymentHash -> received)
         }.values.toSeq.sortBy(_.timestamp)
+      paginated_opt match {
+        case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
+        case None => result
+      }
     }
 
-  override def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed] = {
+  override def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed] = {
     val trampolineByHash = using(sqlite.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
@@ -385,7 +393,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
         }
     }
-    relayedByHash.flatMap {
+    val result = relayedByHash.flatMap {
       case (paymentHash, parts) =>
         // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
         // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
@@ -401,6 +409,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           case _ => Nil
         }
     }.toSeq.sortBy(_.timestamp)
+    paginated_opt match {
+      case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
+      case None => result
+    }
   }
 
   override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee] =

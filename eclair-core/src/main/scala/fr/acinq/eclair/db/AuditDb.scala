@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
-import fr.acinq.eclair.TimestampMilli
+import fr.acinq.eclair.{Paginated, TimestampMilli}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -44,11 +44,11 @@ trait AuditDb {
 
   def addPathFindingExperimentMetrics(metrics: PathFindingExperimentMetrics): Unit
 
-  def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent]
+  def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentSent]
 
-  def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived]
+  def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentReceived]
 
-  def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed]
+  def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed]
 
   def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee]
 

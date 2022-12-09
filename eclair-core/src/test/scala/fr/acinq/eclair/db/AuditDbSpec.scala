@@ -101,10 +101,22 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(e11)
       db.add(e12)
 
-      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute).toSet == Set(e1, e5, e6))
+      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute).toList == List(e5, e1, e6))
       assert(db.listSent(from = TimestampMilli(100000L), to = TimestampMilli.now() + 1.minute).toList == List(e1))
+      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
+      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e5, e1))
+      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e1, e6))
+      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 2))).toList == List(e6))
+      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 3))).toList == List())
       assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).toList == List(e2))
+      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
+      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e2))
+      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List())
       assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).toList == List(e3, e10, e11, e12))
+      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
+      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e3, e10))
+      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e10, e11))
+      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 4))).toList == List())
       assert(db.listNetworkFees(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).size == 1)
       assert(db.listNetworkFees(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).head.txType == "mutual")
     }
@@ -835,7 +847,7 @@ class AuditDbSpec extends AnyFunSuite {
         statement.executeUpdate()
       }
 
-      assert(db.listRelayed(0 unixms, 40 unixms) == Nil)
+      assert(db.listRelayed(0 unixms, 40 unixms, None) == Nil)
     }
   }
 

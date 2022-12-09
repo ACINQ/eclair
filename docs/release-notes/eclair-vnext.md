@@ -8,7 +8,7 @@
 
 ### API changes
 
-<insert changes>
+- `audit` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474, #2487)
 
 ### Miscellaneous improvements and bug fixes
 
