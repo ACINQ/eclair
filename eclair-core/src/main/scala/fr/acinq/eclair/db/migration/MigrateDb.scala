@@ -10,12 +10,12 @@ import java.sql.{Connection, PreparedStatement, ResultSet}
 
 object MigrateDb extends Logging {
 
-  private def getVersion(conn: Connection,
-                         dbName: String): Int = {
-    val statement = conn.prepareStatement(s"SELECT version FROM versions WHERE db_name='$dbName'")
-    val res = statement.executeQuery()
-    res.next()
-    res.getInt("version")
+  private def getVersion(conn: Connection, dbName: String): Int = {
+    JdbcUtils.using(conn.prepareStatement(s"SELECT version FROM versions WHERE db_name='$dbName'")) { statement =>
+      val res = statement.executeQuery()
+      res.next()
+      res.getInt("version")
+    }
   }
 
   def checkVersions(source: Connection,
