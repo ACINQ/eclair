@@ -97,26 +97,24 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
     val wallet = new DummyOnChainWallet()
     val userCli = testKit.createTestProbe[Status]()
     val swapEvents = testKit.createTestProbe[SwapEvent]()
-    val monitor = testKit.createTestProbe[SwapCommands.SwapCommand]()
     val keyManager: SwapKeyManager = new LocalSwapKeyManager(TestConstants.Bob.seed, TestConstants.Bob.nodeParams.chainHash)
     val remoteNodeId: PublicKey = TestConstants.Bob.nodeParams.nodeId
 
     // subscribe to notification events from SwapInReceiver when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapOutSender = testKit.spawn(Behaviors.monitor(monitor.ref, SwapTaker(remoteNodeId, TestConstants.Bob.nodeParams, paymentInitiator.ref.toClassic, watcher.ref, switchboard.ref.toClassic, wallet, keyManager, db)), "swap-out-sender")
+    val swapOutSender = testKit.spawn(SwapTaker(remoteNodeId, TestConstants.Bob.nodeParams, paymentInitiator.ref.toClassic, watcher.ref, switchboard.ref.toClassic, wallet, keyManager, db), "swap-out-sender")
 
-    withFixture(test.toNoArgTest(FixtureParam(swapOutSender, userCli, monitor, switchboard, relayer, router, paymentInitiator, paymentHandler, TestConstants.Bob.nodeParams, watcher, wallet, swapEvents, remoteNodeId)))
+    withFixture(test.toNoArgTest(FixtureParam(swapOutSender, userCli, switchboard, relayer, router, paymentInitiator, paymentHandler, TestConstants.Bob.nodeParams, watcher, wallet, swapEvents, remoteNodeId)))
   }
 
-  case class FixtureParam(swapOutSender: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], monitor: TestProbe[SwapCommands.SwapCommand], switchboard: TestProbe[Any], relayer: TestProbe[Any], router: TestProbe[Any], paymentInitiator: TestProbe[Any], paymentHandler: TestProbe[Any], nodeParams: NodeParams, watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent], remoteNodeId: PublicKey)
+  case class FixtureParam(swapOutSender: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], switchboard: TestProbe[Any], relayer: TestProbe[Any], router: TestProbe[Any], paymentInitiator: TestProbe[Any], paymentHandler: TestProbe[Any], nodeParams: NodeParams, watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent], remoteNodeId: PublicKey)
 
   test("happy path for new swap out sender") { f =>
     import f._
 
     // start new SwapOutSender
     swapOutSender ! StartSwapOutSender(amount, swapId, shortChannelId)
-    monitor.expectMessageType[StartSwapOutSender]
 
     // SwapOutSender: SwapOutRequest -> SwapOutReceiver
     val request = expectSwapMessage[SwapOutRequest](switchboard)
@@ -124,59 +122,40 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
 
     // SwapOutReceiver: SwapOutAgreement -> SwapOutSender (request fee)
     swapOutSender ! SwapMessageReceived(SwapOutAgreement(request.protocolVersion, request.swapId, makerPubkey.toString(), feeInvoice.toString))
-    monitor.expectMessageType[SwapMessageReceived]
 
     // SwapOutSender validates fee invoice before paying the invoice
-    assert(paymentInitiator.expectMessageType[SendPaymentToNode] === SendPaymentToNode(feeInvoice.amount_opt.get, feeInvoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, blockUntilComplete = true))
+    assert(paymentInitiator.expectMessageType[SendPaymentToNode] === SendPaymentToNode(feeInvoice.amount_opt.get, feeInvoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
     swapOutSender ! GetStatus(userCli.ref)
-    monitor.expectMessageType[GetStatus]
     assert(userCli.expectMessageType[SwapStatus].behavior == "payFeeInvoice")
-
-    // wait for SwapOutSender to subscribe to PaymentEventReceived messages
-    swapEvents.expectNoMessage()
 
     // SwapOutSender confirms the fee invoice has been paid
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), feeInvoice.paymentHash, feePreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), fee.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
-    val feePaymentEvent = monitor.expectMessageType[PaymentEventReceived].paymentEvent
-    assert(feePaymentEvent.isInstanceOf[PaymentSent] && feePaymentEvent.paymentHash === feeInvoice.paymentHash)
 
     // SwapOutSender reports status of awaiting opening transaction after paying claim invoice
     swapOutSender ! GetStatus(userCli.ref)
-    monitor.expectMessageType[GetStatus]
     assert(userCli.expectMessageType[SwapStatus].behavior == "payFeeInvoice")
 
     // SwapOutReceiver:OpeningTxBroadcasted -> SwapOutSender
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, paymentInvoice.toString, txid, scriptOut, blindingKey)
     swapOutSender ! SwapMessageReceived(openingTxBroadcasted)
-    monitor.expectMessageType[SwapMessageReceived]
 
     // ZmqWatcher -> SwapOutSender, trigger confirmation of opening transaction
     val openingTx = Transaction(2, Seq(), Seq(makeSwapOpeningTxOut(request.amount.sat, makerPubkey, takerPubkey, paymentInvoice.paymentHash)), 0)
     swapOutSender ! OpeningTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(1), 0, openingTx))
-    monitor.expectMessageType[OpeningTxConfirmed]
 
     // SwapOutSender validates invoice and opening transaction before paying the invoice
-    assert(paymentInitiator.expectMessageType[SendPaymentToNode] === SendPaymentToNode(paymentInvoice.amount_opt.get, paymentInvoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, blockUntilComplete = true))
-
-    // wait for SwapOutSender to subscribe to PaymentEventReceived messages
-    swapEvents.expectNoMessage()
+    assert(paymentInitiator.expectMessageType[SendPaymentToNode] === SendPaymentToNode(paymentInvoice.amount_opt.get, paymentInvoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
 
     // SwapOutSender ignores payments that do not correspond to the invoice from SwapOutReceiver
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), ByteVector32.Zeroes, paymentPreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), amount.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
-    monitor.expectMessageType[PaymentEventReceived].paymentEvent
-    monitor.expectNoMessage()
 
     // SwapOutSender successfully pays the invoice from SwapOutReceiver and then commits a claim-by-invoice transaction
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), paymentInvoice.paymentHash, paymentPreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), amount.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
-    val paymentEvent = monitor.expectMessageType[PaymentEventReceived].paymentEvent
-    assert(paymentEvent.isInstanceOf[PaymentSent] && paymentEvent.paymentHash === paymentInvoice.paymentHash)
-    monitor.expectMessage(ClaimTxCommitted)
 
     // SwapOutSender reports a successful claim by invoice
     swapEvents.expectMessageType[TransactionPublished]
     val claimByInvoiceTx = makeSwapClaimByInvoiceTx(request.amount.sat, makerPubkey, takerPrivkey, paymentPreimage, feeRatePerKw, openingTx.txid, openingTxBroadcasted.scriptOut.toInt)
     swapOutSender ! ClaimTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(6), 0, claimByInvoiceTx))
-    monitor.expectMessageType[ClaimTxConfirmed]
     swapEvents.expectMessageType[ClaimByInvoiceConfirmed]
 
     val deathWatcher = testKit.createTestProbe[Any]()

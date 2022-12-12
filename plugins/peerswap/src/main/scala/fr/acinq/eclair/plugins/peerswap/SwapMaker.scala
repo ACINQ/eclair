@@ -30,15 +30,15 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuriedTriggered, WatchTxConfirmedTriggered}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.db.IncomingPaymentStatus.Received
+import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{CreateInvoiceActor, ReceiveStandardPayment}
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents._
 import fr.acinq.eclair.plugins.peerswap.SwapHelpers._
 import fr.acinq.eclair.plugins.peerswap.SwapResponses._
 import fr.acinq.eclair.plugins.peerswap.SwapRole.Maker
-import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.db.SwapsDb
+import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions._
 import fr.acinq.eclair.plugins.peerswap.wire.protocol._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, TimestampSecond}
@@ -168,15 +168,15 @@ private class SwapMaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
   }
 
   private def awaitFeePayment(request: SwapOutRequest, agreement: SwapOutAgreement, invoice: Bolt11Invoice): Behavior[SwapCommand] = {
-    watchForPayment(watch = true) // subscribe to be notified of payment events
+    watchForPaymentReceived(watch = true)
     send(switchboard, remoteNodeId)(agreement)
 
     Behaviors.withTimers { timers =>
       timers.startSingleTimer(swapFeeExpiredTimer(request.swapId), InvoiceExpired, invoice.createdAt + invoice.relativeExpiry.toSeconds - TimestampSecond.now())
       receiveSwapMessage[AwaitFeePaymentMessages](context, "awaitFeePayment") {
-        case PaymentEventReceived(payment: PaymentReceived) if payment.paymentHash == invoice.paymentHash && payment.amount >= invoice.amount_opt.get =>
+        case WrappedPaymentReceived(p) if p.paymentHash == invoice.paymentHash && p.amount >= invoice.amount_opt.get =>
           createOpeningTx(request, agreement, isInitiator = false)
-        case PaymentEventReceived(_) => Behaviors.same
+        case WrappedPaymentReceived(_) => Behaviors.same
         case SwapMessageReceived(cancel: CancelSwap) => swapCanceled(PeerCanceled(request.swapId, cancel.message))
         case SwapMessageReceived(m) => swapCanceled(InvalidMessage(request.swapId, "awaitFeePayment", m))
         case InvoiceExpired => swapCanceled(FeePaymentInvoiceExpired(request.swapId))
@@ -206,53 +206,49 @@ private class SwapMaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     }
   }
 
-  private def createOpeningTx(request: SwapRequest, agreement: SwapAgreement, isInitiator: Boolean): Behavior[SwapCommand] =
-    db.find(request.swapId) match {
-      case Some(s: SwapData) =>
-        awaitClaimPayment(request, agreement, s.invoice, s.openingTxBroadcasted, isInitiator)
-      case None =>
-        val receivePayment = ReceiveStandardPayment(Some(toMilliSatoshi(Satoshi(request.amount))), Left(s"swap ${request.swapId}"))
-        val createInvoice = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
-        createInvoice ! CreateInvoiceActor.CreateInvoice(context.messageAdapter[Bolt11Invoice](InvoiceResponse).toClassic, receivePayment)
+  private def createOpeningTx(request: SwapRequest, agreement: SwapAgreement, isInitiator: Boolean): Behavior[SwapCommand] = {
+    val receivePayment = ReceiveStandardPayment(Some(toMilliSatoshi(Satoshi(request.amount))), Left(s"swap ${request.swapId}"))
+    val createInvoice = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
+    createInvoice ! CreateInvoiceActor.CreateInvoice(context.messageAdapter[Bolt11Invoice](InvoiceResponse).toClassic, receivePayment)
 
-        receiveSwapMessage[CreateOpeningTxMessages](context, "createOpeningTx") {
-          case InvoiceResponse(invoice: Bolt11Invoice) => fundOpening(wallet, feeRatePerKw)((request.amount + agreement.premium).sat, makerPubkey(request.swapId), takerPubkey(request, agreement, isInitiator), invoice)
-            Behaviors.same
-          case OpeningTxFunded(invoice, fundingResponse) =>
-            commitOpening(wallet)(request.swapId, invoice, fundingResponse, s"swap ${request.swapId} opening tx")
-            Behaviors.same
-          case OpeningTxCommitted(invoice, openingTxBroadcasted) =>
-            db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Maker, isInitiator, remoteNodeId))
-            awaitClaimPayment(request, agreement, invoice, openingTxBroadcasted, isInitiator)
-          case OpeningTxFundingFailed(cause) => swapCanceled(OpeningFundingFailed(request.swapId, cause))
-          case OpeningTxCommitFailed(r) => rollback(wallet)(r)
-            Behaviors.same
-          case RollbackSuccess(value, r) => swapCanceled(OpeningCommitFailed(request.swapId, value, r))
-          case RollbackFailure(t, r) => swapCanceled(OpeningRollbackFailed(request.swapId, r, t))
-          case SwapMessageReceived(_) => Behaviors.same // ignore
-          case CancelRequested(replyTo) => replyTo ! CancelAfterOpeningCommit(request.swapId)
-            Behaviors.same // ignore
-          case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "createOpeningTx", request, Some(agreement))
-            Behaviors.same
-        }
+    receiveSwapMessage[CreateOpeningTxMessages](context, "createOpeningTx") {
+      case InvoiceResponse(invoice: Bolt11Invoice) => fundOpening(wallet, feeRatePerKw)((request.amount + agreement.premium).sat, makerPubkey(request.swapId), takerPubkey(request, agreement, isInitiator), invoice)
+        Behaviors.same
+      case OpeningTxFunded(invoice, fundingResponse) =>
+        commitOpening(wallet)(request.swapId, invoice, fundingResponse, s"swap ${request.swapId} opening tx")
+        Behaviors.same
+      case OpeningTxCommitted(invoice, openingTxBroadcasted) =>
+        db.add(SwapData(request, agreement, invoice, openingTxBroadcasted, Maker, isInitiator, remoteNodeId))
+        awaitClaimPayment(request, agreement, invoice, openingTxBroadcasted, isInitiator)
+      case OpeningTxFundingFailed(cause) => swapCanceled(OpeningFundingFailed(request.swapId, cause))
+      case OpeningTxCommitFailed(r) => rollback(wallet)(r)
+        Behaviors.same
+      case RollbackSuccess(value, r) => swapCanceled(OpeningCommitFailed(request.swapId, value, r))
+      case RollbackFailure(t, r) => swapCanceled(OpeningRollbackFailed(request.swapId, r, t))
+      case SwapMessageReceived(_) => Behaviors.same // ignore
+      case CancelRequested(replyTo) => replyTo ! CancelAfterOpeningCommit(request.swapId)
+        Behaviors.same // ignore
+      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "createOpeningTx", request, Some(agreement))
+        Behaviors.same
     }
+  }
 
   private def awaitClaimPayment(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean): Behavior[SwapCommand] =
     nodeParams.db.payments.getIncomingPayment(invoice.paymentHash) match {
       case Some(payment) if payment.status.isInstanceOf[Received] && payment.status.asInstanceOf[Received].amount >= request.amount.sat =>
         swapCompleted(ClaimByInvoicePaid(request.swapId))
       case _ =>
-        watchForPayment(watch = true)
+        watchForPaymentReceived(watch = true)
         send(switchboard, remoteNodeId)(openingTxBroadcasted)
 
         Behaviors.withTimers { timers =>
           timers.startSingleTimer(swapInvoiceExpiredTimer(request.swapId), InvoiceExpired, invoice.createdAt + invoice.relativeExpiry.toSeconds - TimestampSecond.now())
           receiveSwapMessage[AwaitClaimPaymentMessages](context, "awaitClaimPayment") {
             // TODO: do we need to check that all payment parts were on our given channel? eg. payment.parts.forall(p => p.fromChannelId == channelId)
-            case PaymentEventReceived(payment: PaymentReceived) if payment.paymentHash == invoice.paymentHash && payment.amount >= request.amount.sat =>
+            case WrappedPaymentReceived(payment) if payment.paymentHash == invoice.paymentHash && payment.amount >= request.amount.sat =>
               swapCompleted(ClaimByInvoicePaid(request.swapId))
+            case WrappedPaymentReceived(_) => Behaviors.same
             case SwapMessageReceived(coopClose: CoopClose) => claimSwapCoop(request, agreement, invoice, openingTxBroadcasted, coopClose, isInitiator)
-            case PaymentEventReceived(_) => Behaviors.same
             case SwapMessageReceived(_) => Behaviors.same
             case InvoiceExpired =>
               waitCsv(request, agreement, invoice, openingTxBroadcasted, isInitiator)
@@ -272,7 +268,7 @@ private class SwapMaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     def claimByCoopConfirmedAdapter: ActorRef[WatchTxConfirmedTriggered] = context.messageAdapter[WatchTxConfirmedTriggered](ClaimTxConfirmed)
     def openingConfirmedAdapter: ActorRef[WatchTxConfirmedTriggered] = context.messageAdapter[WatchTxConfirmedTriggered](OpeningTxConfirmed)
 
-    watchForPayment(watch = false)
+    watchForPaymentReceived(watch = false)
     watchForTxConfirmation(watcher)(openingConfirmedAdapter, openingTxId, 1) // watch for opening tx to be confirmed
 
     receiveSwapMessage[ClaimSwapCoopMessages](context, "claimSwapCoop") {
@@ -294,7 +290,7 @@ private class SwapMaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
   private def waitCsv(request: SwapRequest, agreement: SwapAgreement, invoice: Bolt11Invoice, openingTxBroadcasted: OpeningTxBroadcasted, isInitiator: Boolean): Behavior[SwapCommand] = {
     // TODO: are we sure the opening transaction has been committed? should we rollback locked funding outputs?
     def csvDelayConfirmedAdapter: ActorRef[WatchFundingDeeplyBuriedTriggered] = context.messageAdapter[WatchFundingDeeplyBuriedTriggered](CsvDelayConfirmed)
-    watchForPayment(watch = false)
+    watchForPaymentReceived(watch = false)
     watchForTxCsvConfirmation(watcher)(csvDelayConfirmedAdapter, ByteVector32(ByteVector.fromValidHex(openingTxBroadcasted.txId)), claimByCsvDelta.toInt) // watch for opening tx to be buried enough that it can be claimed by csv
 
     receiveSwapMessage[WaitCsvMessages](context, "waitCsv") {

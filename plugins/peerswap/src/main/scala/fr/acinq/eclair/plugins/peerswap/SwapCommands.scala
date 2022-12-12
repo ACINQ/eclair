@@ -17,11 +17,12 @@
 package fr.acinq.eclair.plugins.peerswap
 
 import akka.actor.typed.ActorRef
-import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuriedTriggered, WatchTxConfirmedTriggered}
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent}
+import fr.acinq.eclair.db.OutgoingPaymentStatus.Failed
+import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, PaymentReceived}
 import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Response, Status}
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.{HasSwapId, OpeningTxBroadcasted, SwapInRequest, SwapOutRequest}
 
@@ -53,8 +54,18 @@ object SwapCommands {
 
   sealed trait AwaitClaimPaymentMessages extends SwapCommand
   case class CsvDelayConfirmed(csvDelayTriggered: WatchFundingDeeplyBuriedTriggered) extends SwapCommand with WaitCsvMessages
-  case class PaymentEventReceived(paymentEvent: PaymentEvent) extends AwaitClaimPaymentMessages with PayClaimInvoiceMessages with AwaitFeePaymentMessages with PayFeeInvoiceMessages
 
+  sealed trait PayClaimPaymentMessages extends SwapCommand
+
+  sealed trait WrappedPaymentEvent extends PayFeeInvoiceMessages with PayClaimPaymentMessages {
+    def paymentHash: ByteVector32
+  }
+  case class WrappedPaymentReceived(paymentEvent: PaymentReceived) extends AwaitFeePaymentMessages with AwaitClaimPaymentMessages {
+    def paymentHash: ByteVector32 = paymentEvent.paymentHash
+  }
+  case class WrappedPaymentSent(paymentHash: ByteVector32, paymentPreimage: ByteVector32) extends WrappedPaymentEvent
+  case class WrappedPaymentFailed(paymentHash: ByteVector32, failure: Either[PaymentFailed, Failed]) extends WrappedPaymentEvent
+  case class WrappedPaymentPending(paymentHash: ByteVector32) extends WrappedPaymentEvent
   sealed trait ClaimSwapCoopMessages extends SwapCommand
   case object ClaimTxCommitted extends ClaimSwapCoopMessages with ClaimSwapCsvMessages with ClaimSwapMessages
   case object ClaimTxFailed extends ClaimSwapCoopMessages with ClaimSwapCsvMessages with ClaimSwapMessages
@@ -72,13 +83,11 @@ object SwapCommands {
   sealed trait SendAgreementMessages extends SwapCommand
   sealed trait AwaitFeePaymentMessages extends SwapCommand
 
-  sealed trait PayClaimInvoiceMessages extends SwapCommand
-
   sealed trait ClaimSwapMessages extends SwapCommand
 
   sealed trait PayFeeInvoiceMessages extends SwapCommand
 
-  sealed trait UserMessages extends AwaitFeePaymentMessages with AwaitAgreementMessages with CreateOpeningTxMessages with AwaitOpeningTxConfirmedMessages with PayClaimInvoiceMessages with AwaitClaimPaymentMessages with ClaimSwapMessages with ClaimSwapCoopMessages with WaitCsvMessages with ClaimSwapCsvMessages
+  sealed trait UserMessages extends AwaitFeePaymentMessages with AwaitAgreementMessages with CreateOpeningTxMessages with AwaitOpeningTxConfirmedMessages with AwaitClaimPaymentMessages with PayClaimPaymentMessages with ClaimSwapMessages with ClaimSwapCoopMessages with WaitCsvMessages with ClaimSwapCsvMessages
   case class GetStatus(replyTo: ActorRef[Status]) extends UserMessages with PayFeeInvoiceMessages with SendAgreementMessages
   case class CancelRequested(replyTo: ActorRef[Response]) extends UserMessages with PayFeeInvoiceMessages with SendAgreementMessages
   // @Formatter:on

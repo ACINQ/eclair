@@ -64,7 +64,8 @@ object SwapTransactions {
   def validOpeningTx(openingTx: Transaction, scriptOut: Long, amount: Satoshi, makerPubkey: PublicKey, takerPubkey: PublicKey, paymentHash: ByteVector32): Boolean =
     openingTx match {
       // TODO: should check that locktime is set in the past, or ideally not set at all
-      case Transaction(2, _, txOut, _) if txOut(scriptOut.toInt) == makeSwapOpeningTxOut(amount, makerPubkey, takerPubkey, paymentHash) => true
+      case Transaction(2, _, txOut, _) if txOut(scriptOut.toInt).amount < amount => false
+      case Transaction(2, _, txOut, _) if txOut(scriptOut.toInt).publicKeyScript == makeSwapOpeningTxOut(amount, makerPubkey, takerPubkey, paymentHash).publicKeyScript => true
       case _ => false
     }
 

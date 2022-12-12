@@ -89,18 +89,17 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
     }
     val userCli = testKit.createTestProbe[Status]()
     val swapEvents = testKit.createTestProbe[SwapEvent]()
-    val monitor = testKit.createTestProbe[SwapCommands.SwapCommand]()
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
     // subscribe to notification events from SwapInSender when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapInSender = testKit.spawn(Behaviors.monitor(monitor.ref, SwapMaker(remoteNodeId, TestConstants.Alice.nodeParams, watcher.ref, switchboard.ref.toClassic, wallet, keyManager, db)), "swap-in-sender")
+    val swapInSender = testKit.spawn(SwapMaker(remoteNodeId, TestConstants.Alice.nodeParams, watcher.ref, switchboard.ref.toClassic, wallet, keyManager, db), "swap-in-sender")
 
-    withFixture(test.toNoArgTest(FixtureParam(swapInSender, userCli, monitor, switchboard, paymentInitiator, watcher, wallet, swapEvents, remoteNodeId)))
+    withFixture(test.toNoArgTest(FixtureParam(swapInSender, userCli, switchboard, paymentInitiator, watcher, wallet, swapEvents, remoteNodeId)))
   }
 
-  case class FixtureParam(swapInSender: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], monitor: TestProbe[SwapCommands.SwapCommand], switchboard: TestProbe[Any], paymentInitiator: TestProbe[Any], watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent], remoteNodeId: PublicKey)
+  case class FixtureParam(swapInSender: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], switchboard: TestProbe[Any], paymentInitiator: TestProbe[Any], watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent], remoteNodeId: PublicKey)
 
   test("happy path from restored swap") { f =>
     import f._

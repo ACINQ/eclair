@@ -18,7 +18,6 @@ package fr.acinq.eclair.plugins.peerswap
 
 import akka.actor
 import akka.actor.typed.eventstream.EventStream
-import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.ScriptFlags
@@ -30,10 +29,11 @@ import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.db.OutgoingPaymentStatus.{Failed, Pending, Succeeded}
 import fr.acinq.eclair.db.PaymentType
 import fr.acinq.eclair.io.Switchboard.ForwardUnknownMessage
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
-import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent}
+import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, PaymentReceived, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents.TransactionPublished
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{SwapTransactionWithInputInfo, makeSwapOpeningTxOut}
@@ -68,14 +68,30 @@ private object SwapHelpers {
   def watchForTxCsvConfirmation(watcher: ActorRef[ZmqWatcher.Command])(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: ByteVector32, minDepth: Long): Unit =
     watcher ! WatchFundingDeeplyBuried(replyTo, txId, minDepth)
 
-  def payInvoice(nodeParams: NodeParams)(paymentInitiator: actor.ActorRef, swapId: String, invoice: Bolt11Invoice): Unit =
-    paymentInitiator ! SendPaymentToNode(invoice.amount_opt.get, invoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, blockUntilComplete = true)
+  def payInvoice(nodeParams: NodeParams)(paymentInitiator: actor.ActorRef, swapId: String, invoice: Bolt11Invoice)(implicit context: ActorContext[SwapCommand]): Unit =
+    context.self ! nodeParams.db.payments.listOutgoingPayments(invoice.paymentHash).collectFirst {
+      // handle a payment that has already been sent; do not pay twice
+      case p if p.status.isInstanceOf[Succeeded] => WrappedPaymentSent(invoice.paymentHash, p.status.asInstanceOf[Succeeded].paymentPreimage)
+      case p if p.status.isInstanceOf[Failed] => WrappedPaymentFailed(invoice.paymentHash, Right(p.status.asInstanceOf[Failed]))
+      case p if p.status == Pending => WrappedPaymentPending(invoice.paymentHash)
+    }.getOrElse({
+      paymentInitiator ! SendPaymentToNode(invoice.amount_opt.get, invoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+      WrappedPaymentPending(invoice.paymentHash)
+    })
 
-  def watchForPayment(watch: Boolean)(implicit context: ActorContext[SwapCommand]): Unit =
-    if (watch) context.system.classicSystem.eventStream.subscribe(paymentEventAdapter(context).toClassic, classOf[PaymentEvent])
-    else context.system.classicSystem.eventStream.unsubscribe(paymentEventAdapter(context).toClassic, classOf[PaymentEvent])
+  def watchForPaymentSent(watch: Boolean)(implicit context: ActorContext[SwapCommand]): Unit =
+    if (watch) {
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PaymentSent](ps => WrappedPaymentSent(ps.paymentHash, ps.paymentPreimage)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PaymentFailed](pf => WrappedPaymentFailed(pf.paymentHash, Left(pf))))
+    }
+    else {
+      context.system.eventStream ! EventStream.Unsubscribe(context.messageAdapter[PaymentSent](ps => WrappedPaymentSent(ps.paymentHash, ps.paymentPreimage)))
+      context.system.eventStream ! EventStream.Unsubscribe(context.messageAdapter[PaymentFailed](pf => WrappedPaymentFailed(pf.paymentHash, Left(pf))))
+    }
 
-  private def paymentEventAdapter(context: ActorContext[SwapCommand]): ActorRef[PaymentEvent] = context.messageAdapter[PaymentEvent](PaymentEventReceived)
+  def watchForPaymentReceived(watch: Boolean)(implicit context: ActorContext[SwapCommand]): Unit =
+    if (watch) context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PaymentReceived](WrappedPaymentReceived))
+    else context.system.eventStream ! EventStream.Unsubscribe(context.messageAdapter[PaymentReceived](WrappedPaymentReceived))
 
   def makeUnknownMessage(message: HasSwapId): UnknownMessage = {
     val encoded = peerSwapMessageCodecWithFallback.encode(message).require

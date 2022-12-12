@@ -80,7 +80,14 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
   val txid: String = ByteVector32.One.toHex
   val scriptOut: Long = 0
   val blindingKey: String = ""
+  val paymentId: UUID = UUID.randomUUID()
   val request: SwapInRequest = SwapInRequest(protocolVersion, swapId, noAsset, network, shortChannelId.toString, amount.toLong, makerPubkey.toHex)
+  val paymentFailed: PaymentFailed = PaymentFailed(paymentId, invoice.paymentHash, Seq(), 0 unixms)
+  val pendingPayment: OutgoingPayment = OutgoingPayment(paymentId, UUID.randomUUID(), Some("1"), invoice.paymentHash, PaymentType.Standard, 123 msat, 123 msat, alice, 1100 unixms, Some(invoice), Pending)
+  val openingTxBroadcasted: OpeningTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
+  val agreement: SwapInAgreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
+  def openingTx(agreement: SwapInAgreement): Transaction = Transaction(2, Seq(), Seq(makeSwapOpeningTxOut((request.amount + agreement.premium).sat, makerPubkey, takerPubkey, invoice.paymentHash)), 0)
+  def claimByInvoiceTx(agreement: SwapInAgreement): Transaction = makeSwapClaimByInvoiceTx((request.amount + agreement.premium).sat, makerPubkey, takerPrivkey, paymentPreimage, feeRatePerKw, openingTx(agreement).txid, openingTxBroadcasted.scriptOut.toInt)
 
   def expectSwapMessage[B](switchboard: TestProbe[Any]): B = {
     val unknownMessage = switchboard.expectMessageType[ForwardUnknownMessage].msg
@@ -99,35 +106,40 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     val wallet = new DummyOnChainWallet()
     val userCli = testKit.createTestProbe[Status]()
     val swapEvents = testKit.createTestProbe[SwapEvent]()
-    val monitor = testKit.createTestProbe[SwapCommands.SwapCommand]()
     val nodeParams = TestConstants.Bob.nodeParams
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
     // subscribe to notification events from SwapInReceiver when a payment is successfully received or claimed via coop or csv
     testKit.system.eventStream ! Subscribe[SwapEvent](swapEvents.ref)
 
-    val swapInReceiver = testKit.spawn(Behaviors.monitor(monitor.ref, SwapTaker(remoteNodeId, nodeParams, paymentInitiator.ref.toClassic, watcher.ref, switchboard.ref.toClassic, wallet, keyManager, db)), "swap-in-receiver")
+    val swapInReceiver = testKit.spawn(SwapTaker(remoteNodeId, nodeParams, paymentInitiator.ref.toClassic, watcher.ref, switchboard.ref.toClassic, wallet, keyManager, db), "swap-in-receiver")
 
-    withFixture(test.toNoArgTest(FixtureParam(swapInReceiver, userCli, monitor, switchboard, relayer, router, paymentInitiator, paymentHandler, nodeParams, watcher, wallet, swapEvents, remoteNodeId)))
+    withFixture(test.toNoArgTest(FixtureParam(swapInReceiver, userCli, switchboard, relayer, router, paymentInitiator, paymentHandler, nodeParams, watcher, wallet, swapEvents, remoteNodeId)))
   }
 
-  case class FixtureParam(swapInReceiver: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], monitor: TestProbe[SwapCommands.SwapCommand], switchboard: TestProbe[Any], relayer: TestProbe[Any], router: TestProbe[Any], paymentInitiator: TestProbe[Any], paymentHandler: TestProbe[Any], nodeParams: NodeParams, watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent], remoteNodeId: PublicKey)
+  case class FixtureParam(swapInReceiver: ActorRef[SwapCommands.SwapCommand], userCli: TestProbe[Status], switchboard: TestProbe[Any], relayer: TestProbe[Any], router: TestProbe[Any], paymentInitiator: TestProbe[Any], paymentHandler: TestProbe[Any], nodeParams: NodeParams, watcher: TestProbe[ZmqWatcher.Command], wallet: OnChainWallet, swapEvents: TestProbe[SwapEvent], remoteNodeId: PublicKey)
 
   test("send cooperative close after a restore with no pending payment") { f =>
     import f._
 
-    val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
     val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false, remoteNodeId)
     db.add(swapData)
     swapInReceiver ! RestoreSwap(swapData)
-    monitor.expectMessageType[RestoreSwap]
+
+    // send the payment because no pending payment was in the database
+    paymentInitiator.expectMessageType[SendPaymentToNode]
+
+    // the payment fails
+    testKit.system.eventStream ! Publish(paymentFailed)
+
+    // send a cooperative close because the swap maker has committed the opening tx
+    assert(expectSwapMessage[CoopClose](switchboard).message == LightningPaymentFailed(swapId, Left(paymentFailed), "swap").toString)
 
     val deathWatcher = testKit.createTestProbe[Any]()
     deathWatcher.expectTerminated(swapInReceiver)
 
     // the swap result has been recorded in the db
-    assert(db.list().head.result == ClaimByCoopOffered(swapId, SwapPaymentNotSent(swapId).toString()).toString)
+    assert(db.list().head.result == ClaimByCoopOffered(swapId, LightningPaymentFailed(swapId, Left(paymentFailed), "swap").toString).toString)
     db.remove(swapId)
   }
 
@@ -135,19 +147,21 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     import f._
 
     // restore the SwapInReceiver actor state from a confirmed on-chain opening tx
-    val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
     val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false, remoteNodeId)
     db.add(swapData)
 
     // add failed outgoing payment to the payments databases
-    val paymentId = UUID.randomUUID()
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(paymentId, UUID.randomUUID(), Some("1"), invoice.paymentHash, PaymentType.Standard, 123 msat, 123 msat, alice, 1100 unixms, Some(invoice), Pending))
-    nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(paymentId, invoice.paymentHash, Seq(), 0 unixms))
+    nodeParams.db.payments.addOutgoingPayment(pendingPayment)
+    nodeParams.db.payments.updateOutgoingPayment(paymentFailed)
     assert(nodeParams.db.payments.listOutgoingPayments(invoice.paymentHash).nonEmpty)
 
     swapInReceiver ! RestoreSwap(swapData)
-    monitor.expectMessageType[RestoreSwap]
+
+    // do not send a payment because a pending payment was in the database
+    paymentInitiator.expectNoMessage(100 millis)
+
+    // send a cooperative close because the swap maker has committed the opening tx
+    assert(expectSwapMessage[CoopClose](switchboard).message == LightningPaymentFailed(swapId, Right(Failed(Seq(), paymentFailed.timestamp)), "swap").toString)
 
     val deathWatcher = testKit.createTestProbe[Any]()
     deathWatcher.expectTerminated(swapInReceiver)
@@ -161,8 +175,6 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     import f._
 
     // restore the SwapInReceiver actor state from a confirmed on-chain opening tx
-    val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
     val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false, remoteNodeId)
     db.add(swapData)
 
@@ -173,24 +185,21 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     assert(nodeParams.db.payments.listOutgoingPayments(invoice.paymentHash).nonEmpty)
 
     swapInReceiver ! RestoreSwap(swapData)
-    monitor.expectMessageType[RestoreSwap]
 
     // SwapInReceiver reports status of awaiting claim-by-invoice transaction
     swapInReceiver ! GetStatus(userCli.ref)
-    monitor.expectMessageType[GetStatus]
-    assert(userCli.expectMessageType[SwapStatus].behavior == "claimSwap")
+    assert(userCli.expectMessageType[SwapStatus].behavior == "payClaimInvoice")
 
     // SwapInReceiver reports a successful claim by invoice
     swapEvents.expectMessageType[TransactionPublished]
-    val claimByInvoiceTx = makeSwapClaimByInvoiceTx((request.amount + agreement.premium).sat, makerPubkey, takerPrivkey, paymentPreimage, feeRatePerKw, openingTxBroadcasted.txid, openingTxBroadcasted.scriptOut.toInt)
-    swapInReceiver ! ClaimTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(6), 0, claimByInvoiceTx))
+    swapInReceiver ! ClaimTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(6), 0, claimByInvoiceTx(agreement)))
     swapEvents.expectMessageType[ClaimByInvoiceConfirmed]
 
     val deathWatcher = testKit.createTestProbe[Any]()
     deathWatcher.expectTerminated(swapInReceiver)
 
     // the swap result has been recorded in the db
-    assert(db.list().head.result.contains("Claimed by paid invoice:"))
+    assert(db.list().head.result == ClaimByInvoiceConfirmed(swapId, WatchTxConfirmedTriggered(BlockHeight(6), 0, claimByInvoiceTx(agreement))).toString)
     db.remove(swapId)
   }
 
@@ -198,8 +207,6 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     import f._
 
     // restore the SwapInReceiver actor state from a confirmed on-chain opening tx
-    val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
-    val agreement = SwapInAgreement(protocolVersion, swapId, takerPubkey.toHex, premium)
     val swapData = SwapData(request, agreement, invoice, openingTxBroadcasted, swapRole = SwapRole.Taker, isInitiator = false, remoteNodeId)
     db.add(swapData)
 
@@ -207,28 +214,19 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("1"), invoice.paymentHash, PaymentType.Standard, 123 msat, 123 msat, alice, 1100 unixms, Some(invoice), OutgoingPaymentStatus.Pending))
     assert(nodeParams.db.payments.listOutgoingPayments(invoice.paymentHash).nonEmpty)
 
+    // restore with pending payment found in the database
     swapInReceiver ! RestoreSwap(swapData)
-    monitor.expectMessageType[RestoreSwap]
 
     // SwapInReceiver reports status of awaiting opening transaction
     swapInReceiver ! GetStatus(userCli.ref)
-    monitor.expectMessageType[GetStatus]
     assert(userCli.expectMessageType[SwapStatus].behavior == "payClaimInvoice")
 
     // pending payment successfully sent by SwapInReceiver
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), invoice.paymentHash, paymentPreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), amount.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
-    val paymentEvent = monitor.expectMessageType[PaymentEventReceived].paymentEvent
-    assert(paymentEvent.isInstanceOf[PaymentSent] && paymentEvent.paymentHash === invoice.paymentHash)
-
-    // SwapInReceiver reports status of awaiting claim-by-invoice transaction
-    swapInReceiver ! GetStatus(userCli.ref)
-    monitor.expectMessageType[GetStatus]
-    assert(userCli.expectMessageType[SwapStatus].behavior == "claimSwap")
 
     // SwapInReceiver reports a successful claim by invoice
     swapEvents.expectMessageType[TransactionPublished]
-    val claimByInvoiceTx = makeSwapClaimByInvoiceTx((request.amount + agreement.premium).sat, makerPubkey, takerPrivkey, paymentPreimage, feeRatePerKw, openingTxBroadcasted.txid, openingTxBroadcasted.scriptOut.toInt)
-    swapInReceiver ! ClaimTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(6), 0, claimByInvoiceTx))
+    swapInReceiver ! ClaimTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(6), 0, claimByInvoiceTx(agreement)))
     swapEvents.expectMessageType[ClaimByInvoiceConfirmed]
 
     val deathWatcher = testKit.createTestProbe[Any]()
@@ -244,48 +242,30 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // start new SwapInReceiver
     swapInReceiver ! StartSwapInReceiver(request)
-    monitor.expectMessage(StartSwapInReceiver(request))
 
     // SwapInReceiver:SwapInAgreement -> SwapInSender
     val agreement = expectSwapMessage[SwapInAgreement](switchboard)
 
     // Maker:OpeningTxBroadcasted -> Taker
-    val openingTxBroadcasted = OpeningTxBroadcasted(swapId, invoice.toString, txid, scriptOut, blindingKey)
     swapInReceiver ! SwapMessageReceived(openingTxBroadcasted)
-    monitor.expectMessageType[SwapMessageReceived]
 
     // ZmqWatcher -> SwapInReceiver, trigger confirmation of opening transaction
-    val openingTx = Transaction(2, Seq(), Seq(makeSwapOpeningTxOut((request.amount + agreement.premium).sat, makerPubkey, takerPubkey, invoice.paymentHash)), 0)
-    swapInReceiver ! OpeningTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(1), 0, openingTx))
-    monitor.expectMessageType[OpeningTxConfirmed]
+    swapInReceiver ! OpeningTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(1), 0, openingTx(agreement)))
 
     // SwapInReceiver validates invoice and opening transaction before paying the invoice
-    assert(paymentInitiator.expectMessageType[SendPaymentToNode] === SendPaymentToNode(invoice.amount_opt.get, invoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, blockUntilComplete = true))
+    assert(paymentInitiator.expectMessageType[SendPaymentToNode] === SendPaymentToNode(invoice.amount_opt.get, invoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
 
-    // wait for SwapInReceiver to subscribe to PaymentEventReceived messages
-    swapEvents.expectNoMessage()
-
-    // SwapInReceiver ignores payments that do not correspond to the invoice from SwapInSender
+    // SwapInReceiver ignores payment events that do not correspond to the invoice from SwapInSender
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), ByteVector32.Zeroes, paymentPreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), amount.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
-    monitor.expectMessageType[PaymentEventReceived].paymentEvent
-    monitor.expectNoMessage()
+    swapInReceiver ! GetStatus(userCli.ref)
+    assert(userCli.expectMessageType[SwapStatus].behavior == "payClaimInvoice")
 
     // SwapInReceiver commits a claim-by-invoice transaction after successfully paying the invoice from SwapInSender
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), invoice.paymentHash, paymentPreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), amount.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
-    val paymentEvent = monitor.expectMessageType[PaymentEventReceived].paymentEvent
-    assert(paymentEvent.isInstanceOf[PaymentSent] && paymentEvent.paymentHash === invoice.paymentHash)
-    monitor.expectMessage(ClaimTxCommitted)
-
-    // SwapInReceiver reports status of awaiting claim by invoice tx to confirm
-    swapInReceiver ! GetStatus(userCli.ref)
-    monitor.expectMessageType[GetStatus]
-    assert(userCli.expectMessageType[SwapStatus].behavior == "claimSwap")
 
     // SwapInReceiver reports a successful claim by invoice
     swapEvents.expectMessageType[TransactionPublished]
-    val claimByInvoiceTx = makeSwapClaimByInvoiceTx((request.amount + agreement.premium).sat, makerPubkey, takerPrivkey, paymentPreimage, feeRatePerKw, openingTx.txid, openingTxBroadcasted.scriptOut.toInt)
-    swapInReceiver ! ClaimTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(6), 0, claimByInvoiceTx))
-    monitor.expectMessageType[ClaimTxConfirmed]
+    swapInReceiver ! ClaimTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(6), 0, claimByInvoiceTx(agreement)))
     swapEvents.expectMessageType[ClaimByInvoiceConfirmed]
 
     val deathWatcher = testKit.createTestProbe[Any]()
@@ -301,21 +281,16 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // start new SwapInReceiver
     swapInReceiver ! StartSwapInReceiver(request)
-    monitor.expectMessage(StartSwapInReceiver(request))
 
     // SwapInReceiver:SwapInAgreement -> SwapInSender
-    val agreement = expectSwapMessage[SwapInAgreement](switchboard)
+    expectSwapMessage[SwapInAgreement](switchboard)
 
     // Maker:OpeningTxBroadcasted -> Taker, with payreq invoice where minFinalCltvExpiry >= claimByCsvDelta
     val badInvoice = Bolt11Invoice(TestConstants.Alice.nodeParams.chainHash, Some(amount.toMilliSatoshi), Crypto.sha256(paymentPreimage), makerPrivkey, Left("SwapInReceiver invoice - bad min-final-cltv-expiry-delta"), claimByCsvDelta)
-    val openingTxBroadcasted = OpeningTxBroadcasted(swapId, badInvoice.toString, txid, scriptOut, blindingKey)
-    swapInReceiver ! SwapMessageReceived(openingTxBroadcasted)
-    monitor.expectMessageType[SwapMessageReceived]
+    swapInReceiver ! SwapMessageReceived(openingTxBroadcasted.copy(payreq = badInvoice.toString))
 
     // ZmqWatcher -> SwapInReceiver, trigger confirmation of opening transaction
-    val openingTx = Transaction(2, Seq(), Seq(makeSwapOpeningTxOut((request.amount + agreement.premium).sat, makerPubkey, takerPubkey, invoice.paymentHash)), 0)
-    swapInReceiver ! OpeningTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(1), 0, openingTx))
-    monitor.expectMessageType[OpeningTxConfirmed]
+    swapInReceiver ! OpeningTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(1), 0, openingTx(agreement)))
 
     // SwapInReceiver validates fails before paying the invoice
     paymentInitiator.expectNoMessage()
