@@ -382,7 +382,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored
         goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(d.commitments, shortIds, localChannelReady) storing() sending localChannelReady
       } else {
-        log.info("received their channel_ready, deferring message")
+        log.debug("received their channel_ready, deferring message")
         stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
       }
 

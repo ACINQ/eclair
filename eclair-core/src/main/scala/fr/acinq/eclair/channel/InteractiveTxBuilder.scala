@@ -402,7 +402,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
               case None => Nil
             }
           }
-          log.info("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
+          log.debug("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
           // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this session.
           unlock(unusableInputs.map(_.outpoint))
           // The initiator's serial IDs must use even values and the non-initiator odd values.
@@ -686,7 +686,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val remoteInputsUnchanged = previousTx.tx.remoteInputs.map(_.outPoint).toSet == sharedTx.remoteInputs.map(_.outPoint).toSet
         val remoteOutputsUnchanged = previousTx.tx.remoteOutputs.map(o => TxOut(o.amount, o.pubkeyScript)).toSet == sharedTx.remoteOutputs.map(o => TxOut(o.amount, o.pubkeyScript)).toSet
         if (remoteInputsUnchanged && remoteOutputsUnchanged) {
-          log.info("peer did not contribute to the feerate increase to {}: they used the same inputs and outputs", fundingParams.targetFeerate)
+          log.debug("peer did not contribute to the feerate increase to {}: they used the same inputs and outputs", fundingParams.targetFeerate)
         }
         val previousUnsignedTx = previousTx.tx.buildUnsignedTx()
         val previousMinimumWeight = previousUnsignedTx.weight() + previousUnsignedTx.txIn.length * minimumWitnessWeight

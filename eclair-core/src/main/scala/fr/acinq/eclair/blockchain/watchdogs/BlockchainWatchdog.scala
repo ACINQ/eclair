@@ -119,8 +119,6 @@ object BlockchainWatchdog {
               context.log.warn("{}: we are {} blocks late: we may be eclipsed from the bitcoin network", source, missingBlocks)
               context.system.eventStream ! EventStream.Publish(DangerousBlocksSkew(headers))
               context.system.eventStream ! EventStream.Publish(NotifyNodeOperator(NotificationsLogger.Warning, s"we are $missingBlocks late according to $source: we may be eclipsed from the bitcoin network, check your bitcoind node."))
-            } else if (missingBlocks > 0) {
-              context.log.info("{}: we are {} blocks late", source, missingBlocks)
             } else {
               context.log.debug("{}: we are {} blocks late", source, missingBlocks)
             }

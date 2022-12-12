@@ -457,7 +457,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               }
               if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
                 // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
-                log.info("updating channel_update aboveReserve={}", Helpers.aboveReserve(commitments1))
+                log.debug("updating channel_update aboveReserve={}", Helpers.aboveReserve(commitments1))
                 self ! BroadcastChannelUpdate(AboveReserve)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
@@ -671,7 +671,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               // specs says that we "MUST respond to the first announcement_signatures message after reconnection with its own announcement_signatures message"
               // current implementation always replies to announcement_signatures, not only the first time
               // TODO: we should only be nice once, current behaviour opens way to DOS, but this should be handled higher in the stack anyway
-              log.info("re-sending our announcement sigs")
+              log.debug("re-sending our announcement sigs")
               stay() sending localAnnSigs
           }
         case _ =>
@@ -945,7 +945,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       stay()
 
     case Event(c: ClosingSigned, d: DATA_NEGOTIATING) =>
-      log.info("received closing fee={}", c.feeSatoshis)
       val (remoteClosingFee, remoteSig) = (c.feeSatoshis, c.signature)
       Closing.MutualClose.checkClosingSignature(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, remoteClosingFee, remoteSig) match {
         case Right((signedClosingTx, closingSignedRemoteFees)) =>
@@ -1166,7 +1165,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
-      log.info(s"processing bitcoin output spent by txid=${tx.txid} tx=$tx")
+      log.debug(s"processing bitcoin output spent by txid=${tx.txid} tx=$tx")
       val extracted = Closing.extractPreimages(d.commitments.localCommit, tx)
       extracted.foreach { case (htlc, preimage) =>
         d.commitments.originChannels.get(htlc.id) match {
@@ -1521,7 +1520,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     // before channel_reestablish, which is a minor spec violation. It doesn't halt the channel, we can simply postpone
     // that message.
     case Event(remoteAnnSigs: AnnouncementSignatures, d) =>
-      log.warning("received announcement_signatures before channel_reestablish (known lnd bug): delaying...")
+      log.debug("received announcement_signatures before channel_reestablish (known lnd bug): delaying...")
       context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
       stay() sending Warning(d.channelId, "spec violation: you sent announcement_signatures before channel_reestablish")
 
@@ -1585,7 +1584,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       stay()
 
     case Event(c: CMD_ADD_HTLC, d: PersistentChannelData) =>
-      log.info(s"rejecting htlc request in state=$stateName")
+      log.debug(s"rejecting htlc request in state=$stateName")
       val error = ChannelUnavailable(d.channelId)
       handleAddHtlcCommandError(c, error, None) // we don't provide a channel_update: this will be a permanent channel failure
 
@@ -1852,7 +1851,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
   }
 
   private def handleAddDisconnected(c: CMD_ADD_HTLC, d: DATA_NORMAL) = {
-    log.info(s"rejecting htlc request in state=$stateName")
+    log.debug(s"rejecting htlc request in state=$stateName")
     // in order to reduce gossip spam, we don't disable the channel right away when disconnected
     // we will only emit a new channel_update with the disable flag set if someone tries to use that channel
     if (d.channelUpdate.channelFlags.isEnabled) {

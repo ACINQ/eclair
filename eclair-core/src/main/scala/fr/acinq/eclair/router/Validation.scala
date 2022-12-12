@@ -72,7 +72,7 @@ object Validation {
       sendDecision(origin.peerConnection, GossipDecision.InvalidSignature(c))
       d
     } else {
-      log.info("validating shortChannelId={}", c.shortChannelId)
+      log.debug("validating shortChannelId={}", c.shortChannelId)
       watcher ! ValidateRequest(ctx.self, c)
       // we don't acknowledge the message just yet
       d.copy(awaiting = d.awaiting + (c -> Seq(origin)))
@@ -447,7 +447,7 @@ object Validation {
                 val prunedChannels1 = d.prunedChannels + (pc1.shortChannelId -> pc1)
                 d.copy(prunedChannels = prunedChannels1)
               } else {
-                log.info("channel shortChannelId={} is back from the dead", u.shortChannelId)
+                log.debug("channel shortChannelId={} is back from the dead", u.shortChannelId)
                 // We notify front nodes that the channel is back.
                 ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(pc1.ann, pc1.capacity, pc1.update_1_opt, pc1.update_2_opt) :: Nil))
                 sendDecision(origins, GossipDecision.Accepted(u))

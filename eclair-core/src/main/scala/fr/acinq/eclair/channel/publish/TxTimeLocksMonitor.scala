@@ -115,7 +115,7 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams,
   def waitForParentsToConfirm(parentTxIds: Set[ByteVector32]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case ParentTxConfirmed(parentTxId) =>
-        log.info("parent tx of {} has been confirmed (parent txid={})", cmd.desc, parentTxId)
+        log.debug("parent tx of {} has been confirmed (parent txid={})", cmd.desc, parentTxId)
         val remainingParentTxIds = parentTxIds - parentTxId
         if (remainingParentTxIds.isEmpty) {
           log.info("all parent txs of {} have been confirmed", cmd.desc)

@@ -287,7 +287,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
 
       case TriggerEvent(replyTo, watch, event) =>
         if (watches.contains(watch)) {
-          log.info("triggering {}", watch)
+          log.debug("triggering {}", watch)
           replyTo ! event
           watch match {
             case _: WatchSpent[_] =>

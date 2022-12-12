@@ -97,7 +97,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               // We log whether the sender included the payment metadata field.
               // We always set it in our invoices to test whether senders support it.
               // Once all incoming payments correctly set that field, we can make it mandatory.
-              log.info("received payment for amount={} totalAmount={} paymentMetadata={}", add.amountMsat, payload.totalAmount, payload.paymentMetadata.map(_.toHex).getOrElse("none"))
+              log.debug("received payment for amount={} totalAmount={} paymentMetadata={}", add.amountMsat, payload.totalAmount, payload.paymentMetadata.map(_.toHex).getOrElse("none"))
               Metrics.PaymentHtlcReceived.withTag(Tags.PaymentMetadataIncluded, payload.paymentMetadata.nonEmpty).increment()
               payload.paymentMetadata.foreach(metadata => ctx.system.eventStream.publish(PaymentMetadataReceived(add.paymentHash, metadata)))
               addHtlcPart(ctx, add, payload, payment.paymentPreimage)
@@ -132,7 +132,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
             Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
             PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
           case None =>
-            log.info("received payment for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
+            log.debug("received payment for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
             addHtlcPart(ctx, add, payload, payment.paymentPreimage)
         }
       }
@@ -189,7 +189,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
 
     case DoFulfill(preimage, MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts)) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        log.info("fulfilling payment for amount={}", parts.map(_.amount).sum)
+        log.debug("fulfilling payment for amount={}", parts.map(_.amount).sum)
         val received = PaymentReceived(paymentHash, parts.map {
           case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
         })

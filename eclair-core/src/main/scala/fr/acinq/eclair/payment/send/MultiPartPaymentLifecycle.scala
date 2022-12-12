@@ -73,7 +73,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       } else {
         // If a child payment failed while we were waiting for routes, the routes we received don't cover the whole
         // remaining amount. In that case we discard these routes and send a new request to the router.
-        log.info("discarding routes, another child payment failed so we need to recompute them ({} payments still pending for {})", d.pending.size, d.pending.values.map(_.amount).sum)
+        log.debug("discarding routes, another child payment failed so we need to recompute them ({} payments still pending for {})", d.pending.size, d.pending.values.map(_.amount).sum)
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(nodeParams, routeParams, d, cfg)
         stay() using d.copy(retryRouteRequest = false)
@@ -220,12 +220,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   def myStop(request: SendMultiPartPayment, event: Either[PaymentFailed, PaymentSent]): State = {
     event match {
-      case Left(paymentFailed) =>
-        log.warning("multi-part payment failed")
-        reply(request.replyTo, paymentFailed)
-      case Right(paymentSent) =>
-        log.info("multi-part payment succeeded")
-        reply(request.replyTo, paymentSent)
+      case Left(paymentFailed) => reply(request.replyTo, paymentFailed)
+      case Right(paymentSent) => reply(request.replyTo, paymentSent)
     }
     val status = event match {
       case Right(_: PaymentSent) => "SUCCESS"

@@ -246,14 +246,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         stay() using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
       case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
-        log.info("disconnecting")
+        log.debug("disconnecting")
         sender() ! "disconnecting"
         d.peerConnection ! PeerConnection.Kill(KillReason.UserRequest)
         stay()
 
       case Event(ConnectionDown(peerConnection), d: ConnectedData) if peerConnection == d.peerConnection =>
         Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-          log.info("connection lost")
+          log.debug("connection lost")
         }
         if (d.channels.isEmpty) {
           // we have no existing channels, we can forget about this peer
@@ -276,7 +276,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         stay() using d.copy(channels = channels1)
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
-        log.info(s"got new connection, killing current one and switching")
+        log.debug(s"got new connection, killing current one and switching")
         d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
