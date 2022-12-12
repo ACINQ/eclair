@@ -2,7 +2,7 @@ package fr.acinq.eclair.db.migration
 
 import fr.acinq.eclair.db.Databases.{PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DualDatabases
-import fr.acinq.eclair.db.jdbc.JdbcUtils
+import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgUtils
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -18,13 +18,13 @@ object CompareDb extends Logging {
                    hash1: ResultSet => ByteVector,
                    hash2: ResultSet => ByteVector): Boolean = {
     var hashes1 = List.empty[ByteVector]
-    JdbcUtils.using(conn1.prepareStatement(s"SELECT * FROM $table1")) { statement =>
+    using(conn1.prepareStatement(s"SELECT * FROM $table1")) { statement =>
       val rs = statement.executeQuery()
       while (rs.next()) hashes1 = hash1(rs) +: hashes1
     }
 
     var hashes2 = List.empty[ByteVector]
-    JdbcUtils.using(conn2.prepareStatement(s"SELECT * FROM $table2")) { statement =>
+    using(conn2.prepareStatement(s"SELECT * FROM $table2")) { statement =>
       val rs = statement.executeQuery()
       while (rs.next()) hashes2 = hash2(rs) +: hashes2
     }

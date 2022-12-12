@@ -3,6 +3,7 @@ package fr.acinq.eclair.db.migration
 import fr.acinq.eclair.db.Databases.{PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DualDatabases
 import fr.acinq.eclair.db.jdbc.JdbcUtils
+import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgUtils
 import grizzled.slf4j.Logging
 
@@ -11,7 +12,7 @@ import java.sql.{Connection, PreparedStatement, ResultSet}
 object MigrateDb extends Logging {
 
   private def getVersion(conn: Connection, dbName: String): Int = {
-    JdbcUtils.using(conn.prepareStatement(s"SELECT version FROM versions WHERE db_name='$dbName'")) { statement =>
+    using(conn.prepareStatement(s"SELECT version FROM versions WHERE db_name='$dbName'")) { statement =>
       val res = statement.executeQuery()
       res.next()
       res.getInt("version")
