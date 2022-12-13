@@ -104,7 +104,8 @@ object TestConstants {
       channelConf = ChannelConf(
         dustLimit = 1100 sat,
         maxRemoteDustLimit = 1500 sat,
-        maxHtlcValueInFlightMsat = UInt64(500000000),
+        maxHtlcValueInFlightMsat = 500_000_000 msat,
+        maxHtlcValueInFlightPercent = 100,
         maxAcceptedHtlcs = 100,
         expiryDelta = CltvExpiryDelta(144),
         fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
@@ -216,7 +217,8 @@ object TestConstants {
       None,
       isInitiator = true,
       dualFunded = false,
-      fundingSatoshis
+      fundingSatoshis,
+      unlimitedMaxHtlcValueInFlight = false,
     ).copy(
       requestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
     )
@@ -250,7 +252,8 @@ object TestConstants {
       channelConf = ChannelConf(
         dustLimit = 1000 sat,
         maxRemoteDustLimit = 1500 sat,
-        maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
+        maxHtlcValueInFlightMsat = Long.MaxValue.msat, // Bob has no limit on the combined max value of in-flight htlcs
+        maxHtlcValueInFlightPercent = 100,
         maxAcceptedHtlcs = 30,
         expiryDelta = CltvExpiryDelta(144),
         fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
@@ -362,7 +365,8 @@ object TestConstants {
       None,
       isInitiator = false,
       dualFunded = false,
-      fundingSatoshis
+      fundingSatoshis,
+      unlimitedMaxHtlcValueInFlight = false,
     ).copy(
       requestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance
     )

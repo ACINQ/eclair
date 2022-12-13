@@ -98,15 +98,15 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   private def createChannelParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)): ChannelParams = {
     val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
-    val localParamsA = Peer.makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), ByteVector.empty, None, isInitiator = true, dualFunded = true, fundingAmountA)
-    val localParamsB = Peer.makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), ByteVector.empty, None, isInitiator = false, dualFunded = true, fundingAmountB)
+    val localParamsA = Peer.makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), ByteVector.empty, None, isInitiator = true, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false)
+    val localParamsB = Peer.makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), ByteVector.empty, None, isInitiator = false, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false)
 
     val Seq(remoteParamsA, remoteParamsB) = Seq((nodeParamsA, localParamsA), (nodeParamsB, localParamsB)).map {
       case (nodeParams, localParams) =>
         val channelKeyPath = nodeParams.channelKeyManager.keyPath(localParams, ChannelConfig.standard)
         RemoteParams(
           nodeParams.nodeId,
-          localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
+          localParams.dustLimit, UInt64(localParams.maxHtlcValueInFlightMsat.toLong), None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
           nodeParams.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey,
           nodeParams.channelKeyManager.revocationPoint(channelKeyPath).publicKey,
           nodeParams.channelKeyManager.paymentPoint(channelKeyPath).publicKey,

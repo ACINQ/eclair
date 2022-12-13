@@ -75,6 +75,8 @@ class PeerSpec extends FixtureSpec {
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.DualFunding))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional))
       .modify(_.channelConf.maxFundingSatoshis).setToIf(testData.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
+      .modify(_.channelConf.maxHtlcValueInFlightMsat).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(100_000_000 msat)
+      .modify(_.channelConf.maxHtlcValueInFlightPercent).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(25)
       .modify(_.autoReconnect).setToIf(testData.tags.contains("auto_reconnect"))(true)
 
     if (testData.tags.contains("with_node_announcement")) {
@@ -535,6 +537,40 @@ class PeerSpec extends FixtureSpec {
     assert(!init.dualFunded)
     assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
     assert(init.localParams.defaultFinalScriptPubKey == Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get)))
+  }
+
+  test("compute max-htlc-value-in-flight based on funding amount", Tag("max-htlc-value-in-flight-percent")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+    assert(peer.underlyingActor.nodeParams.channelConf.maxHtlcValueInFlightPercent == 25)
+    assert(peer.underlyingActor.nodeParams.channelConf.maxHtlcValueInFlightMsat == 100_000_000.msat)
+
+    {
+      probe.send(peer, Peer.OpenChannel(remoteNodeId, 200_000 sat, None, None, None, None, None))
+      val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
+      assert(init.localParams.maxHtlcValueInFlightMsat == 50_000_000.msat) // max-htlc-value-in-flight-percent
+    }
+    {
+      probe.send(peer, Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None))
+      val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
+      assert(init.localParams.maxHtlcValueInFlightMsat == 100_000_000.msat) // max-htlc-value-in-flight-msat
+    }
+    {
+      val open = createOpenChannelMessage().copy(fundingSatoshis = 200_000 sat)
+      peerConnection.send(peer, open)
+      val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
+      assert(init.localParams.maxHtlcValueInFlightMsat == 50_000_000.msat) // max-htlc-value-in-flight-percent
+      channel.expectMsg(open)
+    }
+    {
+      val open = createOpenChannelMessage().copy(fundingSatoshis = 500_000 sat)
+      peerConnection.send(peer, open)
+      val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
+      assert(init.localParams.maxHtlcValueInFlightMsat == 100_000_000.msat) // max-htlc-value-in-flight-msat
+      channel.expectMsg(open)
+    }
   }
 
   test("do not allow option_scid_alias with public channel") { f =>

@@ -216,6 +216,9 @@ case class Commitments(channelId: ByteVector32,
 
   val capacity: Satoshi = commitInput.txOut.amount
 
+  // We can safely cast to millisatoshis since we verify that it's less than a valid millisatoshi amount.
+  val maxHtlcAmount: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toBigInt.min(localParams.maxHtlcValueInFlightMsat.toLong).toLong.msat
+
   /** Channel reserve that applies to our funds. */
   val localChannelReserve: Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
     (capacity / 100).max(remoteParams.dustLimit)
@@ -406,9 +409,9 @@ object Commitments {
     // We apply local *and* remote restrictions, to ensure both peers are happy with the resulting number of HTLCs.
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
     val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
-    if (Seq(commitments1.localParams.maxHtlcValueInFlightMsat, commitments1.remoteParams.maxHtlcValueInFlightMsat).min < htlcValueInFlight) {
-      // TODO: this should be a specific UPDATE error (but it would require a spec change)
-      return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = Seq(commitments1.localParams.maxHtlcValueInFlightMsat, commitments1.remoteParams.maxHtlcValueInFlightMsat).min, actual = htlcValueInFlight))
+    val allowedHtlcValueInFlight = commitments1.maxHtlcAmount
+    if (allowedHtlcValueInFlight < htlcValueInFlight) {
+      return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
     }
     if (Seq(commitments1.localParams.maxAcceptedHtlcs, commitments1.remoteParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
       return Left(TooManyAcceptedHtlcs(commitments.channelId, maximum = Seq(commitments1.localParams.maxAcceptedHtlcs, commitments1.remoteParams.maxAcceptedHtlcs).min))

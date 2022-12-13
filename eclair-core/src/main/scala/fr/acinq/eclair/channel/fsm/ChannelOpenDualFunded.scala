@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, RealShortChannelId, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{Features, RealShortChannelId, ToMilliSatoshiConversion, UInt64}
 
 /**
  * Created by t-bast on 19/04/2022.
@@ -123,7 +123,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         commitmentFeerate = input.commitTxFeerate,
         fundingAmount = input.fundingAmount,
         dustLimit = input.localParams.dustLimit,
-        maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
+        maxHtlcValueInFlightMsat = UInt64(input.localParams.maxHtlcValueInFlightMsat.toLong),
         htlcMinimum = input.localParams.htlcMinimum,
         toSelfDelay = input.localParams.toSelfDelay,
         maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
@@ -165,7 +165,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             temporaryChannelId = open.temporaryChannelId,
             fundingAmount = d.init.fundingContribution_opt.getOrElse(0 sat),
             dustLimit = localParams.dustLimit,
-            maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
+            maxHtlcValueInFlightMsat = UInt64(localParams.maxHtlcValueInFlightMsat.toLong),
             htlcMinimum = localParams.htlcMinimum,
             minimumDepth = minimumDepth.getOrElse(0),
             toSelfDelay = localParams.toSelfDelay,
