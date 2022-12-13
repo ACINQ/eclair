@@ -539,9 +539,6 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           } else if (addOutput.amount < fundingParams.dustLimit) {
             replyTo ! RemoteFailure(OutputBelowDust(fundingParams.channelId, addOutput.serialId, addOutput.amount, fundingParams.dustLimit))
             unlockAndStop(session)
-          } else if (!Script.isNativeWitnessScript(addOutput.pubkeyScript)) {
-            replyTo ! RemoteFailure(NonSegwitOutput(fundingParams.channelId, addOutput.serialId))
-            unlockAndStop(session)
           } else {
             val next = session.copy(
               remoteOutputs = session.remoteOutputs :+ addOutput,
