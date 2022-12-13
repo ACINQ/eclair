@@ -571,7 +571,7 @@ object Router {
     /** Fee paid for the channel hops towards the recipient or the source of the final hop, if any. */
     def channelFee(includeLocalChannelCost: Boolean): MilliSatoshi = {
       val hopsToPay = if (includeLocalChannelCost) hops else hops.drop(1)
-      val amountToSend = hopsToPay.reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
+      val amountToSend = hopsToPay.foldRight(amount) { case (hop, amount1) => amount1 + hop.fee(amount1) }
       amountToSend - amount
     }
 

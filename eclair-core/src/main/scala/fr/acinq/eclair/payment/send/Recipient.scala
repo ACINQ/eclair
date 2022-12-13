@@ -56,8 +56,8 @@ object Recipient {
   /** Iteratively build all the payloads for a payment relayed through channel hops. */
   def buildPayloads(finalAmount: MilliSatoshi, finalExpiry: CltvExpiry, finalPayload: NodePayload, hops: Seq[ChannelHop]): PaymentPayloads = {
     // We ignore the first hop since the route starts at our node.
-    hops.tail.reverse.foldLeft(PaymentPayloads(finalAmount, finalExpiry, Seq(finalPayload))) {
-      case (current, hop) =>
+    hops.tail.foldRight(PaymentPayloads(finalAmount, finalExpiry, Seq(finalPayload))) {
+      case (hop, current) =>
         val payload = NodePayload(hop.nodeId, IntermediatePayload.ChannelRelay.Standard(hop.shortChannelId, current.amount, current.expiry))
         PaymentPayloads(current.amount + hop.fee(current.amount), current.expiry + hop.cltvExpiryDelta, payload +: current.payloads)
     }
@@ -74,16 +74,8 @@ case class ClearRecipient(nodeId: PublicKey,
                           paymentMetadata_opt: Option[ByteVector] = None,
                           nextTrampolineOnion_opt: Option[OnionRoutingPacket] = None,
                           customTlvs: Seq[GenericTlv] = Nil) extends Recipient {
-  private def validateRoute(route: Route): Either[OutgoingPaymentError, Route] = {
-    route.hops.lastOption match {
-      case Some(hop) if hop.nextNodeId == nodeId => Right(route)
-      case Some(hop) => Left(InvalidRouteRecipient(nodeId, hop.nextNodeId))
-      case None => Left(EmptyRoute)
-    }
-  }
-
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
-    validateRoute(route).map(_ => {
+    ClearRecipient.validateRoute(nodeId, route).map(_ => {
       val finalPayload = nextTrampolineOnion_opt match {
         case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket))
         case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, customTlvs))
@@ -97,6 +89,14 @@ object ClearRecipient {
   def apply(invoice: Bolt11Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Seq[GenericTlv]): ClearRecipient = {
     ClearRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, invoice.paymentSecret, invoice.extraEdges, invoice.paymentMetadata, None, customTlvs)
   }
+
+  def validateRoute(nodeId: PublicKey, route: Route): Either[OutgoingPaymentError, Route] = {
+    route.hops.lastOption match {
+      case Some(hop) if hop.nextNodeId == nodeId => Right(route)
+      case Some(hop) => Left(InvalidRouteRecipient(nodeId, hop.nextNodeId))
+      case None => Left(EmptyRoute)
+    }
+  }
 }
 
 /** A payment recipient that doesn't expect to receive a payment and can directly be found in the routing graph. */
@@ -108,16 +108,8 @@ case class SpontaneousRecipient(nodeId: PublicKey,
   override val features = Features.empty
   override val extraEdges = Nil
 
-  private def validateRoute(route: Route): Either[OutgoingPaymentError, Route] = {
-    route.hops.lastOption match {
-      case Some(hop) if hop.nextNodeId == nodeId => Right(route)
-      case Some(hop) => Left(InvalidRouteRecipient(nodeId, hop.nextNodeId))
-      case None => Left(EmptyRoute)
-    }
-  }
-
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
-    validateRoute(route).map(_ => {
+    ClearRecipient.validateRoute(nodeId, route).map(_ => {
       val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createKeySendPayload(route.amount, totalAmount, expiry, preimage, customTlvs))
       Recipient.buildPayloads(totalAmount, expiry, finalPayload, route.hops)
     })
