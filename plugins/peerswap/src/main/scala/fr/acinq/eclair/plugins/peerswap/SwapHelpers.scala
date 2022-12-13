@@ -136,12 +136,15 @@ private object SwapHelpers {
         context.system.eventStream ! EventStream.Publish(TransactionPublished(swapId, txInfo.tx, desc))
         context.pipeToSelf(wallet.commit(txInfo.tx)) {
           case Success(true) => ClaimTxCommitted
-          case Success(false) => context.log.error(s"swap $swapId claim tx commit did not succeed with $txInfo")
+          case Success(false) =>
+            context.log.error(s"swap $swapId claim tx commit did not succeed with $txInfo")
             ClaimTxFailed
-          case Failure(t) => context.log.error(s"swap $swapId claim tx commit *possibly* failed with $txInfo, exception: $t")
+          case Failure(t) =>
+            context.log.error(s"swap $swapId claim tx commit *possibly* failed with $txInfo, exception: $t")
             ClaimTxFailed
         }
-      case Failure(e) => context.log.error(s"swap $swapId claim tx is invalid: $e")
+      case Failure(e) =>
+        context.log.error(s"swap $swapId claim tx is invalid: $e")
         context.self ! ClaimTxInvalid
     }
 

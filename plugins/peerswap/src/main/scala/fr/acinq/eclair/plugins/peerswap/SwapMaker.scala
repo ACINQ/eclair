@@ -110,8 +110,7 @@ object SwapMaker {
   def apply(remoteNodeId: PublicKey, nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], switchboard: actor.ActorRef, wallet: OnChainWallet, keyManager: SwapKeyManager, db: SwapsDb): Behavior[SwapCommands.SwapCommand] =
     Behaviors.setup { context =>
       Behaviors.receiveMessagePartial {
-        case StartSwapInSender(amount, swapId, shortChannelId) =>
-          new SwapMaker(remoteNodeId, shortChannelId, nodeParams, watcher, switchboard, wallet, keyManager, db, context)
+        case StartSwapInSender(amount, swapId, shortChannelId) => new SwapMaker(remoteNodeId, shortChannelId, nodeParams, watcher, switchboard, wallet, keyManager, db, context)
             .createSwap(amount, swapId)
         case StartSwapOutReceiver(request: SwapOutRequest) =>
           ShortChannelId.fromCoordinates(request.scid) match {
@@ -124,7 +123,8 @@ object SwapMaker {
           ShortChannelId.fromCoordinates(d.request.scid) match {
             case Success(shortChannelId) => new SwapMaker(remoteNodeId, shortChannelId, nodeParams, watcher, switchboard, wallet, keyManager, db, context)
               .awaitClaimPayment(d.request, d.agreement, d.invoice, d.openingTxBroadcasted, d.isInitiator)
-            case Failure(e) => context.log.error(s"Could not restore from a checkpoint with an invalid shortChannelId: $d, $e")
+            case Failure(e) =>
+              context.log.error(s"Could not restore from a checkpoint with an invalid shortChannelId: $d, $e")
               db.addResult(CouldNotRestore(d.swapId, d))
               Behaviors.stopped
           }
