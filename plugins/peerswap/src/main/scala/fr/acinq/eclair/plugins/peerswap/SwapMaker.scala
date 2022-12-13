@@ -137,7 +137,9 @@ private class SwapMaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
   val noAsset = ""
   implicit val timeout: Timeout = 30 seconds
   private implicit val feeRatePerKw: FeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
+  // fee is the additional off-chain amount the Maker is asking for from the Taker to open the swap
   private val openingFee = (feeRatePerKw * openingTxWeight / 1000).toLong // TODO: how should swap out initiator calculate an acceptable swap opening tx fee?
+  // premium is the additional on-chain amount the Taker is asking for from the Maker over the swap amount
   private val maxPremium = (feeRatePerKw * claimByInvoiceTxWeight / 1000).toLong // TODO: how should swap sender calculate an acceptable premium?
 
   private def makerPrivkey(swapId: String): PrivateKey = keyManager.openingPrivateKey(SwapKeyManager.keyPath(swapId)).privateKey
