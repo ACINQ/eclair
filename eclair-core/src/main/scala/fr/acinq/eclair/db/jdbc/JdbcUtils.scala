@@ -109,7 +109,7 @@ trait JdbcUtils {
                    migrate: (ResultSet, PreparedStatement) => Unit)(implicit logger: Logger): Int = {
     val insertStatement = destination.prepareStatement(migrateSql)
     val batchSize = 50
-    JdbcUtils.using(source.prepareStatement(s"SELECT * FROM $sourceTable")) { queryStatement =>
+    using(source.prepareStatement(s"SELECT * FROM $sourceTable")) { queryStatement =>
       val rs = queryStatement.executeQuery()
       var inserted = 0
       var batchCount = 0
@@ -192,11 +192,6 @@ trait JdbcUtils {
     def getLongNullable(columnLabel: String): Option[Long] = {
       val result = rs.getLong(columnLabel)
       if (rs.wasNull()) None else Some(result)
-    }
-
-    def getUUIDNullable(label: String): Option[UUID] = {
-      val result = rs.getString(label)
-      if (rs.wasNull()) None else Some(UUID.fromString(result))
     }
 
     def getMilliSatoshiNullable(label: String): Option[MilliSatoshi] = {

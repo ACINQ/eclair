@@ -2,6 +2,7 @@ package fr.acinq.eclair.db.migration
 
 import fr.acinq.eclair.db.Databases.{PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DualDatabases
+import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgUtils
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -16,30 +17,27 @@ object CompareDb extends Logging {
                    table2: String,
                    hash1: ResultSet => ByteVector,
                    hash2: ResultSet => ByteVector): Boolean = {
-    val rs1 = conn1.prepareStatement(s"SELECT * FROM $table1").executeQuery()
-    val rs2 = conn2.prepareStatement(s"SELECT * FROM $table2").executeQuery()
-
     var hashes1 = List.empty[ByteVector]
-    while (rs1.next()) {
-      hashes1 = hash1(rs1) +: hashes1
+    using(conn1.prepareStatement(s"SELECT * FROM $table1")) { statement =>
+      val rs = statement.executeQuery()
+      while (rs.next()) hashes1 = hash1(rs) +: hashes1
     }
 
     var hashes2 = List.empty[ByteVector]
-    while (rs2.next()) {
-      hashes2 = hash2(rs2) +: hashes2
+    using(conn2.prepareStatement(s"SELECT * FROM $table2")) { statement =>
+      val rs = statement.executeQuery()
+      while (rs.next()) hashes2 = hash2(rs) +: hashes2
     }
 
-    val res = hashes1.sorted == hashes2.sorted
-
-    if (res) {
+    if (hashes1.sorted == hashes2.sorted) {
       logger.info(s"tables $table1/$table2 are identical")
+      true
     } else {
       val diff1 = hashes1 diff hashes2
       val diff2 = hashes2 diff hashes1
       logger.warn(s"tables $table1/$table2 are different diff1=${diff1.take(3).map(_.toHex.take(128))} diff2=${diff2.take(3).map(_.toHex.take(128))}")
+      false
     }
-
-    res
   }
 
   // @formatter:off
