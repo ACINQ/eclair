@@ -574,8 +574,8 @@ object Peer {
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
-    val maxHtlcValueInFlightMsat = if (disableMaxHtlcValueInFlight) {
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
+    val maxHtlcValueInFlightMsat = if (unlimitedMaxHtlcValueInFlight) {
       // We don't want to impose limits on the amount in flight, typically to allow fully emptying the channel.
       21e6.btc.toMilliSatoshi
     } else {
