@@ -1031,6 +1031,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val txToFund = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
     wallet.fundTransaction(txToFund, FeeratePerKw(2000 sat), replaceable = true, lockUtxos = true).pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+    // The transaction is kept in bitcoind's internal wallet.
+    wallet.rpcClient.invoke("gettransaction", tx.txid).map(json => Transaction.read((json \ "hex").extract[String])).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Transaction].txid == tx.txid)
   }
 
 }
