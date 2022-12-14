@@ -38,7 +38,7 @@ import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents.TransactionPublished
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{SwapTransactionWithInputInfo, makeSwapOpeningTxOut}
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodecWithFallback
-import fr.acinq.eclair.plugins.peerswap.wire.protocol.{HasSwapId, OpeningTxBroadcasted}
+import fr.acinq.eclair.plugins.peerswap.wire.protocol.{HasSwapId, OpeningTxBroadcasted, SwapAgreement, SwapRequest}
 import fr.acinq.eclair.wire.protocol.UnknownMessage
 import fr.acinq.eclair.{NodeParams, TimestampSecond, randomBytes32}
 
@@ -164,4 +164,7 @@ private object SwapHelpers {
       nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, PaymentType.Standard)
       invoice
     }
+
+  def logStatus(swapId: String, actor: String, behavior: String, request: SwapRequest, agreement_opt: Option[SwapAgreement] = None, invoice_opt: Option[Bolt11Invoice] = None, openingTxBroadcasted_opt: Option[OpeningTxBroadcasted] = None)(implicit context: ActorContext[SwapCommand]): Unit =
+    context.log.debug(s"$actor[$behavior]: $swapId, ${request.scid}, $request, $agreement_opt, $invoice_opt, $openingTxBroadcasted_opt")
 }

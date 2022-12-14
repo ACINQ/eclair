@@ -87,8 +87,8 @@ object SwapCommands {
 
   sealed trait PayFeeInvoiceMessages extends SwapCommand
 
-  sealed trait UserMessages extends AwaitFeePaymentMessages with AwaitAgreementMessages with CreateOpeningTxMessages with AwaitOpeningTxConfirmedMessages with AwaitClaimPaymentMessages with PayClaimPaymentMessages with ClaimSwapMessages with ClaimSwapCoopMessages with WaitCsvMessages with ClaimSwapCsvMessages
-  case class GetStatus(replyTo: ActorRef[Status]) extends UserMessages with PayFeeInvoiceMessages with SendAgreementMessages
-  case class CancelRequested(replyTo: ActorRef[Response]) extends UserMessages with PayFeeInvoiceMessages with SendAgreementMessages
+  sealed trait UserMessages extends AwaitFeePaymentMessages with AwaitAgreementMessages with AwaitOpeningTxConfirmedMessages with AwaitClaimPaymentMessages with WaitCsvMessages with ClaimSwapMessages with ClaimSwapCsvMessages with ClaimSwapCoopMessages with PayFeeInvoiceMessages with SendAgreementMessages with PayClaimPaymentMessages with CreateOpeningTxMessages
+  case class GetStatus(replyTo: ActorRef[Status]) extends UserMessages
+  case class CancelRequested(replyTo: ActorRef[Response]) extends UserMessages
   // @Formatter:on
 }

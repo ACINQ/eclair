@@ -149,16 +149,37 @@ object SwapResponses {
     override def toString: String = s"$desc lightning payment failed: $payment"
   }
 
-  case class SwapPaymentNotSent(swapId: String) extends Error {
-    override def toString: String = s"swap lightning payment not sent"
-  }
-
   case class UserRequestedCancel(swapId: String) extends Error {
     override def toString: String = s"cancel requested by user"
   }
 
-  case class SwapStatus(swapId: String, actor: String, behavior: String, request: SwapRequest, agreement_opt: Option[SwapAgreement] = None, invoice_opt: Option[Bolt11Invoice] = None, openingTxBroadcasted_opt: Option[OpeningTxBroadcasted] = None) extends Status {
-    override def toString: String = s"$actor[$behavior]: $swapId, ${request.scid}, $request, $agreement_opt, $invoice_opt, $openingTxBroadcasted_opt"
+  sealed trait SwapStatus extends Status
+  case class AwaitingAgreement(swapId: String) extends SwapStatus {
+    override def toString: String = s"awaiting agreement"
+  }
+
+  case class AwaitClaimPayment(swapId: String) extends SwapStatus {
+    override def toString: String = s"awaiting claim payment"
+  }
+
+  case class AwaitOpeningTxConfirmation(swapId: String) extends SwapStatus {
+    override def toString: String = s"awaiting confirmation of the opening transaction"
+  }
+
+  case class AwaitCsv(swapId: String) extends SwapStatus {
+    override def toString: String = s"awaiting CSV expiry"
+  }
+
+  case class AwaitClaimByInvoiceTxConfirmation(swapId: String) extends SwapStatus {
+    override def toString: String = s"waiting for claim-by-invoice transaction to confirm"
+  }
+
+  case class AwaitClaimByCoopTxConfirmation(swapId: String) extends SwapStatus {
+    override def toString: String = s"waiting for claim-by-coop transaction to confirm"
+  }
+
+  case class AwaitClaimByCsvTxConfirmation(swapId: String) extends SwapStatus {
+    override def toString: String = s"waiting for claim-by-csv transaction to confirm"
   }
 
 }

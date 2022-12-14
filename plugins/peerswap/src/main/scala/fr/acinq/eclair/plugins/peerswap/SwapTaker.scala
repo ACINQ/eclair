@@ -20,7 +20,6 @@ import akka.actor
 import akka.actor.typed.eventstream.EventStream.Publish
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.OnChainWallet
@@ -40,7 +39,6 @@ import fr.acinq.eclair.plugins.peerswap.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, NodeParams, ShortChannelId}
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
 
 object SwapTaker {
@@ -165,7 +163,8 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
         replyTo ! UserCanceled(request.swapId)
         swapCanceled(UserCanceled(request.swapId))
       case GetStatus(replyTo) =>
-        replyTo ! SwapStatus(request.swapId, context.self.toString, "awaitAgreement", request)
+        logStatus(request.swapId, context.self.toString, "awaitAgreement", request)
+        replyTo ! AwaitingAgreement(request.swapId)
         Behaviors.same
     }
   }
@@ -201,7 +200,8 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
         replyTo ! UserCanceled(request.swapId)
         sendCoopClose(UserRequestedCancel(request.swapId))
       case GetStatus(replyTo) =>
-        replyTo ! SwapStatus(request.swapId, context.self.toString, "payFeeInvoice", request, Some(agreement), None, None)
+        logStatus(request.swapId, context.self.toString, "payFeeInvoice", request, Some(agreement), None, None)
+        replyTo ! AwaitOpeningTxConfirmation(request.swapId)
         Behaviors.same
     }
   }
@@ -223,7 +223,9 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
       case SwapMessageReceived(m) => sendCoopClose(InvalidMessage(request.swapId, "sendAgreement", m))
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
         sendCoopClose(UserRequestedCancel(request.swapId))
-      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "sendAgreement", request, Some(agreement))
+      case GetStatus(replyTo) =>
+        logStatus(request.swapId, context.self.toString, "sendAgreement", request, Some(agreement))
+        replyTo ! AwaitOpeningTxConfirmation(request.swapId)
         Behaviors.same
     }
   }
@@ -241,7 +243,8 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
         replyTo ! UserCanceled(request.swapId)
         sendCoopClose(UserRequestedCancel(request.swapId))
       case GetStatus(replyTo) =>
-        replyTo ! SwapStatus(request.swapId, context.self.toString, "awaitOpeningTxConfirmed", request, Some(agreement), None, Some(openingTxBroadcasted))
+        logStatus(request.swapId, context.self.toString, "awaitOpeningTxConfirmed", request, Some(agreement), None, Some(openingTxBroadcasted))
+        replyTo ! AwaitOpeningTxConfirmation(request.swapId)
         Behaviors.same
     }
   }
@@ -267,16 +270,18 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     watchForPaymentSent(watch = true)
     payInvoice(nodeParams)(paymentInitiator, request.swapId, invoice)
     receiveSwapMessage[PayClaimPaymentMessages](context, "payClaimInvoice") {
-      case _: WrappedPaymentPending =>
+      case _: WrappedPaymentPending => Behaviors.same
+      case p: WrappedPaymentEvent if p.paymentHash != invoice.paymentHash =>
         Behaviors.same
-      case p: WrappedPaymentEvent if p.paymentHash != invoice.paymentHash => Behaviors.same
       case p: WrappedPaymentFailed => sendCoopClose(LightningPaymentFailed(request.swapId, p.failure, "swap"))
       case p: WrappedPaymentSent =>
         watchForPaymentSent(watch = false)
         claimSwap(request, agreement, openingTxBroadcasted, invoice, p.paymentPreimage, isInitiator)
       case CancelRequested(replyTo) => replyTo ! UserCanceled(request.swapId)
         sendCoopClose(UserCanceled(request.swapId))
-      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "payClaimInvoice", request, Some(agreement), None, Some(openingTxBroadcasted))
+      case GetStatus(replyTo) =>
+        logStatus(request.swapId, context.self.toString, "payClaimInvoice", request, Some(agreement), None, Some(openingTxBroadcasted))
+        replyTo ! AwaitClaimByInvoiceTxConfirmation(request.swapId)
         Behaviors.same
     }
   }
@@ -285,7 +290,6 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
     val inputInfo = makeSwapOpeningInputInfo(openingTxBroadcasted.txid, openingTxBroadcasted.scriptOut.toInt, (request.amount + agreement.premium).sat, makerPubkey(request, agreement, isInitiator), takerPubkey(request.swapId), invoice.paymentHash)
     val claimByInvoiceTx = makeSwapClaimByInvoiceTx((request.amount + agreement.premium).sat, makerPubkey(request, agreement, isInitiator), takerPrivkey(request.swapId), paymentPreimage, feeRatePerKw, openingTxBroadcasted.txid, openingTxBroadcasted.scriptOut.toInt)
     def claimByInvoiceConfirmedAdapter: ActorRef[WatchTxConfirmedTriggered] = context.messageAdapter[WatchTxConfirmedTriggered](ClaimTxConfirmed)
-
     watchForTxConfirmation(watcher)(claimByInvoiceConfirmedAdapter, claimByInvoiceTx.txid, nodeParams.channelConf.minDepthBlocks)
     commitClaim(wallet)(request.swapId, SwapClaimByInvoiceTx(inputInfo, claimByInvoiceTx), "claim_by_invoice")
     receiveSwapMessage[ClaimSwapMessages](context, "claimSwap") {
@@ -295,9 +299,11 @@ private class SwapTaker(remoteNodeId: PublicKey, shortChannelId: ShortChannelId,
         Behaviors.same
       case ClaimTxFailed => Behaviors.same // TODO: handle when claim tx not confirmed, retry the tx?
       case ClaimTxInvalid => Behaviors.same // TODO: handle when claim tx not confirmed, retry the tx?
-      case CancelRequested(replyTo) => replyTo ! CancelAfterClaimCommit(request.swapId)
+      case CancelRequested(replyTo) => replyTo ! CancelAfterOpeningCommit(request.swapId)
         Behaviors.same
-      case GetStatus(replyTo) => replyTo ! SwapStatus(request.swapId, context.self.toString, "claimSwap", request, Some(agreement), None, Some(openingTxBroadcasted))
+      case GetStatus(replyTo) =>
+        logStatus(request.swapId, context.self.toString, "claimSwap", request, Some(agreement), None, Some(openingTxBroadcasted))
+        replyTo ! AwaitClaimByInvoiceTxConfirmation(request.swapId)
         Behaviors.same
     }
   }

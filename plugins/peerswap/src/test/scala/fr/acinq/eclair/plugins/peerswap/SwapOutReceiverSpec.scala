@@ -32,7 +32,7 @@ import fr.acinq.eclair.io.Switchboard.ForwardUnknownMessage
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents.{ClaimByInvoicePaid, SwapEvent, TransactionPublished}
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Status, SwapStatus}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.{AwaitClaimPayment, Status}
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.openingTxWeight
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodec
@@ -130,7 +130,7 @@ case class SwapOutReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory
 
     // SwapOutReceiver reports status of awaiting payment
     swapOutReceiver ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "awaitClaimPayment")
+    userCli.expectMessageType[AwaitClaimPayment]
 
     // SwapOutReceiver receives a payment with the corresponding payment hash
     // TODO: convert from ShortChannelId to ByteVector32

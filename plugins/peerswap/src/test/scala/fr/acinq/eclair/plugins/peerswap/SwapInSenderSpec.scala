@@ -19,7 +19,6 @@ package fr.acinq.eclair.plugins.peerswap
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream.{Publish, Subscribe}
-import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
@@ -34,7 +33,7 @@ import fr.acinq.eclair.io.Switchboard.ForwardUnknownMessage
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentReceived}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents._
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Status, SwapStatus}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.{AwaitClaimByCoopTxConfirmation, AwaitClaimByCsvTxConfirmation, AwaitClaimPayment, Status}
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodec
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.{CoopClose, OpeningTxBroadcasted, SwapInAgreement, SwapInRequest}
@@ -163,7 +162,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
 
     // SwapInSender reports status of awaiting payment
     swapInSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "awaitClaimPayment")
+    userCli.expectMessageType[AwaitClaimPayment]
 
     // SwapInSender receives a payment with the corresponding payment hash
     val paymentReceived = PaymentReceived(invoice.paymentHash, Seq(PaymentReceived.PartialPayment(amount.toMilliSatoshi, channelId, TimestampMilli(1553784963659L))))
@@ -204,7 +203,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
 
     // SwapInSender reports status of awaiting claim by cooperative close tx to confirm
     swapInSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "claimSwapCoop")
+    userCli.expectMessageType[AwaitClaimByCoopTxConfirmation]
 
     // ZmqWatcher -> SwapInSender, trigger confirmation of coop close transaction
     swapEvents.expectMessageType[TransactionPublished]
@@ -243,7 +242,7 @@ case class SwapInSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.lo
 
     // SwapInSender reports status of awaiting claim by csv tx to confirm
     swapInSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "claimSwapCsv")
+    userCli.expectMessageType[AwaitClaimByCsvTxConfirmation]
 
     // watch for and trigger that the claim-by-csv tx has been confirmed on chain
     watcher.expectMessageType[WatchTxConfirmed].replyTo ! WatchTxConfirmedTriggered(BlockHeight(0), scriptOut.toInt, Transaction(2, Seq(), Seq(), 0))

@@ -17,23 +17,11 @@
 package fr.acinq.eclair.plugins.peerswap
 
 import fr.acinq.eclair.json.MinimalSerializer
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Response, SwapStatus}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.Response
 import fr.acinq.eclair.plugins.peerswap.json.PeerSwapJsonSerializers
 import org.json4s.{Formats, JField, JObject, JString}
 
 object ApiSerializers {
-
-  object SwapStatusSerializer extends MinimalSerializer({
-    case x: SwapStatus => JObject(List(
-      JField("swap_id", JString(x.swapId)),
-      JField("actor", JString(x.actor)),
-      JField("behavior", JString(x.behavior)),
-      JField("request", JString(x.request.json)),
-      JField("agreement", JString(x.agreement_opt.collect(a => a.json).toString)),
-      JField("invoice", JString(x.invoice_opt.toString)),
-      JField("openingTxBroadcasted", JString(x.openingTxBroadcasted_opt.collect(o => o.json).toString))
-    ))
-  })
 
   object SwapResponseSerializer extends MinimalSerializer({
     case x: Response => JString(x.toString)
@@ -52,6 +40,6 @@ object ApiSerializers {
     ))
   })
 
-  implicit val formats: Formats = PeerSwapJsonSerializers.formats + SwapResponseSerializer + SwapStatusSerializer + SwapDataSerializer
+  implicit val formats: Formats = PeerSwapJsonSerializers.formats + SwapResponseSerializer + SwapDataSerializer
 
 }

@@ -19,7 +19,6 @@ package fr.acinq.eclair.plugins.peerswap
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream.{Publish, Subscribe}
-import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
@@ -35,7 +34,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents.{ClaimByInvoiceConfirmed, SwapEvent, TransactionPublished}
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{Status, SwapStatus}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.{AwaitOpeningTxConfirmation, Status}
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{makeSwapClaimByInvoiceTx, makeSwapOpeningTxOut}
 import fr.acinq.eclair.plugins.peerswap.wire.protocol.PeerSwapMessageCodecs.peerSwapMessageCodec
@@ -126,14 +125,12 @@ case class SwapOutSenderSpec() extends ScalaTestWithActorTestKit(ConfigFactory.l
     // SwapOutSender validates fee invoice before paying the invoice
     assert(paymentInitiator.expectMessageType[SendPaymentToNode] === SendPaymentToNode(feeInvoice.amount_opt.get, feeInvoice, nodeParams.maxPaymentAttempts, Some(swapId), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
     swapOutSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "payFeeInvoice")
 
     // SwapOutSender confirms the fee invoice has been paid
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), feeInvoice.paymentHash, feePreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), fee.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
 
     // SwapOutSender reports status of awaiting opening transaction after paying claim invoice
-    swapOutSender ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "payFeeInvoice")
+    userCli.expectMessageType[AwaitOpeningTxConfirmation]
 
     // SwapOutReceiver:OpeningTxBroadcasted -> SwapOutSender
     val openingTxBroadcasted = OpeningTxBroadcasted(swapId, paymentInvoice.toString, txid, scriptOut, blindingKey)

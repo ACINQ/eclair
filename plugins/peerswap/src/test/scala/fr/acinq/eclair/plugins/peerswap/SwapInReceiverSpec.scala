@@ -19,7 +19,6 @@ package fr.acinq.eclair.plugins.peerswap
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream.{Publish, Subscribe}
-import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
@@ -38,7 +37,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.plugins.peerswap.SwapCommands._
 import fr.acinq.eclair.plugins.peerswap.SwapEvents.{ClaimByCoopOffered, ClaimByInvoiceConfirmed, SwapEvent, TransactionPublished}
-import fr.acinq.eclair.plugins.peerswap.SwapResponses.{LightningPaymentFailed, Status, SwapPaymentNotSent, SwapStatus}
+import fr.acinq.eclair.plugins.peerswap.SwapResponses.{LightningPaymentFailed, Status}
 import fr.acinq.eclair.plugins.peerswap.db.sqlite.SqliteSwapsDb
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapScripts.claimByCsvDelta
 import fr.acinq.eclair.plugins.peerswap.transactions.SwapTransactions.{claimByInvoiceTxWeight, makeSwapClaimByInvoiceTx, makeSwapOpeningTxOut}
@@ -157,7 +156,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     swapInReceiver ! RestoreSwap(swapData)
 
-    // do not send a payment because a pending payment was in the database
+    // do not send a payment because a failed payment was in the database
     paymentInitiator.expectNoMessage(100 millis)
 
     // send a cooperative close because the swap maker has committed the opening tx
@@ -171,7 +170,7 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     db.remove(swapId)
   }
 
-  test("claim by invoice after a restore with the payment already marked as paid") { f =>
+  test("claim by invoice after a restore with the payment already marked as sent") { f =>
     import f._
 
     // restore the SwapInReceiver actor state from a confirmed on-chain opening tx
@@ -186,9 +185,8 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     swapInReceiver ! RestoreSwap(swapData)
 
-    // SwapInReceiver reports status of awaiting claim-by-invoice transaction
-    swapInReceiver ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "payClaimInvoice")
+    // do not send a payment because a sent payment was in the database
+    paymentInitiator.expectNoMessage(100 millis)
 
     // SwapInReceiver reports a successful claim by invoice
     swapEvents.expectMessageType[TransactionPublished]
@@ -217,9 +215,8 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // restore with pending payment found in the database
     swapInReceiver ! RestoreSwap(swapData)
 
-    // SwapInReceiver reports status of awaiting opening transaction
-    swapInReceiver ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "payClaimInvoice")
+    // do not send a payment because a pending payment was in the database
+    paymentInitiator.expectNoMessage(100 millis)
 
     // pending payment successfully sent by SwapInReceiver
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), invoice.paymentHash, paymentPreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), amount.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
@@ -257,8 +254,6 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // SwapInReceiver ignores payment events that do not correspond to the invoice from SwapInSender
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), ByteVector32.Zeroes, paymentPreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), amount.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
-    swapInReceiver ! GetStatus(userCli.ref)
-    assert(userCli.expectMessageType[SwapStatus].behavior == "payClaimInvoice")
 
     // SwapInReceiver commits a claim-by-invoice transaction after successfully paying the invoice from SwapInSender
     testKit.system.eventStream ! Publish(PaymentSent(UUID.randomUUID(), invoice.paymentHash, paymentPreimage, amount.toMilliSatoshi, makerNodeId, PaymentSent.PartialPayment(UUID.randomUUID(), amount.toMilliSatoshi, 0.sat.toMilliSatoshi, channelId, None) :: Nil))
@@ -292,8 +287,8 @@ case class SwapInReceiverSpec() extends ScalaTestWithActorTestKit(ConfigFactory.
     // ZmqWatcher -> SwapInReceiver, trigger confirmation of opening transaction
     swapInReceiver ! OpeningTxConfirmed(WatchTxConfirmedTriggered(BlockHeight(1), 0, openingTx(agreement)))
 
-    // SwapInReceiver validates fails before paying the invoice
-    paymentInitiator.expectNoMessage()
+    // SwapInReceiver fails before paying the invoice
+    paymentInitiator.expectNoMessage(100 millis)
 
     // SwapInReceiver:CoopClose -> SwapInSender
     val coopClose = expectSwapMessage[CoopClose](switchboard)
