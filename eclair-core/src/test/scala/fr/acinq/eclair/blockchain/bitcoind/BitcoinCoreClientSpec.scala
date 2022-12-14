@@ -21,7 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, MilliBtcDouble, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
@@ -49,7 +49,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   implicit val formats: Formats = DefaultFormats
 
   override def beforeAll(): Unit = {
-    startBitcoind(defaultAddressType_opt = Some("bech32m"))
+    startBitcoind(defaultAddressType_opt = Some("bech32m"), mempoolSize_opt = Some(5 /* MB */))
     waitForBitcoindReady()
   }
 
@@ -976,6 +976,64 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(tx.txOut.length == 2)
     assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(Script.pay2pkh(pubKey))) == 1)
     assert(tx.txOut.count(txOut => Script.isNativeWitnessScript(txOut.publicKeyScript)) == 1)
+  }
+
+  test("does not double-spend inputs of evicted transactions") {
+    // We fund our wallet with a single confirmed utxo.
+    val sender = TestProbe()
+    val wallet = new BitcoinCoreClient(createWallet("mempool_eviction", sender))
+    wallet.getP2wpkhPubkey().pipeTo(sender.ref)
+    val walletPubKey = sender.expectMsgType[PublicKey]
+    val miner = new BitcoinCoreClient(bitcoinrpcclient)
+    miner.getP2wpkhPubkey().pipeTo(sender.ref)
+    val nonWalletPubKey = sender.expectMsgType[PublicKey]
+    // We use a large input script to be able to fill the mempool with a few transactions.
+    val bigInputScript = Script.write(Seq.fill(200)(Seq(OP_PUSHDATA(ByteVector.fill(15)(42)), OP_DROP)).flatten)
+    val largeInputsCount = 110
+    // We prepare confirmed parent transactions containing such inputs.
+    val parentTxs = (walletPubKey +: Seq.fill(12)(nonWalletPubKey)).map(recipient => {
+      val mainOutput = TxOut(500_000 sat, Script.pay2wpkh(recipient))
+      val outputsWithLargeScript = Seq.fill(largeInputsCount)(TxOut(1_000 sat, Script.pay2wsh(bigInputScript)))
+      val outputs = mainOutput +: outputsWithLargeScript
+      val txNotFunded = Transaction(2, Nil, mainOutput +: outputsWithLargeScript, 0)
+      miner.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(500 sat), changePosition = Some(outputs.length))).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
+      miner.signTransaction(fundedTx, allowIncomplete = false).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      miner.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    })
+    generateBlocks(1)
+
+    def publishLargeTx(parentTx: Transaction, amount: Satoshi, wallet: BitcoinCoreClient): Transaction = {
+      val mainInput = TxIn(OutPoint(parentTx, 0), Nil, 0)
+      val inputsWithLargeScript = (1 to largeInputsCount).map(i => TxIn(OutPoint(parentTx, i), ByteVector.empty, 0, ScriptWitness(Seq(ByteVector(1), bigInputScript))))
+      val txIn = mainInput +: inputsWithLargeScript
+      val txOut = Seq(TxOut(amount, Script.pay2wpkh(randomKey().publicKey)))
+      wallet.signTransaction(Transaction(2, txIn, txOut, 0), allowIncomplete = true).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      assert(390_000 <= signedTx.weight() && signedTx.weight() <= 400_000) // standard transactions cannot exceed 400 000 WU
+      wallet.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+
+    // We create a large unconfirmed transaction with a low feerate.
+    val tx = publishLargeTx(parentTxs.head, 450_000 sat, wallet)
+    // Transactions with higher feerates are added to the mempool and evict the first transaction.
+    parentTxs.tail.foreach(parentTx => publishLargeTx(parentTx, 300_000 sat, miner))
+    // Even though the wallet transaction has been evicted, bitcoind doesn't double-spend its inputs.
+    wallet.getMempoolTx(tx.txid).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("Transaction not in mempool"))
+    wallet.listUnspent().pipeTo(sender.ref)
+    assert(sender.expectMsgType[Seq[Utxo]].isEmpty)
+    val txToFund = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+    wallet.fundTransaction(txToFund, FeeratePerKw(2000 sat), replaceable = true, lockUtxos = true).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+    // The transaction is kept in bitcoind's internal wallet.
+    wallet.rpcClient.invoke("gettransaction", tx.txid).map(json => Transaction.read((json \ "hex").extract[String])).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Transaction].txid == tx.txid)
   }
 
 }
