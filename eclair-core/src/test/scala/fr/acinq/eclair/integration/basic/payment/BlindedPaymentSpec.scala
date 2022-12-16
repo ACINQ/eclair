@@ -54,13 +54,16 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
   override def createFixture(testData: TestData): FixtureParam = {
     // seeds have been chosen so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
     val aliceParams = nodeParamsFor("alice", ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3"))
+      .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
     val bobParams = nodeParamsFor("bob", ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492"))
+      .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
       .modify(_.features.activated).usingIf(testData.tags.contains(RouteBlindingDisabledBob))(_ - RouteBlinding)
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
     val carolParams = nodeParamsFor("carol", ByteVector32(hex"ebd5a5d3abfb3ef73731eb3418d918f247445183180522674666db98a66411cc"))
+      .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
       .modify(_.features.activated).using(_ + (KeySend -> Optional))
       .modify(_.features.activated).usingIf(testData.tags.contains(RouteBlindingDisabledCarol))(_ - RouteBlinding)
@@ -97,9 +100,10 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
   }
 
   def createInvoice(recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[ReceivingRoute], sender: TestProbe): Bolt12Invoice = {
-    val offer = Offer(None, "test", recipient.nodeParams.nodeId, Features.empty, recipient.nodeParams.chainHash)
+    val offerKey = randomKey()
+    val offer = Offer(None, "test", offerKey.publicKey, Features.empty, recipient.nodeParams.chainHash)
     val invoiceReq = InvoiceRequest(offer, amount, 1, Features.empty, randomKey(), recipient.nodeParams.chainHash)
-    sender.send(recipient.paymentHandler, MultiPartHandler.ReceiveOfferPayment(randomKey(), offer, invoiceReq, routes, recipient.router))
+    sender.send(recipient.paymentHandler, MultiPartHandler.ReceiveOfferPayment(offerKey, offer, invoiceReq, routes, recipient.router))
     val invoice = sender.expectMsgType[Bolt12Invoice]
     assert(invoice.nodeId != recipient.nodeParams.nodeId)
     invoice

@@ -301,6 +301,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
               Behaviors.same
+            case _ =>
+              Behaviors.same
           }
         }
       }
