@@ -191,13 +191,13 @@ object PaymentOnion {
   import OnionPaymentPayloadTlv._
 
   /*
-   *                              PerHopPayload
-   *                                    |
-   *                                    |
-   *                     +--------------+---------------+
-   *                     |                              |
-   *                     |                              |
-   *            IntermediatePayload                FinalPayload
+   *                                              PerHopPayload
+   *                                                    |
+   *                                                    |
+   *                     +------------------------------+-----------------------------+
+   *                     |                              |                             |
+   *                     |                              |                             |
+   *            IntermediatePayload                FinalPayload          OutgoingBlindedPerHopPayload
    *                     |                              |
    *                     |                              |
    *           +---------+---------+             +------+------+
@@ -434,6 +434,33 @@ object PaymentOnion {
         }
         BlindedRouteData.validPaymentRecipientData(blindedRecords).map(blindedRecords => Blinded(records, blindedRecords))
       }
+    }
+  }
+
+  /**
+   * An opaque blinded payload (used when sending to a blinded route, never used to decode incoming payloads).
+   * We cannot use the other payload types because we cannot decrypt the recipient encrypted data, so we don't even
+   * know if those payloads are valid.
+   */
+  case class OutgoingBlindedPerHopPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends PerHopPayload {
+    require(records.get[EncryptedRecipientData].nonEmpty, "blinded per-hop payload must contain encrypted data")
+  }
+
+  object OutgoingBlindedPerHopPayload {
+    def createIntroductionPayload(encryptedRecipientData: ByteVector, blinding: PublicKey): OutgoingBlindedPerHopPayload = {
+      OutgoingBlindedPerHopPayload(TlvStream(Seq(EncryptedRecipientData(encryptedRecipientData), BlindingPoint(blinding))))
+    }
+
+    def createIntermediatePayload(encryptedRecipientData: ByteVector): OutgoingBlindedPerHopPayload = {
+      OutgoingBlindedPerHopPayload(TlvStream(Seq(EncryptedRecipientData(encryptedRecipientData))))
+    }
+
+    def createFinalPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, encryptedRecipientData: ByteVector, customTlvs: Seq[GenericTlv] = Nil): OutgoingBlindedPerHopPayload = {
+      OutgoingBlindedPerHopPayload(TlvStream(Seq(AmountToForward(amount), TotalAmount(totalAmount), OutgoingCltv(expiry), EncryptedRecipientData(encryptedRecipientData)), customTlvs))
+    }
+
+    def createFinalIntroductionPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, blinding: PublicKey, encryptedRecipientData: ByteVector, customTlvs: Seq[GenericTlv] = Nil): OutgoingBlindedPerHopPayload = {
+      OutgoingBlindedPerHopPayload(TlvStream(Seq(AmountToForward(amount), TotalAmount(totalAmount), OutgoingCltv(expiry), EncryptedRecipientData(encryptedRecipientData), BlindingPoint(blinding)), customTlvs))
     }
   }
 

@@ -367,6 +367,7 @@ object Sphinx extends Logging {
       val subsequentNodes: Seq[BlindedNode] = blindedNodes.tail
       val blindedNodeIds: Seq[PublicKey] = blindedNodes.map(_.blindedPublicKey)
       val encryptedPayloads: Seq[ByteVector] = blindedNodes.map(_.encryptedPayload)
+      val length: Int = blindedNodes.length - 1
     }
 
     /**
