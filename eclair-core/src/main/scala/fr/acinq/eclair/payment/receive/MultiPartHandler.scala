@@ -339,6 +339,7 @@ object MultiPartHandler {
                 Future.sequence(r.routes.map(route => {
                   val pathId = randomBytes32()
                   val dummyHops = route.dummyHops.map(h => {
+                    // We don't want to restrict HTLC size in dummy hops, so we use htlc_minimum_msat = 1 msat and htlc_maximum_msat = None.
                     val edge = Invoice.ExtraEdge(nodeParams.nodeId, nodeParams.nodeId, ShortChannelId.toSelf, h.feeBase, h.feeProportionalMillionths, h.cltvExpiryDelta, 1 msat, None)
                     ChannelHop(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId, HopRelayParams.FromHint(edge))
                   })
