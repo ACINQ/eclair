@@ -308,13 +308,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val route = PredefinedNodeRoute(Seq(randomKey().publicKey))
-    val trampolines = Seq(randomKey().publicKey, randomKey().publicKey)
+    val route = PredefinedNodeRoute(1000 msat, Seq(randomKey().publicKey))
     val parentId = UUID.randomUUID()
     val secret = randomBytes32()
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
-    eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
-    paymentInitiator.expectMsg(SendPaymentToRoute(1000 msat, 1200 msat, pr, route, Some("42"), Some(parentId), Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
+    eclair.sendToRoute(Some(1200 msat), Some("42"), Some(parentId), pr, route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)))
+    paymentInitiator.expectMsg(SendPaymentToRoute(1200 msat, pr, route, Some("42"), Some(parentId), Some(TrampolineAttempt(secret, 100 msat, CltvExpiryDelta(144)))))
   }
 
   test("call sendWithPreimage, which generates a random preimage, to perform a KeySend payment") { f =>

@@ -19,9 +19,10 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.Invoice.{BasicEdge, ExtraEdge}
+import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
+import fr.acinq.eclair.payment.send.{ClearRecipient, Recipient}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
 import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
@@ -234,21 +235,23 @@ object PaymentFailure {
     failures.foldLeft(ignore) { case (current, failure) => updateIgnored(failure, current) }
   }
 
-  /** Update the invoice routing hints based on more recent channel updates received. */
-  def updateExtraEdges(failures: Seq[PaymentFailure], extraEdges: Seq[ExtraEdge]): Seq[ExtraEdge] = {
-    // We're only interested in the last channel update received per channel.
-    val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
-      case (current, failure) => failure match {
-        case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => current.updated(f.update.shortChannelId, f.update)
-        case _ => current
-      }
-    }
-    extraEdges.map {
-      case edge: BasicEdge => updates.get(edge.shortChannelId) match {
-        case Some(u) => edge.update(u)
-        case None => edge
-      }
-      case edge => edge
+  /** Update the recipient routing hints based on more recent data received. */
+  def updateExtraEdges(failures: Seq[PaymentFailure], recipient: Recipient): Recipient = {
+    recipient match {
+      case r: ClearRecipient =>
+        // We're only interested in the last channel update received per channel.
+        val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
+          case (current, failure) => failure match {
+            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => current.updated(f.update.shortChannelId, f.update)
+            case _ => current
+          }
+        }
+        val extraEdges1 = r.extraEdges.map(edge => updates.get(edge.shortChannelId) match {
+          case Some(u) => edge.update(u)
+          case None => edge
+        })
+        r.copy(extraEdges = extraEdges1)
+      case r => r
     }
   }
 

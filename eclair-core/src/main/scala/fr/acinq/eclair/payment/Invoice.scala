@@ -20,65 +20,45 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond}
-import scodec.bits.ByteVector
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, ShortChannelId, TimestampSecond}
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 
 trait Invoice {
-  val amount_opt: Option[MilliSatoshi]
-
-  val createdAt: TimestampSecond
-
-  val nodeId: PublicKey
-
-  val paymentHash: ByteVector32
-
-  val paymentSecret: ByteVector32
-
-  val paymentMetadata: Option[ByteVector]
-
-  val description: Either[String, ByteVector32]
-
-  val extraEdges: Seq[Invoice.ExtraEdge]
-
-  val relativeExpiry: FiniteDuration
-
-  val minFinalCltvExpiryDelta: CltvExpiryDelta
-
-  val features: Features[InvoiceFeature]
-
-  def isExpired(): Boolean = createdAt + relativeExpiry.toSeconds <= TimestampSecond.now()
-
+  // @formatter:off
+  def nodeId: PublicKey
+  def amount_opt: Option[MilliSatoshi]
+  def createdAt: TimestampSecond
+  def paymentHash: ByteVector32
+  def description: Either[String, ByteVector32]
+  def relativeExpiry: FiniteDuration
+  def minFinalCltvExpiryDelta: CltvExpiryDelta
+  def features: Features[InvoiceFeature]
+  def isExpired(now: TimestampSecond = TimestampSecond.now()): Boolean = createdAt + relativeExpiry.toSeconds <= now
   def toString: String
+  // @formatter:on
 }
 
 object Invoice {
   /** An extra edge that can be used to pay a given invoice and may not be part of the public graph. */
-  sealed trait ExtraEdge {
-    // @formatter:off
-    def sourceNodeId: PublicKey
-    def feeBase: MilliSatoshi
-    def feeProportionalMillionths: Long
-    def cltvExpiryDelta: CltvExpiryDelta
-    def htlcMinimum: MilliSatoshi
-    def htlcMaximum_opt: Option[MilliSatoshi]
-    def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBase, feeProportionalMillionths = feeProportionalMillionths)
-    // @formatter:on
-  }
-
-  /** A normal graph edge, that should be handled exactly like public graph edges. */
-  case class BasicEdge(sourceNodeId: PublicKey,
+  case class ExtraEdge(sourceNodeId: PublicKey,
                        targetNodeId: PublicKey,
                        shortChannelId: ShortChannelId,
                        feeBase: MilliSatoshi,
                        feeProportionalMillionths: Long,
-                       cltvExpiryDelta: CltvExpiryDelta) extends ExtraEdge {
-    override val htlcMinimum: MilliSatoshi = 0 msat
-    override val htlcMaximum_opt: Option[MilliSatoshi] = None
+                       cltvExpiryDelta: CltvExpiryDelta,
+                       htlcMinimum: MilliSatoshi,
+                       htlcMaximum_opt: Option[MilliSatoshi]) {
+    val relayFees = Relayer.RelayFees(feeBase, feeProportionalMillionths)
 
-    def update(u: ChannelUpdate): BasicEdge = copy(feeBase = u.feeBaseMsat, feeProportionalMillionths = u.feeProportionalMillionths, cltvExpiryDelta = u.cltvExpiryDelta)
+    def update(u: ChannelUpdate): ExtraEdge = copy(
+      feeBase = u.feeBaseMsat,
+      feeProportionalMillionths = u.feeProportionalMillionths,
+      cltvExpiryDelta = u.cltvExpiryDelta,
+      htlcMinimum = u.htlcMinimumMsat,
+      htlcMaximum_opt = Some(u.htlcMaximumMsat)
+    )
   }
 
   def fromString(input: String): Try[Invoice] = {

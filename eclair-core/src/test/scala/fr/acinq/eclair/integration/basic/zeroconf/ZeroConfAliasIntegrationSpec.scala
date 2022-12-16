@@ -100,9 +100,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
   private def createSelfRouteCarol(f: FixtureParam, scid_ab: ShortChannelId, scid_bc: ShortChannelId): Unit = {
     import f._
     val sender = TestProbe("sender")
-    sender.send(carol.router, FinalizeRoute(50_000 msat, PredefinedNodeRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId))))
+    sender.send(carol.router, FinalizeRoute(PredefinedNodeRoute(50_000 msat, Seq(alice.nodeId, bob.nodeId, carol.nodeId))))
     val route = sender.expectMsgType[RouteResponse].routes.head
-    assert(route.length == 2)
+    assert(route.hops.length == 2)
     assert(route.hops.map(_.nodeId) == Seq(alice.nodeId, bob.nodeId))
     assert(route.hops.map(_.nextNodeId) == Seq(bob.nodeId, carol.nodeId))
     assert(route.hops.map(_.shortChannelId) == Seq(scid_ab, scid_bc))

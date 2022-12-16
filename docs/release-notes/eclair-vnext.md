@@ -9,6 +9,7 @@
 ### API changes
 
 - `audit` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474, #2487)
+- `sendtoroute` removes the `--trampolineNodes` argument and implicitly uses a single trampoline hop (#2480)
 
 ### Miscellaneous improvements and bug fixes
 

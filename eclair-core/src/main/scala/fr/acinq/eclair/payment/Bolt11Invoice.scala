@@ -549,53 +549,12 @@ object Bolt11Invoice {
       signature = bolt11Data.signature)
   }
 
-  private def readBoltData(input: String): Bolt11Data = {
-    val lowercaseInput = input.toLowerCase
-    val separatorIndex = lowercaseInput.lastIndexOf('1')
-    val hrp = lowercaseInput.take(separatorIndex)
-    if (!prefixes.values.exists(prefix => hrp.startsWith(prefix))) throw new RuntimeException("unknown prefix")
-    val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
-    Codecs.bolt11DataCodec.decode(data).require.value
-  }
-
-  /**
-   * Extracts the description from a serialized invoice that is **expected to be valid**.
-   * Throws an error if the invoice is not valid.
-   *
-   * @param input valid serialized invoice
-   * @return description as a String. If the description is a hash, returns the hash value as a String.
-   */
-  def fastReadDescription(input: String): String = {
-    readBoltData(input).taggedFields.collectFirst {
-      case Bolt11Invoice.Description(d) => d
-      case Bolt11Invoice.DescriptionHash(h) => h.toString()
-    }.get
-  }
-
-  /**
-   * Checks if a serialized invoice is expired. Timestamp is compared to the System's current time.
-   *
-   * @param input valid serialized invoice
-   * @return true if the invoice has expired, false otherwise.
-   */
-  def fastHasExpired(input: String): Boolean = {
-    val bolt11Data = readBoltData(input)
-    val expiry_opt = bolt11Data.taggedFields.collectFirst {
-      case p: Bolt11Invoice.Expiry => p
-    }
-    val timestamp = bolt11Data.timestamp
-    expiry_opt match {
-      case Some(expiry) => timestamp + expiry.toLong <= TimestampSecond.now()
-      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now()
-    }
-  }
-
   def toExtraEdges(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Seq[Invoice.ExtraEdge] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
     extraRoute.zip(nextNodeIds).map {
       case (extraHop, nextNodeId) =>
-        Invoice.BasicEdge(extraHop.nodeId, nextNodeId, extraHop.shortChannelId, extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta)
+        Invoice.ExtraEdge(extraHop.nodeId, nextNodeId, extraHop.shortChannelId, extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta, 1 msat, None)
     }
   }
 }
