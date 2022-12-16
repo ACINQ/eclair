@@ -262,47 +262,38 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
    * validation requests from the router
    */
   def watcherAutopilot(knownFundingTxs: () => Iterable[Transaction], deepConfirm: Boolean = true)(implicit system: ActorSystem): TestActor.AutoPilot = {
-    val fundingTxWatcher = system.spawnAnonymous(FundingTxWatcher(knownFundingTxs))
+    // we forward messages to an actor to emulate a stateful autopilot
+    val fundingTxWatcher = system.spawnAnonymous(FundingTxWatcher(knownFundingTxs, deepConfirm = deepConfirm))
     (_, msg) =>
       msg match {
-        case watch: ZmqWatcher.WatchFundingConfirmed =>
-          fundingTxWatcher ! FundingTxWatcher.WrappedWatchFundingConfirmed(watch.replyTo, watch.txId)
-          TestActor.KeepRunning
-        case watch: ZmqWatcher.WatchFundingDeeplyBuried if deepConfirm =>
-          fundingTxWatcher ! FundingTxWatcher.WrappedWatchFundingDeeplyBuried(watch.replyTo, watch.txId)
-          TestActor.KeepRunning
-        case vr: ZmqWatcher.ValidateRequest =>
-          val res = knownFundingTxs().find(tx => deterministicShortId(tx.txid) == vr.ann.shortChannelId) match {
-            case Some(fundingTx) => Right(fundingTx, ZmqWatcher.UtxoStatus.Unspent)
-            case None => Left(new RuntimeException(s"unknown realScid=${vr.ann.shortChannelId}, known=${knownFundingTxs().map(tx => deterministicShortId(tx.txid)).mkString(",")}"))
-          }
-          vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
+        case msg: ZmqWatcher.Command => fundingTxWatcher ! msg
+        case _ => ()
       }
+      TestActor.KeepRunning
   }
 
   // When opening a channel, only one of the two nodes publishes the funding transaction, which creates a race when the
   // other node sets a watch before that happens. We simply retry until the funding transaction is published.
   private object FundingTxWatcher {
-    // @formatter:off
-    sealed trait Command
-    case class WrappedWatchFundingConfirmed(replyTo: akka.actor.typed.ActorRef[ZmqWatcher.WatchFundingConfirmedTriggered], txId: ByteVector32) extends Command
-    case class WrappedWatchFundingDeeplyBuried(replyTo: akka.actor.typed.ActorRef[ZmqWatcher.WatchFundingDeeplyBuriedTriggered], txId: ByteVector32) extends Command
-    // @formatter:on
-
-    def apply(knownFundingTxs: () => Iterable[Transaction]): Behavior[Command] = {
+    def apply(knownFundingTxs: () => Iterable[Transaction], deepConfirm: Boolean): Behavior[ZmqWatcher.Command] = {
       Behaviors.setup { _ =>
         Behaviors.withTimers { timers =>
-          Behaviors.receiveMessage {
-            case watch: WrappedWatchFundingConfirmed =>
+          Behaviors.receiveMessagePartial {
+            case vr: ZmqWatcher.ValidateRequest =>
+              val res = knownFundingTxs().find(tx => deterministicShortId(tx.txid) == vr.ann.shortChannelId) match {
+                case Some(fundingTx) => Right(fundingTx, ZmqWatcher.UtxoStatus.Unspent)
+                case None => Left(new RuntimeException(s"unknown realScid=${vr.ann.shortChannelId}, known=${knownFundingTxs().map(tx => deterministicShortId(tx.txid)).mkString(",")}"))
+              }
+              vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
+              Behaviors.same
+            case watch: ZmqWatcher.WatchFundingConfirmed =>
               val realScid = deterministicShortId(watch.txId)
               knownFundingTxs().find(_.txid == watch.txId) match {
                 case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
               Behaviors.same
-            case watch: WrappedWatchFundingDeeplyBuried =>
+            case watch: ZmqWatcher.WatchFundingDeeplyBuried if deepConfirm =>
               val realScid = deterministicShortId(watch.txId)
               knownFundingTxs().find(_.txid == watch.txId) match {
                 case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
