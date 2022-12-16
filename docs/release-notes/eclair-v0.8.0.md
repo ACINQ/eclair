@@ -1,4 +1,4 @@
-# Eclair vnext
+# Eclair v0.8.0
 
 This release adds official support for two important lightning features: zero-conf channels and channel aliases.
 It also adds experimental support for dual-funding and a lot of preparatory work for Bolt 12 offers.
