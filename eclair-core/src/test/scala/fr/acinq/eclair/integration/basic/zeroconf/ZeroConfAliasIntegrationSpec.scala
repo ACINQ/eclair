@@ -97,15 +97,15 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     assert(result == expected)
   }
 
-  private def createSelfRouteCarol(f: FixtureParam, scid_ab: ShortChannelId, scid_bc: ShortChannelId): Unit = {
+  private def createSelfRouteCarol(f: FixtureParam, scid_bc: ShortChannelId): Unit = {
     import f._
     val sender = TestProbe("sender")
-    sender.send(carol.router, FinalizeRoute(PredefinedNodeRoute(50_000 msat, Seq(alice.nodeId, bob.nodeId, carol.nodeId))))
+    sender.send(carol.router, FinalizeRoute(PredefinedNodeRoute(50_000 msat, Seq(bob.nodeId, carol.nodeId))))
     val route = sender.expectMsgType[RouteResponse].routes.head
-    assert(route.hops.length == 2)
-    assert(route.hops.map(_.nodeId) == Seq(alice.nodeId, bob.nodeId))
-    assert(route.hops.map(_.nextNodeId) == Seq(bob.nodeId, carol.nodeId))
-    assert(route.hops.map(_.shortChannelId) == Seq(scid_ab, scid_bc))
+    assert(route.hops.length == 1)
+    assert(route.hops.map(_.nodeId) == Seq(bob.nodeId))
+    assert(route.hops.map(_.nextNodeId) == Seq(carol.nodeId))
+    assert(route.hops.map(_.shortChannelId) == Seq(scid_bc))
   }
 
   private def internalTest(f: FixtureParam,
@@ -160,11 +160,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
     eventually {
       if (deepConfirm) {
-        val scidsAlice = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds
-        val scid_ab = scidsAlice.real.toOption.get
         val scidsBob = getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds
         val scid_bc = if (bcPublic) scidsBob.real.toOption.get else scidsBob.localAlias
-        createSelfRouteCarol(f, scid_ab, scid_bc)
+        createSelfRouteCarol(f, scid_bc)
       }
     }
   }

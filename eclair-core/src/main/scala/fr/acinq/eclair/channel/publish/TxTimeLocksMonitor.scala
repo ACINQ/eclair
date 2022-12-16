@@ -45,7 +45,7 @@ object TxTimeLocksMonitor {
   // @formatter:off
   sealed trait Command
   case class CheckTx(replyTo: ActorRef[TimeLocksOk], tx: Transaction, desc: String) extends Command
-  private case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
+  final case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
   private case object CheckRelativeTimeLock extends Command
   private case class ParentTxConfirmed(parentTxId: ByteVector32) extends Command
   // @formatter:on
