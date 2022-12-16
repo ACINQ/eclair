@@ -64,7 +64,7 @@ class CommandCodecsSpec extends AnyFunSuite {
         ("reason" | either(bool, varsizebinarydata, failureMessageCodec)) ::
         ("commit" | provide(false))
     assert(CommandCodecs.cmdFailCodec.decode(legacyCmdFailCodec.encode(42 :: Left(data123) :: true :: HNil).require).require ==
-      DecodeResult(CMD_FAIL_HTLC(42, Left(data123), commit = false, None), BitVector.empty))
+      DecodeResult(CMD_FAIL_HTLC(42, Left(data123), None, commit = false, None), BitVector.empty))
 
     val legacyCmdFailMalformedCodec =
       ("id" | int64) ::
@@ -72,7 +72,7 @@ class CommandCodecsSpec extends AnyFunSuite {
         ("failureCode" | uint16) ::
         ("commit" | provide(false))
     assert(CommandCodecs.cmdFailMalformedCodec.decode(legacyCmdFailMalformedCodec.encode(42 :: data32 :: 456 :: true :: HNil).require).require ==
-      DecodeResult(CMD_FAIL_MALFORMED_HTLC(42, data32, 456, None, commit = false, None), BitVector.empty))
+      DecodeResult(CMD_FAIL_MALFORMED_HTLC(42, data32, 456, commit = false, None), BitVector.empty))
   }
 
 }

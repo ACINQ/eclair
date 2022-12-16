@@ -54,6 +54,7 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       wallet: DummyOnChainWallet,
                                       bitcoinClient: TestBitcoinCoreClient) {
   val nodeId = nodeParams.nodeId
+  val routeParams = nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
 }
 
 object MinimalNodeFixture extends Assertions with Eventually with IntegrationPatience with EitherValues {
@@ -299,6 +300,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
                 case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
+              Behaviors.same
+            case _ =>
               Behaviors.same
           }
         }

@@ -641,13 +641,13 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // e returns a failure
     val failure = IncorrectOrUnknownPaymentDetails(finalAmount, BlockHeight(currentBlockCount))
-    val Right(fail_e) = buildHtlcFailure(priv_e.privateKey, CMD_FAIL_HTLC(add_e.id, Right(failure)), add_e)
+    val Right(fail_e: UpdateFailHtlc) = buildHtlcFailure(priv_e.privateKey, CMD_FAIL_HTLC(add_e.id, Right(failure)), add_e)
     assert(fail_e.id == add_e.id)
-    val Right(fail_d) = buildHtlcFailure(priv_d.privateKey, CMD_FAIL_HTLC(add_d.id, Left(fail_e.reason)), add_d)
+    val Right(fail_d: UpdateFailHtlc) = buildHtlcFailure(priv_d.privateKey, CMD_FAIL_HTLC(add_d.id, Left(fail_e.reason)), add_d)
     assert(fail_d.id == add_d.id)
-    val Right(fail_c) = buildHtlcFailure(priv_c.privateKey, CMD_FAIL_HTLC(add_c.id, Left(fail_d.reason)), add_c)
+    val Right(fail_c: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, CMD_FAIL_HTLC(add_c.id, Left(fail_d.reason)), add_c)
     assert(fail_c.id == add_c.id)
-    val Right(fail_b) = buildHtlcFailure(priv_b.privateKey, CMD_FAIL_HTLC(add_b.id, Left(fail_c.reason)), add_b)
+    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, CMD_FAIL_HTLC(add_b.id, Left(fail_c.reason)), add_b)
     assert(fail_b.id == add_b.id)
     val Success(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, payment.sharedSecrets)
     assert(failingNode == e)
@@ -661,14 +661,29 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(add_b, priv_b.privateKey, Features.empty)
     val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None)
-    val Right(_: ChannelRelayPacket) = decrypt(add_c, priv_c.privateKey, Features(RouteBlinding -> Optional))
+    val Right(ChannelRelayPacket(_, payload_c, packet_d)) = decrypt(add_c, priv_c.privateKey, Features(RouteBlinding -> Optional))
+    val blinding_d = payload_c.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextBlinding
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, Some(blinding_d))
+    val Right(ChannelRelayPacket(_, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features(RouteBlinding -> Optional))
+    val blinding_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextBlinding
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, Some(blinding_e))
+    val Right(FinalPacket(_, payload_e)) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
+    assert(payload_e.isInstanceOf[FinalPayload.Blinded])
 
-    // only the introduction node is allowed to send an `update_fail_htlc` message: downstream nodes must send
-    // `update_fail_malformed_htlc` which doesn't use onion encryption
+    // nodes after the introduction node cannot send `update_fail_htlc` messages
+    val Right(fail_e: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_e.privateKey, CMD_FAIL_HTLC(add_e.id, Right(TemporaryNodeFailure)), add_e)
+    assert(fail_e.id == add_e.id)
+    assert(fail_e.onionHash == Sphinx.hash(add_e.onionRoutingPacket))
+    assert(fail_e.failureCode == InvalidOnionBlinding(fail_e.onionHash).code)
+    val Right(fail_d: UpdateFailMalformedHtlc) = buildHtlcFailure(priv_d.privateKey, CMD_FAIL_HTLC(add_d.id, Right(UnknownNextPeer)), add_d)
+    assert(fail_d.id == add_d.id)
+    assert(fail_d.onionHash == Sphinx.hash(add_d.onionRoutingPacket))
+    assert(fail_d.failureCode == InvalidOnionBlinding(fail_d.onionHash).code)
+    // only the introduction node is allowed to send an `update_fail_htlc` message
     val failure = InvalidOnionBlinding(Sphinx.hash(add_c.onionRoutingPacket))
-    val Right(fail_c) = buildHtlcFailure(priv_c.privateKey, CMD_FAIL_HTLC(add_c.id, Right(failure)), add_c)
+    val Right(fail_c: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, CMD_FAIL_HTLC(add_c.id, Right(failure)), add_c)
     assert(fail_c.id == add_c.id)
-    val Right(fail_b) = buildHtlcFailure(priv_b.privateKey, CMD_FAIL_HTLC(add_b.id, Left(fail_c.reason)), add_b)
+    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, CMD_FAIL_HTLC(add_b.id, Left(fail_c.reason)), add_b)
     assert(fail_b.id == add_b.id)
     val Success(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, payment.sharedSecrets)
     assert(failingNode == c)

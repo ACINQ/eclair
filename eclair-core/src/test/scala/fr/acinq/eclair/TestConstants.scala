@@ -95,6 +95,7 @@ object TestConstants {
           PaymentSecret -> Mandatory,
           BasicMultiPartPayment -> Optional,
           PaymentMetadata -> Optional,
+          RouteBlinding -> Optional,
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
@@ -245,6 +246,7 @@ object TestConstants {
         PaymentSecret -> Mandatory,
         BasicMultiPartPayment -> Optional,
         PaymentMetadata -> Optional,
+        RouteBlinding -> Optional,
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,

@@ -235,7 +235,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               case Origin.ChannelRelayedCold(originChannelId, originHtlcId, _, _) =>
                 log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing 1 HTLC upstream")
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
-                val cmd = ChannelRelay.translateRelayFailure(originHtlcId, fail, None)
+                val cmd = ChannelRelay.translateRelayFailure(originHtlcId, fail)
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, cmd)
               case Origin.TrampolineRelayedCold(origins) =>
                 log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${origins.length} HTLCs upstream")

@@ -201,8 +201,7 @@ class PaymentOnionSpec extends AnyFunSuite {
       RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
     )
     val testCases = Map(
-      TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), EncryptedRecipientData(hex"deadbeef")) -> hex"0d 02020231 04012a 0a04deadbeef",
-      TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), EncryptedRecipientData(hex"deadbeef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"))) -> hex"30 02020231 04012a 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), EncryptedRecipientData(hex"deadbeef"), TotalAmount(1105 msat)) -> hex"11 02020231 04012a 0a04deadbeef 12020451",
       TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42)), EncryptedRecipientData(hex"deadbeef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")), TotalAmount(1105 msat)) -> hex"34 02020231 04012a 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 12020451",
     )
 
@@ -211,6 +210,7 @@ class PaymentOnionSpec extends AnyFunSuite {
       assert(decoded == expected)
       val Right(payload) = FinalPayload.Blinded.validate(decoded, blindedTlvs)
       assert(payload.amount == 561.msat)
+      assert(payload.totalAmount == 1105.msat)
       assert(payload.expiry == CltvExpiry(42))
       assert(payload.pathId == hex"2a2a2a2a")
       val encoded = perHopPayloadCodec.encode(expected).require.bytes
@@ -312,13 +312,14 @@ class PaymentOnionSpec extends AnyFunSuite {
       RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
     )
     val testCases = Seq(
-      (MissingRequiredTlv(UInt64(2)), hex"0d 04012a 0a080123456789abcdef"), // missing amount
-      (MissingRequiredTlv(UInt64(4)), hex"0e 02020231 0a080123456789abcdef"), // missing expiry
-      (MissingRequiredTlv(UInt64(10)), hex"07 02020231 04012a"), // missing encrypted data
-      (ForbiddenTlv(UInt64(0)), hex"1b 02020231 04012a 06080000000000000451 0a080123456789abcdef"), // forbidden outgoing_channel_id
-      (ForbiddenTlv(UInt64(0)), hex"35 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 0a080123456789abcdef"), // forbidden payment_data
-      (ForbiddenTlv(UInt64(0)), hex"17 02020231 04012a 0a080123456789abcdef 1004deadbeef"), // forbidden payment_metadata
-      (ForbiddenTlv(UInt64(65535)), hex"17 02020231 04012a 0a080123456789abcdef fdffff0206c1"), // forbidden unknown tlv
+      (MissingRequiredTlv(UInt64(2)), hex"11 04012a 0a080123456789abcdef 12020451"), // missing amount
+      (MissingRequiredTlv(UInt64(4)), hex"12 02020231 0a080123456789abcdef 12020451"), // missing expiry
+      (MissingRequiredTlv(UInt64(10)), hex"0b 02020231 04012a 12020451"), // missing encrypted data
+      (MissingRequiredTlv(UInt64(18)), hex"11 02020231 04012a 0a080123456789abcdef"), // missing total amount
+      (ForbiddenTlv(UInt64(0)), hex"1f 02020231 04012a 06080000000000000451 0a080123456789abcdef 12020451"), // forbidden outgoing_channel_id
+      (ForbiddenTlv(UInt64(0)), hex"39 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 0a080123456789abcdef 12020451"), // forbidden payment_data
+      (ForbiddenTlv(UInt64(0)), hex"1b 02020231 04012a 0a080123456789abcdef 1004deadbeef 12020451"), // forbidden payment_metadata
+      (ForbiddenTlv(UInt64(65535)), hex"1b 02020231 04012a 0a080123456789abcdef 12020451 fdffff0206c1"), // forbidden unknown tlv
     )
 
     for ((expectedErr, bin) <- testCases) {

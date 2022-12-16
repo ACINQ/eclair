@@ -33,15 +33,16 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
+import fr.acinq.eclair.payment.receive.MultiPartHandler.{DummyBlindedHop, ReceiveOfferPayment, ReceiveStandardPayment, ReceivingRoute}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
 
@@ -680,6 +681,93 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(outgoingSuccess.amount == amount + 500000.msat, outgoingSuccess)
     val status = outgoingSuccess.status.asInstanceOf[OutgoingPaymentStatus.Succeeded]
     assert(status.route.lastOption.contains(HopSummary(nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId)), status)
+  }
+
+  test("send a blinded payment A->D with many blinded routes") {
+    val sender = TestProbe()
+    val recipientKey = randomKey()
+    val amount = 50_000_000 msat
+    val chain = nodes("D").nodeParams.chainHash
+    val offer = Offer(Some(amount), "test offer", recipientKey.publicKey, nodes("D").nodeParams.features.invoiceFeatures(), chain)
+    val invoiceRequest = InvoiceRequest(offer, amount, 1, nodes("A").nodeParams.features.invoiceFeatures(), randomKey(), chain)
+    val receivingRoutes = Seq(
+      ReceivingRoute(Seq(nodes("G").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
+      ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
+      ReceivingRoute(Seq(nodes("E").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
+    )
+    sender.send(nodes("D").paymentHandler, ReceiveOfferPayment(recipientKey, offer, invoiceRequest, receivingRoutes, nodes("D").router))
+    val invoice = sender.expectMsgType[Bolt12Invoice]
+    assert(invoice.blindedPaths.length == 3)
+    assert(invoice.blindedPathsInfo.length == 3)
+    assert(invoice.nodeId == recipientKey.publicKey)
+
+    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 3, routeParams = integrationTestRouteParams))
+    val paymentId = sender.expectMsgType[UUID]
+    val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
+    assert(paymentSent.id == paymentId, paymentSent)
+    assert(paymentSent.paymentHash == invoice.paymentHash, paymentSent)
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.feesPaid > 0.msat, paymentSent)
+
+    awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingBlindedPayment(_, _, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    assert(receivedAmount >= amount)
+  }
+
+  test("send a blinded payment D->C with empty blinded routes") {
+    val sender = TestProbe()
+    val amount = 25_000_000 msat
+    val chain = nodes("C").nodeParams.chainHash
+    val offer = Offer(Some(amount), "test offer", nodes("C").nodeParams.nodeId, nodes("C").nodeParams.features.invoiceFeatures(), chain)
+    val invoiceRequest = InvoiceRequest(offer, amount, 1, nodes("D").nodeParams.features.invoiceFeatures(), randomKey(), chain)
+    // C uses a 0-hop blinded route and signs the invoice with its public nodeId.
+    val receivingRoutes = Seq(
+      ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000)),
+      ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000)),
+    )
+    sender.send(nodes("C").paymentHandler, ReceiveOfferPayment(nodes("C").nodeParams.privateKey, offer, invoiceRequest, receivingRoutes, nodes("C").router))
+    val invoice = sender.expectMsgType[Bolt12Invoice]
+    assert(invoice.blindedPaths.length == 2)
+    assert(invoice.blindedPaths.forall(_.length == 0))
+    assert(invoice.nodeId == nodes("C").nodeParams.nodeId)
+
+    sender.send(nodes("D").paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 3, routeParams = integrationTestRouteParams))
+    val paymentId = sender.expectMsgType[UUID]
+    val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
+    assert(paymentSent.id == paymentId)
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.feesPaid == 0.msat, paymentSent)
+
+    awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingBlindedPayment(_, _, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    assert(receivedAmount == amount)
+  }
+
+  test("send a blinded payment B->A with dummy hops") {
+    val sender = TestProbe()
+    val recipientKey = randomKey()
+    val amount = 50_000_000 msat
+    val chain = nodes("A").nodeParams.chainHash
+    val offer = Offer(Some(amount), "test offer", recipientKey.publicKey, nodes("A").nodeParams.features.invoiceFeatures(), chain)
+    val invoiceRequest = InvoiceRequest(offer, amount, 1, nodes("B").nodeParams.features.invoiceFeatures(), randomKey(), chain)
+    val receivingRoutes = Seq(
+      ReceivingRoute(Seq(nodes("A").nodeParams.nodeId), CltvExpiryDelta(1000), Seq(DummyBlindedHop(100 msat, 100, CltvExpiryDelta(48)), DummyBlindedHop(150 msat, 50, CltvExpiryDelta(36))))
+    )
+    sender.send(nodes("A").paymentHandler, ReceiveOfferPayment(recipientKey, offer, invoiceRequest, receivingRoutes, nodes("A").router))
+    val invoice = sender.expectMsgType[Bolt12Invoice]
+    assert(invoice.blindedPaths.length == 1)
+    assert(invoice.nodeId == recipientKey.publicKey)
+
+    sender.send(nodes("B").paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 3, routeParams = integrationTestRouteParams))
+    val paymentId = sender.expectMsgType[UUID]
+    val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
+    assert(paymentSent.id == paymentId)
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.feesPaid >= 0.msat, paymentSent)
+
+    awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingBlindedPayment(_, _, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    assert(receivedAmount >= amount)
   }
 
   test("generate and validate lots of channels") {
