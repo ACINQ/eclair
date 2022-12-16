@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OP_1, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, Utxo}
@@ -138,13 +138,13 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
                      rpcClientB: BitcoinJsonRPCClient,
                      alice2bob: TestProbe,
                      bob2alice: TestProbe) {
-    def forwardAlice2Bob[T <: LightningMessage](implicit t: ClassTag[T]): T = forwardMessage(alice2bob, bob)
+    def forwardAlice2Bob[T <: LightningMessage](implicit t: ClassTag[T]): T = forwardMessage(alice2bob, bob)(t)
 
-    def forwardRbfAlice2Bob[T <: LightningMessage](implicit t: ClassTag[T]): T = forwardMessage(alice2bob, bobRbf)
+    def forwardRbfAlice2Bob[T <: LightningMessage](implicit t: ClassTag[T]): T = forwardMessage(alice2bob, bobRbf)(t)
 
-    def forwardBob2Alice[T <: LightningMessage](implicit t: ClassTag[T]): T = forwardMessage(bob2alice, alice)
+    def forwardBob2Alice[T <: LightningMessage](implicit t: ClassTag[T]): T = forwardMessage(bob2alice, alice)(t)
 
-    def forwardRbfBob2Alice[T <: LightningMessage](implicit t: ClassTag[T]): T = forwardMessage(bob2alice, aliceRbf)
+    def forwardRbfBob2Alice[T <: LightningMessage](implicit t: ClassTag[T]): T = forwardMessage(bob2alice, aliceRbf)(t)
 
     private def forwardMessage[T <: LightningMessage](s2r: TestProbe, r: ActorRef[InteractiveTxBuilder.Command])(implicit t: ClassTag[T]): T = {
       val msg = s2r.expectMsgType[SendMessage].msg
@@ -1035,6 +1035,27 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  test("allow all output types") {
+    val probe = TestProbe()
+    val wallet = new SingleKeyOnChainWallet()
+    val params = createChannelParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
+    val testCases = Seq(
+      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2pkh(randomKey().publicKey))),
+      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2sh(OP_1 :: Nil))),
+      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(OP_1 :: Nil)),
+    )
+    testCases.foreach { output =>
+      val alice = params.spawnTxBuilderAlice(params.fundingParamsA, TestConstants.anchorOutputsFeeratePerKw, wallet)
+      alice ! Start(probe.ref, Nil)
+      // Alice --- tx_add_input --> Bob
+      probe.expectMsgType[SendMessage]
+      // Alice <-- tx_add_output --- Bob
+      alice ! ReceiveTxMessage(output)
+      // Alice does not send a failure for non-segwit outputs.
+      assert(probe.expectMsgType[SendMessage].msg.isInstanceOf[TxAddOutput])
+    }
+  }
+
   test("invalid output") {
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
@@ -1044,7 +1065,6 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       TxAddOutput(params.channelId, UInt64(0), 25_000 sat, validScript) -> InvalidSerialId(params.channelId, UInt64(0)),
       TxAddOutput(params.channelId, UInt64(1), 45_000 sat, validScript) -> DuplicateSerialId(params.channelId, UInt64(1)),
       TxAddOutput(params.channelId, UInt64(3), 329 sat, validScript) -> OutputBelowDust(params.channelId, UInt64(3), 329 sat, 330 sat),
-      TxAddOutput(params.channelId, UInt64(5), 45_000 sat, Script.write(Script.pay2pkh(randomKey().publicKey))) -> NonSegwitOutput(params.channelId, UInt64(5)),
     )
     testCases.foreach {
       case (output, expected) =>
@@ -1056,7 +1076,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         alice ! ReceiveTxMessage(TxAddOutput(params.channelId, UInt64(1), 50_000 sat, validScript))
         // Alice --- tx_add_output --> Bob
         probe.expectMsgType[SendMessage]
-        // Alice <-- tx_add_input --- Bob
+        // Alice <-- tx_add_output --- Bob
         alice ! ReceiveTxMessage(output)
         assert(probe.expectMsgType[RemoteFailure].cause == expected)
     }

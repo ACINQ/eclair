@@ -285,7 +285,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private val log = context.log
 
-  def start(): Behavior[Command] = {
+  private def start(): Behavior[Command] = {
     val toFund = if (fundingParams.isInitiator) {
       // If we're the initiator, we need to pay the fees of the common fields of the transaction, even if we don't want
       // to contribute to the shared output. We create a non-zero amount here to ensure that bitcoind will fund the
@@ -356,7 +356,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   }
 
   /** Not all inputs are suitable for interactive tx construction. */
-  def filterInputs(fundedTx: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
+  private def filterInputs(fundedTx: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     context.pipeToSelf(Future.sequence(fundedTx.txIn.map(txIn => getInputDetails(txIn, currentInputs)))) {
       case Failure(t) => WalletFailure(t)
       case Success(results) => InputDetails(results.collect { case Right(i) => i }, results.collect { case Left(i) => i }.toSet)
@@ -464,7 +464,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def buildTx(localContributions: FundingContributions): Behavior[Command] = {
+  private def buildTx(localContributions: FundingContributions): Behavior[Command] = {
     val toSend = localContributions.inputs.map(Left(_)) ++ localContributions.outputs.map(Right(_))
     if (fundingParams.isInitiator) {
       // The initiator sends the first message.
@@ -539,9 +539,6 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           } else if (addOutput.amount < fundingParams.dustLimit) {
             replyTo ! RemoteFailure(OutputBelowDust(fundingParams.channelId, addOutput.serialId, addOutput.amount, fundingParams.dustLimit))
             unlockAndStop(session)
-          } else if (!Script.isNativeWitnessScript(addOutput.pubkeyScript)) {
-            replyTo ! RemoteFailure(NonSegwitOutput(fundingParams.channelId, addOutput.serialId))
-            unlockAndStop(session)
           } else {
             val next = session.copy(
               remoteOutputs = session.remoteOutputs :+ addOutput,
@@ -593,7 +590,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def validateAndSign(session: InteractiveTxSession): Behavior[Command] = {
+  private def validateAndSign(session: InteractiveTxSession): Behavior[Command] = {
     require(session.isComplete, "interactive session was not completed")
     if (fundingParams.requireConfirmedInputs.forRemote) {
       context.pipeToSelf(checkInputsConfirmed(session.remoteInputs)) {
@@ -643,7 +640,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def validateTx(session: InteractiveTxSession): Either[ChannelException, (SharedTransaction, Int)] = {
+  private def validateTx(session: InteractiveTxSession): Either[ChannelException, (SharedTransaction, Int)] = {
     val sharedTx = SharedTransaction(session.localInputs.toList, session.remoteInputs.map(i => RemoteTxAddInput(i)).toList, session.localOutputs.toList, session.remoteOutputs.map(o => RemoteTxAddOutput(o)).toList, fundingParams.lockTime)
     val tx = sharedTx.buildUnsignedTx()
 
@@ -670,11 +667,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
     }
 
-    // The transaction isn't signed yet, so we estimate its weight knowing that all inputs are using native segwit.
-    val minimumWitnessWeight = 107 // see Bolt 3
-    val minimumWeight = tx.weight() + tx.txIn.length * minimumWitnessWeight
-    if (minimumWeight > Transactions.MAX_STANDARD_TX_WEIGHT) {
-      log.warn("invalid interactive tx: exceeds standard weight (weight={})", minimumWeight)
+    // The transaction isn't signed yet, and segwit witnesses can be arbitrarily low (e.g. when using an OP_1 script),
+    // so we use empty witnesses to provide a lower bound on the transaction weight.
+    if (tx.weight() > Transactions.MAX_STANDARD_TX_WEIGHT) {
+      log.warn("invalid interactive tx: exceeds standard weight (weight={})", tx.weight())
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
     }
 
@@ -688,18 +684,18 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         if (remoteInputsUnchanged && remoteOutputsUnchanged) {
           log.info("peer did not contribute to the feerate increase to {}: they used the same inputs and outputs", fundingParams.targetFeerate)
         }
+        // We don't know yet the witness weight since the transaction isn't signed, so we compare unsigned transactions.
         val previousUnsignedTx = previousTx.tx.buildUnsignedTx()
-        val previousMinimumWeight = previousUnsignedTx.weight() + previousUnsignedTx.txIn.length * minimumWitnessWeight
-        val previousFeerate = Transactions.fee2rate(previousTx.tx.fees, previousMinimumWeight)
-        val nextFeerate = Transactions.fee2rate(sharedTx.fees, minimumWeight)
+        val previousFeerate = Transactions.fee2rate(previousTx.tx.fees, previousUnsignedTx.weight())
+        val nextFeerate = Transactions.fee2rate(sharedTx.fees, tx.weight())
         if (nextFeerate <= previousFeerate) {
           log.warn("invalid interactive tx: next feerate isn't greater than previous feerate (previous={}, next={})", previousFeerate, nextFeerate)
           return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
         }
       case None =>
-        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, minimumWeight)
+        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
         if (sharedTx.fees < minimumFee) {
-          log.warn("invalid interactive tx: below the target feerate (target={}, actual={})", fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, minimumWeight))
+          log.warn("invalid interactive tx: below the target feerate (target={}, actual={})", fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, tx.weight()))
           return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
         }
     }
@@ -716,7 +712,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     Right(sharedTx, sharedOutputIndex)
   }
 
-  def signCommitTx(completeTx: SharedTransaction, fundingOutputIndex: Int): Behavior[Command] = {
+  private def signCommitTx(completeTx: SharedTransaction, fundingOutputIndex: Int): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
     Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, fundingParams.channelId, localParams, remoteParams, fundingParams.localAmount, fundingParams.remoteAmount, localPushAmount, remotePushAmount, commitTxFeerate, fundingTx.hash, fundingOutputIndex, remoteFirstPerCommitmentPoint) match {
       case Left(cause) =>
@@ -762,7 +758,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def signFundingTx(completeTx: SharedTransaction, commitments: Commitments): Behavior[Command] = {
+  private def signFundingTx(completeTx: SharedTransaction, commitments: Commitments): Behavior[Command] = {
     val shouldSignFirst = if (completeTx.localAmountIn == completeTx.remoteAmountIn) {
       // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
       LexicographicalOrdering.isLessThan(commitments.localParams.nodeId.value, commitments.remoteNodeId.value)
