@@ -31,7 +31,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, UInt64, randomKey}
+import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, UInt64}
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -201,6 +201,7 @@ object InteractiveTxBuilder {
             params: Params,
             commitTxFeerate: FeeratePerKw,
             remoteFirstPerCommitmentPoint: PublicKey,
+            remoteSecondPerCommitmentPoint: PublicKey,
             wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       // The stash is used to buffer messages that arrive while we're funding the transaction.
@@ -210,7 +211,7 @@ object InteractiveTxBuilder {
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
             case Start(replyTo, previousTransactions) =>
-              val actor = new InteractiveTxBuilder(replyTo, remoteNodeId, nodeParams, fundingParams, localPushAmount, remotePushAmount, params, commitTxFeerate, remoteFirstPerCommitmentPoint, wallet, previousTransactions, stash, context)
+              val actor = new InteractiveTxBuilder(replyTo, remoteNodeId, nodeParams, fundingParams, localPushAmount, remotePushAmount, params, commitTxFeerate, remoteFirstPerCommitmentPoint, remoteSecondPerCommitmentPoint, wallet, previousTransactions, stash, context)
               actor.start()
             case Abort => Behaviors.stopped
           }
@@ -266,6 +267,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                                    params: Params,
                                    commitTxFeerate: FeeratePerKw,
                                    remoteFirstPerCommitmentPoint: PublicKey,
+                                   remoteSecondPerCommitmentPoint: PublicKey,
                                    wallet: OnChainChannelFunder,
                                    previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction],
                                    stash: StashBuffer[InteractiveTxBuilder.Command],
@@ -589,7 +591,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                   localNextHtlcId = 0L, remoteNextHtlcId = 0L,
                   localCommitIndex = 0L, remoteCommitIndex = 0L,
                   originChannels = Map.empty,
-                  remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
+                  remoteNextCommitInfo = Right(remoteSecondPerCommitmentPoint),
                   remotePerCommitmentSecrets = ShaChain.init
                 )
                 val commitment = Commitment(

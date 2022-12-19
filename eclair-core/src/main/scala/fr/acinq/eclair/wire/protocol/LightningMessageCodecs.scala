@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.ScriptWitness
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt}
+import fr.acinq.eclair.{Features, InitFeature, KamonExt}
 import scodec.bits.{BinStringSyntax, BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -107,6 +107,7 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
+      ("secondPerCommitmentPoint" | publicKey) ::
       ("channelFlags" | channelflags) ::
       ("tlvStream" | OpenDualFundedChannelTlv.openTlvCodec)).as[OpenDualFundedChannel]
 
@@ -142,6 +143,7 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
+      ("secondPerCommitmentPoint" | publicKey) ::
       ("tlvStream" | AcceptDualFundedChannelTlv.acceptTlvCodec)).as[AcceptDualFundedChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (

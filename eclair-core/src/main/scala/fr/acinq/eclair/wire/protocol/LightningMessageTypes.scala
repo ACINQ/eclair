@@ -217,6 +217,7 @@ case class OpenDualFundedChannel(chainHash: ByteVector32,
                                  delayedPaymentBasepoint: PublicKey,
                                  htlcBasepoint: PublicKey,
                                  firstPerCommitmentPoint: PublicKey,
+                                 secondPerCommitmentPoint: PublicKey,
                                  channelFlags: ChannelFlags,
                                  tlvStream: TlvStream[OpenDualFundedChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
@@ -240,6 +241,7 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
                                    delayedPaymentBasepoint: PublicKey,
                                    htlcBasepoint: PublicKey,
                                    firstPerCommitmentPoint: PublicKey,
+                                   secondPerCommitmentPoint: PublicKey,
                                    tlvStream: TlvStream[AcceptDualFundedChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)

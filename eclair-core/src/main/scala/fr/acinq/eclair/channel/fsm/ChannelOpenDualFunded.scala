@@ -137,6 +137,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
         htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
         firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+        secondPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1),
         channelFlags = input.channelFlags,
         tlvStream = TlvStream(tlvs))
       goto(WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) using DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(input, open) sending open
@@ -179,6 +180,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
             htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+            secondPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1),
             tlvStream = TlvStream(tlvs))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
@@ -221,6 +223,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             params,
             open.commitmentFeerate,
             open.firstPerCommitmentPoint,
+            open.secondPerCommitmentPoint,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, Nil)
           goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, accept.pushAmount, open.pushAmount, txBuilder, None) sending accept
@@ -283,6 +286,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             params,
             d.lastSent.commitmentFeerate,
             accept.firstPerCommitmentPoint,
+            accept.secondPerCommitmentPoint,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, Nil)
           goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, d.lastSent.pushAmount, accept.pushAmount, txBuilder, None)
@@ -469,6 +473,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.metaCommitments.params,
             d.commitments.localCommit.spec.commitTxFeerate,
             d.commitments.remoteCommit.remotePerCommitmentPoint,
+            d.commitments.remoteNextCommitInfo.toOption.get,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, d.allFundingTxs)
           stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder)) sending TxAckRbf(d.channelId, fundingParams.localAmount)
@@ -502,6 +507,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.metaCommitments.params,
             d.commitments.localCommit.spec.commitTxFeerate,
             d.commitments.remoteCommit.remotePerCommitmentPoint,
+            d.commitments.remoteNextCommitInfo.toOption.get,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, d.allFundingTxs)
           stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder))

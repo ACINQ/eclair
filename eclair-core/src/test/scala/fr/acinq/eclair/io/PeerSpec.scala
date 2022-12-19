@@ -676,7 +676,7 @@ object PeerSpec {
   }
 
   def createOpenDualFundedChannelMessage(): protocol.OpenDualFundedChannel = {
-    protocol.OpenDualFundedChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), TestConstants.feeratePerKw, TestConstants.anchorOutputsFeeratePerKw, 25000 sat, 483 sat, UInt64(100), 1 msat, CltvExpiryDelta(144), 10, 0, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, ChannelFlags.Private)
+    protocol.OpenDualFundedChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), TestConstants.feeratePerKw, TestConstants.anchorOutputsFeeratePerKw, 25000 sat, 483 sat, UInt64(100), 1 msat, CltvExpiryDelta(144), 10, 0, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, ChannelFlags.Private)
   }
 
 }
