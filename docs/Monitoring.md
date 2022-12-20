@@ -53,7 +53,7 @@ To enable monitoring with Prometheus, add the following to your `eclair.conf`:
 ```config
 eclair.enable-kamon=true
 
-// The Kamon APM reporter is enabled by default, but it won't work with Prometheus, so we disable it.
+# The Kamon APM reporter is enabled by default, but it won't work with Prometheus, so we disable it.
 kamon.modules {
   apm-reporter {
     enabled = false

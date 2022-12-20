@@ -119,6 +119,11 @@
             <artifactId>kamon-jdbc_${scala.version.short}</artifactId>
             <version>${kamon.version}</version>
         </dependency>
+        <dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-prometheus_${scala.version.short}</artifactId>
+            <version>${kamon.version}</version>
+        </dependency>
         <!-- test dependencies -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>

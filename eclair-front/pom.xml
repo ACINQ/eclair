@@ -104,6 +104,11 @@
             <artifactId>kamon-system-metrics_${scala.version.short}</artifactId>
             <version>${kamon.version}</version>
         </dependency>
+        <dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-prometheus_${scala.version.short}</artifactId>
+            <version>${kamon.version}</version>
+        </dependency>
         <!-- agents -->
         <dependency>
             <groupId>io.kamon</groupId>
