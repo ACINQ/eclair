@@ -352,7 +352,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[CommitSig]
     awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
     val waitForRevocation = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.left.toOption.get
-    assert(!waitForRevocation.reSignAsap)
 
     // actual test starts here
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))

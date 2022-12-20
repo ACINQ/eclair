@@ -468,8 +468,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
         case Left(waitForRevocation) =>
           log.debug("already in the process of signing, will sign again as soon as possible")
-          val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
-          stay() using d.copy(commitments = commitments1)
+          stay()
       }
 
     case Event(commit: CommitSig, d: DATA_NORMAL) =>
@@ -508,7 +507,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               log.debug("forwarding {} to relayer", result)
               relayer ! result
           }
-          if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
+          if (Commitments.localHasChanges(commitments1)) {
             self ! CMD_SIGN()
           }
           if (d.remoteShutdown.isDefined && !Commitments.localHasUnsignedOutgoingHtlcs(commitments1)) {
@@ -571,17 +570,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
             // are we in the middle of a signature?
             d.commitments.remoteNextCommitInfo match {
-              case Left(waitForRevocation) =>
-                // yes, let's just schedule a new signature ASAP, which will include all pending unsigned changes
-                val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
-                // in the meantime we won't send new changes
-                stay() using d.copy(commitments = commitments1, remoteShutdown = Some(remoteShutdown))
+              case Left(_) =>
+                // we already have a signature in progress, will resign when we receive the revocation
+                ()
               case Right(_) =>
                 // no, let's sign right away
                 self ! CMD_SIGN()
-                // in the meantime we won't send new changes
-                stay() using d.copy(remoteShutdown = Some(remoteShutdown))
             }
+            // in the meantime we won't send new changes
+            stay() using d.copy(remoteShutdown = Some(remoteShutdown))
           } else {
             // so we don't have any unsigned outgoing changes
             val (localShutdown, sendList) = d.localShutdown match {
@@ -838,7 +835,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
         case Left(waitForRevocation) =>
           log.debug("already in the process of signing, will sign again as soon as possible")
-          stay() using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+          stay()
       }
 
     case Event(commit: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown, closingFeerates)) =>
@@ -897,7 +894,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing()
             }
           } else {
-            if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
+            if (Commitments.localHasChanges(commitments1)) {
               self ! CMD_SIGN()
             }
             stay() using d.copy(commitments = commitments1) storing()

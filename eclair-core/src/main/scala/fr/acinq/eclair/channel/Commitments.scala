@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.DualFunding
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
@@ -41,12 +41,11 @@ case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessag
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
-case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
 case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
 case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ByteVector64)
 case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey)
-case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
+case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 // @formatter:on
 
 // @formatter:off
@@ -669,10 +668,6 @@ object Commitments {
 
   def remoteHasChanges(commitments: Commitments): Boolean = commitments.localChanges.acked.nonEmpty || commitments.remoteChanges.proposed.nonEmpty
 
-  def revocationPreimage(seed: ByteVector32, index: Long): ByteVector32 = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
-
-  def revocationHash(seed: ByteVector32, index: Long): ByteVector32 = Crypto.sha256(revocationPreimage(seed, index))
-
   def sendCommit(commitments: Commitments, keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, CommitSig)] = {
     import commitments._
     commitments.remoteNextCommitInfo match {
@@ -784,7 +779,7 @@ object Commitments {
     commitments.remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.publicKey != commitments.remoteCommit.remotePerCommitmentPoint =>
         Left(InvalidRevocation(commitments.channelId))
-      case Left(WaitingForRevocation(theirNextCommit, _, _, _)) =>
+      case Left(WaitingForRevocation(theirNextCommit, _, _)) =>
         val receivedHtlcs = commitments.remoteChanges.signed.collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
