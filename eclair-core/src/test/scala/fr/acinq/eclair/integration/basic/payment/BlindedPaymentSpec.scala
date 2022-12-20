@@ -24,7 +24,7 @@ import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{KeySend, RouteBlinding}
 import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
-import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelData, knownFundingTxs, nodeParamsFor, openChannel, watcherAutopilot}
+import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelData, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, watcherAutopilot}
 import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler
@@ -54,16 +54,13 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
   override def createFixture(testData: TestData): FixtureParam = {
     // seeds have been chosen so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
     val aliceParams = nodeParamsFor("alice", ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3"))
-      .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
     val bobParams = nodeParamsFor("bob", ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492"))
-      .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
       .modify(_.features.activated).usingIf(testData.tags.contains(RouteBlindingDisabledBob))(_ - RouteBlinding)
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
     val carolParams = nodeParamsFor("carol", ByteVector32(hex"ebd5a5d3abfb3ef73731eb3418d918f247445183180522674666db98a66411cc"))
-      .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
       .modify(_.features.activated).using(_ + (KeySend -> Optional))
       .modify(_.features.activated).usingIf(testData.tags.contains(RouteBlindingDisabledCarol))(_ - RouteBlinding)
@@ -81,9 +78,9 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
   private def createChannels(f: FixtureParam): Unit = {
     import f._
 
-    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob)))
     bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
-    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
+    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(bob, carol)))
 
     connect(alice, bob)
     connect(bob, carol)
@@ -96,6 +93,8 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
       assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
       assert(getChannelData(bob, channelId_bc_1).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
       assert(getChannelData(bob, channelId_bc_2).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      // Carol must have received Bob's alias to create usable blinded routes to herself.
+      assert(getRouterData(carol).privateChannels.values.forall(_.shortIds.remoteAlias_opt.nonEmpty))
     }
   }
 
