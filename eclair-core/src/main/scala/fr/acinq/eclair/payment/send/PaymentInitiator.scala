@@ -58,7 +58,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       if (!nodeParams.features.invoiceFeatures().areSupported(recipient.features)) {
         sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil)
       } else if (Features.canUseFeature(nodeParams.features.invoiceFeatures(), recipient.features, Features.BasicMultiPartPayment)) {
-        val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
+        val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg, publishPreimage = !r.blockUntilComplete)
         fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipient, r.maxAttempts, r.routeParams)
         context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
       } else {
@@ -168,8 +168,6 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         context become main(pending - pf.id)
     }
 
-    case _: MultiPartPaymentLifecycle.PreimageReceived => // we received the preimage, but we wait for the PaymentSent event that will contain more data
-
     case ps: PaymentSent => pending.get(ps.id).foreach(pp => {
       pp.sender ! ps
       pp match {
@@ -208,7 +206,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     val trampolineHop = NodeHop(r.trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees)
     val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = false, recordPathFindingMetrics = true)
     buildTrampolineRecipient(r, trampolineHop).map { recipient =>
-      val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
+      val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg, publishPreimage = false)
       fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipient, nodeParams.maxPaymentAttempts, r.routeParams)
     }
   }
@@ -222,7 +220,7 @@ object PaymentInitiator {
   }
 
   trait MultiPartPaymentFactory extends PaymentFactory {
-    def spawnOutgoingMultiPartPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef
+    def spawnOutgoingMultiPartPayment(context: ActorContext, cfg: SendPaymentConfig, publishPreimage: Boolean): ActorRef
   }
 
   case class SimplePaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends MultiPartPaymentFactory {
@@ -230,8 +228,8 @@ object PaymentInitiator {
       context.actorOf(PaymentLifecycle.props(nodeParams, cfg, router, register))
     }
 
-    override def spawnOutgoingMultiPartPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef = {
-      context.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, router, this))
+    override def spawnOutgoingMultiPartPayment(context: ActorContext, cfg: SendPaymentConfig, publishPreimage: Boolean): ActorRef = {
+      context.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, publishPreimage, router, this))
     }
   }
 

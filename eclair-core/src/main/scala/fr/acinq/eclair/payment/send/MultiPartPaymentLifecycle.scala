@@ -20,7 +20,7 @@ import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream}
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit
  * Sender for a multi-part payment (see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#basic-multi-part-payments).
  * The payment will be split into multiple sub-payments that will be sent in parallel.
  */
-class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, paymentFactory: PaymentInitiator.PaymentFactory) extends FSMDiagnosticActorLogging[MultiPartPaymentLifecycle.State, MultiPartPaymentLifecycle.Data] {
+class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, publishPreimage: Boolean, router: ActorRef, paymentFactory: PaymentInitiator.PaymentFactory) extends FSMDiagnosticActorLogging[MultiPartPaymentLifecycle.State, MultiPartPaymentLifecycle.Data] {
 
   import MultiPartPaymentLifecycle._
 
@@ -211,7 +211,9 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   }
 
   private def gotoSucceededOrStop(d: PaymentSucceeded): State = {
-    d.request.replyTo ! PreimageReceived(paymentHash, d.preimage)
+    if (publishPreimage) {
+      d.request.replyTo ! PreimageReceived(paymentHash, d.preimage)
+    }
     if (d.pending.isEmpty) {
       myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts)))
     } else
@@ -292,7 +294,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
 object MultiPartPaymentLifecycle {
 
-  def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, paymentFactory: PaymentInitiator.PaymentFactory) = Props(new MultiPartPaymentLifecycle(nodeParams, cfg, router, paymentFactory))
+  def props(nodeParams: NodeParams, cfg: SendPaymentConfig, publishPreimage: Boolean, router: ActorRef, paymentFactory: PaymentInitiator.PaymentFactory) =
+    Props(new MultiPartPaymentLifecycle(nodeParams, cfg, publishPreimage, router, paymentFactory))
 
   /**
    * Send a payment to a given node. The payment may be split into multiple child payments, for which a path-finding
