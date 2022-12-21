@@ -257,6 +257,19 @@ class Setup(val datadir: File,
 
       bitcoinClient = new BitcoinCoreClient(bitcoin)
 
+      // We remove utxos locks that were previously set, otherwise we may have utxos that stay locked indefinitely.
+      // This may happen if we started funding a channel and restarted before completing the funding flow: the channel
+      // will be safely forgotten but the corresponding utxos stay locked.
+      //
+      // The only drawback that this may have is if we have funded and signed a funding transaction but didn't publish
+      // it and we accidentally double-spend it after a restart. This shouldn't be an issue because:
+      //  - locks are automatically removed when the transaction is published anyway
+      //  - funding transactions are republished at startup if they aren't in the blockchain or in the mempool
+      //  - funding transactions detect when they are double-spent and abort the channel creation
+      //  - the only case where double-spending a funding transaction causes a loss of funds is when we accept a 0-conf
+      //    channel and our peer double-spends it, but we should never accept 0-conf channels from peers we don't trust
+      _ <- bitcoinClient.listLockedOutpoints().flatMap(lockedOutpoints => bitcoinClient.unlockOutpoints(lockedOutpoints.toSeq))
+
       watcher = {
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))

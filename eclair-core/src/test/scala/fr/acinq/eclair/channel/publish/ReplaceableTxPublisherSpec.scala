@@ -96,7 +96,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
 
     def getMempoolTxs(expectedTxCount: Int): Seq[MempoolTx] = {
-      awaitCond(getMempool().size == expectedTxCount, interval = 200 milliseconds)
+      awaitAssert(assert(getMempool().size == expectedTxCount), interval = 200 milliseconds)
       getMempool().map(tx => {
         wallet.getMempoolTx(tx.txid).pipeTo(probe.ref)
         probe.expectMsgType[MempoolTx]
@@ -138,8 +138,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
     reachNormal(setup, testTags)
     import setup._
-    awaitCond(alice.stateName == NORMAL)
-    awaitCond(bob.stateName == NORMAL)
+    awaitAssert(assert(alice.stateName == NORMAL))
+    awaitAssert(assert(bob.stateName == NORMAL))
 
     // Generate blocks to ensure the funding tx is confirmed.
     generateBlocks(1)
@@ -539,9 +539,9 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // A new block is found, and the feerate has increased for our block target, but we don't have enough funds to bump the fees.
       system.eventStream.subscribe(probe.ref, classOf[NotifyNodeOperator])
       // just making sure that we have been subscribed to the event, otherwise there is a possible race condition
-      awaitCond({
+      awaitAssert({
         system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Info, "ping"))
-        probe.msgAvailable
+        assert(probe.msgAvailable)
       }, max = 30 seconds)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 15))
       probe.fishForMessage() {
@@ -615,7 +615,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       publisher ! UpdateConfirmationTarget(aliceBlockHeight() + 15)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight()))
       val anchorTxId2 = listener.expectMsgType[TransactionPublished].tx.txid
-      awaitCond(!isInMempool(mempoolAnchorTx1.txid), interval = 200 millis, max = 30 seconds)
+      awaitAssert(assert(!isInMempool(mempoolAnchorTx1.txid)), interval = 200 millis, max = 30 seconds)
       val mempoolTxs2 = getMempoolTxs(2)
       val mempoolAnchorTx2 = mempoolTxs2.filter(_.txid != commitTx.tx.txid).head
       assert(mempoolAnchorTx2.txid == anchorTxId2)
@@ -650,7 +650,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // our parent will stop us when receiving the TxRejected message.
       publisher2 ! Stop
-      awaitCond(!getLocks(probe, walletRpcClient).exists(_.txid != commitTx.tx.txid))
+      awaitAssert({
+        wallet.listLockedOutpoints().pipeTo(probe.ref)
+        assert(!probe.expectMsgType[Set[OutPoint]].exists(_.txid != commitTx.tx.txid))
+      })
 
       // the first publishing attempt succeeds
       generateBlocks(5)
@@ -674,7 +677,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // we unlock utxos before stopping
       publisher ! Stop
-      awaitCond(getLocks(probe, walletRpcClient).isEmpty)
+      awaitAssert({
+        wallet.listLockedOutpoints().pipeTo(probe.ref)
+        assert(probe.expectMsgType[Set[OutPoint]].isEmpty)
+      })
     }
   }
 
@@ -990,7 +996,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       setFeerate(targetFeerate, blockTarget = 2)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 10))
       val htlcSuccessTxId2 = listener.expectMsgType[TransactionPublished].tx.txid
-      awaitCond(!isInMempool(htlcSuccessTx1.txid), interval = 200 millis, max = 30 seconds)
+      awaitAssert(assert(!isInMempool(htlcSuccessTx1.txid)), interval = 200 millis, max = 30 seconds)
       val htlcSuccessTx2 = getMempoolTxs(1).head
       val htlcSuccessInputs2 = getMempool().head.txIn.map(_.outPoint).toSet
       assert(htlcSuccessTx2.txid == htlcSuccessTxId2)
@@ -1118,7 +1124,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // our parent will stop us when receiving the TxRejected message.
       publisher2 ! Stop
-      awaitCond(!getLocks(probe, walletRpcClient).exists(_.txid != commitTx.txid))
+      awaitAssert({
+        wallet.listLockedOutpoints().pipeTo(probe.ref)
+        assert(!probe.expectMsgType[Set[OutPoint]].exists(_.txid != commitTx.txid))
+      })
 
       // the first publishing attempt succeeds
       generateBlocks(5)
@@ -1141,7 +1150,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // We unlock utxos before stopping.
       publisher ! Stop
-      awaitCond(getLocks(probe, walletRpcClient).isEmpty)
+      awaitAssert({
+        wallet.listLockedOutpoints().pipeTo(probe.ref)
+        assert(probe.expectMsgType[Set[OutPoint]].isEmpty)
+      })
     }
   }
 

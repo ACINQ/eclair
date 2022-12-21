@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OP_1, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, Utxo}
@@ -219,10 +219,14 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Utxos are locked for the duration of the protocol.
       val probe = TestProbe()
-      val locksA = getLocks(probe, rpcClientA)
+      val bitcoinClientA = new BitcoinCoreClient(rpcClientA)
+      bitcoinClientA.listLockedOutpoints().pipeTo(probe.ref)
+      val locksA = probe.expectMsgType[Set[OutPoint]]
       assert(locksA.size == 3)
       assert(locksA == Set(inputA1, inputA2, inputA3).map(toOutPoint))
-      val locksB = getLocks(probe, rpcClientB)
+      val bitcoinClientB = new BitcoinCoreClient(rpcClientB)
+      bitcoinClientB.listLockedOutpoints().pipeTo(probe.ref)
+      val locksB = probe.expectMsgType[Set[OutPoint]]
       assert(locksB.size == 1)
       assert(locksB == Set(toOutPoint(inputB1)))
 
@@ -528,7 +532,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       alice ! Start(alice2bob.ref, Nil)
       assert(alice2bob.expectMsgType[LocalFailure].cause == ChannelFundingError(aliceParams.channelId))
       // Alice's utxos shouldn't be locked after the failed funding attempt.
-      awaitCond(getLocks(probe, rpcClientA).isEmpty)
+      awaitAssert({
+        bitcoinClient.listLockedOutpoints().pipeTo(probe.ref)
+        assert(probe.expectMsgType[Set[OutPoint]].isEmpty)
+      }, max = 10 seconds, interval = 100 millis)
     }
   }
 
@@ -573,7 +580,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       alice ! Start(alice2bob.ref, Nil)
       assert(alice2bob.expectMsgType[LocalFailure].cause == ChannelFundingError(aliceParams.channelId))
       // Utxos shouldn't be locked after a failure.
-      awaitCond(getLocks(probe, rpcClientA).isEmpty, max = 10 seconds, interval = 100 millis)
+      awaitAssert({
+        bitcoinClient.listLockedOutpoints().pipeTo(probe.ref)
+        assert(probe.expectMsgType[Set[OutPoint]].isEmpty)
+      }, max = 10 seconds, interval = 100 millis)
     }
   }
 
@@ -638,9 +648,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Unusable utxos should be skipped.
       legacyTxIds.foreach(txid => assert(!txA.signedTx.txIn.exists(_.outPoint.txid == txid)))
       // Only used utxos should be locked.
-      awaitCond({
-        val locks = getLocks(probe, rpcClientA)
-        locks == txA.signedTx.txIn.map(_.outPoint).toSet
+      awaitAssert({
+        bitcoinClient.listLockedOutpoints().pipeTo(probe.ref)
+        val locks = probe.expectMsgType[Set[OutPoint]]
+        assert(locks == txA.signedTx.txIn.map(_.outPoint).toSet)
       }, max = 10 seconds, interval = 100 millis)
     }
   }
