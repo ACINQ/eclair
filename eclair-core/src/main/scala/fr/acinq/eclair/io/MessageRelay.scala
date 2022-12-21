@@ -73,7 +73,7 @@ object MessageRelay {
 
   def waitForPreviousPeer(messageId: ByteVector32, switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]]): Behavior[Command] = {
     Behaviors.receivePartial {
-      case (context, WrappedPeerInfo(PeerInfo(_, _, _, _, channels))) if channels > 0 =>
+      case (context, WrappedPeerInfo(PeerInfo(_, _, _, _, channels))) if channels.nonEmpty =>
         switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), nextNodeId)
         waitForNextPeer(messageId, msg, replyTo_opt)
       case _ =>
@@ -84,7 +84,7 @@ object MessageRelay {
 
   def waitForNextPeer(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedPeerInfo(PeerInfo(peer, _, _, _, channels)) if channels > 0 =>
+      case WrappedPeerInfo(PeerInfo(peer, _, _, _, channels)) if channels.nonEmpty =>
         peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
         Behaviors.stopped
       case _ =>

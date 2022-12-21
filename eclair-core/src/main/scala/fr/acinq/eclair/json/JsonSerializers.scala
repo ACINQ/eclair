@@ -485,7 +485,7 @@ private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalanc
 object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
 
 private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[String], channels: Int)
-object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address.map(_.toString), peerInfo.channels))
+object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address.map(_.toString), peerInfo.channels.size))
 
 private[json] case class MessageReceivedJson(pathId: Option[ByteVector], encodedReplyPath: Option[String], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
 object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.finalPayload.pathId_opt, m.finalPayload.replyPath_opt.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex), m.finalPayload.replyPath_opt.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))

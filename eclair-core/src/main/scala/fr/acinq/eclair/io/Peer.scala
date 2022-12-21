@@ -324,7 +324,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       replyTo ! PeerInfo(self, remoteNodeId, stateName, d match {
         case c: ConnectedData => Some(c.address)
         case _ => None
-      }, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
+      }, d.channels.values.toSet)
       stay()
 
     case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
@@ -549,7 +549,7 @@ object Peer {
   sealed trait PeerInfoResponse {
     def nodeId: PublicKey
   }
-  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[NodeAddress], channels: Int) extends PeerInfoResponse
+  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
   case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse { override def toString: String = s"peer $nodeId not found" }
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes

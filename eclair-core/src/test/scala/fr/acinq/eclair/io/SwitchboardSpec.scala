@@ -43,7 +43,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     peer.expectMsg(Peer.Init(Set.empty))
     val connect = peer.expectMsgType[Peer.Connect]
     assert(connect.nodeId == remoteNodeId)
-    assert(connect.address_opt == None)
+    assert(connect.address_opt.isEmpty)
   }
 
   test("disconnect from peers") {
