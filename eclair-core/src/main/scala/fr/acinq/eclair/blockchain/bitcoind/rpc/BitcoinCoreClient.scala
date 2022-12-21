@@ -351,7 +351,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
           case Success(JBool(result)) => Future.successful(result)
           case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
             Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
-          case Failure(t) =>
+          case Failure(_) =>
             Future.successful(false)
         })
     val future = Future.sequence(futures)
