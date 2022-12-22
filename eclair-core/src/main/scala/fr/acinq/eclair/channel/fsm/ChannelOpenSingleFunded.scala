@@ -406,11 +406,11 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 
-    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
+    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx_opt)
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
 
-    case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.fundingTx match {
+    case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.fundingTx_opt match {
       case Some(_) => stay() // we are funder, we're still waiting for the funding tx to be confirmed
       case None if c.blockHeight - d.waitingSince > FUNDING_TIMEOUT_FUNDEE =>
         log.warning(s"funding tx hasn't been published in ${c.blockHeight - d.waitingSince} blocks")
