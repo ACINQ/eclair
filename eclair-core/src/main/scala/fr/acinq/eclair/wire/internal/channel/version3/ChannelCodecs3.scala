@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.internal.channel.version3
 
-import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
+import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel.InteractiveTxBuilder._
 import fr.acinq.eclair.channel._
@@ -37,16 +37,6 @@ private[channel] object ChannelCodecs3 {
   private[version3] object Codecs {
 
     val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
-
-    val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
-      ("secretkeybytes" | bytes32) ::
-        ("chaincode" | bytes32) ::
-        ("depth" | uint16) ::
-        ("path" | keyPathCodec) ::
-        ("parent" | int64)).xmap(
-      { case a :: b :: c :: d :: e :: HNil => ExtendedPrivateKey(a, b, c, d, e) },
-      { exp: ExtendedPrivateKey => exp.secretkeybytes :: exp.chaincode :: exp.depth :: exp.path :: exp.parent :: HNil }
-    )
 
     val channelConfigCodec: Codec[ChannelConfig] = lengthDelimited(bytes).xmap(b => {
       val activated: Set[ChannelConfigOption] = b.bits.toIndexedSeq.reverse.zipWithIndex.collect {
