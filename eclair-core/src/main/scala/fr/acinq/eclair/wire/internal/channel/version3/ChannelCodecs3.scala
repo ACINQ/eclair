@@ -274,6 +274,52 @@ private[channel] object ChannelCodecs3 {
             ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
         })).as[Commitments]
 
+    private val remoteTxAddInputCodec: Codec[RemoteTxAddInput] = (
+      ("serialId" | uint64) ::
+        ("outPoint" | outPointCodec) ::
+        ("txOut" | txOutCodec) ::
+        ("sequence" | uint32)).as[RemoteTxAddInput]
+
+    private val remoteTxAddOutputCodec: Codec[RemoteTxAddOutput] = (
+      ("serialId" | uint64) ::
+        ("amount" | satoshi) ::
+        ("scriptPubKey" | lengthDelimited(bytes))).as[RemoteTxAddOutput]
+
+    private val sharedTransactionCodec: Codec[SharedTransaction] = (
+      ("localInputs" | listOfN(uint16, lengthDelimited(txAddInputCodec))) ::
+        ("remoteInputs" | listOfN(uint16, remoteTxAddInputCodec)) ::
+        ("localOutputs" | listOfN(uint16, lengthDelimited(txAddOutputCodec))) ::
+        ("remoteOutputs" | listOfN(uint16, remoteTxAddOutputCodec)) ::
+        ("lockTime" | uint32)).as[SharedTransaction]
+
+    private val partiallySignedSharedTransactionCodec: Codec[PartiallySignedSharedTransaction] = (
+      ("sharedTx" | sharedTransactionCodec) ::
+        ("localSigs" | lengthDelimited(txSignaturesCodec))).as[PartiallySignedSharedTransaction]
+
+    private val fullySignedSharedTransactionCodec: Codec[FullySignedSharedTransaction] = (
+      ("sharedTx" | sharedTransactionCodec) ::
+        ("localSigs" | lengthDelimited(txSignaturesCodec)) ::
+        ("remoteSigs" | lengthDelimited(txSignaturesCodec))).as[FullySignedSharedTransaction]
+
+    private val signedSharedTransactionCodec: Codec[SignedSharedTransaction] = discriminated[SignedSharedTransaction].by(uint16)
+      .typecase(0x01, partiallySignedSharedTransactionCodec)
+      .typecase(0x02, fullySignedSharedTransactionCodec)
+
+    private val dualFundingTxCodec: Codec[DualFundingTx] = (
+      ("fundingTx" | signedSharedTransactionCodec) ::
+        ("commitments" | commitmentsCodec)).as[DualFundingTx]
+
+    private val fundingParamsCodec: Codec[InteractiveTxParams] = (
+      ("channelId" | bytes32) ::
+        ("isInitiator" | bool8) ::
+        ("localAmount" | satoshi) ::
+        ("remoteAmount" | satoshi) ::
+        ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
+        ("lockTime" | uint32) ::
+        ("dustLimit" | satoshi) ::
+        ("targetFeerate" | feeratePerKw) ::
+        ("requireConfirmedInputs" | (("forLocal" | bool8) :: ("forRemote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
+
     val closingFeeratesCodec: Codec[ClosingFeerates] = (
       ("preferred" | feeratePerKw) ::
         ("min" | feeratePerKw) ::
@@ -326,52 +372,6 @@ private[channel] object ChannelCodecs3 {
       ("commitments" | commitmentsCodec) ::
         ("shortIds" | shortids) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
-
-    private val remoteTxAddInputCodec: Codec[RemoteTxAddInput] = (
-      ("serialId" | uint64) ::
-        ("outPoint" | outPointCodec) ::
-        ("txOut" | txOutCodec) ::
-        ("sequence" | uint32)).as[RemoteTxAddInput]
-
-    private val remoteTxAddOutputCodec: Codec[RemoteTxAddOutput] = (
-      ("serialId" | uint64) ::
-        ("amount" | satoshi) ::
-        ("scriptPubKey" | lengthDelimited(bytes))).as[RemoteTxAddOutput]
-
-    private val sharedTransactionCodec: Codec[SharedTransaction] = (
-      ("localInputs" | listOfN(uint16, lengthDelimited(txAddInputCodec))) ::
-        ("remoteInputs" | listOfN(uint16, remoteTxAddInputCodec)) ::
-        ("localOutputs" | listOfN(uint16, lengthDelimited(txAddOutputCodec))) ::
-        ("remoteOutputs" | listOfN(uint16, remoteTxAddOutputCodec)) ::
-        ("lockTime" | uint32)).as[SharedTransaction]
-
-    private val partiallySignedSharedTransactionCodec: Codec[PartiallySignedSharedTransaction] = (
-      ("sharedTx" | sharedTransactionCodec) ::
-        ("localSigs" | lengthDelimited(txSignaturesCodec))).as[PartiallySignedSharedTransaction]
-
-    private val fullySignedSharedTransactionCodec: Codec[FullySignedSharedTransaction] = (
-      ("sharedTx" | sharedTransactionCodec) ::
-        ("localSigs" | lengthDelimited(txSignaturesCodec)) ::
-        ("remoteSigs" | lengthDelimited(txSignaturesCodec))).as[FullySignedSharedTransaction]
-
-    private val signedSharedTransactionCodec: Codec[SignedSharedTransaction] = discriminated[SignedSharedTransaction].by(uint16)
-      .typecase(0x01, partiallySignedSharedTransactionCodec)
-      .typecase(0x02, fullySignedSharedTransactionCodec)
-
-    private val dualFundingTxCodec: Codec[DualFundingTx] = (
-      ("fundingTx" | signedSharedTransactionCodec) ::
-        ("commitments" | commitmentsCodec)).as[DualFundingTx]
-
-    private val fundingParamsCodec: Codec[InteractiveTxParams] = (
-      ("channelId" | bytes32) ::
-        ("isInitiator" | bool8) ::
-        ("localAmount" | satoshi) ::
-        ("remoteAmount" | satoshi) ::
-        ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
-        ("lockTime" | uint32) ::
-        ("dustLimit" | satoshi) ::
-        ("targetFeerate" | feeratePerKw) ::
-        ("requireConfirmedInputs" | (("forLocal" | bool8) :: ("forRemote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0b_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
