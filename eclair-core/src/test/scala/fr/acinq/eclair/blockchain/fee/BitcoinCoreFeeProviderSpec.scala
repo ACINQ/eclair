@@ -92,15 +92,6 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
     assert(sender.expectMsgType[FeeratesPerKB] == ref)
   }
 
-  test("get fee rates when no fee rate is found") {
-    val sender = TestProbe()
-
-    val mockProvider = BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
-
-    mockProvider.getFeerates.pipeTo(sender.ref)
-    assert(sender.expectMsgType[Failure].cause.getMessage == "estimatesmartfee failed: Insufficient data or no feerate found")
-  }
-
   test("get mempool minimum fee") {
     val regtestProvider = BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
     val sender = TestProbe()

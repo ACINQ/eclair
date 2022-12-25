@@ -28,7 +28,7 @@ trait FeeProvider {
   def getFeerates: Future[FeeratesPerKB]
 }
 
-case object CannotRetrieveFeerates extends RuntimeException("Cannot retrieve feerates. Channels may be at risk. Ensure bitcoind estimatesmartfee correctly returns feerates and restart eclair")
+case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve feerates, channels may be at risk: ensure bitcoind estimatesmartfee correctly returns feerates and restart eclair")
 
 /** Fee rate in satoshi-per-bytes. */
 case class FeeratePerByte(feerate: Satoshi) {
@@ -53,7 +53,6 @@ case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
 object FeeratePerKB {
   // @formatter:off
   def apply(feeratePerByte: FeeratePerByte): FeeratePerKB = FeeratePerKB(feeratePerByte.feerate * 1000)
-  // feerate-per-kw should be feerate-per-kvb / 4
   def apply(feeratePerKw: FeeratePerKw): FeeratePerKB = FeeratePerKB(feeratePerKw.feerate * 4)
   // @formatter:on
 }
@@ -97,9 +96,6 @@ object FeeratePerKw {
    * hence feerate-per-kw >= 253
    *
    * See also https://github.com/ElementsProject/lightning/pull/1251
-   * Notes:
-   *  - The size of a block is limited to 4,000,000 weight units which corresponds to 1,000,000 virtual bytes.
-   *  - The transaction fee doesn't depend on the amount being transferred. It depends on the amount of data being transferred.
    */
   val MinimumFeeratePerKw = FeeratePerKw(253 sat)
 
