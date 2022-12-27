@@ -23,7 +23,7 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64, nodeFee, randomBytes32}
 import fr.acinq.secp256k1.Secp256k1JvmKt
 import scodec.Codec
 import scodec.bits.ByteVector
@@ -47,42 +47,103 @@ object OfferTypes {
 
   sealed trait InvoiceErrorTlv extends Bolt12Tlv
 
+  /**
+   * Chains for which the offer is valid. If empty, bitcoin mainnet is implied.
+   */
   case class OfferChains(chains: Seq[ByteVector32]) extends OfferTlv
 
+  /**
+   * Data from the offer creator to themselves, for instance a signature that authenticates the offer so that they don't need to store the offer.
+   */
   case class OfferMetadata(data: ByteVector) extends OfferTlv
 
+  /**
+   * Three-letter code of the currency the offer is denominated in. If empty, bitcoin is implied.
+   */
   case class OfferCurrency(iso4217: String) extends OfferTlv
 
+  /**
+   * Amount to pay per item. As we only support bitcoin, the amount is in msat.
+   */
   case class OfferAmount(amount: MilliSatoshi) extends OfferTlv
 
+  /**
+   * Description of the purpose of the payment.
+   */
   case class OfferDescription(description: String) extends OfferTlv
 
+  /**
+   * Features supported to pay the offer.
+   */
   case class OfferFeatures(features: Features[Feature]) extends OfferTlv
 
+  /**
+   * Time after which the offer is no longer valid.
+   */
   case class OfferAbsoluteExpiry(absoluteExpiry: TimestampSecond) extends OfferTlv
 
+  /**
+   * Paths that can be used to retrieve an invoice.
+   */
   case class OfferPaths(paths: Seq[BlindedRoute]) extends OfferTlv
 
+  /**
+   * Name of the offer creator.
+   */
   case class OfferIssuer(issuer: String) extends OfferTlv
 
+  /**
+   * If present, the item described in the offer can be purchased multiple times with a single payment.
+   * If max = 0, there is no limit on the quantity that can be purchased in a single payment.
+   * If max > 1, it corresponds to the maximum number of items that be purchased in a single payment.
+   */
   case class OfferQuantityMax(max: Long) extends OfferTlv
 
+  /**
+   * Public key of the offer creator.
+   * If `OfferPaths` is present, they must be used to retrieve an invoice even if this public key corresponds to a node id in the public network.
+   * If `OfferPaths` is not present, this public key must correspond to a node id in the public network that needs to be contacted to retrieve an invoice.
+   */
   case class OfferNodeId(publicKey: PublicKey) extends OfferTlv
 
+  /**
+   * Random data to provide enough entropy so that some fields of the invoice request / invoice can be revealed without revealing the others.
+   */
   case class InvoiceRequestMetadata(data: ByteVector) extends InvoiceRequestTlv
 
+  /**
+   * If `OfferChains` is present, this specifies which chain is going to be use to pay.
+   */
   case class InvoiceRequestChain(hash: ByteVector32) extends InvoiceRequestTlv
 
+  /**
+   * Amount that the sender is going to send.
+   */
   case class InvoiceRequestAmount(amount: MilliSatoshi) extends InvoiceRequestTlv
 
+  /**
+   * Features supported by the sender to pay the offer.
+   */
   case class InvoiceRequestFeatures(features: Features[Feature]) extends InvoiceRequestTlv
 
+  /**
+   * Number of items to purchase. Only use if the offer supports purchasing multiple items at once.
+   */
   case class InvoiceRequestQuantity(quantity: Long) extends InvoiceRequestTlv
 
+  /**
+   * A public key for which the sender know the corresponding private key.
+   */
   case class InvoiceRequestPayerId(publicKey: PublicKey) extends InvoiceRequestTlv
 
+  /**
+   * A message from the sender.
+   */
   case class InvoiceRequestPayerNote(note: String) extends InvoiceRequestTlv
 
+  /**
+   * Payment paths to send the payment to.
+   */
   case class InvoicePaths(paths: Seq[BlindedRoute]) extends InvoiceTlv
 
   case class PaymentInfo(feeBase: MilliSatoshi,
@@ -94,25 +155,61 @@ object OfferTypes {
     def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(feeBase, feeProportionalMillionths, amount)
   }
 
+  /**
+   * Costs and parameters of the paths in `InvoicePaths`.
+   */
   case class InvoiceBlindedPay(paymentInfo: Seq[PaymentInfo]) extends InvoiceTlv
 
+  /**
+   * Time at which the invoice was created.
+   */
   case class InvoiceCreatedAt(timestamp: TimestampSecond) extends InvoiceTlv
 
+  /**
+   * Duration after which the invoice can no longer be paid.
+   */
   case class InvoiceRelativeExpiry(seconds: Long) extends InvoiceTlv
 
+  /**
+   * Hash whose preimage will be released in exchange for the payment.
+   */
   case class InvoicePaymentHash(hash: ByteVector32) extends InvoiceTlv
 
+  /**
+   * Amount to pay. Must be the same as `InvoiceRequestAmount` if it was present.
+   */
   case class InvoiceAmount(amount: MilliSatoshi) extends InvoiceTlv
 
   case class FallbackAddress(version: Byte, value: ByteVector)
 
+  /**
+   * Onchain addresses to use to pay the invoice in case the lightning payment fails.
+   */
   case class InvoiceFallbacks(addresses: Seq[FallbackAddress]) extends InvoiceTlv
 
+  /**
+   * Features supported to pay the invoice.
+   */
   case class InvoiceFeatures(features: Features[Feature]) extends InvoiceTlv
 
+  /**
+   * Public key of the invoice recipient.
+   */
   case class InvoiceNodeId(nodeId: PublicKey) extends InvoiceTlv
 
-  case class Signature(signature: ByteVector64) extends InvoiceRequestTlv
+  /**
+   * Signature from the sender when used in an invoice request.
+   * Signature from the recipient when used in an invoice.
+   */
+  case class Signature(signature: ByteVector64) extends InvoiceRequestTlv with InvoiceTlv
+
+  def filterOfferFields(tlvs: TlvStream[InvoiceRequestTlv]): TlvStream[OfferTlv] =
+    // Offer TLVs are in the range (0, 80).
+    TlvStream[OfferTlv](tlvs.records.collect { case tlv: OfferTlv => tlv }, tlvs.unknown.filter(_.tag < UInt64(80)))
+
+  def filterInvoiceRequestFields(tlvs: TlvStream[InvoiceTlv]): TlvStream[InvoiceRequestTlv] =
+    // Invoice request TLVs are in the range [0, 160): invoice request metadata (tag 0), offer TLVs, and additional invoice request TLVs in the range [80, 160).
+    TlvStream[InvoiceRequestTlv](tlvs.records.collect { case tlv: InvoiceRequestTlv => tlv }, tlvs.unknown.filter(_.tag < UInt64(160)))
 
   case class ErroneousField(tag: Long) extends InvoiceErrorTlv
 
@@ -129,7 +226,7 @@ object OfferTypes {
       case None => records.get[OfferAmount].map(_.amount)
     }
     val description: String = records.get[OfferDescription].get.description
-    val features: Features[InvoiceFeature] = records.get[OfferFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
+    val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val expiry: Option[TimestampSecond] = records.get[OfferAbsoluteExpiry].map(_.absoluteExpiry)
     private val paths: Option[Seq[BlindedRoute]] = records.get[OfferPaths].map(_.paths)
     val issuer: Option[String] = records.get[OfferIssuer].map(_.issuer)
@@ -156,7 +253,7 @@ object OfferTypes {
      * @param features    invoice features.
      * @param chain       chain on which the offer is valid.
      */
-    def apply(amount_opt: Option[MilliSatoshi], description: String, nodeId: PublicKey, features: Features[InvoiceFeature], chain: ByteVector32): Offer = {
+    def apply(amount_opt: Option[MilliSatoshi], description: String, nodeId: PublicKey, features: Features[Bolt12Feature], chain: ByteVector32): Offer = {
       val tlvs: Seq[OfferTlv] = Seq(
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
         amount_opt.map(OfferAmount),
@@ -190,12 +287,12 @@ object OfferTypes {
   }
 
   case class InvoiceRequest(records: TlvStream[InvoiceRequestTlv]) {
-    val offer: Offer = Offer.validate(TlvStream[OfferTlv](records.records.collect { case tlv: OfferTlv => tlv }, records.unknown.filter(_.tag < UInt64(80)))).toOption.get
+    val offer: Offer = Offer.validate(filterOfferFields(records)).toOption.get
 
-    val metadata: Option[ByteVector] = records.get[InvoiceRequestMetadata].map(_.data)
+    val metadata: ByteVector = records.get[InvoiceRequestMetadata].get.data
     val chain: ByteVector32 = records.get[InvoiceRequestChain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
     val amount: Option[MilliSatoshi] = records.get[InvoiceRequestAmount].map(_.amount)
-    val features: Features[InvoiceFeature] = records.get[InvoiceRequestFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
+    val features: Features[Bolt12Feature] = records.get[InvoiceRequestFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val quantity_opt: Option[Long] = records.get[InvoiceRequestQuantity].map(_.quantity)
     val quantity: Long = quantity_opt.getOrElse(1)
     val payerId: PublicKey = records.get[InvoiceRequestPayerId].get.publicKey
@@ -246,7 +343,7 @@ object OfferTypes {
      * @param payerKey private key identifying the payer: this lets us prove we're the ones who paid the invoice.
      * @param chain    chain we want to use to pay this offer.
      */
-    def apply(offer: Offer, amount: MilliSatoshi, quantity: Long, features: Features[InvoiceFeature], payerKey: PrivateKey, chain: ByteVector32): InvoiceRequest = {
+    def apply(offer: Offer, amount: MilliSatoshi, quantity: Long, features: Features[Bolt12Feature], payerKey: PrivateKey, chain: ByteVector32): InvoiceRequest = {
       require(offer.chains.contains(chain))
       require(quantity == 1 || offer.quantityMax.nonEmpty)
       val tlvs: Seq[InvoiceRequestTlv] = InvoiceRequestMetadata(randomBytes32()) +: (offer.records.records.toSeq ++ Seq(
@@ -256,15 +353,16 @@ object OfferTypes {
         if (!features.isEmpty) Some(InvoiceRequestFeatures(features.unscoped())) else None,
         Some(InvoiceRequestPayerId(payerKey.publicKey)),
       ).flatten)
-      val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs), OfferCodecs.invoiceRequestTlvCodec), payerKey)
+      val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, offer.records.unknown), OfferCodecs.invoiceRequestTlvCodec), payerKey)
       InvoiceRequest(TlvStream(tlvs :+ Signature(signature), offer.records.unknown))
     }
 
     def validate(records: TlvStream[InvoiceRequestTlv]): Either[InvalidTlvPayload, InvoiceRequest] = {
-      Offer.validate(TlvStream[OfferTlv](records.records.collect { case tlv: OfferTlv => tlv }, records.unknown.filter(_.tag < UInt64(80)))).fold(
+      Offer.validate(filterOfferFields(records)).fold(
         invalidTlvPayload => return Left(invalidTlvPayload),
         _ -> ()
       )
+      if (records.get[InvoiceRequestMetadata].isEmpty) return Left(MissingRequiredTlv(UInt64(0)))
       if (records.get[InvoiceRequestPayerId].isEmpty) return Left(MissingRequiredTlv(UInt64(88)))
       if (records.get[Signature].isEmpty) return Left(MissingRequiredTlv(UInt64(240)))
       if (records.unknown.exists(_.tag >= UInt64(160))) return Left(ForbiddenTlv(records.unknown.find(_.tag >= UInt64(160)).get.tag))
@@ -346,7 +444,8 @@ object OfferTypes {
 
   def verifySchnorr(tag: ByteVector, msg: ByteVector32, signature: ByteVector64, publicKey: PublicKey): Boolean = {
     val h = hash(tag, msg)
-    Secp256k1JvmKt.getSecpk256k1.verifySchnorr(signature.toArray, h.toArray, publicKey.value.drop(1).toArray)
+    val xonlyPublicKey = publicKey.value.drop(1) // Schnorr signature only use 32 bytes keys.
+    Secp256k1JvmKt.getSecpk256k1.verifySchnorr(signature.toArray, h.toArray, xonlyPublicKey.toArray)
   }
 
   /** We often need to remove the signature field to compute the merkle root. */

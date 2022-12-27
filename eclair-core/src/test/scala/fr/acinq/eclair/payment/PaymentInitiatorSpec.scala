@@ -36,7 +36,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{BlindedRouteCreation, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -58,27 +58,27 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
-  val featuresWithoutMpp: Features[InvoiceFeature] = Features(
+  val featuresWithoutMpp: Features[Bolt11Feature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     RouteBlinding -> Optional,
   )
 
-  val featuresWithMpp: Features[InvoiceFeature] = Features(
+  val featuresWithMpp: Features[Bolt11Feature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
     RouteBlinding -> Optional,
   )
 
-  val featuresWithTrampoline: Features[InvoiceFeature] = Features(
+  val featuresWithTrampoline: Features[Bolt11Feature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
     TrampolinePaymentPrototype -> Optional,
   )
 
-  val featuresWithoutRouteBlinding: Features[InvoiceFeature] = Features(
+  val featuresWithoutRouteBlinding: Features[Bolt11Feature] = Features(
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
@@ -171,7 +171,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val fail = sender.expectMsgType[PaymentFailed]
       assert(fail.id == id)
       assert(fail.failures.head.isInstanceOf[LocalFailure])
-      assert(fail.failures.head.asInstanceOf[LocalFailure].t == UnsupportedFeatures(invoice.features))
+      assert(fail.failures.head.asInstanceOf[LocalFailure].t == UnsupportedFeatures(invoice.invoiceFeatures))
     }
   }
 
@@ -292,12 +292,12 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(NoPendingPayment(Right(invoice.paymentHash)))
   }
 
-  def createBolt12Invoice(features: Features[InvoiceFeature]): Bolt12Invoice = {
+  def createBolt12Invoice(features: Features[Bolt12Feature]): Bolt12Invoice = {
     val offer = Offer(None, "Bolt12 r0cks", e, features, Block.RegtestGenesisBlock.hash)
     val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
     val blindedRoute = BlindedRouteCreation.createBlindedRouteWithoutHops(e, hex"2a2a2a2a", 1 msat, CltvExpiry(500_000)).route
     val paymentInfo = OfferTypes.PaymentInfo(1_000 msat, 0, CltvExpiryDelta(24), 0 msat, finalAmount, Features.empty)
-    Bolt12Invoice(invoiceRequest, paymentPreimage, priv_e.privateKey, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+    Bolt12Invoice(invoiceRequest, paymentPreimage, priv_e.privateKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
   }
 
   test("forward single-part blinded payment") { f =>
@@ -365,7 +365,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val id = sender.expectMsgType[UUID]
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id == id)
-    assert(fail.failures == LocalFailure(finalAmount, Nil, UnsupportedFeatures(invoice.features)) :: Nil)
+    assert(fail.failures == LocalFailure(finalAmount, Nil, UnsupportedFeatures(invoice.invoiceFeatures)) :: Nil)
   }
 
   test("forward trampoline payment") { f =>

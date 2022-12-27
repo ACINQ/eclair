@@ -211,6 +211,7 @@ class PaymentOnionSpec extends AnyFunSuite {
       val Right(payload) = FinalPayload.Blinded.validate(decoded, blindedTlvs)
       assert(payload.amount == 561.msat)
       assert(payload.totalAmount == 1105.msat)
+      assert(payload.expiry == CltvExpiry(1234567))
       assert(payload.pathId == hex"2a2a2a2a")
       val encoded = perHopPayloadCodec.encode(expected).require.bytes
       assert(encoded == bin)

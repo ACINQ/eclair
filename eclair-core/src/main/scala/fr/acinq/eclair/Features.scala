@@ -56,6 +56,8 @@ trait InitFeature extends Feature
 trait NodeFeature extends Feature
 /** Feature that should be advertised in invoices. */
 trait InvoiceFeature extends Feature
+/** Feature that should be advertised in Bolt 11 invoices. */
+trait Bolt11Feature extends InvoiceFeature
 /** Feature that should be advertised in Bolt 12 invoices. */
 trait Bolt12Feature extends InvoiceFeature
 
@@ -104,7 +106,9 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Se
 
   def invoiceFeatures(): Features[InvoiceFeature] = Features(activated.collect { case (f: InvoiceFeature, s) => (f, s) }, unknown)
 
-  def bolt12Features(): Features[InvoiceFeature] = Features(activated.collect { case (f: Bolt12Feature, s) => (f: InvoiceFeature, s) }, unknown)
+  def bolt11Features(): Features[Bolt11Feature] = Features(activated.collect { case (f: Bolt11Feature, s) => (f, s) }, unknown)
+
+  def bolt12Features(): Features[Bolt12Feature] = Features(activated.collect { case (f: Bolt12Feature, s) => (f, s) }, unknown)
 
   def unscoped(): Features[Feature] = Features[Feature](activated.collect { case (f, s) => (f: Feature, s) }, unknown)
 
@@ -190,7 +194,7 @@ object Features {
     val mandatory = 6
   }
 
-  case object VariableLengthOnion extends Feature with InitFeature with NodeFeature with InvoiceFeature {
+  case object VariableLengthOnion extends Feature with InitFeature with NodeFeature with Bolt11Feature with Bolt12Feature {
     val rfcName = "var_onion_optin"
     val mandatory = 8
   }
@@ -205,12 +209,12 @@ object Features {
     val mandatory = 12
   }
 
-  case object PaymentSecret extends Feature with InitFeature with NodeFeature with InvoiceFeature {
+  case object PaymentSecret extends Feature with InitFeature with NodeFeature with Bolt11Feature {
     val rfcName = "payment_secret"
     val mandatory = 14
   }
 
-  case object BasicMultiPartPayment extends Feature with InitFeature with NodeFeature with InvoiceFeature with Bolt12Feature {
+  case object BasicMultiPartPayment extends Feature with InitFeature with NodeFeature with Bolt11Feature with Bolt12Feature {
     val rfcName = "basic_mpp"
     val mandatory = 16
   }
@@ -230,7 +234,7 @@ object Features {
     val mandatory = 22
   }
 
-  case object RouteBlinding extends Feature with InitFeature with NodeFeature with InvoiceFeature {
+  case object RouteBlinding extends Feature with InitFeature with NodeFeature with Bolt11Feature with Bolt12Feature {
     val rfcName = "option_route_blinding"
     val mandatory = 24
   }
@@ -260,7 +264,7 @@ object Features {
     val mandatory = 46
   }
 
-  case object PaymentMetadata extends Feature with InvoiceFeature {
+  case object PaymentMetadata extends Feature with Bolt11Feature {
     val rfcName = "option_payment_metadata"
     val mandatory = 48
   }
@@ -281,13 +285,13 @@ object Features {
   // The version of trampoline enabled by this feature bit does not match the latest spec PR: once the spec is accepted,
   // we will introduce a new version of trampoline that will work in parallel to this legacy one, until we can safely
   // deprecate it.
-  case object TrampolinePaymentPrototype extends Feature with InitFeature with NodeFeature with InvoiceFeature {
+  case object TrampolinePaymentPrototype extends Feature with InitFeature with NodeFeature with Bolt11Feature {
     val rfcName = "trampoline_payment_prototype"
     val mandatory = 148
   }
 
   // TODO: @remyers update feature bits once spec-ed (currently reserved here: https://github.com/lightning/bolts/pull/989)
-  case object AsyncPaymentPrototype extends Feature with InitFeature with InvoiceFeature {
+  case object AsyncPaymentPrototype extends Feature with InitFeature with Bolt11Feature {
     val rfcName = "async_payment_prototype"
     val mandatory = 152
   }

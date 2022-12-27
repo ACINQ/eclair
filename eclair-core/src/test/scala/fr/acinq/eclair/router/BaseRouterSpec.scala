@@ -263,7 +263,7 @@ object BaseRouterSpec {
                              preimage: ByteVector32 = randomBytes32(),
                              pathId: ByteVector = randomBytes(32)): (Bolt12Invoice, BlindedRecipient) = {
     val recipientKey = randomKey()
-    val features = Features[InvoiceFeature](
+    val features = Features[Bolt12Feature](
       Features.VariableLengthOnion -> FeatureSupport.Mandatory,
       Features.BasicMultiPartPayment -> FeatureSupport.Optional,
       Features.RouteBlinding -> FeatureSupport.Mandatory
@@ -275,7 +275,7 @@ object BaseRouterSpec {
       val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops)
       PaymentBlindedRoute(blindedRoute, paymentInfo)
     })
-    val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, features, blindedRoutes)
+    val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, 300 seconds, features, blindedRoutes)
     val recipient = BlindedRecipient(invoice, amount, expiry, Nil)
     (invoice, recipient)
   }

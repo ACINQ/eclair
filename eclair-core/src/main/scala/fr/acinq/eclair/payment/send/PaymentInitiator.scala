@@ -83,7 +83,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       r.trampolineAttempts match {
         case Nil =>
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineFeesMissing) :: Nil)
-        case _ if !r.invoice.features.hasFeature(Features.TrampolinePaymentPrototype) && r.invoice.amount_opt.isEmpty =>
+        case _ if !r.invoice.invoiceFeatures.hasFeature(Features.TrampolinePaymentPrototype) && r.invoice.amount_opt.isEmpty =>
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineLegacyAmountLessInvoice) :: Nil)
         case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts =>
           log.info(s"sending trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
@@ -100,8 +100,8 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentId = UUID.randomUUID()
       val parentPaymentId = r.parentId.getOrElse(UUID.randomUUID())
       r.trampoline_opt match {
-        case _ if !nodeParams.features.invoiceFeatures().areSupported(r.invoice.features) =>
-          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil)
+        case _ if !nodeParams.features.invoiceFeatures().areSupported(r.invoice.invoiceFeatures) =>
+          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.invoiceFeatures)) :: Nil)
         case Some(trampolineAttempt) =>
           val trampolineNodeId = r.route.targetNodeId
           log.info(s"sending trampoline payment to ${r.recipientNodeId} with trampoline=$trampolineNodeId, trampoline fees=${trampolineAttempt.fees}, expiry delta=${trampolineAttempt.cltvExpiryDelta}")

@@ -68,16 +68,6 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(offer.quantityMax.contains(Long.MaxValue))
   }
 
-  test("decode invalid offer") {
-    val testCases = Seq(
-      "lno1pgxx7enxv4e8xgrjda3kkgg", // missing node id
-      "lno1rcsdhss957tylk58rmly849jupnmzs52ydhxhl8fgz7994xkf2hnwhg", // missing description
-    )
-    for (testCase <- testCases) {
-      assert(Offer.decode(testCase).isFailure)
-    }
-  }
-
   def signInvoiceRequest(request: InvoiceRequest, key: PrivateKey): InvoiceRequest = {
     val tlvs = removeSignature(request.records)
     val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(tlvs, invoiceRequestTlvCodec), key)
@@ -125,6 +115,7 @@ class OfferTypesSpec extends AnyFunSuite {
       val payerKey = randomKey()
       val request = {
         val tlvs: Seq[InvoiceRequestTlv] = (offer.records.records ++ Seq(
+          InvoiceRequestMetadata(hex"012345"),
           InvoiceRequestAmount(100 msat),
           InvoiceRequestPayerId(payerKey.publicKey),
         )).toSeq
@@ -167,20 +158,6 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(!invalidAmount.isValidFor(offer))
     val tooManyItems = InvoiceRequest(offer, 5500 msat, 11, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(!tooManyItems.isValidFor(offer))
-  }
-
-  test("decode invalid invoice request") {
-    val testCases = Seq(
-      // Missing offer id.
-      "lnr1pqpp8zqvqqnzqq7pw52tqj6pj2mar5cgkmnt9xe3tj40nxc3pp95xml2e8v432ny7pq957u2v4r5cjxfmxtwk9qfu99hftq2ek48pz6c2ywynajha03ut4ffjf34htxxxp668dqd9jwvz2eal6up5mjfe4ad8ndccrtpkkke0g",
-      // Missing payer key.
-      "lnr1qss0h356hn94473j5yls8q3w4gkzu9j8rrach3hgms4ks8aumsx29vsgqgfcsrqq7pq957u2v4r5cjxfmxtwk9qfu99hftq2ek48pz6c2ywynajha03ut4ffjf34htxxxp668dqd9jwvz2eal6up5mjfe4ad8ndccrtpkkke0g",
-      // Missing signature.
-      "lnr1qss0h356hn94473j5yls8q3w4gkzu9j8rrach3hgms4ks8aumsx29vsgqgfcsrqqycsq8st4zjcyksvjklgaxz9ku6efkv2u4tuekyggfdpkl6kfm9v25eq",
-    )
-    for (testCase <- testCases) {
-      assert(InvoiceRequest.decode(testCase).isFailure)
-    }
   }
 
   test("compute merkle tree root") {

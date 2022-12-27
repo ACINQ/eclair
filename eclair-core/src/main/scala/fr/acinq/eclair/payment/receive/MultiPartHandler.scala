@@ -35,11 +35,10 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.BlindedRouteCreation.{aggregatePaymentInfo, createBlindedRouteFromHops, createBlindedRouteWithoutHops}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
+import fr.acinq.eclair.wire.protocol.OfferTypes.InvoiceRequest
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32}
+import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, FeatureSupport, Features, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32}
 import scodec.bits.HexStringSyntax
 
 import scala.concurrent.duration.DurationInt
@@ -109,9 +108,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = Left("Donation")
               val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
-                Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
+                Features[Bolt11Feature](Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               } else {
-                Features[InvoiceFeature](Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
+                Features[Bolt11Feature](Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               }
               // Insert a fake invoice and then restart the incoming payment handler
               val invoice = Bolt11Invoice(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = payload.paymentSecret, features = features)
@@ -302,16 +301,16 @@ object MultiPartHandler {
           case CreateInvoice(replyTo, receivePayment) =>
             val paymentPreimage = receivePayment.paymentPreimage_opt.getOrElse(randomBytes32())
             val paymentHash = Crypto.sha256(paymentPreimage)
-            val featuresTrampolineOpt = if (nodeParams.enableTrampolinePayment) {
-              nodeParams.features.invoiceFeatures().add(Features.TrampolinePaymentPrototype, FeatureSupport.Optional)
-            } else {
-              nodeParams.features.invoiceFeatures()
-            }
             receivePayment match {
               case r: ReceiveStandardPayment =>
                 Try {
                   val expirySeconds = r.expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
                   val paymentMetadata = hex"2a"
+                  val featuresTrampolineOpt = if (nodeParams.enableTrampolinePayment) {
+                    nodeParams.features.bolt11Features().add(Features.TrampolinePaymentPrototype, FeatureSupport.Optional)
+                  } else {
+                    nodeParams.features.bolt11Features()
+                  }
                   val invoice = Bolt11Invoice(
                     nodeParams.chainHash,
                     r.amount_opt,
@@ -362,8 +361,8 @@ object MultiPartHandler {
                     })
                   }
                 })).map(paths => {
-                  val invoiceFeatures = featuresTrampolineOpt.remove(Features.RouteBlinding).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-                  val invoice = Bolt12Invoice(r.invoiceRequest, paymentPreimage, r.nodeKey, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) })
+                  val invoiceFeatures = nodeParams.features.bolt12Features().remove(Features.RouteBlinding).add(Features.RouteBlinding, FeatureSupport.Mandatory)
+                  val invoice = Bolt12Invoice(r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.invoiceExpiry, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) })
                   log.debug("generated invoice={} for offer={}", invoice.toString, r.invoiceRequest.offer.toString)
                   nodeParams.db.payments.addIncomingBlindedPayment(invoice, paymentPreimage, paths.map { case (blindedRoute, _, pathId) => blindedRoute.lastBlinding -> pathId.bytes }.toMap, r.paymentType)
                   invoice
@@ -452,7 +451,7 @@ object MultiPartHandler {
   }
 
   private def validateInvoiceFeatures(add: UpdateAddHtlc, payload: FinalPayload, invoice: Invoice)(implicit log: LoggingAdapter): Boolean = {
-    if (payload.amount < payload.totalAmount && !invoice.features.hasFeature(Features.BasicMultiPartPayment)) {
+    if (payload.amount < payload.totalAmount && !invoice.invoiceFeatures.hasFeature(Features.BasicMultiPartPayment)) {
       log.warning("received multi-part payment but invoice doesn't support it for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
       false
     } else {

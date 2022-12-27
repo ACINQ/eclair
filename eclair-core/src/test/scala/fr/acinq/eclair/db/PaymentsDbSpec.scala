@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, NodeHop}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, TlvStream, UnknownNextPeer}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, Paginated, ShortChannelId, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, Paginated, ShortChannelId, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
@@ -516,21 +516,21 @@ class PaymentsDbSpec extends AnyFunSuite {
 
       val expiredInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #1"), CltvExpiryDelta(18), timestamp = 1 unixsec)
       val expiredInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #2"), CltvExpiryDelta(18), timestamp = 2 unixsec, expirySeconds = Some(30))
-      val expiredInvoice3 = Bolt12Invoice(TlvStream(OfferDescription("invoice #3"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(3 unixsec), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), Signature(ByteVector64.Zeroes)))
+      val expiredInvoice3 = Bolt12Invoice(TlvStream(InvoiceRequestMetadata(randomBytes(5)), OfferDescription("invoice #3"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(3 unixsec), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), InvoiceNodeId(randomKey().publicKey), Signature(ByteVector64.Zeroes)))
       val expiredPayment1 = IncomingStandardPayment(expiredInvoice1, randomBytes32(), PaymentType.Standard, expiredInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
       val expiredPayment2 = IncomingStandardPayment(expiredInvoice2, randomBytes32(), PaymentType.Standard, expiredInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
       val expiredPayment3 = IncomingBlindedPayment(expiredInvoice3, randomBytes32(), PaymentType.Blinded, Map(randomKey().publicKey -> hex"2a2a2a2a"), expiredInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
 
       val pendingInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #4"), CltvExpiryDelta(18), timestamp = TimestampSecond.now() - 10.seconds)
       val pendingInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #5"), CltvExpiryDelta(18), expirySeconds = Some(30), timestamp = TimestampSecond.now() - 9.seconds)
-      val pendingInvoice3 = Bolt12Invoice(TlvStream(OfferDescription("invoice #6"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(TimestampSecond.now() - 8.seconds), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), Signature(ByteVector64.Zeroes)))
+      val pendingInvoice3 = Bolt12Invoice(TlvStream(InvoiceRequestMetadata(randomBytes(5)), OfferDescription("invoice #6"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(TimestampSecond.now() - 8.seconds), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), InvoiceNodeId(randomKey().publicKey), Signature(ByteVector64.Zeroes)))
       val pendingPayment1 = IncomingStandardPayment(pendingInvoice1, randomBytes32(), PaymentType.Standard, pendingInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
       val pendingPayment2 = IncomingStandardPayment(pendingInvoice2, randomBytes32(), PaymentType.SwapIn, pendingInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
       val pendingPayment3 = IncomingBlindedPayment(pendingInvoice3, randomBytes32(), PaymentType.Blinded, Map(randomKey().publicKey -> hex"deaddead"), pendingInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
 
       val paidInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #7"), CltvExpiryDelta(18), timestamp = TimestampSecond.now() - 5.seconds)
       val paidInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #8"), CltvExpiryDelta(18), expirySeconds = Some(60), timestamp = TimestampSecond.now() - 4.seconds)
-      val paidInvoice3 = Bolt12Invoice(TlvStream(OfferDescription("invoice #9"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(TimestampSecond.now() - 3.seconds), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), Signature(ByteVector64.Zeroes)))
+      val paidInvoice3 = Bolt12Invoice(TlvStream(InvoiceRequestMetadata(randomBytes(5)), OfferDescription("invoice #9"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(TimestampSecond.now() - 3.seconds), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), InvoiceNodeId(randomKey().publicKey), Signature(ByteVector64.Zeroes)))
       val receivedAt1 = TimestampMilli.now() + 1.milli
       val receivedAt2 = TimestampMilli.now() + 2.milli
       val receivedAt3 = TimestampMilli.now() + 3.milli

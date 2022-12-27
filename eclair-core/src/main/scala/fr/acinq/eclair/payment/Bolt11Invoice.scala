@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -92,7 +92,9 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
 
   lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = tags.collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta }.getOrElse(DEFAULT_MIN_CLTV_EXPIRY_DELTA)
 
-  lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeatures() }.getOrElse(Features.empty[InvoiceFeature])
+  lazy val features: Features[Bolt11Feature] = tags.collectFirst { case f: InvoiceFeatures => f.features.bolt11Features() }.getOrElse(Features.empty)
+
+  override lazy val invoiceFeatures: Features[InvoiceFeature] = features.invoiceFeatures()
 
   /**
    * @return the hash of this payment invoice
@@ -142,7 +144,7 @@ object Bolt11Invoice {
     Block.LivenetGenesisBlock.hash -> "lnbc"
   )
 
-  val defaultFeatures: Features[InvoiceFeature] = Features((Features.VariableLengthOnion, FeatureSupport.Mandatory), (Features.PaymentSecret, FeatureSupport.Mandatory))
+  val defaultFeatures: Features[Bolt11Feature] = Features((Features.VariableLengthOnion, FeatureSupport.Mandatory), (Features.PaymentSecret, FeatureSupport.Mandatory))
 
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
@@ -156,7 +158,7 @@ object Bolt11Invoice {
             timestamp: TimestampSecond = TimestampSecond.now(),
             paymentSecret: ByteVector32 = randomBytes32(),
             paymentMetadata: Option[ByteVector] = None,
-            features: Features[InvoiceFeature] = defaultFeatures): Bolt11Invoice = {
+            features: Features[Bolt11Feature] = defaultFeatures): Bolt11Invoice = {
     require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), "invoices must require a payment secret")
     require(!features.hasFeature(Features.RouteBlinding), "bolt11 invoices cannot use route blinding")
     val prefix = prefixes(chainHash)

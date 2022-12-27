@@ -87,7 +87,7 @@ case class ClearRecipient(nodeId: PublicKey,
 
 object ClearRecipient {
   def apply(invoice: Bolt11Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Seq[GenericTlv]): ClearRecipient = {
-    ClearRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, invoice.paymentSecret, invoice.extraEdges, invoice.paymentMetadata, None, customTlvs)
+    ClearRecipient(invoice.nodeId, invoice.invoiceFeatures, totalAmount, expiry, invoice.paymentSecret, invoice.extraEdges, invoice.paymentMetadata, None, customTlvs)
   }
 
   def validateRoute(nodeId: PublicKey, route: Route): Either[OutgoingPaymentError, Route] = {
@@ -167,14 +167,14 @@ case class BlindedRecipient(nodeId: PublicKey,
 
 object BlindedRecipient {
   def apply(invoice: Bolt12Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Seq[GenericTlv]): BlindedRecipient = {
-    val blindedHops = invoice.blindedPaths.zip(invoice.blindedPathsInfo).map {
-      case (route, info) =>
+    val blindedHops = invoice.blindedPaths.map(
+      path => {
         // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a
         // given edge in the graph, so we create a dummy one for the duration of the payment attempt.
         val dummyId = ShortChannelId.generateLocalAlias()
-        BlindedHop(dummyId, route, info)
-    }
-    BlindedRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, blindedHops, customTlvs)
+        BlindedHop(dummyId, path.route, path.paymentInfo)
+      })
+    BlindedRecipient(invoice.nodeId, invoice.invoiceFeatures, totalAmount, expiry, blindedHops, customTlvs)
   }
 }
 
@@ -200,7 +200,7 @@ case class ClearTrampolineRecipient(invoice: Bolt11Invoice,
   val trampolineExpiry = expiry + trampolineHop.cltvExpiryDelta
 
   override val nodeId = invoice.nodeId
-  override val features = invoice.features
+  override val features = invoice.invoiceFeatures
   override val extraEdges = Seq(ExtraEdge(trampolineNodeId, nodeId, ShortChannelId.generateLocalAlias(), trampolineFee, 0, trampolineHop.cltvExpiryDelta, 1 msat, None))
 
   private def validateRoute(route: Route): Either[OutgoingPaymentError, NodeHop] = {
