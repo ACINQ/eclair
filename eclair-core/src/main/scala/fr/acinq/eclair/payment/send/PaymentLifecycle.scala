@@ -87,7 +87,6 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
 
     case Event(Status.Failure(t), WaitingForRoute(request, failures, _)) =>
-      log.warning("router error: {}", t.getMessage)
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(request.amount, Nil, t))).increment()
       myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(request.amount, Nil, t))))
   }

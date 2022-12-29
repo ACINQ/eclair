@@ -103,9 +103,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
       case Success(Attempt.Failure(err)) =>
-        log.error(s"cannot deserialize $plaintext: $err")
+        log.error(s"cannot deserialize ${plaintext.toHex}: $err")
       case Failure(t) =>
-        log.error(s"cannot deserialize $plaintext: ${t.getMessage}")
+        log.error(s"cannot deserialize ${plaintext.toHex}: ${t.getMessage}")
     })
     log.debug("decoded {} messages", m.values.sum)
     m
@@ -250,11 +250,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   whenUnhandled {
     handleExceptions {
       case Event(closed: Tcp.ConnectionClosed, _) =>
-        log.info(s"connection closed: $closed")
+        log.debug(s"connection closed: $closed")
         stop(FSM.Normal)
 
       case Event(Terminated(actor), _) if actor == connection =>
-        log.info("connection actor died")
+        log.debug("connection actor died")
         // this can be the connection or the listener, either way it is a cause of death
         stop(FSM.Normal)
 

@@ -56,7 +56,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       goto(WAITING) using WaitingData(nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
 
     case Event(Peer.Transition(_, _: Peer.ConnectedData), d) =>
-      log.info("peer is connected")
+      log.debug("peer is connected")
       goto(IDLE) using IdleData(d)
   }
 
@@ -73,7 +73,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       }
 
     case Event(Peer.Transition(_, _: Peer.ConnectedData), d) =>
-      log.info("peer is connected")
+      log.debug("peer is connected")
       cancelTimer(RECONNECT_TIMER)
       goto(IDLE) using IdleData(d)
   }
@@ -119,7 +119,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       }
 
     case Event(Peer.Transition(_, _: Peer.ConnectedData), _) =>
-      log.info("peer is connected")
+      log.debug("peer is connected")
       stay()
   }
 

@@ -53,12 +53,8 @@ class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams],
         case addr: DnsHostname => new InetSocketAddress(addr.host, addr.port)
       }
       val (peerOrProxyAddress, proxyParams_opt) = socks5ProxyParams_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteNodeAddress, proxyParams))) match {
-        case Some((proxyParams, Some(proxyAddress))) =>
-          log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")
-          (proxyAddress, Some(proxyParams))
-        case _ =>
-          log.info(s"connecting to ${str(remoteAddress)}")
-          (remoteAddress, None)
+        case Some((proxyParams, Some(proxyAddress))) => (proxyAddress, Some(proxyParams))
+        case _ => (remoteAddress, None)
       }
       IO(Tcp) ! Tcp.Connect(peerOrProxyAddress, timeout = Some(20 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
       context become connecting(proxyParams_opt, remoteAddress)
@@ -76,7 +72,6 @@ class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams],
       proxyParams match {
         case Some(proxyParams) =>
           val proxyAddress = peerOrProxyAddress
-          log.info(s"connected to SOCKS5 proxy ${str(proxyAddress)}")
           log.info(s"connecting to ${str(remoteAddress)} via SOCKS5 ${str(proxyAddress)}")
           val proxy = context.actorOf(Socks5Connection.props(sender(), Socks5ProxyParams.proxyCredentials(proxyParams), Socks5Connect(remoteAddress)))
           context watch proxy

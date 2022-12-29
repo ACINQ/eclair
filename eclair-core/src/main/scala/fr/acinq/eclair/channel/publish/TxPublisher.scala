@@ -209,7 +209,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
         val alreadyPublished = attempts.finalAttempts.exists(_.cmd.tx.txid == cmd.tx.txid)
         if (alreadyPublished) {
-          log.info("not publishing {} txid={} spending {}:{}, publishing is already in progress", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index)
+          log.debug("not publishing {} txid={} spending {}:{}, publishing is already in progress", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index)
           Behaviors.same
         } else {
           val publishId = UUID.randomUUID()
@@ -229,7 +229,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
             }
             val currentConfirmationTarget = currentAttempt.confirmBefore
             if (currentConfirmationTarget <= proposedConfirmationTarget) {
-              log.info("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
+              log.debug("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
               Behaviors.same
             } else {
               log.info("replaceable {} spending {}:{} has new confirmation target={} (previous={})", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)

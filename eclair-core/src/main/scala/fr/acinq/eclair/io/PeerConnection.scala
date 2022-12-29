@@ -265,7 +265,6 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             c + 1
         }
 
-        log.info("sending the full routing table")
         val channelsSent = send(channels.map(_.ann))
         val nodesSent = send(nodes)
         val updatesSent = send(channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq))
@@ -394,7 +393,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueriesExtended)
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-          log.info(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
+          log.debug(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
           router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
         }
         stay()
@@ -422,7 +421,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
     case Event(Terminated(actor), d: HasTransport) if actor == d.transport =>
       Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-        log.info("transport died, stopping")
+        log.debug("transport died, stopping")
       }
       d match {
         case a: AuthenticatingData => a.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("connection aborted while authenticating"))
@@ -434,7 +433,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
     case Event(Kill(reason), _) =>
       Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-        log.info(s"stopping with reason=$reason")
+        log.debug(s"stopping with reason=$reason")
         stop(FSM.Normal)
       }
 

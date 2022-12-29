@@ -331,7 +331,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       stay()
 
     case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
-      log.info("received their channel_ready, deferring message")
+      log.debug("received their channel_ready, deferring message")
       stay() using d.copy(deferred = Some(channelReady))
 
     case Event(msg: InteractiveTxBuilder.Response, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) => msg match {
@@ -403,7 +403,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               stay()
             case _ =>
               // Signatures are retransmitted on reconnection, but we may have already received them.
-              log.info("ignoring duplicate tx_signatures for txid={}", txSigs.txId)
+              log.debug("ignoring duplicate tx_signatures for txid={}", txSigs.txId)
               stay()
           }
       }
@@ -609,7 +609,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored
         goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(d.commitments, shortIds, localChannelReady) storing() sending localChannelReady
       } else {
-        log.info("received their channel_ready, deferring message")
+        log.debug("received their channel_ready, deferring message")
         stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
       }
 

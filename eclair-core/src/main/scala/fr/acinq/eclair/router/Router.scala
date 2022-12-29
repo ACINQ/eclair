@@ -146,7 +146,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
         .foreach(listener ! _)
       listener ! RoutingStateStreamingUpToDate
       context.actorOf(Props(new Actor with ActorLogging {
-        log.info(s"subscribing listener=$listener to network events")
+        log.debug(s"subscribing listener=$listener to network events")
         context.system.eventStream.subscribe(listener, classOf[NetworkEvent])
         context.watch(listener)
 
@@ -163,7 +163,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
         stay()
       } else {
-        log.debug("broadcasting routing messages")
         log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
         context.system.eventStream.publish(d.rebroadcast)
         stay() using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))

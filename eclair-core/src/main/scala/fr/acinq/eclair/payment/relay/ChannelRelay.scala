@@ -118,7 +118,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         if (previousFailures.isEmpty) {
           context.log.info(s"relaying htlc #${r.add.id} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.channelId, r.payload.outgoingChannelId, nextNodeId_opt.getOrElse(""))
         }
-        context.log.info("attempting relay previousAttempts={}", previousFailures.size)
+        context.log.debug("attempting relay previousAttempts={}", previousFailures.size)
         handleRelay(previousFailures) match {
           case RelayFailure(cmdFail) =>
             Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
@@ -153,13 +153,13 @@ class ChannelRelay private(nodeParams: NodeParams,
   def waitForAddSettled(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill)) =>
-        context.log.info("relaying fulfill to upstream")
+        context.log.debug("relaying fulfill to upstream")
         val cmd = CMD_FULFILL_HTLC(o.originHtlcId, fulfill.paymentPreimage, commit = true)
         context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(o.amountIn, o.amountOut, htlc.paymentHash, o.originChannelId, htlc.channelId))
         safeSendAndStop(o.originChannelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail)) =>
-        context.log.info("relaying fail to upstream")
+        context.log.debug("relaying fail to upstream")
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(o.originHtlcId, fail)
         safeSendAndStop(o.originChannelId, cmd)
@@ -264,7 +264,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           context.log.debug("requested short channel id is our preferred channel")
           Some(channel)
         } else {
-          context.log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, channel.channelUpdate.shortChannelId, channel.commitments.availableBalanceForSend)
+          context.log.debug("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, channel.channelUpdate.shortChannelId, channel.commitments.availableBalanceForSend)
           Some(channel)
         }
       case None =>

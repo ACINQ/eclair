@@ -64,7 +64,7 @@ object Sync {
       // reset our sync state for this peer: we create an entry to ensure we reject duplicate queries and unsolicited reply_channel_range
       d.copy(sync = d.sync + (s.remoteNodeId -> Syncing(Nil, 0)))
     } else {
-      log.info("not sending query_channel_range: sync already in progress")
+      log.debug("not sending query_channel_range: sync already in progress")
       d
     }
   }
@@ -198,7 +198,7 @@ object Sync {
       case Some(sync) =>
         sync.remainingQueries match {
           case nextRequest :: rest =>
-            log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.remainingQueries.size}/${sync.totalQueries})")
+            log.debug(s"asking for the next slice of short_channel_ids (remaining=${sync.remainingQueries.size}/${sync.totalQueries})")
             origin.peerConnection ! nextRequest
             d.sync + (origin.nodeId -> sync.copy(remainingQueries = rest))
           case Nil =>
