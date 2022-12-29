@@ -331,7 +331,8 @@ class Setup(val datadir: File,
         channelsListener = channelsListener,
         balanceActor = balanceActor,
         postman = postman,
-        wallet = bitcoinClient)
+        wallet = bitcoinClient,
+        triggerer = triggerer)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -399,7 +400,8 @@ case class Kit(nodeParams: NodeParams,
                channelsListener: typed.ActorRef[ChannelsListener.Command],
                balanceActor: typed.ActorRef[BalanceActor.Command],
                postman: typed.ActorRef[Postman.Command],
-               wallet: OnChainWallet)
+               wallet: OnChainWallet,
+               triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command])
 
 object Kit {
 
