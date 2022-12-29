@@ -53,7 +53,6 @@ import scodec.{Attempt, DecodeResult, codecs}
 
 import java.nio.charset.StandardCharsets
 import java.util.UUID
-import scala.collection.immutable.SortedMap
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.{Failure, Success}
@@ -538,14 +537,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       Future.successful(Set.empty)
     } else {
       for {
-        channelsMap <- (appKit.router ? GetChannelsMap).mapTo[SortedMap[ShortChannelId, PublicChannel]]
+        routerData <- (appKit.router ? GetRouterData).mapTo[Router.Data]
       } yield {
-        shortChannelIds.flatMap { id =>
-          val c = channelsMap.getOrElse(id, throw new IllegalArgumentException(s"unknown channel: $id"))
-          Set(
-            ChannelDesc(c.ann.shortChannelId, c.ann.nodeId1, c.ann.nodeId2),
-            ChannelDesc(c.ann.shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
-        }
+        shortChannelIds.flatMap(scid => routerData.resolve(scid) match {
+          case Some(c) => Set(ChannelDesc(scid, c.nodeId1, c.nodeId2), ChannelDesc(scid, c.nodeId2, c.nodeId1))
+          case None => Set.empty
+        })
       }
     }
   }
