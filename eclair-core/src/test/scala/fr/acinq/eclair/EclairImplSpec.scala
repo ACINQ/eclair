@@ -344,7 +344,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.findRoute(c, 250_000 msat, None)
     val routeRequest1 = router.expectMsgType[RouteRequest]
-    assert(routeRequest1.target == c)
+    assert(routeRequest1.target.nodeId == c)
     assert(routeRequest1.ignore == Router.Ignore.empty)
 
     val unknownNodeId = randomKey().publicKey
@@ -353,7 +353,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     router.expectMsg(Router.GetRouterData)
     router.reply(routerData)
     val routeRequest2 = router.expectMsgType[RouteRequest]
-    assert(routeRequest2.target == c)
+    assert(routeRequest2.target.nodeId == c)
     assert(routeRequest2.ignore.nodes == Set(b, unknownNodeId))
     assert(routeRequest2.ignore.channels == Set(
       Router.ChannelDesc(channel1.shortChannelId, a, b),
