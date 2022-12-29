@@ -29,8 +29,6 @@ import fr.acinq.eclair.io.{PeerReadyNotifier, Switchboard}
 import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer.Command
 import fr.acinq.eclair.{BlockHeight, Logs}
 
-import scala.concurrent.duration.Duration
-
 /**
  * This actor waits for an async payment receiver to become ready to receive a payment or for a block timeout to expire.
  * If the receiver of the payment is a connected peer, spawn a PeerReadyNotifier actor.
@@ -40,6 +38,7 @@ object AsyncPaymentTriggerer {
   sealed trait Command
   case class Start(switchboard: ActorRef[Switchboard.GetPeerInfo]) extends Command
   case class Watch(replyTo: ActorRef[Result], remoteNodeId: PublicKey, paymentHash: ByteVector32, timeout: BlockHeight) extends Command
+  case class Cancel(paymentHash: ByteVector32) extends Command
   private[relay] case class NotifierStopped(remoteNodeId: PublicKey) extends Command
   private case class WrappedPeerReadyResult(result: PeerReadyNotifier.Result) extends Command
   private case class WrappedCurrentBlockHeight(currentBlockHeight: CurrentBlockHeight) extends Command
@@ -47,6 +46,7 @@ object AsyncPaymentTriggerer {
   sealed trait Result
   case object AsyncPaymentTriggered extends Result
   case object AsyncPaymentTimeout extends Result
+  case object AsyncPaymentCanceled extends Result
   // @formatter:on
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
@@ -70,12 +70,21 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
     def update(currentBlockHeight: BlockHeight): Option[PeerPayments] = {
       val expiredPayments = pendingPayments.filter(_.expired(currentBlockHeight))
       expiredPayments.foreach(e => e.replyTo ! AsyncPaymentTimeout)
-      val pendingPayments1 = pendingPayments.removedAll(expiredPayments)
-      if (pendingPayments1.isEmpty) {
+      updatePaymentsOrStop(pendingPayments.removedAll(expiredPayments))
+    }
+
+    def cancel(paymentHash: ByteVector32): Option[PeerPayments] = {
+      val canceledPayment = pendingPayments.find(_.paymentHash == paymentHash)
+      if (canceledPayment.isDefined) canceledPayment.get.replyTo ! AsyncPaymentCanceled
+      updatePaymentsOrStop(pendingPayments.removedAll(canceledPayment))
+    }
+
+    private def updatePaymentsOrStop(pendingPayments: Set[Payment]): Option[PeerPayments] = {
+      if (pendingPayments.isEmpty) {
         context.stop(notifier)
         None
       } else {
-        Some(PeerPayments(notifier, pendingPayments1))
+        Some(PeerPayments(notifier, pendingPayments))
       }
     }
 
@@ -105,6 +114,11 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
             val peer1 = PeerPayments(peer.notifier, peer.pendingPayments + Payment(replyTo, timeout, paymentHash))
             watching(peers + (remoteNodeId -> peer1))
         }
+      case Cancel(paymentHash) =>
+        val peers1 = peers.flatMap {
+          case (remoteNodeId, peer) => peer.cancel(paymentHash).map(peer1 => remoteNodeId -> peer1)
+        }
+        watching(peers1)
       case WrappedCurrentBlockHeight(CurrentBlockHeight(currentBlockHeight)) =>
         val peers1 = peers.flatMap {
           case (remoteNodeId, peer) => peer.update(currentBlockHeight).map(peer1 => remoteNodeId -> peer1)

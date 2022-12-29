@@ -53,6 +53,20 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     probe.expectNoMessage(100 millis)
   }
 
+  test("remote node does not connect before sender cancels") { f =>
+    import f._
+
+    triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
+
+    // cancel of an unwatched payment does nothing
+    triggerer ! Cancel(ByteVector32.One)
+    probe.expectNoMessage(100 millis)
+
+    triggerer ! Cancel(ByteVector32.Zeroes)
+    probe.expectMessage(AsyncPaymentCanceled)
+  }
+
   test("duplicate watches should emit only one trigger") { f =>
     import f._
 

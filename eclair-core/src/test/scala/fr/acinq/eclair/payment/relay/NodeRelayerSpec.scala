@@ -29,7 +29,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{AsyncPaymentPrototype, BasicMultiPartPayment, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
-import AsyncPaymentTriggerer.{AsyncPaymentTimeout, AsyncPaymentTriggered, Watch}
+import AsyncPaymentTriggerer.{AsyncPaymentCanceled, AsyncPaymentTimeout, AsyncPaymentTriggered, Watch}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.IncomingPaymentPacket.NodeRelayPacket
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
@@ -432,7 +432,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a trigger
 
     // fail the payment if waiting when payment sender sends cancel message
-    nodeRelayer ! NodeRelay.CancelAsyncPayment
+    nodeRelayer ! NodeRelay.WrappedPeerReadyResult(AsyncPaymentCanceled)
 
     incomingAsyncPayment.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]

@@ -55,14 +55,13 @@ object NodeRelay {
   case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
   case object Stop extends Command
   case object RelayAsyncPayment extends Command
-  case object CancelAsyncPayment extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
   private case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
   private case class WrappedPreimageReceived(preimageReceived: PreimageReceived) extends Command
   private case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
-  private case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
+  private[relay] case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
@@ -228,7 +227,7 @@ class NodeRelay private(nodeParams: NodeParams,
         context.log.warn("rejecting async payment; was not triggered before block {}", notifierTimeout)
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
         stopping()
-      case CancelAsyncPayment =>
+      case WrappedPeerReadyResult(AsyncPaymentTriggerer.AsyncPaymentCanceled) =>
         context.log.warn(s"payment sender canceled a waiting async payment")
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
         stopping()
