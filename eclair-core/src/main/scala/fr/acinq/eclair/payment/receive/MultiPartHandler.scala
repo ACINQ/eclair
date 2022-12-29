@@ -451,7 +451,7 @@ object MultiPartHandler {
   }
 
   private def validateInvoiceFeatures(add: UpdateAddHtlc, payload: FinalPayload, invoice: Invoice)(implicit log: LoggingAdapter): Boolean = {
-    if (payload.amount < payload.totalAmount && !invoice.invoiceFeatures.hasFeature(Features.BasicMultiPartPayment)) {
+    if (payload.amount < payload.totalAmount && !invoice.features.hasFeature(Features.BasicMultiPartPayment)) {
       log.warning("received multi-part payment but invoice doesn't support it for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
       false
     } else {

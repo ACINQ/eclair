@@ -171,7 +171,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val fail = sender.expectMsgType[PaymentFailed]
       assert(fail.id == id)
       assert(fail.failures.head.isInstanceOf[LocalFailure])
-      assert(fail.failures.head.asInstanceOf[LocalFailure].t == UnsupportedFeatures(invoice.invoiceFeatures))
+      assert(fail.failures.head.asInstanceOf[LocalFailure].t == UnsupportedFeatures(invoice.features))
     }
   }
 
@@ -365,7 +365,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val id = sender.expectMsgType[UUID]
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id == id)
-    assert(fail.failures == LocalFailure(finalAmount, Nil, UnsupportedFeatures(invoice.invoiceFeatures)) :: Nil)
+    assert(fail.failures == LocalFailure(finalAmount, Nil, UnsupportedFeatures(invoice.features)) :: Nil)
   }
 
   test("forward trampoline payment") { f =>

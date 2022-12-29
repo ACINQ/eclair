@@ -194,7 +194,7 @@ object Features {
     val mandatory = 6
   }
 
-  case object VariableLengthOnion extends Feature with InitFeature with NodeFeature with Bolt11Feature with Bolt12Feature {
+  case object VariableLengthOnion extends Feature with InitFeature with NodeFeature with Bolt11Feature {
     val rfcName = "var_onion_optin"
     val mandatory = 8
   }
@@ -234,7 +234,7 @@ object Features {
     val mandatory = 22
   }
 
-  case object RouteBlinding extends Feature with InitFeature with NodeFeature with Bolt11Feature with Bolt12Feature {
+  case object RouteBlinding extends Feature with InitFeature with NodeFeature with Bolt11Feature {
     val rfcName = "option_route_blinding"
     val mandatory = 24
   }

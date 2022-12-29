@@ -92,9 +92,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
 
   lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = tags.collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta }.getOrElse(DEFAULT_MIN_CLTV_EXPIRY_DELTA)
 
-  lazy val features: Features[Bolt11Feature] = tags.collectFirst { case f: InvoiceFeatures => f.features.bolt11Features() }.getOrElse(Features.empty)
-
-  override lazy val invoiceFeatures: Features[InvoiceFeature] = features.invoiceFeatures()
+  override lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeatures() }.getOrElse(Features.empty)
 
   /**
    * @return the hash of this payment invoice

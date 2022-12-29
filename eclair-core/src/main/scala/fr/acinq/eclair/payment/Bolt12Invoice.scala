@@ -23,7 +23,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.{OfferCodecs, OfferTypes, TlvStream}
-import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64}
+import fr.acinq.eclair.{Bolt12Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
@@ -47,8 +47,11 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   override val description: Either[String, ByteVector32] = Left(invoiceRequest.offer.description)
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-  val features: Features[Bolt12Feature] = records.get[InvoiceFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
-  override val invoiceFeatures: Features[InvoiceFeature] = features.invoiceFeatures()
+  override val features: Features[InvoiceFeature] = {
+    val f = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
+    // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
+    f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
+  }
   val blindedPaths: Seq[PaymentBlindedRoute] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedRoute(route, info) }
   val fallbacks: Option[Seq[FallbackAddress]] = records.get[InvoiceFallbacks].map(_.addresses)
   val signature: ByteVector64 = records.get[Signature].get.signature
@@ -59,7 +62,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
       nodeId == invoiceRequest.offer.nodeId &&
       !isExpired() &&
       request.amount.forall(_ == amount) &&
-      request.features.areSupported(features) &&
+      request.features.areSupported(features.bolt12Features()) &&
       checkSignature()
   }
 
