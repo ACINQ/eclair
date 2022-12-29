@@ -40,7 +40,6 @@ import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
-import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer.Cancel
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.ClearRecipient
 import fr.acinq.eclair.payment.send.PaymentInitiator._
@@ -165,8 +164,6 @@ trait Eclair {
   def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 
   def stop(): Future[Unit]
-
-  def cancelAsyncPayment(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Unit]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -588,11 +585,6 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     // eclair can simply and cleanly be stopped by killing its process without fear of losing data, payments, ... and it should remain this way.
     logger.info("stopping eclair")
     sys.exit(0)
-    Future.successful(())
-  }
-
-  override def cancelAsyncPayment(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Unit] = {
-    appKit.triggerer ! Cancel(paymentHash)
     Future.successful(())
   }
 }

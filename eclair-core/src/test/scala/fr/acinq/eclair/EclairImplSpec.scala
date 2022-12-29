@@ -70,7 +70,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val channelsListener = TestProbe()
     val balanceActor = TestProbe()
     val postman = TestProbe()
-    val triggerer = TestProbe()
     val kit = Kit(
       TestConstants.Alice.nodeParams,
       system,
@@ -85,8 +84,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       channelsListener.ref.toTyped,
       balanceActor.ref.toTyped,
       postman.ref.toTyped,
-      new DummyOnChainWallet(),
-      triggerer.ref.toTyped
+      new DummyOnChainWallet()
     )
     withFixture(test.toNoArgTest(FixtureParam(register, relayer, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
   }

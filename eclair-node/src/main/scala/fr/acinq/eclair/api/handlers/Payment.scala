@@ -92,12 +92,6 @@ trait Payment {
     }
   }
 
-  val cancelAsyncPayment: Route = postRequest("cancelasyncpayment") { implicit t =>
-    formFields(paymentHashFormParam) { paymentHash =>
-      complete(eclairApi.cancelAsyncPayment(paymentHash))
-    }
-  }
-
-  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ cancelAsyncPayment
+  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo
 
 }
