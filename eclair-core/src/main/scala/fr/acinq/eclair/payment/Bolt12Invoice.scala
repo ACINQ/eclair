@@ -47,7 +47,6 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   override val description: Either[String, ByteVector32] = Left(invoiceRequest.offer.description)
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-  override val minFinalCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(0)
   val features: Features[Bolt12Feature] = records.get[InvoiceFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
   override val invoiceFeatures: Features[InvoiceFeature] = features.invoiceFeatures()
   val blindedPaths: Seq[PaymentBlindedRoute] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedRoute(route, info) }

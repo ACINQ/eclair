@@ -33,7 +33,6 @@ trait Invoice {
   def paymentHash: ByteVector32
   def description: Either[String, ByteVector32]
   def relativeExpiry: FiniteDuration
-  def minFinalCltvExpiryDelta: CltvExpiryDelta
   def invoiceFeatures: Features[InvoiceFeature]
   def isExpired(now: TimestampSecond = TimestampSecond.now()): Boolean = createdAt + relativeExpiry.toSeconds <= now
   def toString: String

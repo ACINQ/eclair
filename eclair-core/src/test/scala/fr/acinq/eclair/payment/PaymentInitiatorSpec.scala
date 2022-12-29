@@ -130,7 +130,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(payment.amount == finalAmount)
     assert(payment.recipient.nodeId == invoice.nodeId)
     assert(payment.recipient.totalAmount == finalAmount)
-    assert(payment.recipient.expiry == req.invoice.minFinalCltvExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1))
+    assert(payment.recipient.expiry == invoice.minFinalCltvExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1))
     assert(payment.recipient.isInstanceOf[ClearRecipient])
     assert(payment.recipient.asInstanceOf[ClearRecipient].customTlvs == customRecords)
   }
