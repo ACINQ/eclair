@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.io.PeerReadyNotifier.NotifyWhenPeerReady
+import fr.acinq.eclair.io.PeerReadyNotifier.{NotifyWhenPeerReady, PeerUnavailable}
 import fr.acinq.eclair.io.{PeerReadyNotifier, Switchboard}
 import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer.Command
 import fr.acinq.eclair.{BlockHeight, Logs}
@@ -74,9 +74,9 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
     }
 
     def cancel(paymentHash: ByteVector32): Option[PeerPayments] = {
-      val canceledPayment = pendingPayments.find(_.paymentHash == paymentHash)
-      if (canceledPayment.isDefined) canceledPayment.get.replyTo ! AsyncPaymentCanceled
-      updatePaymentsOrStop(pendingPayments.removedAll(canceledPayment))
+      val canceledPayments = pendingPayments.filter(_.paymentHash == paymentHash)
+      canceledPayments.foreach(_.replyTo ! AsyncPaymentCanceled)
+      updatePaymentsOrStop(pendingPayments.removedAll(canceledPayments))
     }
 
     private def updatePaymentsOrStop(pendingPayments: Set[Payment]): Option[PeerPayments] = {
@@ -89,7 +89,7 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
     }
 
     def trigger(): Unit = pendingPayments.foreach(e => e.replyTo ! AsyncPaymentTriggered)
-    def timeout(): Unit = pendingPayments.foreach(e => e.replyTo ! AsyncPaymentTimeout)
+    def cancel(): Unit = pendingPayments.foreach(e => e.replyTo ! AsyncPaymentCanceled)
   }
 
   def start(): Behavior[Command] = {
@@ -102,10 +102,7 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
       case Watch(replyTo, remoteNodeId, paymentHash, timeout) =>
         peers.get(remoteNodeId) match {
           case None =>
-            val notifier = context.spawn(
-              Behaviors.supervise(PeerReadyNotifier(remoteNodeId, switchboard, None)).onFailure(SupervisorStrategy.stop),
-              s"peer-ready-notifier-$remoteNodeId",
-            )
+            val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(remoteNodeId, switchboard, timeout_opt = None)).onFailure(SupervisorStrategy.stop))
             context.watchWith(notifier, NotifierStopped(remoteNodeId))
             notifier ! NotifyWhenPeerReady(context.messageAdapter[PeerReadyNotifier.Result](WrappedPeerReadyResult))
             val peer = PeerPayments(notifier, Set(Payment(replyTo, timeout, paymentHash)))
@@ -124,16 +121,21 @@ private class AsyncPaymentTriggerer(switchboard: ActorRef[Switchboard.GetPeerInf
           case (remoteNodeId, peer) => peer.update(currentBlockHeight).map(peer1 => remoteNodeId -> peer1)
         }
         watching(peers1)
-      case WrappedPeerReadyResult(PeerReadyNotifier.PeerReady(remoteNodeId, _)) =>
-        // notify watcher that destination peer is ready to receive async payments; PeerReadyNotifier will stop itself
-        peers.get(remoteNodeId).foreach(_.trigger())
-        watching(peers - remoteNodeId)
+      case WrappedPeerReadyResult(result) => result match {
+        case PeerReadyNotifier.PeerReady(remoteNodeId, _) =>
+          // notify watcher that destination peer is ready to receive async payments; PeerReadyNotifier will stop itself
+          peers.get(remoteNodeId).foreach(_.trigger())
+          watching(peers - remoteNodeId)
+        case PeerUnavailable(_) =>
+          // only use PeerReadyNotifier to signal when the peer connects, not for timeouts
+          Behaviors.same
+      }
       case NotifierStopped(remoteNodeId) =>
         peers.get(remoteNodeId) match {
           case None => Behaviors.same
           case Some(peer) =>
             context.log.error(s"PeerReadyNotifier stopped unexpectedly while watching node $remoteNodeId.")
-            peer.timeout()
+            peer.cancel()
             watching(peers - remoteNodeId)
         }
     }

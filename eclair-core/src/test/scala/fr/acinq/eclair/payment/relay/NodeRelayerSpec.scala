@@ -370,9 +370,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(peerWatch.timeout == asyncSafetyHeight(incomingAsyncPayment, nodeParams))
     peerWatch.replyTo ! AsyncPaymentTriggered
 
-    // send trigger to forward the payment
-    nodeRelayer ! NodeRelay.RelayAsyncPayment
-
     // upstream payment relayed
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingAsyncPayment.map(_.add)))

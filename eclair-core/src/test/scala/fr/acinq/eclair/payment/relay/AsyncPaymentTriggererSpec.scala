@@ -92,6 +92,21 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     probe2.expectMessage(AsyncPaymentTimeout)
   }
 
+  test("all payments with the same payment hash should be canceled") { f =>
+    import f._
+
+    // create watches for two payments with the same payment hash
+    val probe2 = TestProbe[Result]()
+    triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
+    triggerer ! Watch(probe2.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+
+    // each payment gets a cancel message when we cancel the payment hash
+    triggerer ! Cancel(paymentHash = ByteVector32.Zeroes)
+    probe.expectMessage(AsyncPaymentCanceled)
+    probe2.expectMessage(AsyncPaymentCanceled)
+  }
+
   test("remote node connects before timeout") { f =>
     import f._
 
@@ -171,12 +186,12 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     probe2.expectMessage(AsyncPaymentTriggered)
   }
 
-  test("triggerer treats an unexpected stop of the notifier as a timeout") { f =>
+  test("triggerer treats an unexpected stop of the notifier as a cancel") { f =>
     import f._
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
 
     triggerer ! NotifierStopped(remoteNodeId)
-    probe.expectMessage(AsyncPaymentTimeout)
+    probe.expectMessage(AsyncPaymentCanceled)
   }
 }

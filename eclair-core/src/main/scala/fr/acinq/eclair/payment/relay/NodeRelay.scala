@@ -54,7 +54,6 @@ object NodeRelay {
   sealed trait Command
   case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
   case object Stop extends Command
-  case object RelayAsyncPayment extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
   private case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
