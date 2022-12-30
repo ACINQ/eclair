@@ -133,6 +133,7 @@ object OfferTypes {
 
   /**
    * A public key for which the sender know the corresponding private key.
+   * This can be used to prove that you are the sender.
    */
   case class InvoiceRequestPayerId(publicKey: PublicKey) extends InvoiceRequestTlv
 
