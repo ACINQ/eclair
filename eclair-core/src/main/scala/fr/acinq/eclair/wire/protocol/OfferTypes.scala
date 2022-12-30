@@ -312,7 +312,7 @@ object OfferTypes {
         offer.chains.contains(chain) &&
         offer.quantityMax.forall(max => quantity_opt.nonEmpty && quantity <= max) &&
         quantity_opt.forall(_ => offer.quantityMax.nonEmpty) &&
-        offer.features.areSupported(features) &&
+        Features.areCompatible(offer.features, features) &&
         checkSignature()
     }
 

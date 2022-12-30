@@ -62,7 +62,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
       nodeId == invoiceRequest.offer.nodeId &&
       !isExpired() &&
       request.amount.forall(_ == amount) &&
-      request.features.areSupported(features.bolt12Features()) &&
+      Features.areCompatible(request.features, features.bolt12Features()) &&
       checkSignature()
   }
 

@@ -90,13 +90,13 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("check that invoice request matches offer (with features)") {
-    val offer = Offer(Some(2500 msat), "offer with features", randomKey().publicKey, Features(VariableLengthOnion -> Optional), Block.LivenetGenesisBlock.hash)
+    val offer = Offer(Some(2500 msat), "offer with features", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
-    val request = InvoiceRequest(offer, 2500 msat, 1, Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Optional), payerKey, Block.LivenetGenesisBlock.hash)
+    val request = InvoiceRequest(offer, 2500 msat, 1, Features(BasicMultiPartPayment -> Optional), payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValidFor(offer))
     val withoutFeatures = InvoiceRequest(offer, 2500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(withoutFeatures.isValidFor(offer))
-    val otherFeatures = InvoiceRequest(offer, 2500 msat, 1, Features(VariableLengthOnion -> Mandatory, BasicMultiPartPayment -> Mandatory), payerKey, Block.LivenetGenesisBlock.hash)
+    val otherFeatures = InvoiceRequest(offer, 2500 msat, 1, Features(BasicMultiPartPayment -> Mandatory), payerKey, Block.LivenetGenesisBlock.hash)
     assert(!otherFeatures.isValidFor(offer))
   }
 

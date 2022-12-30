@@ -361,7 +361,7 @@ object MultiPartHandler {
                     })
                   }
                 })).map(paths => {
-                  val invoiceFeatures = nodeParams.features.bolt12Features().remove(Features.RouteBlinding).add(Features.RouteBlinding, FeatureSupport.Mandatory)
+                  val invoiceFeatures = nodeParams.features.bolt12Features()
                   val invoice = Bolt12Invoice(r.invoiceRequest, paymentPreimage, r.nodeKey, nodeParams.invoiceExpiry, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) })
                   log.debug("generated invoice={} for offer={}", invoice.toString, r.invoiceRequest.offer.toString)
                   nodeParams.db.payments.addIncomingBlindedPayment(invoice, paymentPreimage, paths.map { case (blindedRoute, _, pathId) => blindedRoute.lastBlinding -> pathId.bytes }.toMap, r.paymentType)

@@ -26,6 +26,7 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -264,15 +265,13 @@ object BaseRouterSpec {
                              pathId: ByteVector = randomBytes(32)): (Bolt12Invoice, BlindedRecipient) = {
     val recipientKey = randomKey()
     val features = Features[Bolt12Feature](
-      Features.VariableLengthOnion -> FeatureSupport.Mandatory,
       Features.BasicMultiPartPayment -> FeatureSupport.Optional,
-      Features.RouteBlinding -> FeatureSupport.Mandatory
     )
     val offer = Offer(None, "Bolt12 r0cks", recipientKey.publicKey, features, Block.RegtestGenesisBlock.hash)
     val invoiceRequest = InvoiceRequest(offer, amount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
     val blindedRoutes = paths.map(hops => {
       val blindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(hops, pathId, 1 msat, routeExpiry).route
-      val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops, CltvExpiryDelta(100))
+      val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops, Channel.MIN_CLTV_EXPIRY_DELTA)
       PaymentBlindedRoute(blindedRoute, paymentInfo)
     })
     val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, 300 seconds, features, blindedRoutes)
