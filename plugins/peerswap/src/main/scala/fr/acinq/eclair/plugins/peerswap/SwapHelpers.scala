@@ -23,6 +23,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, Transaction}
+import fr.acinq.eclair.Features.RouteBlinding
 import fr.acinq.eclair.MilliSatoshi.toMilliSatoshi
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
@@ -157,9 +158,10 @@ private object SwapHelpers {
   def createInvoice(nodeParams: NodeParams, amount: Satoshi, description: String)(implicit context: ActorContext[SwapCommand]): Try[Bolt11Invoice] =
     Try {
       val paymentPreimage = randomBytes32()
+      val invoiceFeatures = nodeParams.features.invoiceFeatures().remove(RouteBlinding)
       val invoice: Bolt11Invoice = Bolt11Invoice(nodeParams.chainHash, Some(toMilliSatoshi(amount)), Crypto.sha256(paymentPreimage), nodeParams.privateKey, Left(description),
         nodeParams.channelConf.minFinalExpiryDelta, fallbackAddress = None, expirySeconds = Some(nodeParams.invoiceExpiry.toSeconds),
-        extraHops = Nil, timestamp = TimestampSecond.now(), paymentSecret = paymentPreimage, paymentMetadata = None, features = nodeParams.features.invoiceFeatures())
+        extraHops = Nil, timestamp = TimestampSecond.now(), paymentSecret = paymentPreimage, paymentMetadata = None, features = invoiceFeatures)
       context.log.debug("generated invoice={} from amount={} sat, description={}", invoice.toString, amount, description)
       nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, PaymentType.Standard)
       invoice
