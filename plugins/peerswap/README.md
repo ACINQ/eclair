@@ -30,5 +30,16 @@ eclair-node-<version>/bin/eclair-node.sh <path-to-plugin-jar>/peerswap-plugin-<v
 eclair-cli swapin --shortChannelId=<short-channel-id>> --amountSat=<amount>
 eclair-cli swapout --shortChannelId=<short-channel-id>> --amountSat=<amount>
 eclair-cli listswaps
+eclair-cli swaphistory
 eclair-cli cancelswap --swapId=<swap-id>
 ```
+
+## Persistence
+
+This plugin stores its data into a sqlite database named `peer-swap.sqlite`.
+It uses that database to ensure swaps are correctly executed even after a restart of the node.
+You can check the status of pending swap by reading directly from that database or using the command `listwaps`.
+
+## Seed
+
+The seed used to generate keys for swaps is stored in the `swap_seed.dat` file. This seed should be backed up and always kept secret.
