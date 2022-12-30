@@ -112,7 +112,7 @@ object OfferTypes {
   case class InvoiceRequestMetadata(data: ByteVector) extends InvoiceRequestTlv
 
   /**
-   * If `OfferChains` is present, this specifies which chain is going to be use to pay.
+   * If `OfferChains` is present, this specifies which chain is going to be used to pay.
    */
   case class InvoiceRequestChain(hash: ByteVector32) extends InvoiceRequestTlv
 
