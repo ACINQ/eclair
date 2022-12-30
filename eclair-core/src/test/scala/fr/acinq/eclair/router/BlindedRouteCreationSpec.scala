@@ -82,7 +82,7 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
       })
       for (_ <- 0 to 100) {
         val amount = rand.nextLong(10_000_000_000L).msat
-        val payInfo = aggregatePaymentInfo(amount, hops)
+        val payInfo = aggregatePaymentInfo(amount, hops, CltvExpiryDelta(0))
         assert(payInfo.cltvExpiryDelta == CltvExpiryDelta(hops.map(_.cltvExpiryDelta.toInt).sum))
         // We verify that the aggregated fee slightly exceeds the actual fee (because of proportional fees rounding).
         val aggregatedFee = payInfo.fee(amount)

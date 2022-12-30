@@ -349,14 +349,14 @@ object MultiPartHandler {
                     } else {
                       createBlindedRouteFromHops(dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                     }
-                    val paymentInfo = aggregatePaymentInfo(r.amount, dummyHops)
+                    val paymentInfo = aggregatePaymentInfo(r.amount, dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
                     Future.successful((blindedRoute, paymentInfo, pathId))
                   } else {
                     implicit val timeout: Timeout = 10.seconds
                     r.router.ask(Router.FinalizeRoute(Router.PredefinedNodeRoute(r.amount, route.nodes))).mapTo[Router.RouteResponse].map(routeResponse => {
                       val clearRoute = routeResponse.routes.head
                       val blindedRoute = createBlindedRouteFromHops(clearRoute.hops ++ dummyHops, pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
-                      val paymentInfo = aggregatePaymentInfo(r.amount, clearRoute.hops ++ dummyHops)
+                      val paymentInfo = aggregatePaymentInfo(r.amount, clearRoute.hops ++ dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
                       (blindedRoute, paymentInfo, pathId)
                     })
                   }

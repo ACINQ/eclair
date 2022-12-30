@@ -308,13 +308,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.blindedPaths.length == 3)
     assert(invoice.blindedPaths(0).route.blindedNodeIds.length == 4)
     assert(invoice.blindedPaths(0).route.introductionNodeId == a)
-    assert(invoice.blindedPaths(0).paymentInfo == PaymentInfo(1950 msat, 0, CltvExpiryDelta(175), 1 msat, 25_000 msat, Features.empty))
+    assert(invoice.blindedPaths(0).paymentInfo == PaymentInfo(1950 msat, 0, CltvExpiryDelta(193), 1 msat, 25_000 msat, Features.empty))
     assert(invoice.blindedPaths(1).route.blindedNodeIds.length == 4)
     assert(invoice.blindedPaths(1).route.introductionNodeId == c)
-    assert(invoice.blindedPaths(1).paymentInfo == PaymentInfo(400 msat, 0, CltvExpiryDelta(165), 1 msat, 25_000 msat, Features.empty))
+    assert(invoice.blindedPaths(1).paymentInfo == PaymentInfo(400 msat, 0, CltvExpiryDelta(183), 1 msat, 25_000 msat, Features.empty))
     assert(invoice.blindedPaths(2).route.blindedNodeIds.length == 1)
     assert(invoice.blindedPaths(2).route.introductionNodeId == d)
-    assert(invoice.blindedPaths(2).paymentInfo == PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 25_000 msat, Features.empty))
+    assert(invoice.blindedPaths(2).paymentInfo == PaymentInfo(0 msat, 0, CltvExpiryDelta(18), 0 msat, 25_000 msat, Features.empty))
 
     val pendingPayment = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment]
     assert(pendingPayment.invoice.toString == invoice.toString)

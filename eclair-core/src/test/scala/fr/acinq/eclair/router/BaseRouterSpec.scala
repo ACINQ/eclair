@@ -272,7 +272,7 @@ object BaseRouterSpec {
     val invoiceRequest = InvoiceRequest(offer, amount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
     val blindedRoutes = paths.map(hops => {
       val blindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(hops, pathId, 1 msat, routeExpiry).route
-      val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops)
+      val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops, CltvExpiryDelta(100))
       PaymentBlindedRoute(blindedRoute, paymentInfo)
     })
     val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, 300 seconds, features, blindedRoutes)
