@@ -45,6 +45,12 @@ To run tests for a specific class, run:
 mvn test -Dsuites=*<TestClassName>
 ```
 
+To run tests using a specific number of threads, run:
+
+```shell
+mvn -T <thread_count> test
+```
+
 To run tests with a specific version of `bitcoind`, run:
 
 ```shell

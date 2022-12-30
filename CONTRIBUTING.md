@@ -134,10 +134,6 @@ Further paragraphs come after blank lines.
 We try to minimize our dependencies (libraries and tools). Introducing new dependencies increases
 package size, attack surface and cognitive overhead.
 
-Since Eclair is [running on Android](https://github.com/acinq/eclair-mobile), we have a requirement
-to be compatible with Java 7. This currently restricts the set of dependencies we can add and the
-language features we use.
-
 If your contribution is adding a new dependency, please detail:
 
 - why you need it
@@ -149,7 +145,7 @@ dependency may be required.
 
 ### Testing
 
-Your code should be tested. We use ScalaTest as a testing framework.
+Your code should be tested. We use [ScalaTest](https://www.scalatest.org/) as a testing framework.
 
 ScalaTest's approach is to parallelize on test suites rather than individual tests, therefore it is
 recommended to keep the execution time of each test suite under one minute and split tests across

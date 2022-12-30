@@ -6,7 +6,8 @@
 
 **Eclair** (French for Lightning) is a Scala implementation of the Lightning Network.
 
-This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightning/bolts). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning), [lnd](https://github.com/LightningNetwork/lnd), [electrum](https://github.com/spesmilo/electrum/), and [rust-lightning](https://github.com/rust-bitcoin/rust-lightning).
+This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightning/bolts).
+Other implementations include [core lightning](https://github.com/ElementsProject/lightning), [lnd](https://github.com/LightningNetwork/lnd), [electrum](https://github.com/spesmilo/electrum/), and [ldk](https://github.com/lightningdevkit/rust-lightning).
 
 ---
 
@@ -242,15 +243,10 @@ A valid plugin is a jar that contains an implementation of the [Plugin](eclair-n
 Here is how to run Eclair with plugins:
 
 ```shell
-eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar> <...>
+eclair-node-<version>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar> <...>
 ```
 
-### Non-exhaustive plugins list
-
-Here are some plugins created by the Eclair community.
-If you need support for these plugins, head over to their respective github repository.
-
-* [Telegram Bot for Eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
+You can find more details about plugins in the [eclair-plugins](https://github.com/ACINQ/eclair-plugins) repository.
 
 ## Testnet usage
 

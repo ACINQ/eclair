@@ -64,6 +64,7 @@ and COMMAND is one of the available commands:
     - listinvoices
     - listpendinginvoices
     - parseinvoice
+    - deleteinvoice
 
   === Payment ===
     - usablebalances
@@ -76,12 +77,14 @@ and COMMAND is one of the available commands:
   === Message ===
     - signmessage
     - verifymessage
+    - sendonionmessage
 
   === OnChain ===
     - getnewaddress
     - sendonchain
     - onchainbalance
     - onchaintransactions
+    - globalbalance
 
 Examples
 --------
