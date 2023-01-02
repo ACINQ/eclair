@@ -106,10 +106,6 @@
     "remoteNextHtlcId" : 0,
     "originChannels" : { },
     "remoteNextCommitInfo" : "03fd10fe44564e2d7e1550099785c2c1bad32a5ae0feeef6e27f0c108d18b4931d",
-    "commitInput" : {
-      "outPoint" : "1bade1718aaf98ab1f91a97ed5b34ab47bfb78085e384f67c156793544f68659:0",
-      "amountSatoshis" : 15000000
-    },
     "fundingTxStatus" : {
       "type" : "unknown"
     },

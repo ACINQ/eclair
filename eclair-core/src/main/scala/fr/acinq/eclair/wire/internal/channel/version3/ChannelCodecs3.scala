@@ -271,7 +271,7 @@ private[channel] object ChannelCodecs3 {
             ("remoteNextHtlcId" | uint64overflow) ::
             ("originChannels" | originsMapCodec) ::
             ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
-            ("commitInput" | inputInfoCodec) ::
+            ("commitInput" | inputInfoCodec.map(_ => ()).decodeOnly) ::
             ("fundingTxStatus" | provide(UnknownFundingTx).upcast[FundingTxStatus]) ::
             ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
         })).as[Commitments].decodeOnly
@@ -331,7 +331,6 @@ private[channel] object ChannelCodecs3 {
             ("remoteNextHtlcId" | uint64overflow) ::
             ("originChannels" | originsMapCodec) ::
             ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
-            ("commitInput" | inputInfoCodec) ::
             ("fundingTxStatus" | fundingTxStatusCodec) ::
             ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
         })).as[Commitments]

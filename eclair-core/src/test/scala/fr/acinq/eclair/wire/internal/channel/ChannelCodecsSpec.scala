@@ -327,7 +327,6 @@ object ChannelCodecsSpec {
       remoteNextHtlcId = 4L,
       originChannels = origins,
       remoteNextCommitInfo = Right(randomKey().publicKey),
-      commitInput = commitmentInput,
       fundingTxStatus = UnknownFundingTx,
       remotePerCommitmentSecrets = ShaChain.init)
 

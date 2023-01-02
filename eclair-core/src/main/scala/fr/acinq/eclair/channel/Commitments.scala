@@ -81,7 +81,6 @@ case class Commitments(channelId: ByteVector32,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
-                       commitInput: InputInfo,
                        fundingTxStatus: FundingTxStatus,
                        remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
 
@@ -203,6 +202,8 @@ case class Commitments(channelId: ByteVector32,
     require(Transactions.checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
     commitTx
   }
+
+  val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
 
   val fundingTxId: ByteVector32 = commitInput.outPoint.txid
 
