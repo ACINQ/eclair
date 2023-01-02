@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi}
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
-import fr.acinq.eclair.{Alias, FeatureSupport, Features, MilliSatoshi, UInt64}
+import fr.acinq.eclair.{Alias, BlockHeight, FeatureSupport, Features, MilliSatoshi, UInt64}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -85,9 +85,14 @@ object OpenDualFundedChannelTlv {
 
   import ChannelTlv._
 
+  case class RequestFundsTlv(amount: Satoshi, startHeight: BlockHeight) extends OpenDualFundedChannelTlv
+
+  private val requestFundsCodec: Codec[RequestFundsTlv] = tlvField(satoshi :: blockHeight)
+
   val openTlvCodec: Codec[TlvStream[OpenDualFundedChannelTlv]] = tlvStream(discriminated[OpenDualFundedChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(1337), requestFundsCodec)
     .typecase(UInt64(0x40000001), requireConfirmedInputsCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )
@@ -98,9 +103,14 @@ object AcceptDualFundedChannelTlv {
 
   import ChannelTlv._
 
+  case class WillFundTlv(sig: ByteVector64, leaseRates: LiquidityAds.LeaseRates) extends AcceptDualFundedChannelTlv
+
+  private val willFundCodec: Codec[WillFundTlv] = tlvField(bytes64 :: LiquidityAds.leaseRatesCodec)
+
   val acceptTlvCodec: Codec[TlvStream[AcceptDualFundedChannelTlv]] = tlvStream(discriminated[AcceptDualFundedChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(1337), willFundCodec)
     .typecase(UInt64(0x40000001), requireConfirmedInputsCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )

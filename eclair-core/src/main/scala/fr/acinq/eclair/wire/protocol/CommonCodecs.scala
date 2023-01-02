@@ -67,9 +67,10 @@ object CommonCodecs {
   val cltvExpiry: Codec[CltvExpiry] = blockHeight.as[CltvExpiry]
   val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)(_.toInt)
 
-  // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs
-  // this codec will fail if the amount does not fit on 32 bits
-  val millisatoshi32: Codec[MilliSatoshi] = uint32.xmapc(l => MilliSatoshi(l))(_.toLong)
+  // this is needed because some amount are encoded using 32 bits in the BOLTs
+  // these codecs will fail if the amount does not fit in 32 bits
+  val millisatoshi32: Codec[MilliSatoshi] = uint32.as[MilliSatoshi]
+  val satoshi32: Codec[Satoshi] = uint32.as[Satoshi]
 
   val timestampSecond: Codec[TimestampSecond] = uint32.xmapc(TimestampSecond(_))(_.toLong)
 

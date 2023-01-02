@@ -26,8 +26,12 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.wire.protocol.AcceptDualFundedChannelTlv.WillFundTlv
 import fr.acinq.eclair.wire.protocol.ChannelTlv.{ChannelTypeTlv, PushAmountTlv, RequireConfirmedInputsTlv, UpfrontShutdownScriptTlv}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
+import fr.acinq.eclair.wire.protocol.LiquidityAds.LeaseRates
+import fr.acinq.eclair.wire.protocol.NodeAnnouncementTlv.LiquidityAdsTlv
+import fr.acinq.eclair.wire.protocol.OpenDualFundedChannelTlv.RequestFundsTlv
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
 import fr.acinq.eclair.wire.protocol.TxRbfTlv.SharedOutputContributionTlv
 import org.json4s.jackson.Serialization
@@ -273,7 +277,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))) -> (defaultEncoded ++ hex"0103401000"),
       defaultOpen.copy(tlvStream = TlvStream(UpfrontShutdownScriptTlv(hex"00143adb2d0445c4d491cc7568b10323bd6615a91283"), ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))) -> (defaultEncoded ++ hex"001600143adb2d0445c4d491cc7568b10323bd6615a91283 0103401000"),
       defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), PushAmountTlv(1105 msat))) -> (defaultEncoded ++ hex"0103401000 fe47000007020451"),
-      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"0103401000 fe4000000100")
+      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"0103401000 fe4000000100"),
+      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), RequestFundsTlv(50_000 sat, BlockHeight(500_000)))) -> (defaultEncoded ++ hex"0103401000 fd05390c000000000000c3500007a120")
     )
     testCases.foreach { case (open, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
@@ -330,7 +335,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultAccept -> defaultEncoded,
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()))) -> (defaultEncoded ++ hex"01021000"),
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), PushAmountTlv(1729 msat))) -> (defaultEncoded ++ hex"0103401000 fe470000070206c1"),
-      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 fe4000000100")
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 fe4000000100"),
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), WillFundTlv(ByteVector64.Zeroes, LeaseRates(750, 150, 100, 250 sat, 5 msat)))) -> (defaultEncoded ++ hex"0103401000 fd05394b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002ee00960064000000fa05"),
     )
     testCases.foreach { case (accept, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
@@ -356,6 +362,23 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       assert(decoded == expected)
       val reEncoded = closingSignedCodec.encode(decoded).require.bytes
       assert(reEncoded == encoded)
+    }
+  }
+
+  test("encode/decode node announcement") {
+    val color = Color(100, 125, 75)
+    val sig = ByteVector64(hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101")
+    val testCases = Seq(
+      NodeAnnouncement(sig, Features.empty, 0 unixsec, publicKey(1), color, "alice", Nil) -> hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 0000 00000000 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 647d4b 616c696365000000000000000000000000000000000000000000000000000000 0000",
+      NodeAnnouncement(sig, Features.empty, 0 unixsec, publicKey(1), color, "alice", Nil, TlvStream(LiquidityAdsTlv(LeaseRates(2000, 50, 600, 0 sat, 0 msat)))) -> hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 0000 00000000 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 647d4b 616c696365000000000000000000000000000000000000000000000000000000 0000 fd05390a07d00032025800000000",
+      NodeAnnouncement(sig, Features.empty, 0 unixsec, publicKey(1), color, "alice", Nil, TlvStream(LiquidityAdsTlv(LeaseRates(2000, 10, 600, 25_000 sat, 100_000 msat)))) -> hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 0000 00000000 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 647d4b 616c696365000000000000000000000000000000000000000000000000000000 0000 fd05390d07d0000a0258000061a80186a0",
+    )
+
+    testCases.foreach { case (ann, bin) =>
+      val decoded = nodeAnnouncementCodec.decode(bin.bits).require.value
+      assert(decoded == ann)
+      val encoded = nodeAnnouncementCodec.encode(ann).require.bytes
+      assert(encoded == bin)
     }
   }
 
@@ -437,10 +460,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
-  case class TestItem(msg: Any, hex: String)
-
   test("test vectors for extended channel queries ") {
-
     val refs = Map(
       QueryChannelRange(Block.RegtestGenesisBlock.blockId, BlockHeight(100000), 1500, TlvStream.empty) ->
         hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000186a0000005dc",
@@ -475,60 +495,10 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001801789c63600001f30a30c5b0cd144cb92e3b020017c6034a010c01789c6364620100000e0008"
     )
 
-    val items = refs.map { case (obj, refbin) =>
+    refs.foreach { case (obj, refbin) =>
       val bin = lightningMessageCodec.encode(obj).require
       assert(refbin.bits == bin)
-      TestItem(obj, bin.toHex)
     }
-
-    // NB: uncomment this to update the test vectors
-
-    /*class EncodingTypeSerializer extends CustomSerializer[EncodingType](format => ( {
-      null
-    }, {
-      case EncodingType.UNCOMPRESSED => JString("UNCOMPRESSED")
-      case EncodingType.COMPRESSED_ZLIB => JString("COMPRESSED_ZLIB")
-    }))
-
-    class ExtendedQueryFlagsSerializer extends CustomSerializer[QueryChannelRangeTlv.QueryFlags](format => ( {
-      null
-    }, {
-      case QueryChannelRangeTlv.QueryFlags(flag) =>
-        JString(((if (QueryChannelRangeTlv.QueryFlags.wantTimestamps(flag)) List("WANT_TIMESTAMPS") else List()) ::: (if (QueryChannelRangeTlv.QueryFlags.wantChecksums(flag)) List("WANT_CHECKSUMS") else List())) mkString (" | "))
-    }))
-
-    implicit val formats = org.json4s.DefaultFormats.withTypeHintFieldName("type") +
-      new EncodingTypeSerializer +
-      new ExtendedQueryFlagsSerializer +
-      new ByteVectorSerializer +
-      new ByteVector32Serializer +
-      new UInt64Serializer +
-      new MilliSatoshiSerializer +
-      new ShortChannelIdSerializer +
-      new StateSerializer +
-      new ShaChainSerializer +
-      new PublicKeySerializer +
-      new PrivateKeySerializer +
-      new TransactionSerializer +
-      new TransactionWithInputInfoSerializer +
-      new InetSocketAddressSerializer +
-      new OutPointSerializer +
-      new OutPointKeySerializer +
-      new InputInfoSerializer +
-      new ColorSerializer +
-      new RouteResponseSerializer +
-      new ThrowableSerializer +
-      new FailureMessageSerializer +
-      new NodeAddressSerializer +
-      new DirectionSerializer +
-      new InvoiceSerializer +
-      ShortTypeHints(List(
-        classOf[QueryChannelRange],
-        classOf[ReplyChannelRange],
-        classOf[QueryShortChannelIds]))
-
-    val json = Serialization.writePretty(items)
-    println(json)*/
   }
 
   test("decode channel_update with htlc_maximum_msat") {
