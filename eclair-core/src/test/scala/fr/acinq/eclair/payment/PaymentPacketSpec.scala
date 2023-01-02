@@ -205,7 +205,6 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_e.amount == finalAmount)
     assert(payload_e.totalAmount == finalAmount)
     assert(add_e.cltvExpiry == finalExpiry)
-    assert(payload_e.expiry == finalExpiry)
     assert(payload_e.isInstanceOf[FinalPayload.Blinded])
     assert(payload_e.asInstanceOf[FinalPayload.Blinded].pathId == hex"deadbeef")
   }
