@@ -48,10 +48,10 @@ object Helpers {
   /**
    * We update local/global features at reconnection
    */
-  def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData = {
-    val commitments1 = data.commitments.copy(
-      localParams = data.commitments.localParams.copy(initFeatures = localInit.features),
-      remoteParams = data.commitments.remoteParams.copy(initFeatures = remoteInit.features))
+  def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData =
+    updateCommitments(data, data.commitments.updateFeatures(localInit, remoteInit))
+
+  def updateCommitments(data: PersistentChannelData, commitments1: Commitments): PersistentChannelData = {
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
       case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
@@ -693,7 +693,7 @@ object Helpers {
         val allowAnySegwit = Features.canUseFeature(commitments.localParams.initFeatures, commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
         require(isValidFinalScriptPubkey(actualLocalScript, allowAnySegwit), "invalid localScriptPubkey")
         require(isValidFinalScriptPubkey(actualRemoteScript, allowAnySegwit), "invalid remoteScriptPubkey")
-        log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, Commitments.specs2String(commitments))
+        log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, commitments.specs2String)
         val dustLimit = localParams.dustLimit.max(remoteParams.dustLimit)
         val closingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isInitiator, dustLimit, closingFees.preferred, localCommit.spec)
         val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
