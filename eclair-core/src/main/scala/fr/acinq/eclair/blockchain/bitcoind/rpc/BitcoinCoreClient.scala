@@ -325,6 +325,17 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     rpcClient.invoke("abandontransaction", txId).map(_ => true).recover(_ => false)
   }
 
+  /** List all outpoints that are currently locked. */
+  def listLockedOutpoints()(implicit ec: ExecutionContext): Future[Set[OutPoint]] = {
+    rpcClient.invoke("listlockunspent").collect {
+      case JArray(locks) => locks.map(item => {
+        val JString(txid) = item \ "txid"
+        val JInt(vout) = item \ "vout"
+        OutPoint(ByteVector32.fromValidHex(txid).reverse, vout.toInt)
+      }).toSet
+    }
+  }
+
   /**
    * @param outPoints outpoints to unlock.
    * @return true if all outpoints were successfully unlocked, false otherwise.
@@ -340,7 +351,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
           case Success(JBool(result)) => Future.successful(result)
           case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
             Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
-          case Failure(t) =>
+          case Failure(_) =>
             Future.successful(false)
         })
     val future = Future.sequence(futures)

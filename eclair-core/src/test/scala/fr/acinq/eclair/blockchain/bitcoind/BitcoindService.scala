@@ -20,7 +20,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, Satoshi, Transaction, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
@@ -203,17 +203,6 @@ trait BitcoindService extends Logging {
     rpcClient.invoke("getrawtransaction", txid).pipeTo(sender.ref)
     val JString(rawTx) = sender.expectMsgType[JString]
     Transaction.read(rawTx)
-  }
-
-  /** Get locked utxos. */
-  def getLocks(sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): Set[OutPoint] = {
-    rpcClient.invoke("listlockunspent").pipeTo(sender.ref)
-    val JArray(locks) = sender.expectMsgType[JValue]
-    locks.map(item => {
-      val JString(txid) = item \ "txid"
-      val JInt(vout) = item \ "vout"
-      OutPoint(ByteVector32.fromValidHex(txid).reverse, vout.toInt)
-    }).toSet
   }
 
 }

@@ -14,7 +14,15 @@
 
 ### Miscellaneous improvements and bug fixes
 
-<insert changes>
+#### Strategies to handle locked utxos at start-up (#2278)
+
+If some utxos are locked when eclair starts, it is likely because eclair was previously stopped in the middle of funding a transaction.
+While this doesn't create any risk of loss of funds, these utxos will stay locked for no good reason and won't be used to fund future transactions.
+Eclair offers three strategies to handle that scenario, that node operators can configure by setting `eclair.bitcoind.startup-locked-utxos-behavior` in their `eclair.conf`:
+
+- `stop`: eclair won't start until the corresponding utxos are unlocked by the node operator
+- `unlock`: eclair will automatically unlock the corresponding utxos
+- `ignore`: eclair will leave these utxos locked and start
 
 ## Verifying signatures
 
