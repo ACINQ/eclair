@@ -444,10 +444,16 @@ object MultiPartHandler {
     val minExpiry = nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
     if (add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
-      false
-    } else {
-      true
+      return false
     }
+    if (payload.isInstanceOf[FinalPayload.Blinded]) {
+      val expectedExpiry = payload.expiry + nodeParams.channelConf.minFinalExpiryDelta
+      if (add.cltvExpiry < expectedExpiry) {
+        log.warning("received blinded payment with unexpected expiry for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
+        return false
+      }
+    }
+    true
   }
 
   private def validateInvoiceFeatures(add: UpdateAddHtlc, payload: FinalPayload, invoice: Invoice)(implicit log: LoggingAdapter): Boolean = {

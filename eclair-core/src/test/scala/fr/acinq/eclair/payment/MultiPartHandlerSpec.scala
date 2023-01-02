@@ -95,9 +95,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
   }
 
-  def createBlindedPacket(amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, pathId: ByteVector, blinding_opt: Option[PublicKey]): IncomingPaymentPacket.FinalPacket = {
+  def createBlindedPacket(amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, finalExpiry: CltvExpiry, pathId: ByteVector, blinding_opt: Option[PublicKey]): IncomingPaymentPacket.FinalPacket = {
     val add = UpdateAddHtlc(ByteVector32.One, 0, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, blinding_opt)
-    val payload = FinalPayload.Blinded(TlvStream(AmountToForward(amount), TotalAmount(amount), OutgoingCltv(expiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
+    val payload = FinalPayload.Blinded(TlvStream(AmountToForward(amount), TotalAmount(amount), OutgoingCltv(finalExpiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
     IncomingPaymentPacket.FinalPacket(add, payload)
   }
 
@@ -173,7 +173,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val pendingPayment = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment]
       assert(pendingPayment.status == IncomingPaymentStatus.Pending)
 
-      val finalPacket = createBlindedPacket(amountMsat, invoice.paymentHash, defaultExpiry, pendingPayment.pathIds.values.head, pendingPayment.pathIds.keys.headOption)
+      val finalPacket = createBlindedPacket(amountMsat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pendingPayment.pathIds.values.head, pendingPayment.pathIds.keys.headOption)
       sender.send(handlerWithRouteBlinding, finalPacket)
       assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == finalPacket.add.id)
 
@@ -491,7 +491,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(!invoice.features.hasFeature(RouteBlinding))
 
-    val packet = createBlindedPacket(1000 msat, invoice.paymentHash, defaultExpiry, hex"deadbeef", Some(randomKey().publicKey))
+    val packet = createBlindedPacket(1000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), hex"deadbeef", Some(randomKey().publicKey))
     sender.send(handlerWithRouteBlinding, packet)
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
@@ -527,7 +527,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
     assert(pathIds.size == 1)
 
-    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, pathIds.values.head, Some(pathIds.keys.head))
+    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pathIds.values.head, Some(pathIds.keys.head))
     sender.send(handlerWithRouteBlinding, packet)
     register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status.isInstanceOf[IncomingPaymentStatus.Received])
@@ -546,7 +546,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(pathIds.size == 1)
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 5000 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
-    val payload = FinalPayload.Blinded(TlvStream(BlindingPoint(pathIds.keys.head), AmountToForward(5000 msat), TotalAmount(5000 msat), OutgoingCltv(defaultExpiry), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathIds.values.head), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
+    val payload = FinalPayload.Blinded(TlvStream(BlindingPoint(pathIds.keys.head), AmountToForward(5000 msat), TotalAmount(5000 msat), OutgoingCltv(CltvExpiry(nodeParams.currentBlockHeight)), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathIds.values.head), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
     val packet = IncomingPaymentPacket.FinalPacket(add, payload)
     sender.send(handlerWithRouteBlinding, packet)
     register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message
@@ -565,7 +565,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
     assert(pathIds.size == 1)
 
-    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, pathIds.values.head, None)
+    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pathIds.values.head, None)
     sender.send(handlerWithRouteBlinding, packet)
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(5000 msat, nodeParams.currentBlockHeight)))
@@ -584,7 +584,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
     assert(pathIds.size == 1)
 
-    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, pathIds.values.head, Some(randomKey().publicKey))
+    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pathIds.values.head, Some(randomKey().publicKey))
     sender.send(handlerWithRouteBlinding, packet)
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(5000 msat, nodeParams.currentBlockHeight)))
@@ -603,7 +603,26 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
     assert(pathIds.size == 1)
 
-    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, hex"deadbeef", pathIds.keys.headOption)
+    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), hex"deadbeef", pathIds.keys.headOption)
+    sender.send(handlerWithRouteBlinding, packet)
+    val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(5000 msat, nodeParams.currentBlockHeight)))
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
+  }
+
+  test("PaymentHandler should reject incoming blinded payment with unexpected expiry") { f =>
+    import f._
+
+    val nodeKey = randomKey()
+    val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
+    val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.bolt12Features(), randomKey(), Block.RegtestGenesisBlock.hash)
+    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref))
+    val invoice = sender.expectMsgType[Bolt12Invoice]
+    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
+    val pathIds = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.asInstanceOf[IncomingBlindedPayment].pathIds
+    assert(pathIds.size == 1)
+
+    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight) + CltvExpiryDelta(1), pathIds.values.head, pathIds.keys.headOption)
     sender.send(handlerWithRouteBlinding, packet)
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(5000 msat, nodeParams.currentBlockHeight)))
