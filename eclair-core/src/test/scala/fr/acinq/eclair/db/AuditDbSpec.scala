@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
-import fr.acinq.eclair.wire.protocol.Error
+import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
@@ -129,6 +129,38 @@ class AuditDbSpec extends AnyFunSuite {
       assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 4))).toList == List())
       assert(db.listNetworkFees(from = TimestampMilli(0L), to = now + 1.minute).size == 1)
       assert(db.listNetworkFees(from = TimestampMilli(0L), to = now + 1.minute).head.txType == "mutual")
+    }
+  }
+
+  test("add/list liquidity events") {
+    forAllDbs { dbs =>
+      val db = dbs.audit
+      val (nodeId1, nodeId2) = (randomKey().publicKey, randomKey().publicKey)
+      val confirmedFundingTx = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      val unconfirmedFundingTx = Transaction(2, Nil, Seq(TxOut(100_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      val e1a = ChannelLiquidityPurchased(null, randomBytes32(), nodeId1, LiquidityPurchase(confirmedFundingTx.txid, 3, isBuyer = true, LiquidityAds.Lease(250_000 sat, LiquidityAds.LeaseFees(2_000 sat, 3_000 sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(10), 1000, BlockHeight(500_000), 100, 5 msat)), 750_000 sat, 50_000 sat, 300_000 sat, 400_000_000 msat, 350_000_000 msat, 7, 11))
+      val e1b = ChannelLiquidityPurchased(null, randomBytes32(), nodeId1, LiquidityPurchase(confirmedFundingTx.txid, 7, isBuyer = false, LiquidityAds.Lease(50_000 sat, LiquidityAds.LeaseFees(300 sat, 700 sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(15), 2000, BlockHeight(600_000), 150, 10 msat)), 500_000 sat, 50_000 sat, 0 sat, 250_000_000 msat, 250_000_000 msat, 0, 0))
+      val e1c = ChannelLiquidityPurchased(null, e1b.channelId, nodeId1, LiquidityPurchase(confirmedFundingTx.txid, 0, isBuyer = false, LiquidityAds.Lease(150_000 sat, LiquidityAds.LeaseFees(500 sat, 1_500 sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(12), 1500, BlockHeight(610_000), 100, 0 msat)), 250_000 sat, 150_000 sat, -100_000 sat, 200_000_000 msat, 50_000_000 msat, 47, 45))
+      val e1d = ChannelLiquidityPurchased(null, randomBytes32(), nodeId1, LiquidityPurchase(unconfirmedFundingTx.txid, 22, isBuyer = true, LiquidityAds.Lease(250_000 sat, LiquidityAds.LeaseFees(4_000 sat, 1_000 sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(37), 500, BlockHeight(625_000), 50, 25 msat)), 450_000 sat, -50_000 sat, 250_000 sat, 150_000_000 msat, 300_000_000 msat, 3, 3))
+      val e2a = ChannelLiquidityPurchased(null, randomBytes32(), nodeId2, LiquidityPurchase(confirmedFundingTx.txid, 453, isBuyer = false, LiquidityAds.Lease(200_000 sat, LiquidityAds.LeaseFees(1_000 sat, 1_000 sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(45), 2016, BlockHeight(500_000), 0, 1 msat)), 300_000 sat, 250_000 sat, 0 sat, 270_000_000 msat, 30_000_000 msat, 113, 0))
+      val e2b = ChannelLiquidityPurchased(null, randomBytes32(), nodeId2, LiquidityPurchase(unconfirmedFundingTx.txid, 1, isBuyer = false, LiquidityAds.Lease(200_000 sat, LiquidityAds.LeaseFees(1_000 sat, 1_000 sat), randomBytes64(), LiquidityAds.LeaseWitness(randomBytes(25), 2016, BlockHeight(500_000), 0, 1 msat)), 300_000 sat, 250_000 sat, -10_000 sat, 250_000_000 msat, 50_000_000 msat, 0, 113))
+
+      db.add(e1a)
+      db.add(e1b)
+      db.add(e1c)
+      db.add(e1d)
+      db.add(e2a)
+      db.add(e2b)
+
+      // The liquidity purchase is confirmed only once the corresponding transaction confirms.
+      assert(db.listLiquidityPurchases(nodeId1).isEmpty)
+      assert(db.listLiquidityPurchases(nodeId2).isEmpty)
+
+      db.add(TransactionConfirmed(randomBytes32(), nodeId1, confirmedFundingTx))
+      db.add(TransactionConfirmed(randomBytes32(), nodeId2, confirmedFundingTx))
+
+      assert(db.listLiquidityPurchases(nodeId1).toSet == Set(e1a, e1b, e1c).map(_.purchase))
+      assert(db.listLiquidityPurchases(nodeId2) == Seq(e2a.purchase))
     }
   }
 

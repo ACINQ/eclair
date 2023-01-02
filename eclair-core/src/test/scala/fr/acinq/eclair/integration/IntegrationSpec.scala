@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
@@ -183,6 +183,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       pushAmount_opt = Some(pushMsat),
       fundingTxFeerate_opt = None,
       fundingTxFeeBudget_opt = None,
+      requestRemoteFunding_opt = None,
       channelFlags_opt = None,
       timeout_opt = None))
     sender.expectMsgType[OpenChannelResponse.Created](10 seconds)

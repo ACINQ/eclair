@@ -32,7 +32,7 @@ trait Channel {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
-  val supportedChannelTypes = Set(
+  private val supportedChannelTypes = Set(
     ChannelTypes.Standard(),
     ChannelTypes.Standard(zeroConf = true),
     ChannelTypes.Standard(scidAlias = true),
@@ -53,41 +53,48 @@ trait Channel {
 
   val open: Route = postRequest("open") { implicit t =>
     formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "fundingFeeBudgetSatoshis".as[Satoshi].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, channelTypeName_opt, fundingFeerateSatByte, fundingFeeBudget_opt, announceChannel_opt, openTimeout_opt) =>
-        val (channelTypeOk, channelType_opt) = channelTypeName_opt match {
-          case Some(channelTypeName) => supportedChannelTypes.get(channelTypeName) match {
-            case Some(channelType) => (true, Some(channelType))
-            case None => (false, None) // invalid channel type name
+      (nodeId, fundingAmount, pushAmount, channelTypeName_opt, fundingFeerate, fundingFeeBudget_opt, announceChannel_opt, openTimeout_opt) =>
+        withRequestedRemoteFunding { requestRemoteFunding_opt =>
+          val (channelTypeOk, channelType_opt) = channelTypeName_opt match {
+            case Some(channelTypeName) => supportedChannelTypes.get(channelTypeName) match {
+              case Some(channelType) => (true, Some(channelType))
+              case None => (false, None) // invalid channel type name
+            }
+            case None => (true, None)
           }
-          case None => (true, None)
-        }
-        if (!channelTypeOk) {
-          reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be one of ${supportedChannelTypes.keys.mkString(",")}"))
-        } else {
-          complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, fundingFeeBudget_opt, announceChannel_opt, openTimeout_opt))
+          if (!channelTypeOk) {
+            reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be one of ${supportedChannelTypes.keys.mkString(",")}"))
+          } else {
+            complete(eclairApi.open(nodeId, fundingAmount, pushAmount, channelType_opt, fundingFeerate, fundingFeeBudget_opt, requestRemoteFunding_opt, announceChannel_opt, openTimeout_opt))
+          }
         }
     }
   }
 
   val rbfOpen: Route = postRequest("rbfopen") { implicit f =>
-    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "fundingFeeBudgetSatoshis".as[Satoshi], "lockTime".as[Long].?) {
-      (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), fundingFeeBudget, lockTime_opt))
+    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "fundingFeeBudgetSatoshis".as[Satoshi], "lockTime".as[Long].?) { (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) =>
+      withRequestedRemoteFunding { requestRemoteFunding_opt =>
+        complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), fundingFeeBudget, requestRemoteFunding_opt, lockTime_opt))
+      }
     }
   }
 
   val spliceIn: Route = postRequest("splicein") { implicit f =>
-    formFields(channelIdFormParam, "amountIn".as[Satoshi], "pushMsat".as[MilliSatoshi].?) {
-      (channelId, amountIn, pushMsat_opt) => complete(eclairApi.spliceIn(channelId, amountIn, pushMsat_opt))
+    formFields(channelIdFormParam, "amountIn".as[Satoshi], "pushMsat".as[MilliSatoshi].?) { (channelId, amountIn, pushMsat_opt) =>
+      withRequestedRemoteFunding { requestRemoteFunding_opt =>
+        complete(eclairApi.spliceIn(channelId, amountIn, pushMsat_opt, requestRemoteFunding_opt))
+      }
     }
   }
 
   val spliceOut: Route = postRequest("spliceout") { implicit f =>
-    formFields(channelIdFormParam, "amountOut".as[Satoshi], "scriptPubKey".as[ByteVector](bytesUnmarshaller)) {
-      (channelId, amountOut, scriptPubKey) => complete(eclairApi.spliceOut(channelId, amountOut, Left(scriptPubKey)))
-    } ~
-      formFields(channelIdFormParam, "amountOut".as[Satoshi], "address".as[String]) {
-        (channelId, amountOut, address) => complete(eclairApi.spliceOut(channelId, amountOut, Right(address)))
+    formFields(channelIdFormParam, "amountOut".as[Satoshi]) { (channelId, amountOut) =>
+      withAddressOrScript { destination =>
+        withRequestedRemoteFunding { requestRemoteFunding_opt =>
+          complete(eclairApi.spliceOut(channelId, amountOut, destination, requestRemoteFunding_opt))
+        }
       }
+    }
   }
 
   val close: Route = postRequest("close") { implicit t =>

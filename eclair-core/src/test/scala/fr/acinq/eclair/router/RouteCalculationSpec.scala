@@ -318,10 +318,10 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   test("route not found (source OR target node not connected)") {
     val priv_a = randomKey()
     val a = priv_a.publicKey
-    val annA = makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty)
+    val annA = makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty, None)
     val priv_e = randomKey()
     val e = priv_e.publicKey
-    val annE = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty)
+    val annE = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty, None)
 
     val g = DirectedGraph(List(
       makeEdge(2L, b, c, 0 msat, 0),

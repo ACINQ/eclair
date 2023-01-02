@@ -34,7 +34,7 @@ import fr.acinq.eclair.io.Peer.{OpenChannelResponse, OutgoingMessage, SpawnChann
 import fr.acinq.eclair.io.PeerSpec.createOpenChannelMessage
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.payment.Bolt11Invoice.defaultFeatures.initFeatures
-import fr.acinq.eclair.wire.protocol.{ChannelTlv, Error, IPAddress, NodeAddress, OpenChannel, OpenChannelTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol.{ChannelTlv, Error, IPAddress, LiquidityAds, NodeAddress, OpenChannel, OpenChannelTlv, TlvStream}
 import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -87,14 +87,24 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, Some(50_000 sat))
-    val response = peer.expectMessageType[SpawnChannelNonInitiator]
-    assert(response.localFundingAmount_opt.contains(50_000 sat))
-    assert(response.localParams.dustLimit == defaultParams.dustLimit)
-    assert(response.localParams.htlcMinimum == defaultParams.htlcMinimum)
-    assert(response.localParams.maxAcceptedHtlcs == defaultParams.maxAcceptedHtlcs)
-    assert(response.localParams.maxHtlcValueInFlightMsat == defaultParams.maxHtlcValueInFlightMsat)
-    assert(response.localParams.toSelfDelay == defaultParams.toSelfDelay)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, addFunding_opt = None)
+    val updatedLocalParams = peer.expectMessageType[SpawnChannelNonInitiator].localParams
+    assert(updatedLocalParams.dustLimit == defaultParams.dustLimit)
+    assert(updatedLocalParams.htlcMinimum == defaultParams.htlcMinimum)
+    assert(updatedLocalParams.maxAcceptedHtlcs == defaultParams.maxAcceptedHtlcs)
+    assert(updatedLocalParams.maxHtlcValueInFlightMsat == defaultParams.maxHtlcValueInFlightMsat)
+    assert(updatedLocalParams.toSelfDelay == defaultParams.toSelfDelay)
+  }
+
+  test("add liquidity if interceptor plugin requests it") { f =>
+    import f._
+
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
+    openChannelInterceptor ! openChannelNonInitiator
+    pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
+    val addFunding = LiquidityAds.AddFunding(100_000 sat, None)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, Some(addFunding))
+    assert(peer.expectMessageType[SpawnChannelNonInitiator].addFunding_opt.contains(addFunding))
   }
 
   test("continue channel open if no interceptor plugin registered and pending channels rate limiter accepts it") { f =>
@@ -107,7 +117,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectNoMessage(10 millis)
-    peer.expectMessageType[SpawnChannelNonInitiator]
+    assert(peer.expectMessageType[SpawnChannelNonInitiator].addFunding_opt.isEmpty)
   }
 
   test("reject open channel request if rejected by the plugin") { f =>
@@ -147,7 +157,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].channelId == ByteVector32.One)
 
     // original request accepted after plugin accepts it
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, None)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, addFunding_opt = None)
     assert(peer.expectMessageType[SpawnChannelNonInitiator].open == Left(openChannel))
     eventListener.expectMessageType[ChannelAborted]
   }
@@ -157,7 +167,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
     val probe = TestProbe[Any]()
     val fundingAmountBig = Channel.MAX_FUNDING_WITHOUT_WUMBO + 10_000.sat
-    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None, None), Features.empty, initFeatures().add(Wumbo, Optional))
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None, None, None), Features.empty, initFeatures().add(Wumbo, Optional))
     assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason.contains("you must enable large channels support"))
   }
 
@@ -166,7 +176,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
     val probe = TestProbe[Any]()
     val fundingAmountBig = Channel.MAX_FUNDING_WITHOUT_WUMBO + 10_000.sat
-    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None, None), initFeatures().add(Wumbo, Optional), Features.empty)
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None, None, None), initFeatures().add(Wumbo, Optional), Features.empty)
     assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason == s"fundingAmount=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
   }
 

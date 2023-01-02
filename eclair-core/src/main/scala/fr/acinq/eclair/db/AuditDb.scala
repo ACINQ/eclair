@@ -34,6 +34,8 @@ trait AuditDb {
 
   def add(paymentRelayed: PaymentRelayed): Unit
 
+  def add(liquidityPurchase: ChannelLiquidityPurchased): Unit
+
   def add(txPublished: TransactionPublished): Unit
 
   def add(txConfirmed: TransactionConfirmed): Unit
@@ -51,6 +53,8 @@ trait AuditDb {
   def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentReceived]
 
   def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed]
+
+  def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase]
 
   def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee]
 

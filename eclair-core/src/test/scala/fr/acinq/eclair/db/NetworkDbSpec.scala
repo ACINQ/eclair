@@ -30,7 +30,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestDatabases, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
@@ -57,11 +57,11 @@ class NetworkDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.network
 
-      val node_1 = Announcements.makeNodeAnnouncement(randomKey(), "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      val node_2 = Announcements.makeNodeAnnouncement(randomKey(), "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
-      val node_3 = Announcements.makeNodeAnnouncement(randomKey(), "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
-      val node_4 = Announcements.makeNodeAnnouncement(randomKey(), "node-eve", Color(100.toByte, 200.toByte, 300.toByte), Tor3("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad", 42000) :: Nil, Features.empty)
-      val node_5 = Announcements.makeNodeAnnouncement(randomKey(), "node-frank", Color(100.toByte, 200.toByte, 300.toByte), DnsHostname("eclair.invalid", 42000) :: Nil, Features.empty)
+      val node_1 = Announcements.makeNodeAnnouncement(randomKey(), "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty, None)
+      val node_2 = Announcements.makeNodeAnnouncement(randomKey(), "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional), Some(TestConstants.defaultLiquidityRates :: Nil))
+      val node_3 = Announcements.makeNodeAnnouncement(randomKey(), "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional), None)
+      val node_4 = Announcements.makeNodeAnnouncement(randomKey(), "node-eve", Color(100.toByte, 200.toByte, 300.toByte), Tor3("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad", 42000) :: Nil, Features.empty, None)
+      val node_5 = Announcements.makeNodeAnnouncement(randomKey(), "node-frank", Color(100.toByte, 200.toByte, 300.toByte), DnsHostname("eclair.invalid", 42000) :: Nil, Features.empty, None)
 
       assert(db.listNodes().toSet == Set.empty)
       db.addNode(node_1)
@@ -402,7 +402,7 @@ object NetworkDbSpec {
                              update_2_data_opt: Option[Array[Byte]])
 
   val nodeTestCases: Seq[NodeTestCase] = for (_ <- 0 until 10) yield {
-    val node = Announcements.makeNodeAnnouncement(randomKey(), "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+    val node = Announcements.makeNodeAnnouncement(randomKey(), "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty, None)
     val data = nodeAnnouncementCodec.encode(node).require.toByteArray
     NodeTestCase(
       nodeId = node.nodeId,

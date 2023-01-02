@@ -22,14 +22,16 @@ import akka.http.scaladsl.model.StatusCodes.NotFound
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.ConfirmationPriority
 import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.wire.protocol.LiquidityAds
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampSecond}
+import scodec.bits.ByteVector
 
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
@@ -70,6 +72,18 @@ trait ExtraDirectives extends Directives {
     case Success(None) =>
       complete(HttpResponse(NotFound).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("Not found"))))
     case Failure(_) => reject
+  }
+
+  def withRequestedRemoteFunding: Directive1[Option[LiquidityAds.RequestRemoteFundingParams]] = formFields("requestRemoteFundingSatoshis".as[Satoshi].?, "remoteFundingMaxFeeSatoshis".as[Satoshi].?, "remoteFundingDurationBlocks".as[Int].?).tflatMap {
+    case (Some(requestRemoteFunding), Some(remoteFundingMaxFee), leaseDuration_opt) => provide(Some(LiquidityAds.RequestRemoteFundingParams(requestRemoteFunding, leaseDuration_opt.getOrElse(4032 /* ~1 month */), remoteFundingMaxFee)))
+    case (Some(_), None, _) => reject(MalformedFormFieldRejection("remoteFundingMaxFeeSatoshis", "You must specify the maximum fee you're willing to pay when requesting inbound liquidity from the remote node"))
+    case _ => provide(None)
+  }
+
+  def withAddressOrScript: Directive1[Either[ByteVector, String]] = formFields("scriptPubKey".as[ByteVector](bytesUnmarshaller).?, "address".as[String].?).tflatMap {
+    case (Some(script), None) => provide(Left(script))
+    case (None, Some(address)) => provide(Right(address))
+    case _ => reject(MalformedFormFieldRejection("address/scriptPubKey", "You must provide a bitcoin address or a scriptPubKey."))
   }
 
   def withPaginated: Directive1[Option[Paginated]] = formFields(countFormParam.?, skipFormParam.?).tflatMap {

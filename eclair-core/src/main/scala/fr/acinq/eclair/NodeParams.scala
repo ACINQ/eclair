@@ -87,7 +87,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
-                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config) {
+                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
+                      liquidityAdsConfig_opt: Option[LiquidityAds.SellerConfig]) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -610,7 +611,24 @@ object NodeParams extends Logging {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
-      )
+      ),
+      liquidityAdsConfig_opt = if (config.getBoolean("liquidity-ads.enabled")) {
+        Some(LiquidityAds.SellerConfig(rates = config.getConfigList("liquidity-ads.rates").asScala.map { r =>
+          LiquidityAds.LeaseRateConfig(
+            rate = LiquidityAds.LeaseRate(
+              leaseDuration = r.getInt("duration-blocks"),
+              fundingWeight = r.getInt("funding-weight"),
+              leaseFeeProportional = r.getInt("fee-basis-points"),
+              leaseFeeBase = Satoshi(r.getLong("fee-base-satoshis")),
+              maxRelayFeeProportional = r.getInt("max-channel-relay-fee-basis-points"),
+              maxRelayFeeBase = MilliSatoshi(r.getLong("max-channel-relay-fee-base-msat")),
+            ),
+            minAmount = Satoshi(r.getLong("min-funding-amount-satoshis")),
+          )
+        }.toSeq))
+      } else {
+        None
+      },
     )
   }
 }

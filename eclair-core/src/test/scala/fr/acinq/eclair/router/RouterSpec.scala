@@ -59,7 +59,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // continue to rebroadcast node updates with deprecated Torv2 addresses
       val torv2Address = List(NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get)
-      val node_c_torv2 = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), torv2Address, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 1)
+      val node_c_torv2 = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), torv2Address, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), None, timestamp = TimestampSecond.now() + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c_torv2))
       peerConnection.expectMsg(TransportHandler.ReadAck(node_c_torv2))
       peerConnection.expectMsg(GossipDecision.Accepted(node_c_torv2))
@@ -71,7 +71,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // rebroadcast node updates with a single DNS hostname addresses
       val hostname = List(NodeAddress.fromParts("acinq.co", 9735).get)
-      val node_c_hostname = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), hostname, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 10)
+      val node_c_hostname = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), hostname, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), None, timestamp = TimestampSecond.now() + 10)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c_hostname))
       peerConnection.expectMsg(TransportHandler.ReadAck(node_c_hostname))
       peerConnection.expectMsg(GossipDecision.Accepted(node_c_hostname))
@@ -83,7 +83,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // do NOT rebroadcast node updates with more than one DNS hostname addresses
       val multiHostnames = List(NodeAddress.fromParts("acinq.co", 9735).get, NodeAddress.fromParts("acinq.fr", 9735).get)
-      val node_c_noForward = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), multiHostnames, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 20)
+      val node_c_noForward = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), multiHostnames, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), None, timestamp = TimestampSecond.now() + 20)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c_noForward))
       peerConnection.expectMsg(TransportHandler.ReadAck(node_c_noForward))
       peerConnection.expectMsg(GossipDecision.Accepted(node_c_noForward))
@@ -104,7 +104,7 @@ class RouterSpec extends BaseRouterSpec {
       // valid channel announcement, no stashing
       val chan_ac = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 5, 0), priv_a, priv_c, priv_funding_a, priv_funding_c)
       val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, chan_ac.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), timestamp = TimestampSecond.now() + 1)
+      val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), None, timestamp = TimestampSecond.now() + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac))
       peerConnection.expectNoMessage(100 millis) // we don't immediately acknowledge the announcement (back pressure)
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_ac)
@@ -133,7 +133,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_funding_u = randomKey()
       val chan_uc = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 100, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
       val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, Features.empty)
+      val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, Features.empty, None)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_uc))
       peerConnection.expectNoMessage(200 millis) // we don't immediately acknowledge the announcement (back pressure)
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_uc)
@@ -229,7 +229,7 @@ class RouterSpec extends BaseRouterSpec {
       // unknown channel
       val priv_y = randomKey()
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, ShortChannelId(4646464), CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures())
+      val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), None)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
       peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_ay))
@@ -246,7 +246,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_funding_y = randomKey() // a-y will have an invalid script
       val chan_ay = channelAnnouncement(RealShortChannelId(42002), priv_a, priv_y, priv_funding_a, priv_funding_y)
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures())
+      val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures(), None)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ay))
       assert(watcher.expectMsgType[ValidateRequest].ann == chan_ay)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay))

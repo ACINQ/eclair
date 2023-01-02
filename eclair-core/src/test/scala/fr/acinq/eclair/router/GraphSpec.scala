@@ -17,34 +17,31 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
-import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
-import fr.acinq.eclair.router.Router.{ChannelDesc, PublicChannel}
-import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecondLong, randomKey}
+import fr.acinq.eclair.router.Router.ChannelDesc
+import fr.acinq.eclair.wire.protocol.Color
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.HexStringSyntax
-
-import scala.collection.immutable.SortedMap
 
 class GraphSpec extends AnyFunSuite {
 
   val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
   val (a, b, c, d, e, f, g, h) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey)
   val (annA, annB, annC, annD, annE, annF, annG, annH) = (
-    makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty),
-    makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features.empty),
-    makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features.empty),
-    makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty),
-    makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty),
-    makeNodeAnnouncement(priv_f, "F", Color(0, 0, 0), Nil, Features.empty),
-    makeNodeAnnouncement(priv_g, "G", Color(0, 0, 0), Nil, Features.empty),
-    makeNodeAnnouncement(priv_h, "H", Color(0, 0, 0), Nil, Features.empty),
+    makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty, None),
+    makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features.empty, None),
+    makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features.empty, None),
+    makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty, None),
+    makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty, None),
+    makeNodeAnnouncement(priv_f, "F", Color(0, 0, 0), Nil, Features.empty, None),
+    makeNodeAnnouncement(priv_g, "G", Color(0, 0, 0), Nil, Features.empty, None),
+    makeNodeAnnouncement(priv_h, "H", Color(0, 0, 0), Nil, Features.empty, None),
   )
 
   // +---- D -------+
@@ -357,26 +354,26 @@ class GraphSpec extends AnyFunSuite {
   }
 
   test("RoutingHeuristics.normalize") {
-      // value inside the range
-      assert(Graph.RoutingHeuristics.normalize(value = 10, min = 0, max = 100) === (10.0 / 100.0) +- 0.001)
-      assert(Graph.RoutingHeuristics.normalize(value = 20, min = 10, max = 200) === (10.0 / 190.0) +- 0.001)
-      assert(Graph.RoutingHeuristics.normalize(value = -11, min = -100, max = -10) === (89.0 / 90.0) +- 0.001)
+    // value inside the range
+    assert(Graph.RoutingHeuristics.normalize(value = 10, min = 0, max = 100) === (10.0 / 100.0) +- 0.001)
+    assert(Graph.RoutingHeuristics.normalize(value = 20, min = 10, max = 200) === (10.0 / 190.0) +- 0.001)
+    assert(Graph.RoutingHeuristics.normalize(value = -11, min = -100, max = -10) === (89.0 / 90.0) +- 0.001)
 
-      // value on the bounds
-      assert(Graph.RoutingHeuristics.normalize(value = 0, min = 0, max = 100) > 0)
-      assert(Graph.RoutingHeuristics.normalize(value = 10, min = 10, max = 200) > 0)
-      assert(Graph.RoutingHeuristics.normalize(value = -100, min = -100, max = -10) > 0)
-      assert(Graph.RoutingHeuristics.normalize(value = 9.1, min = 10, max = 200) > 0)
-      assert(Graph.RoutingHeuristics.normalize(value = 100, min = 0, max = 100) < 1)
-      assert(Graph.RoutingHeuristics.normalize(value = 200, min = 10, max = 200) < 1)
+    // value on the bounds
+    assert(Graph.RoutingHeuristics.normalize(value = 0, min = 0, max = 100) > 0)
+    assert(Graph.RoutingHeuristics.normalize(value = 10, min = 10, max = 200) > 0)
+    assert(Graph.RoutingHeuristics.normalize(value = -100, min = -100, max = -10) > 0)
+    assert(Graph.RoutingHeuristics.normalize(value = 9.1, min = 10, max = 200) > 0)
+    assert(Graph.RoutingHeuristics.normalize(value = 100, min = 0, max = 100) < 1)
+    assert(Graph.RoutingHeuristics.normalize(value = 200, min = 10, max = 200) < 1)
 
-      // value outside the range
-      assert(Graph.RoutingHeuristics.normalize(value = 105.2, min = 0, max = 100) < 1)
+    // value outside the range
+    assert(Graph.RoutingHeuristics.normalize(value = 105.2, min = 0, max = 100) < 1)
 
-      // Should throw exception if min > max
-      assertThrows[IllegalArgumentException](
-        Graph.RoutingHeuristics.normalize(value = 9, min = 10, max = 1)
-      )
+    // Should throw exception if min > max
+    assertThrows[IllegalArgumentException](
+      Graph.RoutingHeuristics.normalize(value = 9, min = 10, max = 1)
+    )
   }
 
   test("local channel is preferred") {
@@ -410,11 +407,11 @@ class GraphSpec extends AnyFunSuite {
       makeEdge(4L, e, a, 7 msat, 7, capacity = 1000 sat, minHtlc = 700 msat, maxHtlc = Some(800 msat)),
       makeEdge(5L, d, e, 8 msat, 8, capacity = 1000 sat, minHtlc = 800 msat, maxHtlc = Some(900 msat)),
       makeEdge(5L, e, d, 9 msat, 9, capacity = 1000 sat, minHtlc = 900 msat, maxHtlc = Some(1000 msat)),
-    )).addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
-      .addOrUpdateVertex(makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
-      .addOrUpdateVertex(makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
-      .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
-      .addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+    )).addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional), None))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional), None))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional), None))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional), None))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional), None))
 
     {
       // All nodes can relay messages, same weight for each channel.
@@ -427,8 +424,8 @@ class GraphSpec extends AnyFunSuite {
       // Source and target don't relay messages but they can still emit and receive.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
       val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
-      val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty))
-        .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty))
+      val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty, None))
+        .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty, None))
       val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
     }
@@ -436,7 +433,7 @@ class GraphSpec extends AnyFunSuite {
       // E doesn't relay messages.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
       val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
-      val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty))
+      val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty, None))
       val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
     }
