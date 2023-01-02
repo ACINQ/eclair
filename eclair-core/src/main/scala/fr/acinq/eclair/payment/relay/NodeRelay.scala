@@ -16,14 +16,13 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.{ActorRef, typed}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.IncomingPaymentPacket.NodeRelayPacket
@@ -40,7 +39,7 @@ import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
 
 import java.util.UUID
 import scala.collection.immutable.Queue
@@ -55,15 +54,13 @@ object NodeRelay {
   sealed trait Command
   case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
   case object Stop extends Command
-  case object RelayAsyncPayment extends Command
-  case object CancelAsyncPayment extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
   private case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
   private case class WrappedPreimageReceived(preimageReceived: PreimageReceived) extends Command
   private case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
-  private case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
+  private[relay] case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
@@ -87,7 +84,8 @@ object NodeRelay {
             register: ActorRef,
             relayId: UUID,
             nodeRelayPacket: NodeRelayPacket,
-            outgoingPaymentFactory: OutgoingPaymentFactory): Behavior[Command] =
+            outgoingPaymentFactory: OutgoingPaymentFactory,
+            triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command]): Behavior[Command] =
     Behaviors.setup { context =>
       val paymentHash = nodeRelayPacket.add.paymentHash
       val totalAmountIn = nodeRelayPacket.outerPayload.totalAmount
@@ -102,7 +100,7 @@ object NodeRelay {
           context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentSucceeded](WrappedMultiPartPaymentSucceeded)
         }.toClassic
         val incomingPaymentHandler = context.actorOf(MultiPartPaymentFSM.props(nodeParams, paymentHash, totalAmountIn, mppFsmAdapters))
-        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory)
+        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory, triggerer)
           .receiving(Queue.empty, nodeRelayPacket.innerPayload, nodeRelayPacket.nextPacket, incomingPaymentHandler)
       }
     }
@@ -170,7 +168,8 @@ class NodeRelay private(nodeParams: NodeParams,
                         paymentHash: ByteVector32,
                         paymentSecret: ByteVector32,
                         context: ActorContext[NodeRelay.Command],
-                        outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory) {
+                        outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory,
+                        triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command]) {
 
   import NodeRelay._
 
@@ -214,31 +213,24 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def waitForTrigger(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket): Behavior[Command] = {
     context.log.info(s"waiting for async payment to trigger before relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv}, asyncPaymentsParams=${nodeParams.relayParams.asyncPaymentsParams})")
-    // a trigger must be received before waiting more than `holdTimeoutBlocks`
-    val timeoutBlock: BlockHeight = nodeParams.currentBlockHeight + nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks
-    // a trigger must be received `cancelSafetyBeforeTimeoutBlocks` before the incoming payment cltv expiry
-    val safetyBlock: BlockHeight = (upstream.expiryIn - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
-    val messageAdapter = context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight))
-    context.system.eventStream ! EventStream.Subscribe[CurrentBlockHeight](messageAdapter)
+    val timeoutBlock = nodeParams.currentBlockHeight + nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks
+    val safetyBlock = (upstream.expiryIn - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
+    // wait for notification until which ever occurs first: the hold timeout block or the safety block
+    val notifierTimeout = Seq(timeoutBlock, safetyBlock).min
+    val peerReadyResultAdapter = context.messageAdapter[AsyncPaymentTriggerer.Result](WrappedPeerReadyResult)
 
-    // TODO: send the WaitingToRelayPayment message to an actor that watches for the payment receiver to come back online before sending the RelayAsyncPayment message
+    triggerer ! AsyncPaymentTriggerer.Watch(peerReadyResultAdapter, nextPayload.outgoingNodeId, paymentHash, notifierTimeout)
     context.system.eventStream ! EventStream.Publish(WaitingToRelayPayment(nextPayload.outgoingNodeId, paymentHash))
     Behaviors.receiveMessagePartial {
-      case WrappedCurrentBlockHeight(blockHeight) if blockHeight >= safetyBlock =>
-        context.log.warn(s"rejecting async payment at block $blockHeight; was not triggered ${nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout} safety blocks before upstream cltv expiry at ${upstream.expiryIn}")
+      case WrappedPeerReadyResult(AsyncPaymentTriggerer.AsyncPaymentTimeout) =>
+        context.log.warn("rejecting async payment; was not triggered before block {}", notifierTimeout)
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
         stopping()
-      case WrappedCurrentBlockHeight(blockHeight) if blockHeight >= timeoutBlock =>
-        context.log.warn(s"rejecting async payment at block $blockHeight; was not triggered after waiting ${nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks} blocks")
-        rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
-        stopping()
-      case WrappedCurrentBlockHeight(_) =>
-        Behaviors.same
-      case CancelAsyncPayment =>
+      case WrappedPeerReadyResult(AsyncPaymentTriggerer.AsyncPaymentCanceled) =>
         context.log.warn(s"payment sender canceled a waiting async payment")
         rejectPayment(upstream, Some(TemporaryNodeFailure)) // TODO: replace failure type when async payment spec is finalized
         stopping()
-      case RelayAsyncPayment =>
+      case WrappedPeerReadyResult(AsyncPaymentTriggerer.AsyncPaymentTriggered) =>
         doSend(upstream, nextPayload, nextPacket)
     }
   }
