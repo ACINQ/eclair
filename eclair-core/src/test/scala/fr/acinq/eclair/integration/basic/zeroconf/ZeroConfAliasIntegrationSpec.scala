@@ -118,7 +118,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
                            paymentWithRealScidHint_opt: Option[Either[Either[Throwable, FailureMessage], Ok.type]]): Unit = {
     import f._
 
-    val (channelId_ab, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm)
+    val (_, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm)
 
     eventually {
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
