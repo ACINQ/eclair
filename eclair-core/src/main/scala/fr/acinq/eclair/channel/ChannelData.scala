@@ -484,7 +484,7 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
                                               channelFeatures: ChannelFeatures,
                                               lastSent: FundingCreated) extends TransientChannelData
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
-                                                 fundingTx: Option[Transaction],
+                                                 fundingTx_opt: Option[Transaction],
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData

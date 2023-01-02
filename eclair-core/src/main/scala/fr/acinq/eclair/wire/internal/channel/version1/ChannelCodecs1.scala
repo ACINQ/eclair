@@ -234,7 +234,7 @@ private[channel] object ChannelCodecs1 {
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_20_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
-        ("fundingTx" | optional(bool8, txCodec)) ::
+        ("fundingTx_opt" | optional(bool8, txCodec)) ::
         ("waitingSince" | int64.as[BlockHeight]) ::
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec))) ::
         ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
@@ -275,7 +275,7 @@ private[channel] object ChannelCodecs1 {
 
     val DATA_CLOSING_25_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodec) ::
-        ("fundingTx" | optional(bool8, txCodec)) ::
+        ("fundingTx_opt" | optional(bool8, txCodec)) ::
         ("waitingSince" | int64.as[BlockHeight]) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
@@ -284,8 +284,8 @@ private[channel] object ChannelCodecs1 {
         ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
-      case commitments :: fundingTx :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
-        DATA_CLOSING(commitments, fundingTx.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince, Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+      case commitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
+        DATA_CLOSING(commitments, fundingTx_opt.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince, Nil, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_26_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
