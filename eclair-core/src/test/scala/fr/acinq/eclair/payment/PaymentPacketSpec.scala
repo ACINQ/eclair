@@ -169,7 +169,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payment.cmd.nextBlindingKey_opt.isEmpty)
 
     val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
-    val Right(relay_b@ChannelRelayPacket(aaa, payload_b, packet_c)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val Right(relay_b@ChannelRelayPacket(_, payload_b, packet_c)) = decrypt(add_b, priv_b.privateKey, Features.empty)
     assert(packet_c.payload.length == PaymentOnionCodecs.paymentOnionPayloadLength)
     assert(relay_b.amountToForward >= amount_bc)
     assert(relay_b.outgoingCltv == expiry_bc)
@@ -205,6 +205,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_e.amount == finalAmount)
     assert(payload_e.totalAmount == finalAmount)
     assert(add_e.cltvExpiry == finalExpiry)
+    assert(payload_e.expiry == finalExpiry)
     assert(payload_e.isInstanceOf[FinalPayload.Blinded])
     assert(payload_e.asInstanceOf[FinalPayload.Blinded].pathId == hex"deadbeef")
   }

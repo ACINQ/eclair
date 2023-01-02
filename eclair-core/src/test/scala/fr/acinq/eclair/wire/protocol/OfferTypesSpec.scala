@@ -16,17 +16,16 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Bech32
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, VariableLengthOnion}
-import fr.acinq.eclair.wire.protocol.OfferCodecs.invoiceRequestTlvCodec
+import fr.acinq.eclair.Features.BasicMultiPartPayment
+import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, offerTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.{Features, MilliSatoshiLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
-
-import scala.util.Success
 
 class OfferTypesSpec extends AnyFunSuite {
   val nodeKey = PrivateKey(hex"85d08273493e489b9330c85a3e54123874c8cd67c1bf531f4b926c9c555f8e1d")
@@ -40,15 +39,23 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(request.checkSignature())
   }
 
-  test("basic offer") {
-    val offer = Offer(TlvStream[OfferTlv](
+  test("minimal offer") {
+    val tlvs = Seq(
       OfferDescription("basic offer"),
-      OfferNodeId(nodeId)))
+      OfferNodeId(nodeId))
+    val offer = Offer(TlvStream(tlvs))
     val encoded = "lno1pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrj"
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.isEmpty)
     assert(offer.description == "basic offer")
     assert(offer.nodeId == nodeId)
+    // Removing any TLV from the minimal offer makes it invalid.
+    for (tlv <- tlvs) {
+      val incomplete = TlvStream[OfferTlv](tlvs.filterNot(_ == tlv))
+      assert(Offer.validate(incomplete).isLeft)
+      val incompleteEncoded = Bech32.encodeBytes(Offer.hrp, offerTlvCodec.encode(incomplete).require.bytes.toArray, Bech32.Encoding.Beck32WithoutChecksum)
+      assert(Offer.decode(incompleteEncoded).isFailure)
+    }
   }
 
   test("offer with amount and quantity") {
@@ -158,6 +165,33 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(!invalidAmount.isValidFor(offer))
     val tooManyItems = InvoiceRequest(offer, 5500 msat, 11, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(!tooManyItems.isValidFor(offer))
+  }
+
+  test("minimal invoice request") {
+    val payerKey = PrivateKey(hex"527d410ec920b626ece685e8af9abc976a48dbf2fe698c1b35d90a1c5fa2fbca")
+    val tlvsWithoutSignature = Seq(
+      InvoiceRequestMetadata(hex"abcdef"),
+      OfferDescription("basic offer"),
+      OfferNodeId(nodeId),
+      InvoiceRequestPayerId(payerKey.publicKey),
+    )
+    val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream[InvoiceRequestTlv](tlvsWithoutSignature), OfferCodecs.invoiceRequestTlvCodec), payerKey)
+    val tlvs = tlvsWithoutSignature :+ Signature(signature)
+    val invoiceRequest = InvoiceRequest(TlvStream(tlvs))
+    val encoded = "lnr1qqp6hn00pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrjkppqfxajawru7sa7rt300hfzs2lyk2jrxduxrkx9lmzy6lxcvfhk0j7ruzqc4mtjj5fwukrqp7faqrxn664nmwykad76pu997terewcklsx47apag59wf8exly4tky7y63prr7450n28stqssmzuf48w7e6rjad2eq"
+    assert(InvoiceRequest.decode(encoded).get == invoiceRequest)
+    assert(invoiceRequest.offer.amount.isEmpty)
+    assert(invoiceRequest.offer.description == "basic offer")
+    assert(invoiceRequest.offer.nodeId == nodeId)
+    assert(invoiceRequest.metadata == hex"abcdef")
+    assert(invoiceRequest.payerId == payerKey.publicKey)
+    // Removing any TLV from the minimal invoice request makes it invalid.
+    for (tlv <- tlvs) {
+      val incomplete = TlvStream[InvoiceRequestTlv](tlvs.filterNot(_ == tlv))
+      assert(InvoiceRequest.validate(incomplete).isLeft)
+      val incompleteEncoded = Bech32.encodeBytes(InvoiceRequest.hrp, invoiceRequestTlvCodec.encode(incomplete).require.bytes.toArray, Bech32.Encoding.Beck32WithoutChecksum)
+      assert(InvoiceRequest.decode(incompleteEncoded).isFailure)
+    }
   }
 
   test("compute merkle tree root") {

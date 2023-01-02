@@ -59,16 +59,16 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
-    assert(invoice.isValidFor(request))
+    assert(invoice.checkSignature())
     assert(Bolt12Invoice.fromString(invoice.toString).get.toString == invoice.toString)
     // changing signature makes check fail
     val withInvalidSignature = Bolt12Invoice(TlvStream(invoice.records.records.map { case Signature(_) => Signature(randomBytes64()) case x => x }, invoice.records.unknown))
-    assert(!withInvalidSignature.isValidFor(request))
+    assert(!withInvalidSignature.checkSignature())
     // changing fields makes the signature invalid
     val withModifiedUnknownTlv = Bolt12Invoice(invoice.records.copy(unknown = Seq(GenericTlv(UInt64(7), hex"ade4"))))
-    assert(!withModifiedUnknownTlv.isValidFor(request))
+    assert(!withModifiedUnknownTlv.checkSignature())
     val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(amount) => OfferAmount(amount + 100.msat) case x => x }, invoice.records.unknown))
-    assert(!withModifiedAmount.isValidFor(request))
+    assert(!withModifiedAmount.checkSignature())
   }
 
   test("check invoice signature with unknown field from invoice request") {
@@ -77,6 +77,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val basicRequest = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     val requestWithUnknownTlv = basicRequest.copy(records = TlvStream(basicRequest.records.records, Seq(GenericTlv(UInt64(87), hex"0404"))))
     val invoice = Bolt12Invoice(requestWithUnknownTlv, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
+    assert(invoice.records.unknown == Seq(GenericTlv(UInt64(87), hex"0404")))
     assert(invoice.isValidFor(requestWithUnknownTlv))
     assert(Bolt12Invoice.fromString(invoice.toString).get.toString == invoice.toString)
   }
