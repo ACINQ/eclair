@@ -259,8 +259,14 @@ object PaymentInitiator {
     def invoice: Invoice
     def recipientNodeId: PublicKey = invoice.nodeId
     def paymentHash: ByteVector32 = invoice.paymentHash
-    def finalExpiry(nodeParams: NodeParams): CltvExpiry = nodeParams.paymentFinalExpiry.computeFinalExpiry(nodeParams.currentBlockHeight, invoice.minFinalCltvExpiryDelta)
     // @formatter:on
+    def finalExpiry(nodeParams: NodeParams): CltvExpiry = {
+      val minFinalCltvExpiryDelta = invoice match {
+        case invoice: Bolt11Invoice => invoice.minFinalCltvExpiryDelta
+        case _: Bolt12Invoice => CltvExpiryDelta(0)
+      }
+      nodeParams.paymentFinalExpiry.computeFinalExpiry(nodeParams.currentBlockHeight, minFinalCltvExpiryDelta)
+    }
   }
 
   /**

@@ -19,135 +19,159 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.OfferTypes._
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequestChain, InvoiceRequestPayerNote, InvoiceRequestQuantity, _}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64}
+import fr.acinq.eclair.{TimestampSecond, UInt64}
 import scodec.Codec
 import scodec.codecs._
 
 object OfferCodecs {
-  private val chains: Codec[Chains] = tlvField(list(bytes32).xmap[Seq[ByteVector32]](_.toSeq, _.toList).as[Chains])
+  private val offerChains: Codec[OfferChains] = tlvField(list(bytes32).xmap[Seq[ByteVector32]](_.toSeq, _.toList))
 
-  private val currency: Codec[Currency] = tlvField(utf8.as[Currency])
+  private val offerMetadata: Codec[OfferMetadata] = tlvField(bytes)
 
-  private val amount: Codec[Amount] = tlvField(tmillisatoshi.as[Amount])
+  private val offerCurrency: Codec[OfferCurrency] = tlvField(utf8)
 
-  private val description: Codec[Description] = tlvField(utf8.as[Description])
+  private val offerAmount: Codec[OfferAmount] = tlvField(tmillisatoshi)
 
-  private val features: Codec[FeaturesTlv] = tlvField(bytes.xmap[Features[Feature]](Features(_), _.toByteVector).as[FeaturesTlv])
+  private val offerDescription: Codec[OfferDescription] = tlvField(utf8)
 
-  private val absoluteExpiry: Codec[AbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond].as[AbsoluteExpiry])
+  private val offerFeatures: Codec[OfferFeatures] = tlvField(featuresCodec)
 
-  private val blindedNodeCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
+  private val offerAbsoluteExpiry: Codec[OfferAbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond])
+
+  private val blindedNodeCodec: Codec[BlindedNode] =
+    (("nodeId" | publicKey) ::
+      ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
+
   private val blindedNodesCodec: Codec[Seq[BlindedNode]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
-  private val pathCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | blindedNodesCodec)).as[BlindedRoute]
-  private val paths: Codec[Paths] = tlvField(list(pathCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList).as[Paths])
 
-  private val issuer: Codec[Issuer] = tlvField(utf8.as[Issuer])
+  private val pathCodec: Codec[BlindedRoute] =
+    (("firstNodeId" | publicKey) ::
+      ("blinding" | publicKey) ::
+      ("path" | blindedNodesCodec)).as[BlindedRoute]
 
-  private val quantityMin: Codec[QuantityMin] = tlvField(tu64overflow.as[QuantityMin])
+  private val offerPaths: Codec[OfferPaths] = tlvField(list(pathCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
 
-  private val quantityMax: Codec[QuantityMax] = tlvField(tu64overflow.as[QuantityMax])
+  private val offerIssuer: Codec[OfferIssuer] = tlvField(utf8)
 
-  private val nodeId: Codec[NodeId] = tlvField(publicKey.as[NodeId])
 
-  private val sendInvoice: Codec[SendInvoice] = tlvField(provide(SendInvoice()))
+  private val offerQuantityMax: Codec[OfferQuantityMax] = tlvField(tu64overflow)
 
-  private val refundFor: Codec[RefundFor] = tlvField(bytes32.as[RefundFor])
-
-  private val signature: Codec[Signature] = tlvField(bytes64.as[Signature])
+  private val offerNodeId: Codec[OfferNodeId] = tlvField(publicKey)
 
   val offerTlvCodec: Codec[TlvStream[OfferTlv]] = TlvCodecs.tlvStream[OfferTlv](discriminated[OfferTlv].by(varint)
-    .typecase(UInt64(2), chains)
-    .typecase(UInt64(6), currency)
-    .typecase(UInt64(8), amount)
-    .typecase(UInt64(10), description)
-    .typecase(UInt64(12), features)
-    .typecase(UInt64(14), absoluteExpiry)
-    .typecase(UInt64(16), paths)
-    .typecase(UInt64(20), issuer)
-    .typecase(UInt64(22), quantityMin)
-    .typecase(UInt64(24), quantityMax)
-    .typecase(UInt64(30), nodeId)
-    .typecase(UInt64(34), refundFor)
-    .typecase(UInt64(54), sendInvoice)
-    .typecase(UInt64(240), signature)).complete
+    .typecase(UInt64(2), offerChains)
+    .typecase(UInt64(4), offerMetadata)
+    .typecase(UInt64(6), offerCurrency)
+    .typecase(UInt64(8), offerAmount)
+    .typecase(UInt64(10), offerDescription)
+    .typecase(UInt64(12), offerFeatures)
+    .typecase(UInt64(14), offerAbsoluteExpiry)
+    .typecase(UInt64(16), offerPaths)
+    .typecase(UInt64(18), offerIssuer)
+    .typecase(UInt64(20), offerQuantityMax)
+    .typecase(UInt64(22), offerNodeId)
+  ).complete
 
-  private val chain: Codec[Chain] = tlvField(bytes32.as[Chain])
+  private val invoiceRequestMetadata: Codec[InvoiceRequestMetadata] = tlvField(bytes)
 
-  private val offerId: Codec[OfferId] = tlvField(bytes32.as[OfferId])
+  private val invoiceRequestChain: Codec[InvoiceRequestChain] = tlvField(bytes32)
 
-  private val quantity: Codec[Quantity] = tlvField(tu64overflow.as[Quantity])
+  private val invoiceRequestAmount: Codec[InvoiceRequestAmount] = tlvField(tmillisatoshi)
 
-  private val payerKey: Codec[PayerKey] = tlvField(bytes32.as[PayerKey])
+  private val invoiceRequestFeatures: Codec[InvoiceRequestFeatures] = tlvField(featuresCodec)
 
-  private val payerNote: Codec[PayerNote] = tlvField(utf8.as[PayerNote])
+  private val invoiceRequestQuantity: Codec[InvoiceRequestQuantity] = tlvField(tu64overflow)
 
-  private val payerInfo: Codec[PayerInfo] = tlvField(bytes.as[PayerInfo])
+  private val invoiceRequestPayerId: Codec[InvoiceRequestPayerId] = tlvField(publicKey)
 
-  private val replaceInvoice: Codec[ReplaceInvoice] = tlvField(bytes32.as[ReplaceInvoice])
+  private val invoiceRequestPayerNote: Codec[InvoiceRequestPayerNote] = tlvField(utf8)
+
+  private val signature: Codec[Signature] = tlvField(bytes64)
 
   val invoiceRequestTlvCodec: Codec[TlvStream[InvoiceRequestTlv]] = TlvCodecs.tlvStream[InvoiceRequestTlv](discriminated[InvoiceRequestTlv].by(varint)
-    .typecase(UInt64(3), chain)
-    .typecase(UInt64(4), offerId)
-    .typecase(UInt64(8), amount)
-    .typecase(UInt64(12), features)
-    .typecase(UInt64(32), quantity)
-    .typecase(UInt64(38), payerKey)
-    .typecase(UInt64(39), payerNote)
-    .typecase(UInt64(50), payerInfo)
-    .typecase(UInt64(56), replaceInvoice)
-    .typecase(UInt64(240), signature)).complete
+    .typecase(UInt64(0), invoiceRequestMetadata)
+    // Offer part that must be copy-pasted from above
+    .typecase(UInt64(2), offerChains)
+    .typecase(UInt64(4), offerMetadata)
+    .typecase(UInt64(6), offerCurrency)
+    .typecase(UInt64(8), offerAmount)
+    .typecase(UInt64(10), offerDescription)
+    .typecase(UInt64(12), offerFeatures)
+    .typecase(UInt64(14), offerAbsoluteExpiry)
+    .typecase(UInt64(16), offerPaths)
+    .typecase(UInt64(18), offerIssuer)
+    .typecase(UInt64(20), offerQuantityMax)
+    .typecase(UInt64(22), offerNodeId)
+    // Invoice request part
+    .typecase(UInt64(80), invoiceRequestChain)
+    .typecase(UInt64(82), invoiceRequestAmount)
+    .typecase(UInt64(84), invoiceRequestFeatures)
+    .typecase(UInt64(86), invoiceRequestQuantity)
+    .typecase(UInt64(88), invoiceRequestPayerId)
+    .typecase(UInt64(89), invoiceRequestPayerNote)
+    .typecase(UInt64(240), signature)
+  ).complete
 
-  private val paymentInfo: Codec[PaymentInfo] = (("fee_base_msat" | millisatoshi32) ::
-    ("fee_proportional_millionths" | uint32) ::
-    ("cltv_expiry_delta" | cltvExpiryDelta) ::
-    ("htlc_minimum_msat" | millisatoshi) ::
-    ("htlc_maximum_msat" | millisatoshi) ::
-    ("features" | lengthPrefixedFeaturesCodec)).as[PaymentInfo]
+  private val invoicePaths: Codec[InvoicePaths] = tlvField(list(pathCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
 
-  private val paymentPathsInfo: Codec[PaymentPathsInfo] = tlvField(list(paymentInfo).xmap[Seq[PaymentInfo]](_.toSeq, _.toList).as[PaymentPathsInfo])
+  private val paymentInfo: Codec[PaymentInfo] =
+    (("fee_base_msat" | millisatoshi32) ::
+      ("fee_proportional_millionths" | uint32) ::
+      ("cltv_expiry_delta" | cltvExpiryDelta) ::
+      ("htlc_minimum_msat" | millisatoshi) ::
+      ("htlc_maximum_msat" | millisatoshi) ::
+      ("features" | lengthPrefixedFeaturesCodec)).as[PaymentInfo]
 
-  private val paymentPathsCapacities: Codec[PaymentPathsCapacities] = tlvField(list(millisatoshi).xmap[Seq[MilliSatoshi]](_.toSeq, _.toList).as[PaymentPathsCapacities])
+  private val invoiceBlindedPay: Codec[InvoiceBlindedPay] = tlvField(list(paymentInfo).xmap[Seq[PaymentInfo]](_.toSeq, _.toList))
 
-  private val createdAt: Codec[CreatedAt] = tlvField(tu64overflow.as[TimestampSecond].as[CreatedAt])
+  private val invoiceCreatedAt: Codec[InvoiceCreatedAt] = tlvField(tu64overflow.as[TimestampSecond])
 
-  private val paymentHash: Codec[PaymentHash] = tlvField(bytes32.as[PaymentHash])
+  private val invoiceRelativeExpiry: Codec[InvoiceRelativeExpiry] = tlvField(tu32)
 
-  private val relativeExpiry: Codec[RelativeExpiry] = tlvField(tu32.as[RelativeExpiry])
+  private val invoicePaymentHash: Codec[InvoicePaymentHash] = tlvField(bytes32)
 
-  private val cltv: Codec[Cltv] = tlvField(uint16.as[CltvExpiryDelta].as[Cltv])
+  private val invoiceAmount: Codec[InvoiceAmount] = tlvField(tmillisatoshi)
 
-  private val fallbackAddress: Codec[FallbackAddress] = variableSizeBytesLong(varintoverflow, ("version" | byte) :: ("address" | variableSizeBytes(uint16, bytes))).as[FallbackAddress]
+  private val fallbackAddress: Codec[FallbackAddress] = (("version" | byte) :: ("address" | variableSizeBytes(uint16, bytes))).as[FallbackAddress]
 
-  private val fallbacks: Codec[Fallbacks] = tlvField(list(fallbackAddress).xmap[Seq[FallbackAddress]](_.toSeq, _.toList).as[Fallbacks])
+  private val invoiceFallbacks: Codec[InvoiceFallbacks] = tlvField(list(fallbackAddress).xmap[Seq[FallbackAddress]](_.toSeq, _.toList))
 
-  private val refundSignature: Codec[RefundSignature] = tlvField(bytes64.as[RefundSignature])
+  private val invoiceFeatures: Codec[InvoiceFeatures] = tlvField(featuresCodec)
+
+  private val invoiceNodeId: Codec[InvoiceNodeId] = tlvField(publicKey)
 
   val invoiceTlvCodec: Codec[TlvStream[InvoiceTlv]] = TlvCodecs.tlvStream[InvoiceTlv](discriminated[InvoiceTlv].by(varint)
-    .typecase(UInt64(3), chain)
-    .typecase(UInt64(4), offerId)
-    .typecase(UInt64(8), amount)
-    .typecase(UInt64(10), description)
-    .typecase(UInt64(12), features)
-    // TODO: the spec for payment paths is not final, adjust codecs if changes are made to he spec.
-    .typecase(UInt64(16), paths)
-    .typecase(UInt64(18), paymentPathsInfo)
-    .typecase(UInt64(19), paymentPathsCapacities)
-    .typecase(UInt64(20), issuer)
-    .typecase(UInt64(30), nodeId)
-    .typecase(UInt64(32), quantity)
-    .typecase(UInt64(34), refundFor)
-    .typecase(UInt64(38), payerKey)
-    .typecase(UInt64(39), payerNote)
-    .typecase(UInt64(40), createdAt)
-    .typecase(UInt64(42), paymentHash)
-    .typecase(UInt64(44), relativeExpiry)
-    .typecase(UInt64(46), cltv)
-    .typecase(UInt64(48), fallbacks)
-    .typecase(UInt64(50), payerInfo)
-    .typecase(UInt64(52), refundSignature)
-    .typecase(UInt64(56), replaceInvoice)
+    // Invoice request part that must be copy-pasted from above
+    .typecase(UInt64(0), invoiceRequestMetadata)
+    .typecase(UInt64(2), offerChains)
+    .typecase(UInt64(4), offerMetadata)
+    .typecase(UInt64(6), offerCurrency)
+    .typecase(UInt64(8), offerAmount)
+    .typecase(UInt64(10), offerDescription)
+    .typecase(UInt64(12), offerFeatures)
+    .typecase(UInt64(14), offerAbsoluteExpiry)
+    .typecase(UInt64(16), offerPaths)
+    .typecase(UInt64(18), offerIssuer)
+    .typecase(UInt64(20), offerQuantityMax)
+    .typecase(UInt64(22), offerNodeId)
+    .typecase(UInt64(80), invoiceRequestChain)
+    .typecase(UInt64(82), invoiceRequestAmount)
+    .typecase(UInt64(84), invoiceRequestFeatures)
+    .typecase(UInt64(86), invoiceRequestQuantity)
+    .typecase(UInt64(88), invoiceRequestPayerId)
+    .typecase(UInt64(89), invoiceRequestPayerNote)
+    // Invoice part
+    .typecase(UInt64(160), invoicePaths)
+    .typecase(UInt64(162), invoiceBlindedPay)
+    .typecase(UInt64(164), invoiceCreatedAt)
+    .typecase(UInt64(166), invoiceRelativeExpiry)
+    .typecase(UInt64(168), invoicePaymentHash)
+    .typecase(UInt64(170), invoiceAmount)
+    .typecase(UInt64(172), invoiceFallbacks)
+    .typecase(UInt64(174), invoiceFeatures)
+    .typecase(UInt64(176), invoiceNodeId)
     .typecase(UInt64(240), signature)
   ).complete
 
@@ -156,5 +180,9 @@ object OfferCodecs {
     .typecase(UInt64(3), tlvField(bytes.as[SuggestedValue]))
     .typecase(UInt64(5), tlvField(utf8.as[Error]))
   ).complete
+
+  val invoiceRequestCodec: Codec[OnionMessagePayloadTlv.InvoiceRequest] = tlvField(invoiceRequestTlvCodec)
+  val invoiceCodec: Codec[OnionMessagePayloadTlv.Invoice] = tlvField(invoiceTlvCodec)
+  val invoiceErrorCodec: Codec[OnionMessagePayloadTlv.InvoiceError] = tlvField(invoiceErrorTlvCodec)
 
 }

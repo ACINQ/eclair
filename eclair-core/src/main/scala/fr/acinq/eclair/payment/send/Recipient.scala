@@ -167,13 +167,13 @@ case class BlindedRecipient(nodeId: PublicKey,
 
 object BlindedRecipient {
   def apply(invoice: Bolt12Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Seq[GenericTlv]): BlindedRecipient = {
-    val blindedHops = invoice.blindedPaths.zip(invoice.blindedPathsInfo).map {
-      case (route, info) =>
+    val blindedHops = invoice.blindedPaths.map(
+      path => {
         // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a
         // given edge in the graph, so we create a dummy one for the duration of the payment attempt.
         val dummyId = ShortChannelId.generateLocalAlias()
-        BlindedHop(dummyId, route, info)
-    }
+        BlindedHop(dummyId, path.route, path.paymentInfo)
+      })
     BlindedRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, blindedHops, customTlvs)
   }
 }

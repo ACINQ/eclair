@@ -102,9 +102,8 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val offerKey = randomKey()
     val offer = Offer(None, "test", offerKey.publicKey, Features.empty, recipient.nodeParams.chainHash)
     val invoiceReq = InvoiceRequest(offer, amount, 1, Features.empty, randomKey(), recipient.nodeParams.chainHash)
-    sender.send(recipient.paymentHandler, MultiPartHandler.ReceiveOfferPayment(offerKey, offer, invoiceReq, routes, recipient.router))
+    sender.send(recipient.paymentHandler, MultiPartHandler.ReceiveOfferPayment(offerKey, invoiceReq, routes, recipient.router))
     val invoice = sender.expectMsgType[Bolt12Invoice]
-    assert(invoice.nodeId != recipient.nodeParams.nodeId)
     invoice
   }
 

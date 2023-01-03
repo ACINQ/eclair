@@ -135,9 +135,9 @@ object MessageOnionCodecs {
   private val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
     .typecase(UInt64(2), replyPathCodec)
     .typecase(UInt64(4), encryptedDataCodec)
-    .typecase(UInt64(64), tlvField(OfferCodecs.invoiceRequestTlvCodec.as[InvoiceRequest]))
-    .typecase(UInt64(66), tlvField(OfferCodecs.invoiceTlvCodec.as[Invoice]))
-    .typecase(UInt64(68), tlvField(OfferCodecs.invoiceErrorTlvCodec.as[InvoiceError]))
+    .typecase(UInt64(64), OfferCodecs.invoiceRequestCodec)
+    .typecase(UInt64(66), OfferCodecs.invoiceCodec)
+    .typecase(UInt64(68), OfferCodecs.invoiceErrorCodec)
 
   val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 

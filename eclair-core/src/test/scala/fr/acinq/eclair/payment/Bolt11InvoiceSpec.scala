@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, Mil
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
 import fr.acinq.eclair.payment.Bolt11Invoice._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature, payment, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature, randomBytes32}
 import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
@@ -632,7 +632,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("no unknown feature in invoice") {
-    val invoiceFeatures = TestConstants.Alice.nodeParams.features.invoiceFeatures().remove(RouteBlinding)
+    val invoiceFeatures = TestConstants.Alice.nodeParams.features.bolt11Features().remove(RouteBlinding)
     assert(invoiceFeatures.unknown.nonEmpty)
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = invoiceFeatures)
     assert(invoice.features == Features(PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory))

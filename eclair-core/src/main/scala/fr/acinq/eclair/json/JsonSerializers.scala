@@ -429,8 +429,8 @@ object InvoiceSerializer extends MinimalSerializer({
       )),
       JField("blindedPaths", JArray(p.blindedPaths.map(path => {
         JObject(List(
-          JField("introductionNodeId", JString(path.introductionNodeId.toString())),
-          JField("blindedNodeIds", JArray(path.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
+          JField("introductionNodeId", JString(path.route.introductionNodeId.toString())),
+          JField("blindedNodeIds", JArray(path.route.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
         ))
       }).toList)),
       JField("createdAt", JLong(p.createdAt.toLong)),
