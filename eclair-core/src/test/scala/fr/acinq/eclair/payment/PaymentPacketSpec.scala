@@ -205,6 +205,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_e.amount == finalAmount)
     assert(payload_e.totalAmount == finalAmount)
     assert(add_e.cltvExpiry == finalExpiry)
+    assert(payload_e.expiry == finalExpiry - Channel.MIN_CLTV_EXPIRY_DELTA) // the expiry in the onion doesn't take the min_final_expiry_delta into account
     assert(payload_e.isInstanceOf[FinalPayload.Blinded])
     assert(payload_e.asInstanceOf[FinalPayload.Blinded].pathId == hex"deadbeef")
   }
@@ -523,6 +524,28 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val blinding_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextBlinding
 
     // When e receives a smaller amount than expected, it rejects the payment.
+    val add_e = UpdateAddHtlc(randomBytes32(), 0, relay_d.amountToForward, paymentHash, relay_d.outgoingCltv, packet_e, Some(blinding_e))
+    val Left(failure) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
+    assert(failure.isInstanceOf[InvalidOnionBlinding])
+  }
+
+  test("fail to decrypt blinded payment at the final node when expiry is too low") {
+    val (route, recipient) = shortBlindedHops()
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    assert(payment.outgoingChannel == channelUpdate_cd.shortChannelId)
+    assert(payment.cmd.cltvExpiry == expiry_cd)
+
+    // A smaller expiry is sent to d, who doesn't know that it's invalid.
+    // Intermediate nodes can reduce the expiry by at most min_final_expiry_delta.
+    val invalidExpiry = payment.cmd.cltvExpiry - Channel.MIN_CLTV_EXPIRY_DELTA - CltvExpiryDelta(1)
+    val add_d = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, paymentHash, invalidExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features(RouteBlinding -> Optional))
+    assert(payload_d.outgoingChannelId == channelUpdate_de.shortChannelId)
+    assert(relay_d.outgoingCltv < CltvExpiry(currentBlockCount))
+    assert(payload_d.isInstanceOf[IntermediatePayload.ChannelRelay.Blinded])
+    val blinding_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextBlinding
+
+    // When e receives a smaller expiry than expected, it rejects the payment.
     val add_e = UpdateAddHtlc(randomBytes32(), 0, relay_d.amountToForward, paymentHash, relay_d.outgoingCltv, packet_e, Some(blinding_e))
     val Left(failure) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
     assert(failure.isInstanceOf[InvalidOnionBlinding])

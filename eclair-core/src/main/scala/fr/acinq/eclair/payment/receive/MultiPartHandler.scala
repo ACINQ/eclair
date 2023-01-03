@@ -441,19 +441,18 @@ object MultiPartHandler {
   }
 
   private def validatePaymentCltv(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload)(implicit log: LoggingAdapter): Boolean = {
-    val minExpiry = nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
+    val minExpiry = payload match {
+      case _: FinalPayload.Standard => nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
+      // For blinded payments, the min-final-expiry-delta is included in the blinded path instead of being added
+      // explicitly by the sender to their onion payload's expiry.
+      case _: FinalPayload.Blinded => nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight.max(payload.expiry.blockHeight))
+    }
     if (add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
-      return false
+      false
+    } else {
+      true
     }
-    if (payload.isInstanceOf[FinalPayload.Blinded]) {
-      val expectedExpiry = payload.expiry + nodeParams.channelConf.minFinalExpiryDelta
-      if (add.cltvExpiry < expectedExpiry) {
-        log.warning("received blinded payment with unexpected expiry for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
-        return false
-      }
-    }
-    true
   }
 
   private def validateInvoiceFeatures(add: UpdateAddHtlc, payload: FinalPayload, invoice: Invoice)(implicit log: LoggingAdapter): Boolean = {
