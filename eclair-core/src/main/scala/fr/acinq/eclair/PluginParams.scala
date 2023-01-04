@@ -18,7 +18,6 @@ package fr.acinq.eclair
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
 
@@ -55,4 +54,18 @@ trait CustomCommitmentsPlugin extends PluginParams {
    * returned by this method.
    */
   def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc], nodeParams: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]]
+}
+
+/**
+ * Each intercepted message type must be handled by at most one plugin.
+ */
+object InterceptedMessageType extends Enumeration {
+  type InterceptedMessageType = Value
+  val InterceptOpenChannel: InterceptedMessageType.Value = Value(1, "InterceptOpenChannel")
+  val InterceptUpdateAddHtlc: InterceptedMessageType.Value = Value(2, "InterceptUpdateAddHtlc")
+}
+
+trait InterceptMessagePlugin extends PluginParams {
+  // set of message types that can be intercepted by this plugin
+  def canIntercept: Set[InterceptedMessageType.Value]
 }

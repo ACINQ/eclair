@@ -24,6 +24,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{BtcDouble, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
+import fr.acinq.eclair.InterceptedMessageType.InterceptOpenChannel
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
@@ -190,7 +191,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
             stay()
         }
 
-      case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
+        case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
             handleOpenChannel(Right(open), open.temporaryChannelId, open.fundingAmount, open.channelFlags, open.channelType_opt, d)
@@ -417,7 +418,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
         val upfrontShutdownScript = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.UpfrontShutdownScript)
         val localParams = createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight = false)
-        selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
+        if (nodeParams.pluginInterceptedMessages.contains(InterceptOpenChannel)) {
+          // plugin should reply to peer with either SpawnChannelNonInitiator or OutgoingMessage(Error)
+          context.system.eventStream.publish(OpenChannelReceived(selfRef, open, channelType, localParams, d.connectionInfo))
+        } else {
+          selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
+        }
       case Left(ex) =>
         log.warning("ignoring remote channel open: {}", ex.getMessage)
         val err = Error(temporaryChannelId, ex.getMessage)
@@ -545,7 +551,7 @@ object Peer {
   }
 
   private case class SpawnChannelInitiator(cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, origin: ActorRef)
-  private case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
+  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse {
