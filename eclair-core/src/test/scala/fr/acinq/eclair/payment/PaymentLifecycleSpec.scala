@@ -832,6 +832,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, request)
     routerForwarder.expectMsgType[RouteRequest]
     routerForwarder.forward(routerFixture.router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(cfg.id).exists(_.status == OutgoingPaymentStatus.Pending))
     val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(cfg.id)
     assert(outgoing.copy(createdAt = 0 unixms) == OutgoingPayment(cfg.id, cfg.parentId, Some(defaultExternalId), defaultPaymentHash, PaymentType.Blinded, defaultAmountMsat, defaultAmountMsat, recipient.nodeId, 0 unixms, Some(invoice), OutgoingPaymentStatus.Pending))
