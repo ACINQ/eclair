@@ -30,7 +30,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshi, UInt64, randomKey}
+import fr.acinq.eclair.{Features, Logs, MilliSatoshi, UInt64, randomKey}
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -284,6 +284,31 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   import InteractiveTxBuilder._
 
   private val log = context.log
+  // If we lock inputs for the duration of an interactive-tx session, it can be exploited by malicious peers to freeze
+  // some of our liquidity using the following attack:
+  //  - we contribute some funds to a collaborative transaction and lock the corresponding inputs
+  //  - we send our signatures for the shared transaction
+  //  - our peer never sends their signatures for the shared transaction
+  // Our inputs are then locked until we double-spend them, which we may not want to do immediately (it costs on-chain
+  // fees). Even if we double-spend them quickly after noticing that the peer seems malicious, our inputs have been
+  // locked for a short duration and the attacker can simply launch the attack again to keep our liquidity frozen.
+  //
+  // We can avoid this issue entirely by not locking inputs: this way they will be automatically double-spent when we
+  // need them, at no additional cost. There is a drawback though: if multiple interactive-tx sessions are running in
+  // parallel, they may use the same inputs and only one of them will succeed. It is an acceptable trade-off because:
+  //  - there is no other simple solution to protect against the griefing attack described above
+  //  - as soon as the transaction is broadcast, the inputs cannot be double-spent, so the time window for that race
+  //    condition between parallel sessions is quite small (seconds at most), especially for a generally infrequent
+  //    event (creating on-chain transactions)
+  //  - double-spend failures are detected, and we can simply retry the failed sessions if necessary
+  //
+  // When we're using 0-conf however we cannot take the risk of accidentally double-spending our own transaction, since
+  // it could lead to loss of funds. Using 0-conf implies we're trusting our peer, so we simply also trust them not to
+  // perform the liquidity attack.
+  //
+  // If the remote peer doesn't contribute any funds, we don't need their signatures to broadcast the transaction, which
+  // means they cannot perform the liquidity attack either, so we can safely lock our inputs.
+  private val lockInputs: Boolean = localParams.initFeatures.hasFeature(Features.ZeroConf) || fundingParams.remoteAmount == 0.sat
 
   private def start(): Behavior[Command] = {
     val toFund = if (fundingParams.isInitiator) {
@@ -315,7 +340,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
    * inputs.
    */
   def fund(txNotFunded: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
-    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, lockUtxos = true)) {
+    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, lockInputs)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx)
     }
@@ -443,12 +468,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     currentInputs.find(i => txIn.outPoint == toOutPoint(i)) match {
       case Some(previousInput) => Future.successful(Right(previousInput))
       case None =>
-        val inputTxDetails = for {
-          tx <- wallet.getTransaction(txIn.outPoint.txid)
-          confirmations <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
-        } yield (tx, confirmations.getOrElse(0))
-        inputTxDetails.map { case (previousTx, confirmations) =>
-          if (Transaction.write(previousTx).length > 65000) {
+        for {
+          previousTx <- wallet.getTransaction(txIn.outPoint.txid)
+          confirmations_opt <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
+          confirmations = confirmations_opt.getOrElse(0)
+          result = if (Transaction.write(previousTx).length > 65000) {
             // Wallet input transaction is too big to fit inside tx_add_input.
             Left(UnusableInput(txIn.outPoint))
           } else if (!Script.isNativeWitnessScript(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript)) {
@@ -460,7 +484,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           } else {
             Right(TxAddInput(fundingParams.channelId, UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
           }
-        }
+          // If the input is unusable, we lock it to make sure it's not selected in future funding attempts.
+          _ <- if (result.isLeft && !lockInputs) wallet.lockInputs(Set(txIn.outPoint)) else Future.successful(true)
+        } yield result
     }
   }
 

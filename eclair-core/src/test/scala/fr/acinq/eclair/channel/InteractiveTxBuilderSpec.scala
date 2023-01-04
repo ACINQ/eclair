@@ -195,15 +195,15 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Bob waits for Alice to send the first message.
       bob2alice.expectNoMessage(100 millis)
       // Alice --- tx_add_input --> Bob
-      val inputA1 = f.forwardAlice2Bob[TxAddInput]
+      f.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_add_input --- Bob
-      val inputB1 = f.forwardBob2Alice[TxAddInput]
+      f.forwardBob2Alice[TxAddInput]
       // Alice --- tx_add_input --> Bob
-      val inputA2 = f.forwardAlice2Bob[TxAddInput]
+      f.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_add_output --- Bob
       val outputB1 = f.forwardBob2Alice[TxAddOutput]
       // Alice --- tx_add_input --> Bob
-      val inputA3 = f.forwardAlice2Bob[TxAddInput]
+      f.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
       f.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_output --> Bob
@@ -217,18 +217,14 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice --- tx_complete --> Bob
       f.forwardAlice2Bob[TxComplete]
 
-      // Utxos are locked for the duration of the protocol.
+      // We don't lock inputs to protect against liquidity griefing attacks.
       val probe = TestProbe()
       val bitcoinClientA = new BitcoinCoreClient(rpcClientA)
       bitcoinClientA.listLockedInputs().pipeTo(probe.ref)
-      val locksA = probe.expectMsgType[Set[OutPoint]]
-      assert(locksA.size == 3)
-      assert(locksA == Set(inputA1, inputA2, inputA3).map(toOutPoint))
+      probe.expectMsg(Set.empty[OutPoint])
       val bitcoinClientB = new BitcoinCoreClient(rpcClientB)
       bitcoinClientB.listLockedInputs().pipeTo(probe.ref)
-      val locksB = probe.expectMsgType[Set[OutPoint]]
-      assert(locksB.size == 1)
-      assert(locksB == Set(toOutPoint(inputB1)))
+      probe.expectMsg(Set.empty[OutPoint])
 
       // Alice is responsible for adding the shared output.
       assert(aliceParams.fundingPubkeyScript == bobParams.fundingPubkeyScript)
@@ -253,7 +249,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(txB.tx.localFees(bobParams) < txA.tx.localFees(aliceParams))
       walletA.publishTransaction(txA.signedTx).pipeTo(probe.ref)
       probe.expectMsg(txA.signedTx.txid)
-      new BitcoinCoreClient(rpcClientA).getMempoolTx(txA.signedTx.txid).pipeTo(probe.ref)
+      bitcoinClientA.getMempoolTx(txA.signedTx.txid).pipeTo(probe.ref)
       val mempoolTx = probe.expectMsgType[MempoolTx]
       assert(mempoolTx.fees == txA.tx.fees)
       assert(txA.tx.fees == txB.tx.fees)
@@ -312,7 +308,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val probe = TestProbe()
       walletB.publishTransaction(txB.signedTx).pipeTo(probe.ref)
       probe.expectMsg(txB.signedTx.txid)
-      new BitcoinCoreClient(rpcClientB).getMempoolTx(txB.signedTx.txid).pipeTo(probe.ref)
+      val bitcoinClient = new BitcoinCoreClient(rpcClientB)
+      bitcoinClient.getMempoolTx(txB.signedTx.txid).pipeTo(probe.ref)
       val mempoolTx = probe.expectMsgType[MempoolTx]
       assert(mempoolTx.fees == txB.tx.fees)
       assert(txA.tx.fees == txB.tx.fees)
@@ -379,11 +376,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       bob ! Start(bob2alice.ref, Nil)
 
       // Alice --- tx_add_input --> Bob
-      f.forwardAlice2Bob[TxAddInput]
+      val inputA1 = f.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
       f.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_input --> Bob
-      f.forwardAlice2Bob[TxAddInput]
+      val inputA2 = f.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
       f.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_output --> Bob
@@ -396,6 +393,12 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       f.forwardBob2Alice[TxComplete]
       // Alice --- tx_complete --> Bob
       f.forwardAlice2Bob[TxComplete]
+
+      // Griefing attacks are not possible when we're the only contributor: we can then lock utxos for the duration of the protocol.
+      val probe = TestProbe()
+      val bitcoinClientA = new BitcoinCoreClient(rpcClientA)
+      bitcoinClientA.listLockedInputs().pipeTo(probe.ref)
+      probe.expectMsg(Set(inputA1, inputA2).map(i => toOutPoint(i)))
 
       // Alice is responsible for adding the shared output.
       assert(aliceParams.fundingPubkeyScript == bobParams.fundingPubkeyScript)
@@ -417,10 +420,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(txA.tx.remoteAmountIn == 0.sat)
       assert(txB.tx.localFees(bobParams) == 0.sat)
       assert(txA.tx.localFees(aliceParams) == txA.tx.fees)
-      val probe = TestProbe()
       walletA.publishTransaction(txA.signedTx).pipeTo(probe.ref)
       probe.expectMsg(txA.signedTx.txid)
-      new BitcoinCoreClient(rpcClientA).getMempoolTx(txA.signedTx.txid).pipeTo(probe.ref)
+      bitcoinClientA.getMempoolTx(txA.signedTx.txid).pipeTo(probe.ref)
       val mempoolTx = probe.expectMsgType[MempoolTx]
       assert(mempoolTx.fees == txA.tx.fees)
       assert(targetFeerate <= txA.feerate && txA.feerate <= targetFeerate * 1.25, s"unexpected feerate (target=$targetFeerate actual=${txA.feerate})")
@@ -542,7 +544,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("not enough funds (unusable utxos)") {
     val fundingA = 140_000 sat
     val utxosA = Seq(75_000 sat, 60_000 sat)
-    withFixture(fundingA, utxosA, 0 sat, Nil, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+    val fundingB = 50_000 sat
+    val utxosB = Seq(90_000 sat)
+    withFixture(fundingA, utxosA, fundingB, utxosB, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       // Add some unusable utxos to Alice's wallet.
@@ -590,23 +594,25 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("skip unusable utxos") {
     val fundingA = 140_000 sat
     val utxosA = Seq(55_000 sat, 65_000 sat, 50_000 sat)
-    withFixture(fundingA, utxosA, 0 sat, Nil, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+    val fundingB = 50_000 sat
+    val utxosB = Seq(90_000 sat)
+    withFixture(fundingA, utxosA, fundingB, utxosB, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       // Add some unusable utxos to Alice's wallet.
       val probe = TestProbe()
-      val bitcoinClient = new BitcoinCoreClient(rpcClientA)
+      val bitcoinClientA = new BitcoinCoreClient(rpcClientA)
       val legacyTxIds = {
         // Dual funding disallows non-segwit inputs.
         val legacyAddress = getNewAddress(probe, rpcClientA, Some("legacy"))
         val tx1 = sendToAddress(legacyAddress, 100_000 sat, probe).txid
-        val tx2 = sendToAddress(legacyAddress, 120_000 sat, probe).txid
+        val tx2 = sendToAddress(legacyAddress, 50_000 sat, probe).txid
         Seq(tx1, tx2)
       }
       generateBlocks(1)
 
       // We verify that all utxos are correctly included in our wallet.
-      bitcoinClient.listUnspent().pipeTo(probe.ref)
+      bitcoinClientA.listUnspent().pipeTo(probe.ref)
       val utxos = probe.expectMsgType[Seq[Utxo]]
       assert(utxos.length == 5)
       legacyTxIds.foreach(txid => assert(utxos.exists(_.txid == txid)))
@@ -617,12 +623,12 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Alice --- tx_add_input --> Bob
       f.forwardAlice2Bob[TxAddInput]
-      // Alice <-- tx_complete --- Bob
-      f.forwardBob2Alice[TxComplete]
+      // Alice <-- tx_add_input --- Bob
+      f.forwardBob2Alice[TxAddInput]
       // Alice --- tx_add_input --> Bob
       f.forwardAlice2Bob[TxAddInput]
-      // Alice <-- tx_complete --- Bob
-      f.forwardBob2Alice[TxComplete]
+      // Alice <-- tx_add_output --- Bob
+      f.forwardBob2Alice[TxAddOutput]
       // Alice --- tx_add_input --> Bob
       f.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
@@ -647,12 +653,12 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Unusable utxos should be skipped.
       legacyTxIds.foreach(txid => assert(!txA.signedTx.txIn.exists(_.outPoint.txid == txid)))
-      // Only used utxos should be locked.
-      awaitAssert({
+      // Utxos are not locked since both participants contribute.
+      val bitcoinClientB = new BitcoinCoreClient(rpcClientB)
+      Seq(bitcoinClientA, bitcoinClientB).foreach(bitcoinClient => {
         bitcoinClient.listLockedInputs().pipeTo(probe.ref)
-        val locks = probe.expectMsgType[Set[OutPoint]]
-        assert(locks == txA.signedTx.txIn.map(_.outPoint).toSet)
-      }, max = 10 seconds, interval = 100 millis)
+        probe.expectMsg(Set.empty[OutPoint])
+      })
     }
   }
 
