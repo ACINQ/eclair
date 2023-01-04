@@ -56,7 +56,7 @@ trait BitcoindService extends Logging {
 
   val PATH_BITCOIND = sys.env.get("BITCOIND_DIR") match {
     case Some(customBitcoinDir) => new File(customBitcoinDir, "bitcoind")
-    case None => new File(TestUtils.BUILD_DIRECTORY, "bitcoin-23.0/bin/bitcoind")
+    case None => new File(TestUtils.BUILD_DIRECTORY, "bitcoin-23.1/bin/bitcoind")
   }
   logger.info(s"using bitcoind: $PATH_BITCOIND")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
