@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt, QuicklensEach}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
@@ -52,15 +52,15 @@ object Helpers {
    */
   def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData = {
     data match {
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_CHANNEL_READY => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NORMAL => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_SHUTDOWN => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NEGOTIATING => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_CLOSING => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.modifyAll(_.metaCommitments.all.each).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_CHANNEL_READY => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_NORMAL => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_SHUTDOWN => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_NEGOTIATING => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_CLOSING => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
     }
   }
 
@@ -589,14 +589,14 @@ object Helpers {
      *
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
-    def nothingAtStake(data: PersistentChannelData): Boolean = data.metaCommitments.all.forall(nothingAtStake)
+    def nothingAtStake(data: PersistentChannelData): Boolean = data.metaCommitments.commitments.forall(nothingAtStake)
 
-    def nothingAtStake(commitments: Commitments): Boolean =
-      commitments.localCommit.index == 0 &&
-        commitments.localCommit.spec.toLocal == 0.msat &&
-        commitments.remoteCommit.index == 0 &&
-        commitments.remoteCommit.spec.toRemote == 0.msat &&
-        commitments.remoteNextCommitInfo.isRight
+    def nothingAtStake(commitment: Commitment): Boolean =
+      commitment.localCommit.index == 0 &&
+        commitment.localCommit.spec.toLocal == 0.msat &&
+        commitment.remoteCommit.index == 0 &&
+        commitment.remoteCommit.spec.toRemote == 0.msat &&
+        commitment.nextRemoteCommit_opt.isEmpty
 
     /**
      * As soon as a tx spending the funding tx has reached min_depth, we know what the closing type will be, before

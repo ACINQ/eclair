@@ -72,7 +72,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
     blockchain ! WatchFundingDeeplyBuried(self, commitments.fundingTxId, ANNOUNCEMENTS_MINCONF)
-    DATA_NORMAL(metaCommitments.copy(all = commitments.copy(remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)) +: Nil), shortIds1, None, initialChannelUpdate, None, None, None)
+    DATA_NORMAL(metaCommitments.copy(common = commitments.copy(remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)).common), shortIds1, None, initialChannelUpdate, None, None, None)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {

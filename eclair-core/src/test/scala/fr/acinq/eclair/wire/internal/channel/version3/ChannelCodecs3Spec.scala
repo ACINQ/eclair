@@ -100,10 +100,10 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     val remoteParams1 = remoteParams.copy(shutdownScript = Some(ByteVector.fromValidHex("deadbeef")))
     assert(codec.decodeValue(codec.encode(remoteParams1).require).require == remoteParams1)
 
-    val dataWithoutRemoteShutdownScript = normal.modify(_.metaCommitments.all.at(0).remoteParams).setTo(remoteParams)
+    val dataWithoutRemoteShutdownScript = normal.modify(_.metaCommitments.params.remoteParams).setTo(remoteParams)
     assert(channelDataCodec.decode(channelDataCodec.encode(dataWithoutRemoteShutdownScript).require).require.value == dataWithoutRemoteShutdownScript)
 
-    val dataWithRemoteShutdownScript = normal.modify(_.metaCommitments.all.at(0).remoteParams).setTo(remoteParams1)
+    val dataWithRemoteShutdownScript = normal.modify(_.metaCommitments.params.remoteParams).setTo(remoteParams1)
     assert(channelDataCodec.decode(channelDataCodec.encode(dataWithRemoteShutdownScript).require).require.value == dataWithRemoteShutdownScript)
   }
 

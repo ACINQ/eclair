@@ -72,7 +72,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
         // we consider the funding tx as confirmed (even in the zero-conf case)
         val commitments1 = commitments.copy(fundingTxStatus = ConfirmedFundingTx(fundingTx))
         val metaCommitments1 = metaCommitments.copy(
-          all = commitments1 +: Nil // this is the only remaining commitment
+          commitments = commitments1.commitment +: Nil // this is the only remaining commitment
         )
         Some(metaCommitments1)
       case None =>

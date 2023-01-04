@@ -2,26 +2,78 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
-import fr.acinq.eclair.channel.Commitments.PostRevocationAction
+import fr.acinq.eclair.channel.Commitments.{PostRevocationAction, msg2String}
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
+import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol.CommitSigTlv.{AlternativeCommitSig, AlternativeCommitSigsTlv}
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
+
+/** Static parameters shared by all commitments. */
+case class Params(channelId: ByteVector32,
+                  channelConfig: ChannelConfig,
+                  channelFeatures: ChannelFeatures,
+                  localParams: LocalParams, remoteParams: RemoteParams,
+                  channelFlags: ChannelFlags) {
+  /**
+   * We update local/global features at reconnection
+   */
+  def updateFeatures(localInit: Init, remoteInit: Init): Params = copy(
+    localParams = localParams.copy(initFeatures = localInit.features),
+    remoteParams = remoteParams.copy(initFeatures = remoteInit.features)
+  )
+}
+
+case class WaitForRev(sent: CommitSig, sentAfterLocalCommitIndex: Long)
+
+/** Dynamic values shared by all commitments, independently of the funding tx. */
+case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
+                  localNextHtlcId: Long, remoteNextHtlcId: Long,
+                  originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
+                  remoteNextCommitInfo: Either[WaitForRev, PublicKey], // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit_opt
+                  remotePerCommitmentSecrets: ShaChain) {
+  /**
+   * When reconnecting, we drop all unsigned changes.
+   */
+  def discardUnsignedUpdates(implicit log: LoggingAdapter): Common = {
+    log.debug("discarding proposed OUT: {}", localChanges.proposed.map(msg2String(_)).mkString(","))
+    log.debug("discarding proposed IN: {}", remoteChanges.proposed.map(msg2String(_)).mkString(","))
+    val common1 = copy(
+      localChanges = localChanges.copy(proposed = Nil),
+      remoteChanges = remoteChanges.copy(proposed = Nil),
+      localNextHtlcId = localNextHtlcId - localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
+      remoteNextHtlcId = remoteNextHtlcId - remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
+    log.debug(s"localNextHtlcId=${localNextHtlcId}->${common1.localNextHtlcId}")
+    log.debug(s"remoteNextHtlcId=${remoteNextHtlcId}->${common1.remoteNextHtlcId}")
+    common1
+  }
+}
+
+/** A minimal commitment for a given funding tx. */
+case class Commitment(fundingTxStatus: FundingTxStatus,
+                      localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit]) {
+  val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
+  val fundingTxId: ByteVector32 = commitInput.outPoint.txid
+}
 
 /**
  *
  * @param all                   all potentially valid commitments
  * @param remoteChannelData_opt peer backup
  */
-
-case class MetaCommitments(all: List[Commitments],
+case class MetaCommitments(params: Params,
+                           common: Common,
+                           commitments: List[Commitment],
                            remoteChannelData_opt: Option[ByteVector] = None) {
 
-  require(all.nonEmpty, "there must be at least one commitments")
+  require(commitments.nonEmpty, "there must be at least one commitments")
+
+  val all: List[Commitments] = commitments.map(Commitments(params, common, _))
 
   /** current valid commitments, according to our view of the blockchain */
   val main: Commitments = all.head
@@ -33,62 +85,66 @@ case class MetaCommitments(all: List[Commitments],
       case (Left(failure), _) => Left(failure)
     }
 
+  // NB: in the below, some common values are duplicated among all commitments, we only keep the first occurrence
+
   def sendAdd(cmd: CMD_ADD_HTLC, currentHeight: BlockHeight, feeConf: OnChainFeeConf): Either[ChannelException, (MetaCommitments, UpdateAddHtlc)] = {
     sequence(all.map(_.sendAdd(cmd, currentHeight, feeConf)))
-      .map { res: List[(Commitments, UpdateAddHtlc)] => (res.map(_._1), res.head._2) } // we only keep the first update_add_htlc (the others are duplicates)
-      .map { case (commitments, add) => (this.copy(all = commitments), add) }
+      .map { res: List[(Commitments, UpdateAddHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
+      .map { case (common, commitments, add) => (this.copy(common = common, commitments = commitments), add) }
   }
 
   def receiveAdd(add: UpdateAddHtlc, feeConf: OnChainFeeConf): Either[ChannelException, MetaCommitments] = {
     sequence(all.map(_.receiveAdd(add, feeConf)))
-      .map { commitments => this.copy(all = commitments) }
+      .map { res: List[Commitments] => (res.head.common, res.map(_.commitment)) }
+      .map { case (common, commitments) => this.copy(common = common, commitments = commitments) }
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): Either[ChannelException, (MetaCommitments, UpdateFulfillHtlc)] = {
     sequence(all.map(_.sendFulfill(cmd)))
-      .map { res: List[(Commitments, UpdateFulfillHtlc)] => (res.map(_._1), res.head._2) }
-      .map { case (commitments, fulfill) => (this.copy(all = commitments), fulfill) }
+      .map { res: List[(Commitments, UpdateFulfillHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
+      .map { case (common, commitments, fulfill) => (this.copy(common = common, commitments = commitments), fulfill) }
   }
 
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] = {
     sequence(all.map(_.receiveFulfill(fulfill)))
-      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.map(_._1), res.head._2, res.head._3) }
-      .map { case (commitments, origin, add) => (this.copy(all = commitments), origin, add) }
+      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2, res.head._3) }
+      .map { case (common, commitments, origin, add) => (this.copy(common = common, commitments = commitments), origin, add) }
   }
 
   def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either[ChannelException, (MetaCommitments, HtlcFailureMessage)] = {
     sequence(all.map(_.sendFail(cmd, nodeSecret)))
-      .map { res: List[(Commitments, HtlcFailureMessage)] => (res.map(_._1), res.head._2) }
-      .map { case (commitments, fail) => (this.copy(all = commitments), fail) }
+      .map { res: List[(Commitments, HtlcFailureMessage)] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
+      .map { case (common, commitments, fail) => (this.copy(common = common, commitments = commitments), fail) }
   }
 
   def sendFailMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): Either[ChannelException, (MetaCommitments, UpdateFailMalformedHtlc)] = {
     sequence(all.map(_.sendFailMalformed(cmd)))
-      .map { res: List[(Commitments, UpdateFailMalformedHtlc)] => (res.map(_._1), res.head._2) }
-      .map { case (commitments, fail) => (this.copy(all = commitments), fail) }
+      .map { res: List[(Commitments, UpdateFailMalformedHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
+      .map { case (common, commitments, fail) => (this.copy(common = common, commitments = commitments), fail) }
   }
 
   def receiveFail(fail: UpdateFailHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] = {
     sequence(all.map(_.receiveFail(fail)))
-      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.map(_._1), res.head._2, res.head._3) }
-      .map { case (commitments, origin, fail) => (this.copy(all = commitments), origin, fail) }
+      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2, res.head._3) }
+      .map { case (common, commitments, origin, fail) => (this.copy(common = common, commitments = commitments), origin, fail) }
   }
 
   def receiveFailMalformed(fail: UpdateFailMalformedHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] = {
     sequence(all.map(_.receiveFailMalformed(fail)))
-      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.map(_._1), res.head._2, res.head._3) }
-      .map { case (commitments, origin, fail) => (this.copy(all = commitments), origin, fail) }
+      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2, res.head._3) }
+      .map { case (common, commitments, origin, fail) => (this.copy(common = common, commitments = commitments), origin, fail) }
   }
 
   def sendFee(cmd: CMD_UPDATE_FEE, feeConf: OnChainFeeConf): Either[ChannelException, (MetaCommitments, UpdateFee)] = {
     sequence(all.map(_.sendFee(cmd, feeConf)))
-      .map { res: List[(Commitments, UpdateFee)] => (res.map(_._1), res.head._2) }
-      .map { case (commitments, fee) => (this.copy(all = commitments), fee) }
+      .map { res: List[(Commitments, UpdateFee)] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
+      .map { case (common, commitments, fee) => (this.copy(common = common, commitments = commitments), fee) }
   }
 
   def receiveFee(fee: UpdateFee, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, MetaCommitments] = {
     sequence(all.map(_.receiveFee(fee, feeConf)))
-      .map { commitments => this.copy(all = commitments) }
+      .map { res: List[Commitments] => (res.head.common, res.map(_.commitment)) }
+      .map { case (common, commitments) => this.copy(common = common, commitments = commitments) }
   }
 
   /** We need to send signatures for each commitments. */
@@ -100,8 +156,9 @@ case class MetaCommitments(all: List[Commitments],
         })
         // we set all commit_sigs as tlv of the first commit_sig (the first sigs will we duplicated)
         val commitSig = res.head._2.modify(_.tlvStream.records).usingIf(tlv.commitSigs.size > 1)(tlv +: _.toList)
-        val commitments = res.map(_._1)
-        (this.copy(all = commitments), commitSig)
+        val common = res.head._1.common
+        val commitments = res.map(_._1.commitment)
+        (this.copy(common = common, commitments = commitments), commitSig)
       }
   }
 
@@ -118,19 +175,18 @@ case class MetaCommitments(all: List[Commitments],
         }.toMap
     }
     sequence(all.map(c => c.receiveCommit(sigs(c.fundingTxId), keyManager)))
-      .map { res: List[(Commitments, RevokeAndAck)] => (res.map(_._1), res.head._2) }
-      .map { case (commitments, rev) => (this.copy(all = commitments), rev) }
+      .map { res: List[(Commitments, RevokeAndAck)] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
+      .map { case (common, commitments, rev) => (this.copy(common = common, commitments = commitments), rev) }
   }
 
   def receiveRevocation(revocation: RevokeAndAck, maxDustExposure: Satoshi): Either[ChannelException, (MetaCommitments, Seq[PostRevocationAction])] = {
     sequence(all.map(c => c.receiveRevocation(revocation, maxDustExposure)))
-      .map { res: List[(Commitments, Seq[PostRevocationAction])] => (res.map(_._1), res.head._2) }
-      .map { case (commitments, actions) => (this.copy(all = commitments), actions) }
+      .map { res: List[(Commitments, Seq[PostRevocationAction])] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
+      .map { case (common, commitments, actions) => (this.copy(common = common, commitments = commitments), actions) }
   }
 
-  // TODO: Local/RemoteChanges should only be part of MetaCommitments
   def discardUnsignedUpdates(implicit log: LoggingAdapter): MetaCommitments = {
-    this.copy(all = all.map(_.discardUnsignedUpdates))
+    this.copy(common = common.discardUnsignedUpdates)
   }
 
   def localHasChanges: Boolean = main.localHasChanges
@@ -138,5 +194,10 @@ case class MetaCommitments(all: List[Commitments],
 }
 
 object MetaCommitments {
-  def apply(commitments: Commitments): MetaCommitments = MetaCommitments(all = commitments +: Nil)
+  /** A 1:1 conversion helper to facilitate migration, nothing smart here. */
+  def apply(commitments: Commitments): MetaCommitments = MetaCommitments(
+    params = commitments.params,
+    common = commitments.common,
+    commitments = commitments.commitment +: Nil
+  )
 }

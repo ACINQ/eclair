@@ -122,7 +122,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
       case Success(_) =>
         // we consider the funding tx as confirmed (even in the zero-conf case)
         val commitments1 = d.commitments.copy(fundingTxStatus = ConfirmedFundingTx(fundingTx))
-        val metaCommitments1 = d.metaCommitments.copy(all = commitments1 :: Nil)
+        val metaCommitments1 = d.metaCommitments.copy(commitments = commitments1.commitment :: Nil)
         realScidStatus match {
           case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
           case _ => () // zero-conf channel

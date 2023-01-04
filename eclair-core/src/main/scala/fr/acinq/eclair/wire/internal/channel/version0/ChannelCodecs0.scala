@@ -292,7 +292,7 @@ private[channel] object ChannelCodecs0 {
       }).as[ChannelTypes0.Commitments].decodeOnly.map[Commitments](_.migrate()).decodeOnly
 
     val metaCommitmentsCodec: Codec[MetaCommitments] = commitmentsCodec
-      .map(commitments => MetaCommitments(commitments +: Nil))
+      .map(commitments => MetaCommitments(commitments))
       .decodeOnly
 
     val closingSignedCodec: Codec[ClosingSigned] = (
@@ -368,7 +368,7 @@ private[channel] object ChannelCodecs0 {
         ("deferred" | optional(bool, channelReadyCodec)) ::
         ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).map {
       case metaCommitments :: fundingTx :: waitingSince :: deferred :: lastSent :: HNil =>
-        val metaCommitments1 = metaCommitments.modify(_.all.at(0).fundingTxStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx))
+        val metaCommitments1 = metaCommitments.modify(_.commitments.at(0).fundingTxStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx))
         DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments1, waitingSince, deferred, lastSent)
     }.decodeOnly
 
@@ -381,7 +381,7 @@ private[channel] object ChannelCodecs0 {
         ("deferred" | optional(bool, channelReadyCodec)) ::
         ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).map {
       case metaCommitments :: fundingTx :: waitingSince :: deferred :: lastSent :: HNil =>
-        val metaCommitments1 = metaCommitments.modify(_.all.at(0).fundingTxStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx))
+        val metaCommitments1 = metaCommitments.modify(_.commitments.at(0).fundingTxStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx))
         DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments1, waitingSince, deferred, lastSent)
     }.decodeOnly
 
@@ -451,7 +451,7 @@ private[channel] object ChannelCodecs0 {
         ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case metaCommitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
-        val metaCommitments1 = metaCommitments.modify(_.all.at(0).fundingTxStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx_opt))
+        val metaCommitments1 = metaCommitments.modify(_.commitments.at(0).fundingTxStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx_opt))
         DATA_CLOSING(metaCommitments1, waitingSince, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
@@ -467,7 +467,7 @@ private[channel] object ChannelCodecs0 {
         ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case metaCommitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
-        val metaCommitments1 = metaCommitments.modify(_.all.at(0).fundingTxStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx_opt))
+        val metaCommitments1 = metaCommitments.modify(_.commitments.at(0).fundingTxStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx_opt))
         DATA_CLOSING(metaCommitments1, waitingSince, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 

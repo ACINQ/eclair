@@ -879,18 +879,35 @@ case class Commitments(channelId: ByteVector32,
     commitInput.redeemScript == fundingScript
   }
 
-  /**
-   * We update local/global features at reconnection
-   * TODO: should be moved to [[MetaCommitments]]
-   */
-  def updateFeatures(localInit: Init, remoteInit: Init): Commitments = copy(
-    localParams = localParams.copy(initFeatures = localInit.features),
-    remoteParams = remoteParams.copy(initFeatures = remoteInit.features)
-  )
+  def params: Params = Params(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
+
+  def common: Common = Common(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
+
+  def commitment: Commitment = Commitment(fundingTxStatus, localCommit, remoteCommit, remoteNextCommitInfo.swap.map(_.nextRemoteCommit).toOption)
 
 }
 
 object Commitments {
+
+  /** A 1:1 conversion helper to facilitate migration, nothing smart here. */
+  def apply(params: Params, common: Common, commitment: Commitment): Commitments = Commitments(
+    channelId = params.channelId,
+    channelConfig = params.channelConfig,
+    channelFeatures = params.channelFeatures,
+    localParams = params.localParams,
+    remoteParams = params.remoteParams,
+    channelFlags = params.channelFlags,
+    localCommit = commitment.localCommit,
+    remoteCommit = commitment.remoteCommit,
+    localChanges = common.localChanges,
+    remoteChanges = common.remoteChanges,
+    localNextHtlcId = common.localNextHtlcId,
+    remoteNextHtlcId = common.remoteNextHtlcId,
+    originChannels = common.originChannels,
+    remoteNextCommitInfo = common.remoteNextCommitInfo.swap.map(waitForRev => WaitingForRevocation(commitment.nextRemoteCommit_opt.get, waitForRev.sent, waitForRev.sentAfterLocalCommitIndex)).swap,
+    fundingTxStatus = commitment.fundingTxStatus,
+    remotePerCommitmentSecrets = common.remotePerCommitmentSecrets
+  )
 
   def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
     case u: UpdateFulfillHtlc => id == u.id

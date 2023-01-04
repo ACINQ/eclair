@@ -385,8 +385,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       log.info("funding txid={} was successfully published for zero-conf channelId={}", fundingTx.txid, d.channelId)
       acceptSingleFundingTx(d, fundingTx, RealScidStatus.Unknown)
 
-    case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED)
-    =>
+    case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       log.info(s"channelId=${d.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
       val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt))
       acceptSingleFundingTx(d, fundingTx, realScidStatus)

@@ -118,7 +118,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CMD_FULFILL_HTLC(0, r1)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.all.at(0).localChanges.proposed).using(_ :+ fulfill)
+      .modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fulfill)
     )
   }
 
@@ -210,7 +210,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CMD_FAIL_HTLC(1, Right(PermanentChannelFailure()))
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.all.at(0).localChanges.proposed).using(_ :+ fail)
+      .modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fail)
     )
   }
 
@@ -240,7 +240,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.all.at(0).localChanges.proposed).using(_ :+ fail)
+      .modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fail)
     )
   }
 
@@ -519,7 +519,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_FEE]]
     val fee = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState
-      .modify(_.metaCommitments.all.at(0).localChanges.proposed).using(_ :+ fee)
+      .modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fee)
     )
   }
 
@@ -538,7 +538,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee
     awaitCond(bob.stateData == initialData
-      .modify(_.metaCommitments.all.at(0).remoteChanges.proposed).using(_ :+ fee)
+      .modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ fee)
     )
   }
 
