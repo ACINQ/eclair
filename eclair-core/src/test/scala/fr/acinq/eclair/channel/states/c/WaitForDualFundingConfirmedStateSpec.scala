@@ -22,7 +22,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, SingleKeyOnChainWallet}
-import fr.acinq.eclair.channel.InteractiveTxBuilder.FullySignedSharedTransaction
+import fr.acinq.eclair.channel.InteractiveTxBuilder.{FullySignedSharedTransaction, toOutPoint}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ProcessCurrentBlockHeight
@@ -380,27 +380,27 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
   test("recv CurrentBlockCount (funding double-spent)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
     val currentBlock = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].waitingSince + 10
-    wallet.doubleSpent = Set(fundingTx.txid)
+    wallet.doubleSpent = Set(fundingTx.signedTx.txid)
     alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock))
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
-    awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
+    awaitCond(wallet.unlocked == fundingTx.tx.localInputs.map(i => toOutPoint(i)).toSet)
     awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv CurrentBlockCount (funding double-spent while offline)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
     val currentBlock = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].waitingSince + 10
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
-    wallet.doubleSpent = Set(fundingTx.txid)
+    wallet.doubleSpent = Set(fundingTx.signedTx.txid)
     alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock))
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
-    awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
+    awaitCond(wallet.unlocked == fundingTx.tx.localInputs.map(i => toOutPoint(i)).toSet)
     awaitCond(alice.stateName == CLOSED)
   }
 

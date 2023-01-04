@@ -149,10 +149,10 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv INPUT_DISCONNECTED") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].fundingTx
-    assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].rolledback.isEmpty)
+    assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].unlocked.isEmpty)
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == CLOSED)
-    assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].rolledback.contains(fundingTx))
+    assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].unlocked == fundingTx.txIn.map(_.outPoint).toSet)
     aliceOrigin.expectMsgType[Status.Failure]
   }
 

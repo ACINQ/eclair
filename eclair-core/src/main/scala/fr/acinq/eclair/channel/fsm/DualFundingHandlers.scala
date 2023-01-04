@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
@@ -110,7 +109,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     val fundingTxIds = (d.commitments +: d.previousFundingTxs.map(_.commitments)).map(_.fundingTxId).toSet
     if (fundingTxIds.subsetOf(e.fundingTxIds)) {
       log.warning("{} funding attempts have been double-spent, forgetting channel", fundingTxIds.size)
-      (d.fundingTx +: d.previousFundingTxs.map(_.fundingTx)).foreach(tx => wallet.rollback(tx.tx.buildUnsignedTx()))
+      (d.fundingTx +: d.previousFundingTxs.map(_.fundingTx)).foreach(tx => wallet.unlockInputs(tx.tx.localInputs.map(i => toOutPoint(i)).toSet))
       channelOpenReplyToUser(Left(LocalError(FundingTxDoubleSpent(d.channelId))))
       goto(CLOSED) sending Error(d.channelId, FundingTxDoubleSpent(d.channelId).getMessage)
     } else {
@@ -126,10 +125,8 @@ trait DualFundingHandlers extends CommonFundingHandlers {
    * never sent us their signatures, or the transaction wasn't accepted in our mempool), their inputs may still be locked.
    */
   def rollbackDualFundingTxs(txs: Seq[SignedSharedTransaction]): Unit = {
-    val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(toOutPoint(i), Nil, 0))
-    if (inputs.nonEmpty) {
-      wallet.rollback(Transaction(2, inputs, Nil, 0))
-    }
+    val inputs = txs.flatMap(_.tx.localInputs.map(i => toOutPoint(i))).toSet
+    wallet.unlockInputs(inputs)
   }
 
 }

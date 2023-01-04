@@ -404,7 +404,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           }
           log.debug("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
           // We unlock the unusable inputs from previous iterations (if any) as they can be used outside of this session.
-          unlock(unusableInputs.map(_.outpoint))
+          wallet.unlockInputs(unusableInputs.map(_.outpoint))
           // The initiator's serial IDs must use even values and the non-initiator odd values.
           val serialIdParity = if (fundingParams.isInitiator) 0 else 1
           val txAddInputs = inputDetails.usableInputs.zipWithIndex.map { case (input, i) => input.copy(serialId = UInt64(2 * i + serialIdParity)) }
@@ -837,18 +837,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val previousInputs = previousTransactions.flatMap(_.tx.localInputs.map(toOutPoint)).toSet
     val toUnlock = txInputs -- previousInputs
     log.debug("unlocking inputs: {}", toUnlock.map(o => s"${o.txid}:${o.index}").mkString(","))
-    context.pipeToSelf(unlock(toUnlock))(_ => UtxosUnlocked)
+    context.pipeToSelf(wallet.unlockInputs(toUnlock))(_ => UtxosUnlocked)
     Behaviors.receiveMessagePartial {
       case UtxosUnlocked => Behaviors.stopped
-    }
-  }
-
-  private def unlock(inputs: Set[OutPoint]): Future[Boolean] = {
-    if (inputs.isEmpty) {
-      Future.successful(true)
-    } else {
-      val dummyTx = Transaction(2, inputs.toSeq.map(o => TxIn(o, Nil, 0)), Nil, 0)
-      wallet.rollback(dummyTx)
     }
   }
 

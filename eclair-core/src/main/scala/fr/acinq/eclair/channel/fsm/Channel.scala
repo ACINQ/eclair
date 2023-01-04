@@ -1279,7 +1279,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(MakeFundingTxResponse(fundingTx, _, _), _) =>
       // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
       // in that case we rollback the tx
-      wallet.rollback(fundingTx)
+      wallet.unlockInputs(fundingTx.txIn.map(_.outPoint).toSet)
       stay()
 
     case Event(INPUT_DISCONNECTED, _) => stay() // we are disconnected, but it doesn't matter anymore

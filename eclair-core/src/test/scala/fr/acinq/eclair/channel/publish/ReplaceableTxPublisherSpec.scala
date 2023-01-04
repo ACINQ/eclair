@@ -651,7 +651,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // our parent will stop us when receiving the TxRejected message.
       publisher2 ! Stop
       awaitAssert({
-        wallet.listLockedOutpoints().pipeTo(probe.ref)
+        wallet.listLockedInputs().pipeTo(probe.ref)
         assert(!probe.expectMsgType[Set[OutPoint]].exists(_.txid != commitTx.tx.txid))
       })
 
@@ -678,7 +678,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // we unlock utxos before stopping
       publisher ! Stop
       awaitAssert({
-        wallet.listLockedOutpoints().pipeTo(probe.ref)
+        wallet.listLockedInputs().pipeTo(probe.ref)
         assert(probe.expectMsgType[Set[OutPoint]].isEmpty)
       })
     }
@@ -1125,7 +1125,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // our parent will stop us when receiving the TxRejected message.
       publisher2 ! Stop
       awaitAssert({
-        wallet.listLockedOutpoints().pipeTo(probe.ref)
+        wallet.listLockedInputs().pipeTo(probe.ref)
         assert(!probe.expectMsgType[Set[OutPoint]].exists(_.txid != commitTx.txid))
       })
 
@@ -1151,7 +1151,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // We unlock utxos before stopping.
       publisher ! Stop
       awaitAssert({
-        wallet.listLockedOutpoints().pipeTo(probe.ref)
+        wallet.listLockedInputs().pipeTo(probe.ref)
         assert(probe.expectMsgType[Set[OutPoint]].isEmpty)
       })
     }

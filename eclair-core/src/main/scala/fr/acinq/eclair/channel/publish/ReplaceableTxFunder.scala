@@ -333,9 +333,9 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   def unlockAndStop(input: OutPoint, tx: Transaction, failure: TxPublisher.TxRejectedReason): Behavior[Command] = {
-    val toUnlock = tx.txIn.filterNot(_.outPoint == input).map(_.outPoint)
+    val toUnlock = tx.txIn.filterNot(_.outPoint == input).map(_.outPoint).toSet
     log.debug("unlocking utxos={}", toUnlock.mkString(", "))
-    context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock))(_ => UtxosUnlocked)
+    context.pipeToSelf(bitcoinClient.unlockInputs(toUnlock))(_ => UtxosUnlocked)
     Behaviors.receiveMessagePartial {
       case UtxosUnlocked =>
         log.debug("utxos unlocked")

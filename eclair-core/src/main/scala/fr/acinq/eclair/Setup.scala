@@ -268,12 +268,12 @@ class Setup(val datadir: File,
       //  - the only case where double-spending a funding transaction causes a loss of funds is when we accept a 0-conf
       //    channel and our peer double-spends it, but we should never accept 0-conf channels from peers we don't trust
       lockedUtxosBehavior = config.getString("bitcoind.startup-locked-utxos-behavior").toLowerCase
-      _ <- bitcoinClient.listLockedOutpoints().flatMap { lockedOutpoints =>
+      _ <- bitcoinClient.listLockedInputs().flatMap { lockedOutpoints =>
         if (lockedOutpoints.isEmpty) {
           Future.successful(true)
         } else if (lockedUtxosBehavior == "unlock") {
           logger.info(s"unlocking utxos: ${lockedOutpoints.map(o => s"${o.txid}:${o.index}").mkString(", ")}")
-          bitcoinClient.unlockOutpoints(lockedOutpoints.toSeq)
+          bitcoinClient.unlockInputs(lockedOutpoints)
         } else if (lockedUtxosBehavior == "stop") {
           logger.warn(s"cannot start eclair with locked utxos: ${lockedOutpoints.map(o => s"${o.txid}:${o.index}").mkString(", ")}")
           NotificationsLogger.logFatalError(

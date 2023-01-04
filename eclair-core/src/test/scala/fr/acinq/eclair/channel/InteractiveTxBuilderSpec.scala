@@ -220,12 +220,12 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Utxos are locked for the duration of the protocol.
       val probe = TestProbe()
       val bitcoinClientA = new BitcoinCoreClient(rpcClientA)
-      bitcoinClientA.listLockedOutpoints().pipeTo(probe.ref)
+      bitcoinClientA.listLockedInputs().pipeTo(probe.ref)
       val locksA = probe.expectMsgType[Set[OutPoint]]
       assert(locksA.size == 3)
       assert(locksA == Set(inputA1, inputA2, inputA3).map(toOutPoint))
       val bitcoinClientB = new BitcoinCoreClient(rpcClientB)
-      bitcoinClientB.listLockedOutpoints().pipeTo(probe.ref)
+      bitcoinClientB.listLockedInputs().pipeTo(probe.ref)
       val locksB = probe.expectMsgType[Set[OutPoint]]
       assert(locksB.size == 1)
       assert(locksB == Set(toOutPoint(inputB1)))
@@ -533,7 +533,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(alice2bob.expectMsgType[LocalFailure].cause == ChannelFundingError(aliceParams.channelId))
       // Alice's utxos shouldn't be locked after the failed funding attempt.
       awaitAssert({
-        bitcoinClient.listLockedOutpoints().pipeTo(probe.ref)
+        bitcoinClient.listLockedInputs().pipeTo(probe.ref)
         assert(probe.expectMsgType[Set[OutPoint]].isEmpty)
       }, max = 10 seconds, interval = 100 millis)
     }
@@ -581,7 +581,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(alice2bob.expectMsgType[LocalFailure].cause == ChannelFundingError(aliceParams.channelId))
       // Utxos shouldn't be locked after a failure.
       awaitAssert({
-        bitcoinClient.listLockedOutpoints().pipeTo(probe.ref)
+        bitcoinClient.listLockedInputs().pipeTo(probe.ref)
         assert(probe.expectMsgType[Set[OutPoint]].isEmpty)
       }, max = 10 seconds, interval = 100 millis)
     }
@@ -649,7 +649,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       legacyTxIds.foreach(txid => assert(!txA.signedTx.txIn.exists(_.outPoint.txid == txid)))
       // Only used utxos should be locked.
       awaitAssert({
-        bitcoinClient.listLockedOutpoints().pipeTo(probe.ref)
+        bitcoinClient.listLockedInputs().pipeTo(probe.ref)
         val locks = probe.expectMsgType[Set[OutPoint]]
         assert(locks == txA.signedTx.txIn.map(_.outPoint).toSet)
       }, max = 10 seconds, interval = 100 millis)

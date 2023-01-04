@@ -320,7 +320,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published
-          wallet.rollback(fundingTx)
+          wallet.unlockInputs(fundingTx.txIn.map(_.outPoint).toSet)
           channelOpenReplyToUser(Left(LocalError(cause)))
           handleLocalError(InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx.txid), d, Some(msg))
         case Success(_) =>
@@ -350,25 +350,25 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
+      wallet.unlockInputs(d.fundingTx.txIn.map(_.outPoint).toSet)
       channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
       handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
+      wallet.unlockInputs(d.fundingTx.txIn.map(_.outPoint).toSet)
       channelOpenReplyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
+      wallet.unlockInputs(d.fundingTx.txIn.map(_.outPoint).toSet)
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
+      wallet.unlockInputs(d.fundingTx.txIn.map(_.outPoint).toSet)
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
   })

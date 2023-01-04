@@ -313,12 +313,8 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case UnlockUtxos =>
         val toUnlock = failedTx.txIn.map(_.outPoint).toSet -- mempoolTx.signedTx.txIn.map(_.outPoint).toSet
-        if (toUnlock.isEmpty) {
-          context.self ! UtxosUnlocked
-        } else {
-          log.debug("unlocking utxos={}", toUnlock.mkString(", "))
-          context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock.toSeq))(_ => UtxosUnlocked)
-        }
+        log.debug("unlocking utxos={}", toUnlock.mkString(", "))
+        context.pipeToSelf(bitcoinClient.unlockInputs(toUnlock))(_ => UtxosUnlocked)
         Behaviors.same
       case UtxosUnlocked =>
         // Now that we've cleaned up the failed transaction, we can go back to waiting for the current mempool transaction
@@ -358,12 +354,8 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case UnlockUtxos =>
         val toUnlock = txs.flatMap(_.txIn).filterNot(_.outPoint == input).map(_.outPoint).toSet
-        if (toUnlock.isEmpty) {
-          context.self ! UtxosUnlocked
-        } else {
-          log.debug("unlocking utxos={}", toUnlock.mkString(", "))
-          context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock.toSeq))(_ => UtxosUnlocked)
-        }
+        log.debug("unlocking utxos={}", toUnlock.mkString(", "))
+        context.pipeToSelf(bitcoinClient.unlockInputs(toUnlock))(_ => UtxosUnlocked)
         Behaviors.same
       case UtxosUnlocked =>
         log.debug("utxos unlocked")

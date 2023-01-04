@@ -111,7 +111,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
    * Return true if this output has already been spent by a confirmed transaction.
    * Note that a reorg may invalidate the result of this function and make a spent output spendable again.
    */
-  def isTransactionOutputSpent(txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
+  private def isTransactionOutputSpent(txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
     getTxConfirmations(txid).flatMap {
       case Some(confirmations) if confirmations > 0 =>
         // There is an important limitation when using isTransactionOutputSpendable: if it returns false, it can mean a
@@ -251,7 +251,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       logger.warn(s"txid=${tx.txid} error=$e")
       getTransaction(tx.txid).transformWith {
         case Success(_) => Future.successful(true) // tx is in the mempool, we consider that it was published
-        case Failure(_) => rollback(tx).transform(_ => Success(false)) // we use transform here because we want to return false in all cases even if rollback fails
+        case Failure(_) => unlockInputs(tx.txIn.map(_.outPoint).toSet).transform(_ => Success(false)) // we use transform here because we want to return false in all cases even if rollback fails
       }
   }
 
@@ -284,7 +284,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     val f = signTransaction(tx)
     // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
     f.recoverWith { case _ =>
-      unlockOutpoints(tx.txIn.map(_.outPoint))
+      unlockInputs(tx.txIn.map(_.outPoint).toSet)
         .recover { case t: Throwable => // no-op, just add a log in case of failure
           logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", t)
           t
@@ -325,8 +325,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     rpcClient.invoke("abandontransaction", txId).map(_ => true).recover(_ => false)
   }
 
-  /** List all outpoints that are currently locked. */
-  def listLockedOutpoints()(implicit ec: ExecutionContext): Future[Set[OutPoint]] = {
+  /** List all inputs that are currently locked. */
+  def listLockedInputs()(implicit ec: ExecutionContext): Future[Set[OutPoint]] = {
     rpcClient.invoke("listlockunspent").collect {
       case JArray(locks) => locks.map(item => {
         val JString(txid) = item \ "txid"
@@ -337,29 +337,49 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   }
 
   /**
-   * @param outPoints outpoints to unlock.
-   * @return true if all outpoints were successfully unlocked, false otherwise.
+   * @param outpoints inputs to lock.
+   * @return true if all inputs were successfully locked, false otherwise.
    */
-  def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
-    // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually locked and the rest would not be processed
-    val futures = outPoints
-      .map(outPoint => UnlockOutpoint(outPoint.txid, outPoint.index))
-      .map(utxo => rpcClient
-        .invoke("lockunspent", true, List(utxo))
-        .mapTo[JBool]
-        .transformWith {
-          case Success(JBool(result)) => Future.successful(result)
-          case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
-            Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
-          case Failure(_) =>
-            Future.successful(false)
-        })
-    val future = Future.sequence(futures)
-    // return true if all outpoints were unlocked false otherwise
-    future.map(_.forall(b => b))
+  def lockInputs(outpoints: Set[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
+    if (outpoints.isEmpty) {
+      Future.successful(true)
+    } else {
+      // we lock utxos one by one and not as a list as it would fail at the first utxo that is not actually unlocked and the rest would not be processed
+      val futures = outpoints.map(outPoint => UnlockOutpoint(outPoint.txid, outPoint.index)).map(utxo =>
+        rpcClient
+          .invoke("lockunspent", /* unlock */ false, List(utxo))
+          .mapTo[JBool]
+          .transformWith {
+            case Success(JBool(result)) => Future.successful(result)
+            case Failure(JsonRPCError(error)) if error.message.contains("output already locked") => Future.successful(true)
+            case Failure(_) => Future.successful(false)
+          })
+      Future.sequence(futures).map(_.forall(b => b))
+    }
   }
 
-  def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
+  /**
+   * @param outpoints inputs to unlock.
+   * @return true if all inputs were successfully unlocked, false otherwise.
+   */
+  def unlockInputs(outpoints: Set[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
+    if (outpoints.isEmpty) {
+      Future.successful(true)
+    } else {
+      // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually locked and the rest would not be processed
+      val futures = outpoints.map(outPoint => UnlockOutpoint(outPoint.txid, outPoint.index)).map(utxo =>
+        rpcClient
+          .invoke("lockunspent", /* unlock */ true, List(utxo))
+          .mapTo[JBool]
+          .transformWith {
+            case Success(JBool(result)) => Future.successful(result)
+            // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
+            case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") => Future.successful(true)
+            case Failure(_) => Future.successful(false)
+          })
+      Future.sequence(futures).map(_.forall(b => b))
+    }
+  }
 
   //------------------------- ADDRESSES  -------------------------//
 
@@ -468,11 +488,12 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       val JBool(safe) = utxo \ "safe"
       val JDecimal(amount) = utxo \ "amount"
       val JString(txid) = utxo \ "txid"
+      val JInt(vout) = utxo \ "vout"
       val label = utxo \ "label" match {
         case JString(label) => Some(label)
         case _ => None
       }
-      Utxo(ByteVector32.fromValidHex(txid), (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
+      Utxo(ByteVector32.fromValidHex(txid), vout.toLong, (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
     })
   }
 
@@ -536,7 +557,7 @@ object BitcoinCoreClient {
 
   case class UnlockOutpoint(txid: ByteVector32, vout: Long)
 
-  case class Utxo(txid: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
+  case class Utxo(txid: ByteVector32, vout: Long, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 

@@ -31,7 +31,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPass
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressToPublicKeyScript, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
@@ -318,7 +318,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val fundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
       bitcoinClient.publishTransaction(fundingTx.copy(txIn = Nil)).pipeTo(sender.ref) // try publishing an invalid version of the tx
       sender.expectMsgType[Failure]
-      bitcoinClient.rollback(fundingTx).pipeTo(sender.ref) // rollback the locked outputs
+      bitcoinClient.unlockInputs(fundingTx.txIn.map(_.outPoint).toSet).pipeTo(sender.ref)
       assert(sender.expectMsgType[Boolean])
 
       // now fund a tx with correct feerate
@@ -326,19 +326,19 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       sender.expectMsgType[MakeFundingTxResponse].fundingTx
     }
 
-    bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+    bitcoinClient.listLockedInputs().pipeTo(sender.ref)
     assert(sender.expectMsgType[Set[OutPoint]].size == 4)
 
     bitcoinClient.commit(fundingTxs(0)).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
 
-    bitcoinClient.rollback(fundingTxs(1)).pipeTo(sender.ref)
+    bitcoinClient.unlockInputs(fundingTxs(1).txIn.map(_.outPoint).toSet).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
 
     bitcoinClient.commit(fundingTxs(2)).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
 
-    bitcoinClient.rollback(fundingTxs(3)).pipeTo(sender.ref)
+    bitcoinClient.unlockInputs(fundingTxs(3).txIn.map(_.outPoint).toSet).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
 
     bitcoinClient.getTransaction(fundingTxs(0).txid).pipeTo(sender.ref)
@@ -348,7 +348,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(fundingTxs(2))
 
     // NB: from 0.17.0 on bitcoin core will clear locks when a tx is published
-    bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+    bitcoinClient.listLockedInputs().pipeTo(sender.ref)
     assert(sender.expectMsgType[Set[OutPoint]].isEmpty)
   }
 
@@ -376,7 +376,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
-    bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+    bitcoinClient.listLockedInputs().pipeTo(sender.ref)
     assert(sender.expectMsgType[Set[OutPoint]].isEmpty)
 
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
@@ -406,7 +406,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       assert(fundedTx.txIn.length >= 3)
 
       // tx inputs should be locked
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
       val lockedUtxos = sender.expectMsgType[Set[OutPoint]]
       fundedTx.txIn.foreach(txIn => assert(lockedUtxos.contains(txIn.outPoint)))
 
@@ -415,7 +415,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
       sender.expectMsg(signTxResponse.tx.txid)
       // once the tx is published, the inputs should be automatically unlocked
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
       assert(sender.expectMsgType[Set[OutPoint]].isEmpty)
       signTxResponse.tx
     }
@@ -428,7 +428,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       assert(fundedTx.txIn.length >= 2) // we added at least one new input
 
       // newly added inputs should be locked
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
       val lockedUtxos = sender.expectMsgType[Set[OutPoint]]
       fundedTx.txIn.foreach(txIn => assert(lockedUtxos.contains(txIn.outPoint)))
 
@@ -437,7 +437,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
       sender.expectMsg(signTxResponse.tx.txid)
       // once the tx is published, the inputs should be automatically unlocked
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
       assert(sender.expectMsgType[Set[OutPoint]].isEmpty)
       signTxResponse.tx
     }
@@ -473,7 +473,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // fundingTx inputs are still locked except for the first 2 that were just spent
     val expectedLocks = fundingTx.txIn.drop(2).map(_.outPoint).toSet
     awaitAssert({
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
       val locks = sender.expectMsgType[Set[OutPoint]]
       assert((expectedLocks -- locks).isEmpty)
     }, max = 10 seconds, interval = 1 second)
@@ -485,48 +485,62 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     // and all locked inputs should now be unlocked
     awaitAssert({
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
       val locks = sender.expectMsgType[Set[OutPoint]]
       assert(locks.isEmpty)
     }, max = 10 seconds, interval = 1 second)
   }
 
-  test("unlock outpoints correctly") {
+  test("lock/unlock outpoints correctly") {
     val sender = TestProbe()
-    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    bitcoinClient.listUnspent().pipeTo(sender.ref)
+    val inputs = sender.expectMsgType[Seq[Utxo]].take(3).map(utxo => OutPoint(utxo.txid.reverse, utxo.vout)).toSet
+    assert(inputs.size == 3)
 
     {
       // test #1: unlock outpoints that are actually locked
-      // create a huge tx so we make sure it has > 1 inputs
-      bitcoinClient.makeFundingTx(pubkeyScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
-      val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
-      assert(fundingTx.txIn.size > 2)
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
-      assert(sender.expectMsgType[Set[OutPoint]] == fundingTx.txIn.map(_.outPoint).toSet)
-      bitcoinClient.rollback(fundingTx).pipeTo(sender.ref)
-      assert(sender.expectMsgType[Boolean])
+      bitcoinClient.lockInputs(inputs).pipeTo(sender.ref)
+      sender.expectMsg(true)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
+      assert(sender.expectMsgType[Set[OutPoint]] == inputs)
+      bitcoinClient.lockInputs(inputs.take(1)).pipeTo(sender.ref)
+      sender.expectMsg(true)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
+      assert(sender.expectMsgType[Set[OutPoint]] == inputs)
+      bitcoinClient.unlockInputs(inputs).pipeTo(sender.ref)
+      sender.expectMsg(true)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
+      assert(sender.expectMsgType[Set[OutPoint]].isEmpty)
     }
     {
       // test #2: some outpoints are locked, some are unlocked
-      bitcoinClient.makeFundingTx(pubkeyScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
-      val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
-      assert(fundingTx.txIn.size > 2)
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
-      assert(sender.expectMsgType[Set[OutPoint]] == fundingTx.txIn.map(_.outPoint).toSet)
+      bitcoinClient.lockInputs(inputs).pipeTo(sender.ref)
+      sender.expectMsg(true)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
+      assert(sender.expectMsgType[Set[OutPoint]] == inputs)
 
-      // unlock the first 2 outpoints
-      val tx1 = fundingTx.copy(txIn = fundingTx.txIn.take(2))
-      bitcoinClient.rollback(tx1).pipeTo(sender.ref)
-      assert(sender.expectMsgType[Boolean])
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
-      assert(sender.expectMsgType[Set[OutPoint]] == fundingTx.txIn.drop(2).map(_.outPoint).toSet)
+      // unlock 2 of the 3 outpoints
+      val toUnlock = inputs.take(2)
+      bitcoinClient.unlockInputs(toUnlock).pipeTo(sender.ref)
+      sender.expectMsg(true)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
+      assert(sender.expectMsgType[Set[OutPoint]] == inputs -- toUnlock)
 
       // and try to unlock all outpoints: it should work too
-      bitcoinClient.rollback(fundingTx).pipeTo(sender.ref)
-      assert(sender.expectMsgType[Boolean])
-      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      bitcoinClient.unlockInputs(inputs).pipeTo(sender.ref)
+      sender.expectMsg(true)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
       assert(sender.expectMsgType[Set[OutPoint]].isEmpty)
+    }
+    {
+      // test #3: some inputs cannot be locked
+      bitcoinClient.lockInputs(Set(OutPoint(randomBytes32(), 3))).pipeTo(sender.ref)
+      sender.expectMsg(false)
+      bitcoinClient.lockInputs(Set(inputs.head, OutPoint(randomBytes32(), 1))).pipeTo(sender.ref)
+      sender.expectMsg(false)
+      bitcoinClient.listLockedInputs().pipeTo(sender.ref)
+      assert(sender.expectMsgType[Set[OutPoint]].size == 1)
     }
   }
 
