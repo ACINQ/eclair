@@ -31,6 +31,7 @@ import fr.acinq.eclair.transactions.Transactions.ClosingTx
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel}
 
 import java.sql.SQLException
+import scala.util.Try
 
 /**
  * Created by t-bast on 28/03/2022.
@@ -287,7 +288,7 @@ trait ErrorHandlers extends CommonHandlers {
 
   def handleRemoteSpentOther(tx: Transaction, d: PersistentChannelData) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
-    Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
+    Try(Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)).toOption.flatten match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.commitInput, tx, d.commitments.localParams.isInitiator), "revoked-commit"))

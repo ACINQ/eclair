@@ -641,10 +641,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_READY) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
-
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_READY) => handleInformationLeak(tx, d)
-
     case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) => handleRemoteError(e, d)
   })
 
