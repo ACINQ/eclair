@@ -111,7 +111,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
    * Return true if this output has already been spent by a confirmed transaction.
    * Note that a reorg may invalidate the result of this function and make a spent output spendable again.
    */
-  def isTransactionOutputSpent(txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
+  private def isTransactionOutputSpent(txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
     getTxConfirmations(txid).flatMap {
       case Some(confirmations) if confirmations > 0 =>
         // There is an important limitation when using isTransactionOutputSpendable: if it returns false, it can mean a
@@ -220,8 +220,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     })
   }
 
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, lockUtxos))
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable))
   }
 
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
@@ -233,7 +233,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     for {
       feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      fundTxResponse <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate, lockUtxos = true))
+      fundTxResponse <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate))
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(fundTxResponse.tx)
       // there will probably be a change output, so we need to find which output is ours
@@ -493,11 +493,19 @@ object BitcoinCoreClient {
   case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
 
   object FundTransactionOptions {
-    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, lockUtxos: Boolean = false, changePosition: Option[Int] = None, inputWeights: Seq[InputWeight] = Nil): FundTransactionOptions = {
+    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, inputWeights: Seq[InputWeight] = Nil): FundTransactionOptions = {
       FundTransactionOptions(
         BigDecimal(FeeratePerKB(feerate).toLong).bigDecimal.scaleByPowerOfTen(-8),
         replaceable,
-        lockUtxos,
+        // We must *always* lock inputs selected for funding, otherwise locking wouldn't work at all, as the following
+        // scenario highlights:
+        //  - we fund a transaction for which we don't lock utxos
+        //  - we fund another unrelated transaction for which we lock utxos
+        //  - the second transaction ends up using the same utxos as the first one
+        //  - but the first transaction confirms, invalidating the second one
+        // This would break the assumptions of the second transaction: its inputs are locked, so it doesn't expect to
+        // potentially be double-spent.
+        lockUnspents = true,
         changePosition,
         if (inputWeights.isEmpty) None else Some(inputWeights)
       )

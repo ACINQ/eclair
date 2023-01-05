@@ -559,7 +559,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         val publicKey = probe.expectMsgType[PublicKey]
         val tx = Transaction(2, Nil, TxOut(100_000 sat, Script.pay2wpkh(publicKey)) +: (1 to 2500).map(_ => TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
         val minerWallet = new BitcoinCoreClient(bitcoinrpcclient)
-        minerWallet.fundTransaction(tx, FeeratePerKw(500 sat), replaceable = true, lockUtxos = false).pipeTo(probe.ref)
+        minerWallet.fundTransaction(tx, FeeratePerKw(500 sat), replaceable = true).pipeTo(probe.ref)
         val unsignedTx = probe.expectMsgType[FundTransactionResponse].tx
         minerWallet.signTransaction(unsignedTx).pipeTo(probe.ref)
         val signedTx = probe.expectMsgType[SignTransactionResponse].tx

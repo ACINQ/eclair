@@ -33,7 +33,7 @@ trait OnChainChannelFunder {
   import OnChainWallet._
 
   /** Fund the provided transaction by adding inputs (and a change output if necessary). */
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, lockUtxos: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse]
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse]
 
   /** Sign the wallet inputs of the provided transaction. */
   def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse]
