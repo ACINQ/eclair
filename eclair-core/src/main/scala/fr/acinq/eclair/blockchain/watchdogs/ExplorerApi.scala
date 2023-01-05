@@ -97,7 +97,7 @@ object ExplorerApi {
   }
 
   def createSttpBackend(socksProxy_opt: Option[Socks5ProxyParams]): SttpBackend[Future, _] = {
-    val options = SttpBackendOptions(connectionTimeout = 30.seconds, proxy = None)
+    val options = SttpBackendOptions(connectionTimeout = 1.minute, proxy = None)
     val sttpBackendOptions: SttpBackendOptions = socksProxy_opt match {
       case Some(proxy) =>
         val host = proxy.address.getHostString
