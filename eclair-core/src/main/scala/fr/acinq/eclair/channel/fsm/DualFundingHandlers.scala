@@ -60,24 +60,21 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
-    if (w.tx.txid == d.commitments.fundingTxId) {
-      watchFundingTx(d.commitments)
-      context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-      // We can forget previous funding attempts now that the funding tx is confirmed.
-      rollbackDualFundingTxs(d.previousFundingTxs.map(_.fundingTx))
-      stay() using d.copy(previousFundingTxs = Nil) storing()
-    } else if (d.previousFundingTxs.exists(_.commitments.fundingTxId == w.tx.txid)) {
-      log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
-      val confirmed = d.previousFundingTxs.find(_.commitments.fundingTxId == w.tx.txid).get
-      watchFundingTx(confirmed.commitments)
-      context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-      // We can forget other funding attempts now that one of the funding txs is confirmed.
-      val otherFundingTxs = d.fundingTx +: d.previousFundingTxs.filter(_.commitments.fundingTxId != w.tx.txid).map(_.fundingTx)
-      rollbackDualFundingTxs(otherFundingTxs)
-      stay() using d.copy(commitments = confirmed.commitments, fundingTx = confirmed.fundingTx, previousFundingTxs = Nil) storing()
-    } else {
-      log.error(s"internal error: a funding tx confirmed that doesn't match any of our funding txs: ${w.tx.txid}")
-      stay()
+    // We find which funding transaction got confirmed.
+    val allFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
+    allFundingTxs.find(_.commitments.fundingTxId == w.tx.txid) match {
+      case Some(DualFundingTx(fundingTx, commitments)) =>
+        log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
+        watchFundingTx(commitments)
+        context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, w.tx))
+        // We can forget other funding attempts now that one of the funding txs is confirmed.
+        val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != w.tx.txid).map(_.fundingTx)
+        rollbackDualFundingTxs(otherFundingTxs)
+        stay() using d.copy(commitments = commitments, fundingTx = fundingTx, previousFundingTxs = Nil) storing()
+      case None =>
+        log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${w.tx.bin}")
+        rollbackDualFundingTxs(allFundingTxs.map(_.fundingTx))
+        goto(CLOSED)
     }
   }
 
