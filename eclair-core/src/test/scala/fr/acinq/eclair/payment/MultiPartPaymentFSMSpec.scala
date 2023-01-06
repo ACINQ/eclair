@@ -59,7 +59,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val CurrentState(_, WAITING_FOR_HTLC) = monitor.expectMsgClass(classOf[CurrentState[_]])
     val Transition(_, WAITING_FOR_HTLC, PAYMENT_FAILED) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    f.parent.expectMsg(MultiPartPaymentFailed(paymentHash, protocol.PaymentTimeout, Queue.empty))
+    f.parent.expectMsg(MultiPartPaymentFailed(paymentHash, protocol.PaymentTimeout(), Queue.empty))
     f.parent.expectNoMessage(50 millis)
     f.eventListener.expectNoMessage(50 millis)
   }
@@ -74,7 +74,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val fail = f.parent.expectMsgType[MultiPartPaymentFailed]
     assert(fail.paymentHash == paymentHash)
-    assert(fail.failure == protocol.PaymentTimeout)
+    assert(fail.failure == protocol.PaymentTimeout())
     assert(fail.parts.toSet == parts.toSet)
 
     f.parent.expectNoMessage(50 millis)
@@ -91,7 +91,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     f.parent.send(f.handler, extraPart)
     val fail = f.parent.expectMsgType[ExtraPaymentReceived[PaymentPart]]
     assert(fail.paymentHash == paymentHash)
-    assert(fail.failure == Some(protocol.PaymentTimeout))
+    assert(fail.failure == Some(protocol.PaymentTimeout()))
     assert(fail.payment == extraPart)
 
     f.parent.expectNoMessage(50 millis)

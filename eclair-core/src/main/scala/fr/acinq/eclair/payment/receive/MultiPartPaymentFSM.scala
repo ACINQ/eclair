@@ -50,7 +50,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
   when(WAITING_FOR_HTLC) {
     case Event(PaymentTimeout, d: WaitingForHtlc) =>
       log.warning("multi-part payment timed out (received {} expected {})", d.paidAmount, totalAmount)
-      goto(PAYMENT_FAILED) using PaymentFailed(protocol.PaymentTimeout, d.parts)
+      goto(PAYMENT_FAILED) using PaymentFailed(protocol.PaymentTimeout(), d.parts)
 
     case Event(part: PaymentPart, d: WaitingForHtlc) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")

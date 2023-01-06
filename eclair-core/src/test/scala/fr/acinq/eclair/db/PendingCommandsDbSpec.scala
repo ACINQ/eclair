@@ -29,12 +29,10 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import scala.util.Random
 
-
 class PendingCommandsDbSpec extends AnyFunSuite {
 
   import PendingCommandsDbSpec._
   import fr.acinq.eclair.TestDatabases.{forAllDbs, migrationCheck}
-
 
   test("init database two times in a row") {
     forAllDbs {
@@ -137,7 +135,7 @@ object PendingCommandsDbSpec {
     val cmds = (0 until Random.nextInt(5)).map { _ =>
       Random.nextInt(2) match {
         case 0 => CMD_FULFILL_HTLC(Random.nextLong(100_000), randomBytes32())
-        case 1 => CMD_FAIL_HTLC(Random.nextLong(100_000), Right(UnknownNextPeer))
+        case 1 => CMD_FAIL_HTLC(Random.nextLong(100_000), Right(UnknownNextPeer()))
       }
     }
     cmds.map(cmd => TestCase(channelId, cmd))

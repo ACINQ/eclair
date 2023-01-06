@@ -874,11 +874,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             case PostRevocationAction.RelayHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: failing {}", add)
-              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure), commit = true)
+              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure()), commit = true)
             case PostRevocationAction.RejectHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: rejecting {}", add)
-              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure), commit = true)
+              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure()), commit = true)
             case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result

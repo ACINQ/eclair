@@ -71,7 +71,7 @@ object ChannelRelay {
   def translateLocalError(error: Throwable, channelUpdate_opt: Option[ChannelUpdate]): FailureMessage = {
     (error, channelUpdate_opt) match {
       case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(channelUpdate)
-      case (_: ExpiryTooBig, _) => ExpiryTooFar
+      case (_: ExpiryTooBig, _) => ExpiryTooFar()
       case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: HtlcValueTooHighInFlight, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
@@ -79,8 +79,8 @@ object ChannelRelay {
       case (_: RemoteDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: FeerateTooDifferent, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: ChannelUnavailable, Some(channelUpdate)) if !channelUpdate.channelFlags.isEnabled => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
-      case (_: ChannelUnavailable, None) => PermanentChannelFailure
-      case _ => TemporaryNodeFailure
+      case (_: ChannelUnavailable, None) => PermanentChannelFailure()
+      case _ => TemporaryNodeFailure()
     }
   }
 
@@ -88,8 +88,8 @@ object ChannelRelay {
     fail match {
       case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, Left(f.fail.reason), commit = true)
       case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, Right(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), commit = true)
-      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
-      case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
+      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure()), commit = true)
+      case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure()), commit = true)
       case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, Right(TemporaryChannelFailure(f.channelUpdate)), commit = true)
     }
   }
@@ -136,7 +136,7 @@ class ChannelRelay private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, channelId, CMD_ADD_HTLC(_, _, _, _, _, _, o: Origin.ChannelRelayedHot, _)))) =>
         context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${o.add.id}")
-        val cmdFail = CMD_FAIL_HTLC(o.add.id, Right(UnknownNextPeer), commit = true)
+        val cmdFail = CMD_FAIL_HTLC(o.add.id, Right(UnknownNextPeer()), commit = true)
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
         safeSendAndStop(o.add.channelId, cmdFail)
 
@@ -288,7 +288,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   def relayOrFail(outgoingChannel_opt: Option[OutgoingChannelParams]): RelayResult = {
     outgoingChannel_opt match {
       case None =>
-        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
       case Some(c) if !c.channelUpdate.channelFlags.isEnabled =>
         RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(c.channelUpdate.messageFlags, c.channelUpdate.channelFlags, c.channelUpdate)), commit = true))
       case Some(c) if r.amountToForward < c.channelUpdate.htlcMinimumMsat =>

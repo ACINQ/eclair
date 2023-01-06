@@ -187,7 +187,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcScidAlias = true,
       paymentWithoutHint = Left(Left(RouteNotFound)), // alice can't find a route to carol because bob-carol isn't announced
       paymentWithHint_opt = Some(Right(Ok)), // with a routing hint the payment works
-      paymentWithRealScidHint_opt = Some(Left(Right(UnknownNextPeer))) // if alice uses the real scid instead of the bob-carol alias, it doesn't work due to option_scid_alias
+      paymentWithRealScidHint_opt = Some(Left(Right(UnknownNextPeer()))) // if alice uses the real scid instead of the bob-carol alias, it doesn't work due to option_scid_alias
     )
   }
 
@@ -228,7 +228,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcScidAlias = true,
       paymentWithoutHint = Left(Left(RouteNotFound)), // alice can't find a route to carol because bob-carol isn't announced
       paymentWithHint_opt = Some(Right(Ok)), // with a routing hint the payment works
-      paymentWithRealScidHint_opt = Some(Left(Right(UnknownNextPeer))) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
+      paymentWithRealScidHint_opt = Some(Left(Right(UnknownNextPeer()))) // if alice uses the real scid instead of the b-c alias, it doesn't work due to option_scid_alias
     )
   }
 

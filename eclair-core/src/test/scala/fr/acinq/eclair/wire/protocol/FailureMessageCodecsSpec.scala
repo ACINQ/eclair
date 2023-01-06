@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, UInt64, randomBytes32, randomBytes64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, UInt64, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -28,34 +28,54 @@ import scodec.bits._
  */
 
 class FailureMessageCodecsSpec extends AnyFunSuite {
-  val channelUpdate = ChannelUpdate(
-    signature = randomBytes64(),
-    chainHash = Block.RegtestGenesisBlock.hash,
-    shortChannelId = ShortChannelId(12345),
-    timestamp = TimestampSecond(1234567L),
-    cltvExpiryDelta = CltvExpiryDelta(100),
-    messageFlags = ChannelUpdate.MessageFlags(dontForward = false),
-    channelFlags = ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false),
-    htlcMinimumMsat = 1000 msat,
-    feeBaseMsat = 12 msat,
-    feeProportionalMillionths = 76,
-    htlcMaximumMsat = 150_000_000 msat)
 
   test("encode/decode all failure messages") {
-    val msgs: List[FailureMessage] =
-      InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
-        InvalidOnionVersion(randomBytes32()) :: InvalidOnionHmac(randomBytes32()) :: InvalidOnionKey(randomBytes32()) ::
-        TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
-        AmountBelowMinimum(123456 msat, channelUpdate) :: FeeInsufficient(546463 msat, channelUpdate) :: IncorrectCltvExpiry(CltvExpiry(1211), channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
-        IncorrectOrUnknownPaymentDetails(123456 msat, BlockHeight(1105)) :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), channelUpdate) :: ExpiryTooFar :: InvalidOnionPayload(UInt64(561), 1105) :: PaymentTimeout ::
-        TrampolineFeeInsufficient :: TrampolineExpiryTooSoon :: Nil
-
-    msgs.foreach {
-      msg => {
-        val encoded = failureMessageCodec.encode(msg).require
-        val decoded = failureMessageCodec.decode(encoded).require
-        assert(msg == decoded.value)
-      }
+    val channelUpdate = ChannelUpdate(
+      signature = ByteVector64(hex"3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e620"),
+      chainHash = Block.RegtestGenesisBlock.hash,
+      shortChannelId = ShortChannelId(12345),
+      timestamp = TimestampSecond(1234567L),
+      cltvExpiryDelta = CltvExpiryDelta(100),
+      messageFlags = ChannelUpdate.MessageFlags(dontForward = false),
+      channelFlags = ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false),
+      htlcMinimumMsat = 1000 msat,
+      feeBaseMsat = 12 msat,
+      feeProportionalMillionths = 76,
+      htlcMaximumMsat = 150_000_000 msat)
+    val testCases = Map[FailureMessage, ByteVector](
+      InvalidRealm() -> hex"4001",
+      TemporaryNodeFailure() -> hex"2002",
+      TemporaryNodeFailure(TlvStream(Nil, Seq(GenericTlv(UInt64(561), hex"deadbeef"), GenericTlv(UInt64(1105), hex"0102030405")))) -> hex"2002 fd023104deadbeef fd0451050102030405",
+      PermanentNodeFailure() -> hex"6002",
+      RequiredNodeFeatureMissing() -> hex"6003",
+      InvalidOnionVersion(ByteVector32(hex"d8db0e777047d814f569c8243073be42e56a411ebfe82fd877ba958fb068ae3e")) -> hex"c004 d8db0e777047d814f569c8243073be42e56a411ebfe82fd877ba958fb068ae3e",
+      InvalidOnionHmac(ByteVector32(hex"1c9836f65130ee10a13da0db2d2acef8bc799978d351700f1a09aefc3ab221f7")) -> hex"c005 1c9836f65130ee10a13da0db2d2acef8bc799978d351700f1a09aefc3ab221f7",
+      InvalidOnionKey(ByteVector32(hex"7568cf300a7b7458693904d50e67dc0c29a5116600d93e9979c3fa91e2b85395")) -> hex"c006 7568cf300a7b7458693904d50e67dc0c29a5116600d93e9979c3fa91e2b85395",
+      InvalidOnionBlinding(ByteVector32(hex"d71cd923bb201254bc07dadde7e795b8c6b0b849325ee3c603e1bba2e5d2c100")) -> hex"c018 d71cd923bb201254bc07dadde7e795b8c6b0b849325ee3c603e1bba2e5d2c100",
+      TemporaryChannelFailure(channelUpdate) -> hex"1007 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
+      PermanentChannelFailure() -> hex"4008",
+      RequiredChannelFeatureMissing() -> hex"4009",
+      UnknownNextPeer() -> hex"400a",
+      AmountBelowMinimum(123456 msat, channelUpdate) -> hex"100b 000000000001e240 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
+      FeeInsufficient(546463 msat, channelUpdate) -> hex"100c 000000000008569f 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
+      ChannelDisabled(ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), channelUpdate) -> hex"1014 01 01 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
+      IncorrectCltvExpiry(CltvExpiry(1211), channelUpdate) -> hex"100d 000004bb 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
+      IncorrectOrUnknownPaymentDetails(123456 msat, BlockHeight(1105)) -> hex"400f 000000000001e240 00000451",
+      IncorrectOrUnknownPaymentDetails(100 msat, BlockHeight(800_000), TlvStream(Nil, Seq(GenericTlv(UInt64(34001), ByteVector.fill(300)(128))))) -> hex"400f 0000000000000064 000c3500 fd84d1 fd012c 808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080",
+      ExpiryTooSoon(channelUpdate) -> hex"100e 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
+      FinalIncorrectCltvExpiry(CltvExpiry(1234)) -> hex"0012 000004d2",
+      FinalIncorrectHtlcAmount(25_000_000 msat) -> hex"0013 00000000017d7840",
+      ExpiryTooFar() -> hex"0015",
+      InvalidOnionPayload(UInt64(561), 1105) -> hex"4016 fd0231 0451",
+      PaymentTimeout() -> hex"0017",
+      TrampolineFeeInsufficient() -> hex"2033",
+      TrampolineExpiryTooSoon() -> hex"2034",
+    )
+    testCases.foreach { case (msg, bin) =>
+      val encoded = failureMessageCodec.encode(msg).require
+      assert(encoded.bytes == bin)
+      val decoded = failureMessageCodec.decode(encoded).require
+      assert(msg == decoded.value)
     }
   }
 
@@ -127,9 +147,9 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
   test("decode failure onion packet with arbitrary length") {
     val codec = failureOnionCodec(Hmac256(ByteVector32.Zeroes))
     val testCases = Seq(
-      InvalidRealm -> hex"7bfb2aa46218240684f623322ae48af431d06986c82e210bb0cee83c7ddb2ba8 0002 4001 0002 0000",
+      InvalidRealm() -> hex"7bfb2aa46218240684f623322ae48af431d06986c82e210bb0cee83c7ddb2ba8 0002 4001 0002 0000",
       IncorrectOrUnknownPaymentDetails(1105 msat, BlockHeight(1729)) -> hex"c508151d550a6a7fb121542b7c383fd7f18381832499c419de436e131c1f3a76 000e 400f 0000000000000451 000006c1 0004 deadbeef",
-      InvalidRealm -> hex"6f9e2c0e44b3692dac37523c6ff054cc9b26ecab1a78ed6906a46848bffc2bd5 0002 4001 00ff 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      InvalidRealm() -> hex"6f9e2c0e44b3692dac37523c6ff054cc9b26ecab1a78ed6906a46848bffc2bd5 0002 4001 00ff 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
       IncorrectOrUnknownPaymentDetails(1105 msat, BlockHeight(1729)) -> hex"bb2873dad5447927774cb7de99f43c0b5f54f6e298b5be4d7ca88677b8f0817d 000e 400f 0000000000000451 000006c1 00ff 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
     )
 
@@ -168,4 +188,5 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
     val u2 = failureMessageCodec.decode(bin.toBitVector).require.value
     assert(u2 == ref)
   }
+
 }
