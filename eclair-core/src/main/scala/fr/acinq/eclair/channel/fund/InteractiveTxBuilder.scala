@@ -602,6 +602,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                   originChannels = Map.empty,
                   remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
                   fundingTxStatus = null, // TODO: hacky, but we don't have the funding tx yet
+                  remoteFundingStatus = RemoteFundingStatus.NotLocked,
                   ShaChain.init)
                 signFundingTx(completeTx, commitments)
             }

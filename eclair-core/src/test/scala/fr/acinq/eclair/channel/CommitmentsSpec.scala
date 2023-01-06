@@ -505,6 +505,7 @@ object CommitmentsSpec {
       originChannels = Map.empty,
       remoteNextCommitInfo = Right(randomKey().publicKey),
       fundingTxStatus = UnknownFundingTx,
+      remoteFundingStatus = RemoteFundingStatus.Locked,
       remotePerCommitmentSecrets = ShaChain.init)
   }
 
@@ -529,6 +530,7 @@ object CommitmentsSpec {
       originChannels = Map.empty,
       remoteNextCommitInfo = Right(randomKey().publicKey),
       fundingTxStatus = UnknownFundingTx,
+      remoteFundingStatus = RemoteFundingStatus.Locked,
       remotePerCommitmentSecrets = ShaChain.init)
   }
 

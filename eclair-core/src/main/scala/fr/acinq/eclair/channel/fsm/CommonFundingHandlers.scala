@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuried, WatchFundingSpent}
@@ -72,7 +73,10 @@ trait CommonFundingHandlers extends CommonHandlers {
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
     blockchain ! WatchFundingDeeplyBuried(self, commitments.fundingTxId, ANNOUNCEMENTS_MINCONF)
-    DATA_NORMAL(metaCommitments.copy(common = commitments.copy(remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)).common), shortIds1, None, initialChannelUpdate, None, None, None)
+    val metaCommitments1 = metaCommitments
+      .modify(_.common.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
+      .modify(_.commitments.at(0).remoteFundingStatus).setTo(RemoteFundingStatus.Locked)
+    DATA_NORMAL(metaCommitments1, shortIds1, None, initialChannelUpdate, None, None, None)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {

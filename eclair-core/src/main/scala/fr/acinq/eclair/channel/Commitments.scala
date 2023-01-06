@@ -82,6 +82,7 @@ case class Commitments(channelId: ByteVector32,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        fundingTxStatus: FundingTxStatus,
+                       remoteFundingStatus: RemoteFundingStatus,
                        remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
 
   import Commitments._
@@ -883,7 +884,7 @@ case class Commitments(channelId: ByteVector32,
 
   def common: Common = Common(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
 
-  def commitment: Commitment = Commitment(fundingTxStatus, localCommit, remoteCommit, remoteNextCommitInfo.swap.map(_.nextRemoteCommit).toOption)
+  def commitment: Commitment = Commitment(fundingTxStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.swap.map(_.nextRemoteCommit).toOption)
 
 }
 
@@ -906,6 +907,7 @@ object Commitments {
     originChannels = common.originChannels,
     remoteNextCommitInfo = common.remoteNextCommitInfo.swap.map(waitForRev => WaitingForRevocation(commitment.nextRemoteCommit_opt.get, waitForRev.sent, waitForRev.sentAfterLocalCommitIndex)).swap,
     fundingTxStatus = commitment.fundingTxStatus,
+    remoteFundingStatus = commitment.remoteFundingStatus,
     remotePerCommitmentSecrets = common.remotePerCommitmentSecrets
   )
 

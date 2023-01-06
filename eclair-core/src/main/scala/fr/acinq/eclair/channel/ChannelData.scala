@@ -424,6 +424,13 @@ object FundingTxStatus {
   }
 }
 
+sealed trait RemoteFundingStatus
+object RemoteFundingStatus {
+  case object Unknown extends RemoteFundingStatus // backward compat
+  case object NotLocked extends RemoteFundingStatus
+  case object Locked extends RemoteFundingStatus
+}
+
 sealed trait RbfStatus
 object RbfStatus {
   case object NoRbf extends RbfStatus

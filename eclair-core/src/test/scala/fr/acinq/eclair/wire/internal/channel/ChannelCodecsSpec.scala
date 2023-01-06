@@ -148,8 +148,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
         def normalizeLineEndings(s: String) = s.replace("\r\n", "\n")
 
-        assert(normalizeLineEndings(oldjson) == normalizeLineEndings(testCase.json))
-        tmpjsonfile_opt.foreach(_.delete())
+          assert(normalizeLineEndings(oldjson) == normalizeLineEndings(testCase.json))
+          tmpjsonfile_opt.foreach(_.delete())
         // we then encode with new codec
         val newencoded = channelDataCodec.encode(olddecoded).require.bytes
         // and we decode with the new codec
@@ -328,6 +328,7 @@ object ChannelCodecsSpec {
       originChannels = origins,
       remoteNextCommitInfo = Right(randomKey().publicKey),
       fundingTxStatus = UnknownFundingTx,
+      remoteFundingStatus = RemoteFundingStatus.NotLocked,
       remotePerCommitmentSecrets = ShaChain.init)
 
     DATA_NORMAL(MetaCommitments(commitments), ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None)

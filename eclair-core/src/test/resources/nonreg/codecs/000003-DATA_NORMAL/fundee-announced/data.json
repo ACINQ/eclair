@@ -93,7 +93,10 @@
     "originChannels" : { },
     "remoteNextCommitInfo" : "034dcc0704325064a1fa68edc13adb5fd173051775df73a298ec291f22ad9d19f6",
     "fundingTxStatus" : {
-      "type" : "unknown"
+      "status" : "unknown"
+    },
+    "remoteFundingStatus" : {
+      "status" : "unknown"
     },
     "remotePerCommitmentSecrets" : null
   },

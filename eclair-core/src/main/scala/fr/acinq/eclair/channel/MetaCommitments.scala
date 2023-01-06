@@ -56,6 +56,7 @@ case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
 
 /** A minimal commitment for a given funding tx. */
 case class Commitment(fundingTxStatus: FundingTxStatus,
+                      remoteFundingStatus: RemoteFundingStatus,
                       localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit]) {
   val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
   val fundingTxId: ByteVector32 = commitInput.outPoint.txid

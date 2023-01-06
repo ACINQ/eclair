@@ -705,7 +705,7 @@ object PaymentPacketSpec {
     val commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(testCapacity, Nil), Nil)
     val localCommit = LocalCommit(0, null, CommitTxAndRemoteSig(Transactions.CommitTx(commitInput, null), null), null)
     val channelFlags = ChannelFlags.Private
-    new Commitments(channelId, ChannelConfig.standard, channelFeatures, params, remoteParams, channelFlags, localCommit, null, null, null, 0, 0, Map.empty, null, null, null) {
+    new Commitments(channelId, ChannelConfig.standard, channelFeatures, params, remoteParams, channelFlags, localCommit, null, null, null, 0, 0, Map.empty, null, null, null, null) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }

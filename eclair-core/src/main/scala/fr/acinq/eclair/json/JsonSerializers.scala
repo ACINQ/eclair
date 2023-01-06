@@ -506,7 +506,7 @@ object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIds
 // @formatter:on
 
 // @formatter:off
-private case class FundingTxStatusJson(`type`: String, tx: Option[Transaction])
+private case class FundingTxStatusJson(status: String, tx: Option[Transaction])
 object FundingTxStatusSerializer extends ConvertClassSerializer[FundingTxStatus]({
   case FundingTxStatus.UnknownFundingTx => FundingTxStatusJson("unknown", None)
   case s: FundingTxStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt)
@@ -583,6 +583,12 @@ object CustomTypeHints {
     classOf[RealScidStatus.Temporary] -> "temporary",
     classOf[RealScidStatus.Final] -> "final",
   ), typeHintFieldName = "status")
+
+  val remoteFundingStatuses: CustomTypeHints = CustomTypeHints(Map(
+    classOf[RemoteFundingStatus.Unknown.type] -> "unknown",
+    classOf[RemoteFundingStatus.NotLocked.type ] -> "not-locked",
+    classOf[RemoteFundingStatus.Locked.type ] -> "locked",
+  ), typeHintFieldName = "status")
 }
 
 object JsonSerializers {
@@ -597,6 +603,7 @@ object JsonSerializers {
     CustomTypeHints.channelSources +
     CustomTypeHints.channelStates +
     CustomTypeHints.realScidStatuses +
+    CustomTypeHints.remoteFundingStatuses +
     ByteVectorSerializer +
     ByteVector32Serializer +
     ByteVector64Serializer +
