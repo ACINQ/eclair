@@ -497,8 +497,7 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments: MetaCommitment
   def fundingTx_opt: Option[Transaction] = commitments.fundingTxStatus.signedTx_opt
 }
 final case class DATA_WAIT_FOR_CHANNEL_READY(metaCommitments: MetaCommitments,
-                                             shortIds: ShortIds,
-                                             lastSent: ChannelReady) extends PersistentChannelData
+                                             shortIds: ShortIds) extends PersistentChannelData
 
 final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = init.temporaryChannelId
@@ -524,8 +523,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments: MetaCommi
   def allFundingTxs: Seq[SignedSharedTransaction] = mainFundingTx +: previousFundingTxs
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments: MetaCommitments,
-                                                  shortIds: ShortIds,
-                                                  lastSent: ChannelReady) extends PersistentChannelData
+                                                  shortIds: ShortIds) extends PersistentChannelData
 
 final case class DATA_NORMAL(metaCommitments: MetaCommitments,
                              shortIds: ShortIds,

@@ -289,7 +289,7 @@ private[channel] object ChannelCodecs2 {
         ("shortChannelId" | realshortchannelid) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).map {
       case metaCommitments :: shortChannelId :: lastSent :: HNil =>
-        DATA_WAIT_FOR_CHANNEL_READY(metaCommitments, shortIds = ShortIds(real = RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), lastSent = lastSent)
+        DATA_WAIT_FOR_CHANNEL_READY(metaCommitments, shortIds = ShortIds(real = RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None))
     }.decodeOnly
 
     val DATA_NORMAL_02_Codec: Codec[DATA_NORMAL] = (

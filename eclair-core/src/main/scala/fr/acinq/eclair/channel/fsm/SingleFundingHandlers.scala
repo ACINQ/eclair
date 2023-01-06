@@ -130,7 +130,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
         val shortIds = createShortIds(d.channelId, realScidStatus)
         val channelReady = createChannelReady(shortIds, commitments1)
         d.deferred.foreach(self ! _)
-        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds, channelReady) storing() sending channelReady
+        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds) storing() sending channelReady
       case Failure(t) =>
         log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
         goto(CLOSED)

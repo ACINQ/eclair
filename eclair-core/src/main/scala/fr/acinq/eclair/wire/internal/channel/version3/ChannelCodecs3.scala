@@ -432,18 +432,16 @@ private[channel] object ChannelCodecs3 {
         ("shortChannelId" | realshortchannelid) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).map {
       case metaCommitments :: shortChannelId :: lastSent :: HNil =>
-        DATA_WAIT_FOR_CHANNEL_READY(metaCommitments, shortIds = ShortIds(real = RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), lastSent = lastSent)
+        DATA_WAIT_FOR_CHANNEL_READY(metaCommitments, shortIds = ShortIds(real = RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None))
     }.decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_0a_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("metaCommitments" | readOnlyCompatibilityMetaCommitmentsCodec) ::
-        ("shortIds" | shortids) ::
-        ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
+        ("shortIds" | shortids)).as[DATA_WAIT_FOR_CHANNEL_READY]
 
     val DATA_WAIT_FOR_CHANNEL_READY_14_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
-        ("shortIds" | shortids) ::
-        ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
+        ("shortIds" | shortids)).as[DATA_WAIT_FOR_CHANNEL_READY]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0b_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("metaCommitments" | readOnlyCompatibilityMetaCommitmentsCodec) ::
@@ -475,14 +473,12 @@ private[channel] object ChannelCodecs3 {
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_0c_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("metaCommitments" | readOnlyCompatibilityMetaCommitmentsCodec) ::
-        ("shortIds" | shortids) ::
-        ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
+        ("shortIds" | shortids)).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
       .decodeOnly
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_12_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
-        ("shortIds" | shortids) ::
-        ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
+        ("shortIds" | shortids)).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
 
     val DATA_NORMAL_02_Codec: Codec[DATA_NORMAL] = (
       ("metaCommitments" | readOnlyCompatibilityMetaCommitmentsCodec) ::
