@@ -1040,88 +1040,91 @@ object Helpers {
        */
       def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, commitTx: Transaction, db: ChannelsDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
         import commitments._
-        require(commitTx.txIn.size == 1, "commitment tx should have 1 input")
         val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
         val obscuredTxNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
         val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
         // this tx has been published by remote, so we need to invert local/remote params
         val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isInitiator, remoteParams.paymentBasepoint, localPaymentPoint)
-        require(txNumber <= 0xffffffffffffL, "txNumber must be lesser than 48 bits long")
-        log.warning(s"a revoked commit has been published with txnumber=$txNumber")
-        // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
-        remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber)
-          .map(d => PrivateKey(d))
-          .map(remotePerCommitmentSecret => {
-            val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey
-            val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-            val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-            val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-            val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+        if (txNumber > 0xffffffffffffL) {
+          // txNumber must be lesser than 48 bits long
+          None
+        } else {
+          log.warning(s"a revoked commit has been published with txnumber=$txNumber")
+          // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
+          remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber)
+            .map(d => PrivateKey(d))
+            .map(remotePerCommitmentSecret => {
+              val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey
+              val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+              val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+              val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
+              val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+              val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
 
-            val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
-            // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
-            val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 2)
+              val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
+              // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
+              val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 2)
 
-            // first we will claim our main output right away
-            val mainTx = channelFeatures match {
-              case ct if ct.paysDirectlyToWallet =>
-                log.info(s"channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
-                None
-              case ct => ct.commitmentFormat match {
-                case DefaultCommitmentFormat => withTxGenerationLog("claim-p2wpkh-output") {
-                  Transactions.makeClaimP2WPKHOutputTx(commitTx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
-                    val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitmentFormat)
-                    Transactions.addSigs(claimMain, localPaymentPubkey, sig)
-                  })
-                }
-                case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-                  Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
-                    val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
-                    Transactions.addSigs(claimMain, sig)
-                  })
+              // first we will claim our main output right away
+              val mainTx = channelFeatures match {
+                case ct if ct.paysDirectlyToWallet =>
+                  log.info(s"channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
+                  None
+                case ct => ct.commitmentFormat match {
+                  case DefaultCommitmentFormat => withTxGenerationLog("claim-p2wpkh-output") {
+                    Transactions.makeClaimP2WPKHOutputTx(commitTx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
+                      val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitmentFormat)
+                      Transactions.addSigs(claimMain, localPaymentPubkey, sig)
+                    })
+                  }
+                  case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+                    Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
+                      val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
+                      Transactions.addSigs(claimMain, sig)
+                    })
+                  }
                 }
               }
-            }
 
-            // then we punish them by stealing their main output
-            val mainPenaltyTx = withTxGenerationLog("main-penalty") {
-              Transactions.makeMainPenaltyTx(commitTx, localParams.dustLimit, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).map(txinfo => {
-                val sig = keyManager.sign(txinfo, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
-                Transactions.addSigs(txinfo, sig)
-              })
-            }
-
-            // we retrieve the information needed to rebuild htlc scripts
-            val htlcInfos = db.listHtlcInfos(commitments.channelId, txNumber)
-            log.info(s"got htlcs=${htlcInfos.size} for txnumber=$txNumber")
-            val htlcsRedeemScripts = (
-              htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry, commitmentFormat) } ++
-                htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), commitmentFormat) }
-              )
-              .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
-              .toMap
-
-            // and finally we steal the htlc outputs
-            val htlcPenaltyTxs = commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
-              val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
-              withTxGenerationLog("htlc-penalty") {
-                Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).map(htlcPenalty => {
-                  val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
-                  Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
+              // then we punish them by stealing their main output
+              val mainPenaltyTx = withTxGenerationLog("main-penalty") {
+                Transactions.makeMainPenaltyTx(commitTx, localParams.dustLimit, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).map(txinfo => {
+                  val sig = keyManager.sign(txinfo, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
+                  Transactions.addSigs(txinfo, sig)
                 })
               }
-            }.toList.flatten
 
-            RevokedCommitPublished(
-              commitTx = commitTx,
-              claimMainOutputTx = mainTx,
-              mainPenaltyTx = mainPenaltyTx,
-              htlcPenaltyTxs = htlcPenaltyTxs,
-              claimHtlcDelayedPenaltyTxs = Nil, // we will generate and spend those if they publish their HtlcSuccessTx or HtlcTimeoutTx
-              irrevocablySpent = Map.empty
-            )
-          })
+              // we retrieve the information needed to rebuild htlc scripts
+              val htlcInfos = db.listHtlcInfos(commitments.channelId, txNumber)
+              log.info(s"got htlcs=${htlcInfos.size} for txnumber=$txNumber")
+              val htlcsRedeemScripts = (
+                htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry, commitmentFormat) } ++
+                  htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), commitmentFormat) }
+                )
+                .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
+                .toMap
+
+              // and finally we steal the htlc outputs
+              val htlcPenaltyTxs = commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+                val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
+                withTxGenerationLog("htlc-penalty") {
+                  Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).map(htlcPenalty => {
+                    val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
+                    Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
+                  })
+                }
+              }.toList.flatten
+
+              RevokedCommitPublished(
+                commitTx = commitTx,
+                claimMainOutputTx = mainTx,
+                mainPenaltyTx = mainPenaltyTx,
+                htlcPenaltyTxs = htlcPenaltyTxs,
+                claimHtlcDelayedPenaltyTxs = Nil, // we will generate and spend those if they publish their HtlcSuccessTx or HtlcTimeoutTx
+                irrevocablySpent = Map.empty
+              )
+            })
+        }
       }
 
       /**
