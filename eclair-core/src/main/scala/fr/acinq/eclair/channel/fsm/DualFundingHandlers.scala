@@ -60,11 +60,11 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def pruneCommitments(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Try[DualFundingTx] = {
-    // We find which funding transaction got confirmed.
     val allFundingTxs: Seq[DualFundingTx] = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
     // We can forget other funding attempts now that one of the funding txs is confirmed.
     val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != w.tx.txid).map(_.fundingTx)
     rollbackDualFundingTxs(otherFundingTxs)
+    // We find which funding transaction got confirmed.
     allFundingTxs.find(_.commitments.fundingTxId == w.tx.txid) match {
       case Some(dft: DualFundingTx) =>
         log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
@@ -77,6 +77,10 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
+  /**
+   * We could just ignore the event and handle it after the next reconnection, but this allows us to eagerly rollback
+   * deprecated funding transactions
+   */
   def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
     pruneCommitments(w, d) match {
       case Success(DualFundingTx(fundingTx, commitments)) =>
