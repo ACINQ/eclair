@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
 import fr.acinq.eclair.wire.protocol.Error
 
 import scala.concurrent.Future
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 06/05/2022.
@@ -59,22 +59,30 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
-  def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
+  def pruneCommitments(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Try[DualFundingTx] = {
     // We find which funding transaction got confirmed.
-    val allFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
+    val allFundingTxs: Seq[DualFundingTx] = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
+    // We can forget other funding attempts now that one of the funding txs is confirmed.
+    val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != w.tx.txid).map(_.fundingTx)
+    rollbackDualFundingTxs(otherFundingTxs)
     allFundingTxs.find(_.commitments.fundingTxId == w.tx.txid) match {
-      case Some(DualFundingTx(fundingTx, commitments)) =>
+      case Some(dft: DualFundingTx) =>
         log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
-        watchFundingTx(commitments)
-        context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, w.tx))
-        // We can forget other funding attempts now that one of the funding txs is confirmed.
-        val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != w.tx.txid).map(_.fundingTx)
-        rollbackDualFundingTxs(otherFundingTxs)
-        stay() using d.copy(commitments = commitments, fundingTx = fundingTx, previousFundingTxs = Nil) storing()
+        watchFundingTx(dft.commitments)
+        context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+        Success(dft)
       case None =>
-        log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${w.tx.bin}")
-        rollbackDualFundingTxs(allFundingTxs.map(_.fundingTx))
-        goto(CLOSED)
+        val t = new RuntimeException(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${w.tx.bin}")
+        Failure(t)
+    }
+  }
+
+  def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
+    pruneCommitments(w, d) match {
+      case Success(DualFundingTx(fundingTx, commitments)) =>
+        stay() using d.copy(commitments = commitments, fundingTx = fundingTx, previousFundingTxs = Nil) storing()
+      case Failure(t) =>
+        handleLocalError(t, d, Some(w))
     }
   }
 

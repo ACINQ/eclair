@@ -29,6 +29,8 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, RealShortChannelId, ToMilliSatoshiConversion, UInt64}
 
+import scala.util.{Failure, Success}
+
 /**
  * Created by t-bast on 19/04/2022.
  */
@@ -571,16 +573,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending channelReady
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      // We find which funding transaction got confirmed.
-      val allFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
-      allFundingTxs.find(_.commitments.fundingTxId == w.tx.txid) match {
-        case Some(DualFundingTx(_, commitments)) =>
-          log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
-          watchFundingTx(commitments)
-          context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, w.tx))
-          // We can forget other funding attempts now that one of the funding txs is confirmed.
-          val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != w.tx.txid).map(_.fundingTx)
-          rollbackDualFundingTxs(otherFundingTxs)
+      pruneCommitments(w, d) match {
+        case Success(DualFundingTx(_, commitments)) =>
           val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitments.commitInput.outPoint.index.toInt))
           val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
           d.deferred.foreach(self ! _)
@@ -595,10 +589,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               Seq(channelReady)
           }
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending toSend
-        case None =>
-          log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${w.tx.bin}")
-          rollbackDualFundingTxs(allFundingTxs.map(_.fundingTx))
-          goto(CLOSED)
+        case Failure(t) =>
+          handleLocalError(t, d, Some(w))
       }
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleNewBlockDualFundingUnconfirmed(c, d)
