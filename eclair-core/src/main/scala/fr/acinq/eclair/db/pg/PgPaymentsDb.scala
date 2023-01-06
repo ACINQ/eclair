@@ -295,6 +295,22 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
+  override def receiveAddIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-blinded", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, invoice.paymentHash.toHex)
+        statement.setString(2, preimage.toHex)
+        statement.setString(3, paymentType)
+        statement.setString(4, invoice.toString)
+        statement.setTimestamp(5, invoice.createdAt.toSqlTimestamp)
+        statement.setTimestamp(6, (invoice.createdAt + invoice.relativeExpiry.toSeconds).toSqlTimestamp)
+        statement.setLong(7, amount.toLong)
+        statement.setTimestamp(8, receivedAt.toSqlTimestamp)
+        statement.executeUpdate()
+      }
+    }
+  }
+
   private def parseIncomingPayment(rs: ResultSet): Option[IncomingPayment] = {
     val invoice = rs.getString("payment_request")
     val preimage = rs.getByteVector32FromHex("payment_preimage")
@@ -306,7 +322,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         Some(IncomingStandardPayment(invoice, preimage, paymentType, createdAt, status))
       case Success(invoice: Bolt12Invoice) =>
         val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp))
-        val pathIds = decodePathIds(BitVector(rs.getBytes("path_ids")))
+        val pathIds = Option(rs.getBytes("path_ids")).map(bytes => decodePathIds(BitVector(bytes)))
         Some(IncomingBlindedPayment(invoice, preimage, paymentType, pathIds, createdAt, status))
       case _ =>
         logger.error(s"could not parse DB invoice=$invoice, this should not happen")

@@ -20,9 +20,10 @@ import akka.actor.Actor.Receive
 import akka.actor.typed.SupervisorStrategy
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
-import akka.actor.{Actor, ActorContext, ActorRef, DiagnosticActorLogging, Props}
+import akka.actor.{Actor, ActorContext, ActorRef, DiagnosticActorLogging, Props, typed}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
+import fr.acinq.eclair.offer.OfferManager
 import fr.acinq.eclair.{Logs, NodeParams}
 
 trait ReceiveHandler {
@@ -32,10 +33,10 @@ trait ReceiveHandler {
 /**
  * Generic payment handler that delegates handling of incoming messages to a list of handlers.
  */
-class PaymentHandler(nodeParams: NodeParams, register: ActorRef) extends Actor with DiagnosticActorLogging {
+class PaymentHandler(nodeParams: NodeParams, register: ActorRef, offerManager: typed.ActorRef[OfferManager.Payment]) extends Actor with DiagnosticActorLogging {
 
   // we do this instead of sending it to ourselves, otherwise there is no guarantee that this would be the first processed message
-  private val defaultHandler = new MultiPartHandler(nodeParams, register, nodeParams.db.payments)
+  private val defaultHandler = new MultiPartHandler(nodeParams, register, nodeParams.db.payments, offerManager)
 
   // Spawn an actor to purge expired invoices at a configured interval
   private val purger = nodeParams.purgeInvoicesInterval match {
@@ -73,5 +74,6 @@ class PaymentHandler(nodeParams: NodeParams, register: ActorRef) extends Actor w
 }
 
 object PaymentHandler {
-  def props(nodeParams: NodeParams, register: ActorRef): Props = Props(new PaymentHandler(nodeParams, register))
+  def props(nodeParams: NodeParams, register: ActorRef, offerManager: typed.ActorRef[OfferManager.Payment]): Props =
+    Props(new PaymentHandler(nodeParams, register, offerManager))
 }

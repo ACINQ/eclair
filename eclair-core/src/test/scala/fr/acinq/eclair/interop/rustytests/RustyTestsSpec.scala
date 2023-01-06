@@ -59,7 +59,7 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     TestUtils.forwardOutgoingToPipe(bobPeer, pipe)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, TestProbe().ref)))
+    val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, TestProbe().ref, TestProbe().ref)))
     paymentHandler ! new ForwardHandler(TestProbe().ref)
     // we just bypass the relayer for this test
     val relayer = paymentHandler

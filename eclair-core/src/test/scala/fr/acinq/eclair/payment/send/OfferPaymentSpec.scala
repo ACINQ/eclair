@@ -94,7 +94,8 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
       assert(recipientId == merchantKey.publicKey)
       assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
       val Right(invoiceRequest) = InvoiceRequest.validate(message.get[OnionMessagePayloadTlv.InvoiceRequest].get.tlvs)
-      assert(invoiceRequest.isValidFor(offer))
+      assert(invoiceRequest.isValid)
+      assert(invoiceRequest.offer == offer)
       replyTo ! Postman.NoReply
     }
     probe.expectMsg(NoInvoice)

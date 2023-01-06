@@ -302,6 +302,20 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
+  override def receiveAddIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-blinded", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, invoice.paymentHash.toArray)
+      statement.setBytes(2, preimage.toArray)
+      statement.setString(3, paymentType)
+      statement.setString(4, invoice.toString)
+      statement.setLong(5, invoice.createdAt.toTimestampMilli.toLong)
+      statement.setLong(6, (invoice.createdAt + invoice.relativeExpiry).toLong.seconds.toMillis)
+      statement.setLong(7, amount.toLong)
+      statement.setLong(8, receivedAt.toLong)
+      statement.executeUpdate()
+    }
+  }
+
   private def parseIncomingPayment(rs: ResultSet): Option[IncomingPayment] = {
     val invoice = rs.getString("payment_request")
     val preimage = rs.getByteVector32("payment_preimage")
@@ -313,7 +327,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
         Some(IncomingStandardPayment(invoice, preimage, paymentType, createdAt, status))
       case Success(invoice: Bolt12Invoice) =>
         val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getLongNullable("received_at").map(TimestampMilli(_)))
-        val pathIds = decodePathIds(BitVector(rs.getBytes("path_ids")))
+        val pathIds = Option(rs.getBytes("path_ids")).map(bytes => decodePathIds(BitVector(bytes)))
         Some(IncomingBlindedPayment(invoice, preimage, paymentType, pathIds, createdAt, status))
       case _ =>
         logger.error(s"could not parse DB invoice=$invoice, this should not happen")

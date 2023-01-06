@@ -44,6 +44,7 @@ import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
+import scala.util.{Success, Try}
 
 /**
  * Created by t-bast on 21/09/2020.
@@ -359,8 +360,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val forwardHandlerF = TestProbe()
     nodes("F").paymentHandler ! new ForwardHandler(forwardHandlerF.ref)
     // this is the actual payment handler that we will forward requests to
-    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").register))
-    val paymentHandlerF = nodes("F").system.actorOf(PaymentHandler.props(nodes("F").nodeParams, nodes("F").register))
+    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").register, nodes("C").offerManager))
+    val paymentHandlerF = nodes("F").system.actorOf(PaymentHandler.props(nodes("F").nodeParams, nodes("F").register, nodes("F").offerManager))
     // first we make sure nodes are in sync with current blockchain height
     val currentBlockHeight = getBlockHeight()
     awaitCond(getBlockHeight() == currentBlockHeight, max = 20 seconds, interval = 1 second)
@@ -368,7 +369,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: MilliSatoshi, paymentHandler: ActorRef, paymentInitiator: ActorRef): UUID = {
       sender.send(paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-      val invoice = sender.expectMsgType[Invoice]
+      val Success(invoice) = sender.expectMsgType[Try[Invoice]]
       val sendReq = SendPaymentToNode(sender.ref, amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams)
       sender.send(paymentInitiator, sendReq)
       sender.expectMsgType[UUID]
@@ -683,7 +684,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
     sender.send(nodes("F").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-    val invoice = sender.expectMsgType[Invoice]
+    val Success(invoice) = sender.expectMsgType[Try[Invoice]]
 
     // then we make the actual payment
     sender.send(nodes("C").paymentInitiator, SendPaymentToNode(sender.ref, amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams))

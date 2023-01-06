@@ -34,6 +34,7 @@ import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
+import scala.util.{Success, Try}
 
 /**
  * Created by PM on 12/07/2021.
@@ -84,7 +85,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val amountMsat = 100_000.msat
     // first we retrieve a payment hash from B
     sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-    val pr = sender.expectMsgType[Invoice]
+    val Success(pr) = sender.expectMsgType[Try[Invoice]]
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPaymentToNode(sender.ref, amountMsat, pr, routeParams = integrationTestRouteParams, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID]

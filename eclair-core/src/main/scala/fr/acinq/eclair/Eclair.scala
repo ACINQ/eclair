@@ -57,6 +57,7 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.util.Try
 
 case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features[Feature], chainHash: ByteVector32, network: String, blockHeight: Int, publicAddresses: Seq[NodeAddress], onionAddress: Option[NodeAddress], instanceId: String)
 
@@ -279,7 +280,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[Bolt11Invoice] = {
     fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
-    (appKit.paymentHandler ? ReceiveStandardPayment(amount_opt, description, expire_opt, fallbackAddress_opt = fallbackAddress_opt, paymentPreimage_opt = paymentPreimage_opt)).mapTo[Bolt11Invoice]
+    (appKit.paymentHandler ? ReceiveStandardPayment(amount_opt, description, expire_opt, fallbackAddress_opt = fallbackAddress_opt, paymentPreimage_opt = paymentPreimage_opt)).mapTo[Try[Bolt11Invoice]].map(_.get)
   }
 
   override def newAddress(): Future[String] = {

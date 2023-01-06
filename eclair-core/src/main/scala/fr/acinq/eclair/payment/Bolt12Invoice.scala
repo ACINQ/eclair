@@ -17,13 +17,13 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Bech32
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
-import fr.acinq.eclair.wire.protocol.{OfferCodecs, OfferTypes, TlvStream}
-import fr.acinq.eclair.{Bolt12Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64}
+import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferCodecs, OfferTypes, TlvStream}
+import fr.acinq.eclair.{Bolt12Feature, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.concurrent.TimeUnit
@@ -107,7 +107,9 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             invoiceExpiry: FiniteDuration,
             features: Features[Bolt12Feature],
-            paths: Seq[PaymentBlindedRoute]): Bolt12Invoice = {
+            paths: Seq[PaymentBlindedRoute],
+            additionalTlvs: Set[InvoiceTlv] = Set.empty,
+            customTlvs: Set[GenericTlv] = Set.empty): Bolt12Invoice = {
     require(request.amount.nonEmpty || request.offer.amount.nonEmpty)
     val amount = request.amount.orElse(request.offer.amount.map(_ * request.quantity)).get
     val tlvs: Set[InvoiceTlv] = removeSignature(request.records).records ++ Set(
@@ -119,9 +121,9 @@ object Bolt12Invoice {
       Some(InvoiceAmount(amount)),
       if (!features.isEmpty) Some(InvoiceFeatures(features.unscoped())) else None,
       Some(InvoiceNodeId(nodeKey.publicKey)),
-    ).flatten
-    val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, request.records.unknown), OfferCodecs.invoiceTlvCodec), nodeKey)
-    Bolt12Invoice(TlvStream(tlvs + Signature(signature), request.records.unknown))
+    ).flatten ++ additionalTlvs
+    val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, request.records.unknown ++ customTlvs), OfferCodecs.invoiceTlvCodec), nodeKey)
+    Bolt12Invoice(TlvStream(tlvs + Signature(signature), request.records.unknown ++ customTlvs))
   }
 
   def validate(records: TlvStream[InvoiceTlv]): Either[InvalidTlvPayload, Bolt12Invoice] = {

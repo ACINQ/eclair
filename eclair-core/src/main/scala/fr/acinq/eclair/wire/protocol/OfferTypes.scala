@@ -256,15 +256,21 @@ object OfferTypes {
      * @param features    invoice features.
      * @param chain       chain on which the offer is valid.
      */
-    def apply(amount_opt: Option[MilliSatoshi], description: String, nodeId: PublicKey, features: Features[Bolt12Feature], chain: ByteVector32): Offer = {
+    def apply(amount_opt: Option[MilliSatoshi],
+              description: String,
+              nodeId: PublicKey,
+              features: Features[Bolt12Feature],
+              chain: ByteVector32,
+              additionalTlvs: Set[OfferTlv] = Set.empty,
+              customTlvs: Set[GenericTlv] = Set.empty): Offer = {
       val tlvs: Set[OfferTlv] = Set(
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
         amount_opt.map(OfferAmount),
         Some(OfferDescription(description)),
         if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
         Some(OfferNodeId(nodeId)),
-      ).flatten
-      Offer(TlvStream(tlvs))
+      ).flatten ++ additionalTlvs
+      Offer(TlvStream(tlvs, customTlvs))
     }
 
     def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
@@ -302,15 +308,14 @@ object OfferTypes {
     val payerNote: Option[String] = records.get[InvoiceRequestPayerNote].map(_.note)
     private val signature: ByteVector64 = records.get[Signature].get.signature
 
-    def isValidFor(otherOffer: Offer): Boolean = {
+    def isValid: Boolean = {
       val amountOk = offer.amount match {
         case Some(offerAmount) =>
           val baseInvoiceAmount = offerAmount * quantity
           amount.forall(baseInvoiceAmount <= _)
         case None => amount.nonEmpty
       }
-      offer == otherOffer &&
-        amountOk &&
+      amountOk &&
         offer.chains.contains(chain) &&
         offer.quantityMax.forall(max => quantity_opt.nonEmpty && quantity <= max) &&
         quantity_opt.forall(_ => offer.quantityMax.nonEmpty) &&
@@ -346,7 +351,14 @@ object OfferTypes {
      * @param payerKey private key identifying the payer: this lets us prove we're the ones who paid the invoice.
      * @param chain    chain we want to use to pay this offer.
      */
-    def apply(offer: Offer, amount: MilliSatoshi, quantity: Long, features: Features[Bolt12Feature], payerKey: PrivateKey, chain: ByteVector32): InvoiceRequest = {
+    def apply(offer: Offer,
+              amount: MilliSatoshi,
+              quantity: Long,
+              features: Features[Bolt12Feature],
+              payerKey: PrivateKey,
+              chain: ByteVector32,
+              additionalTlvs: Set[InvoiceRequestTlv] = Set.empty,
+              customTlvs: Set[GenericTlv] = Set.empty): InvoiceRequest = {
       require(offer.chains.contains(chain))
       require(quantity == 1 || offer.quantityMax.nonEmpty)
       val tlvs: Set[InvoiceRequestTlv] = offer.records.records ++ Set(
@@ -356,9 +368,9 @@ object OfferTypes {
         if (offer.quantityMax.nonEmpty) Some(InvoiceRequestQuantity(quantity)) else None,
         if (!features.isEmpty) Some(InvoiceRequestFeatures(features.unscoped())) else None,
         Some(InvoiceRequestPayerId(payerKey.publicKey)),
-      ).flatten
-      val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, offer.records.unknown), OfferCodecs.invoiceRequestTlvCodec), payerKey)
-      InvoiceRequest(TlvStream(tlvs + Signature(signature), offer.records.unknown))
+      ).flatten ++ additionalTlvs
+      val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, offer.records.unknown ++ customTlvs), OfferCodecs.invoiceRequestTlvCodec), payerKey)
+      InvoiceRequest(TlvStream(tlvs + Signature(signature), offer.records.unknown ++ customTlvs))
     }
 
     def validate(records: TlvStream[InvoiceRequestTlv]): Either[InvalidTlvPayload, InvoiceRequest] = {

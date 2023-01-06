@@ -20,6 +20,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter, Switchboard}
+import fr.acinq.eclair.offer.OfferManager
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
@@ -35,7 +36,7 @@ import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration.DurationInt
-import scala.util.Random
+import scala.util.{Random, Success, Try}
 
 /**
  * A minimal node setup, with real actors.
@@ -87,7 +88,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val watcherTyped = watcher.ref.toTyped[ZmqWatcher.Command]
     val register = system.actorOf(Register.props(), "register")
     val router = system.actorOf(Router.props(nodeParams, watcherTyped), "router")
-    val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register), "payment-handler")
+    val offerManager = system.spawn(OfferManager(nodeParams, router), "offer-manager")
+    val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
     val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler, triggerer.ref.toTyped), "relayer")
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, watcherTyped, bitcoinClient)
     val channelFactory = Peer.SimpleChannelFactory(nodeParams, watcherTyped, relayer, wallet, txPublisherFactory)
@@ -336,7 +338,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: List[List[ExtraHop]] = List.empty)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
     val sender = TestProbe("sender")
     sender.send(node2.paymentHandler, MultiPartHandler.ReceiveStandardPayment(Some(amount), Left("test payment"), extraHops = hints))
-    val invoice = sender.expectMsgType[Bolt11Invoice]
+    val Success(invoice) = sender.expectMsgType[Try[Bolt11Invoice]]
 
     sendPayment(node1, amount, invoice)
   }

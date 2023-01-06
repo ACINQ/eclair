@@ -87,33 +87,39 @@ class OfferTypesSpec extends AnyFunSuite {
     val offer = Offer(Some(2500 msat), "basic offer", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 2500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
-    assert(request.isValidFor(offer))
+    assert(request.isValid)
+    assert(request.offer == offer)
     val biggerAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.map { case InvoiceRequestAmount(_) => InvoiceRequestAmount(3000 msat) case x => x })), payerKey)
-    assert(biggerAmount.isValidFor(offer))
+    assert(biggerAmount.isValid)
+    assert(biggerAmount.offer == offer)
     val lowerAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.map { case InvoiceRequestAmount(_) => InvoiceRequestAmount(2000 msat) case x => x })), payerKey)
-    assert(!lowerAmount.isValidFor(offer))
+    assert(!lowerAmount.isValid)
     val withQuantity = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestQuantity(1)))), payerKey)
-    assert(!withQuantity.isValidFor(offer))
+    assert(!withQuantity.isValid)
   }
 
   test("check that invoice request matches offer (with features)") {
     val offer = Offer(Some(2500 msat), "offer with features", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 2500 msat, 1, Features(BasicMultiPartPayment -> Optional), payerKey, Block.LivenetGenesisBlock.hash)
-    assert(request.isValidFor(offer))
+    assert(request.isValid)
+    assert(request.offer == offer)
     val withoutFeatures = InvoiceRequest(offer, 2500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
-    assert(withoutFeatures.isValidFor(offer))
+    assert(withoutFeatures.isValid)
+    assert(withoutFeatures.offer == offer)
     val otherFeatures = InvoiceRequest(offer, 2500 msat, 1, Features(BasicMultiPartPayment -> Mandatory), payerKey, Block.LivenetGenesisBlock.hash)
-    assert(!otherFeatures.isValidFor(offer))
+    assert(!otherFeatures.isValid)
+    assert(otherFeatures.offer == offer)
   }
 
   test("check that invoice request matches offer (without amount)") {
     val offer = Offer(None, "offer without amount", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
-    assert(request.isValidFor(offer))
+    assert(request.isValid)
+    assert(request.offer == offer)
     val withoutAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filter { case InvoiceRequestAmount(_) => false case _ => true })), payerKey)
-    assert(!withoutAmount.isValidFor(offer))
+    assert(!withoutAmount.isValid)
   }
 
   test("check that invoice request matches offer (chain compatibility)") {
@@ -129,24 +135,28 @@ class OfferTypesSpec extends AnyFunSuite {
         val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
         InvoiceRequest(TlvStream(tlvs + Signature(signature)))
       }
-      assert(request.isValidFor(offer))
+      assert(request.isValid)
+      assert(request.offer == offer)
       val withDefaultChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestChain(Block.LivenetGenesisBlock.hash)))), payerKey)
-      assert(withDefaultChain.isValidFor(offer))
+      assert(withDefaultChain.isValid)
+      assert(withDefaultChain.offer == offer)
       val otherChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestChain(Block.TestnetGenesisBlock.hash)))), payerKey)
-      assert(!otherChain.isValidFor(offer))
+      assert(!otherChain.isValid)
     }
     {
       val (chain1, chain2) = (randomBytes32(), randomBytes32())
       val offer = Offer(TlvStream(OfferChains(Seq(chain1, chain2)), OfferAmount(100 msat), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey)))
       val payerKey = randomKey()
       val request1 = InvoiceRequest(offer, 100 msat, 1, Features.empty, payerKey, chain1)
-      assert(request1.isValidFor(offer))
+      assert(request1.isValid)
+      assert(request1.offer == offer)
       val request2 = InvoiceRequest(offer, 100 msat, 1, Features.empty, payerKey, chain2)
-      assert(request2.isValidFor(offer))
+      assert(request2.isValid)
+      assert(request2.offer == offer)
       val noChain = signInvoiceRequest(request1.copy(records = TlvStream(request1.records.records.filter { case InvoiceRequestChain(_) => false case _ => true })), payerKey)
-      assert(!noChain.isValidFor(offer))
+      assert(!noChain.isValid)
       val otherChain = signInvoiceRequest(request1.copy(records = TlvStream(request1.records.records.map { case InvoiceRequestChain(_) => InvoiceRequestChain(Block.LivenetGenesisBlock.hash) case x => x })), payerKey)
-      assert(!otherChain.isValidFor(offer))
+      assert(!otherChain.isValid)
     }
   }
 
@@ -160,11 +170,12 @@ class OfferTypesSpec extends AnyFunSuite {
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 1600 msat, 3, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.records.get[InvoiceRequestQuantity].nonEmpty)
-    assert(request.isValidFor(offer))
+    assert(request.isValid)
+    assert(request.offer == offer)
     val invalidAmount = InvoiceRequest(offer, 2400 msat, 5, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
-    assert(!invalidAmount.isValidFor(offer))
+    assert(!invalidAmount.isValid)
     val tooManyItems = InvoiceRequest(offer, 5500 msat, 11, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
-    assert(!tooManyItems.isValidFor(offer))
+    assert(!tooManyItems.isValid)
   }
 
   test("minimal invoice request") {

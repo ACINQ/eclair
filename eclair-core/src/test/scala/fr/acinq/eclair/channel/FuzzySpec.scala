@@ -42,7 +42,7 @@ import org.scalatest.{Outcome, Tag}
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import scala.concurrent.duration._
-import scala.util.Random
+import scala.util.{Random, Success}
 
 /**
  * Created by PM on 05/07/2016.
@@ -65,8 +65,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     val bob2blockchain = TestProbe()
     val aliceRegister = system.actorOf(Props(new TestRegister()))
     val bobRegister = system.actorOf(Props(new TestRegister()))
-    val alicePaymentHandler = system.actorOf(Props(new PaymentHandler(aliceParams, aliceRegister)))
-    val bobPaymentHandler = system.actorOf(Props(new PaymentHandler(bobParams, bobRegister)))
+    val alicePaymentHandler = system.actorOf(Props(new PaymentHandler(aliceParams, aliceRegister, TestProbe().ref)))
+    val bobPaymentHandler = system.actorOf(Props(new PaymentHandler(bobParams, bobRegister, TestProbe().ref)))
     val aliceRelayer = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, aliceRegister, alicePaymentHandler, TestProbe().ref))
     val bobRelayer = system.actorOf(Relayer.props(bobParams, TestProbe().ref, bobRegister, bobPaymentHandler, TestProbe().ref))
     val wallet = new DummyOnChainWallet()
@@ -127,7 +127,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       if (remaining > 0) {
         paymentHandler ! ReceiveStandardPayment(Some(requiredAmount), Left("One coffee"))
         context become {
-          case invoice: Bolt11Invoice =>
+          case Success(invoice: Bolt11Invoice) =>
             sendChannel ! buildCmdAdd(invoice)
             context become {
               case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()

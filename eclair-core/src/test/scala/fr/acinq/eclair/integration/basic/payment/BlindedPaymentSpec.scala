@@ -40,6 +40,7 @@ import org.scalatest.{Tag, TestData}
 import scodec.bits.HexStringSyntax
 
 import java.util.UUID
+import scala.util.{Success, Try}
 
 class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
 
@@ -103,7 +104,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val offer = Offer(None, "test", offerKey.publicKey, Features.empty, recipient.nodeParams.chainHash)
     val invoiceReq = InvoiceRequest(offer, amount, 1, Features.empty, randomKey(), recipient.nodeParams.chainHash)
     sender.send(recipient.paymentHandler, MultiPartHandler.ReceiveOfferPayment(offerKey, invoiceReq, routes, recipient.router))
-    val invoice = sender.expectMsgType[Bolt12Invoice]
+    val Success(invoice) = sender.expectMsgType[Try[Bolt12Invoice]]
     invoice
   }
 

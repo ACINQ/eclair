@@ -42,6 +42,9 @@ trait IncomingPaymentsDb {
    */
   def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
 
+  /** Add a new blinded incoming payment as it is received. */
+  def receiveAddIncomingBlindedPayment(pr: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now(), paymentType: String = PaymentType.Blinded): Unit
+
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
 
@@ -136,7 +139,7 @@ case class IncomingStandardPayment(invoice: Bolt11Invoice,
 case class IncomingBlindedPayment(invoice: Bolt12Invoice,
                                   paymentPreimage: ByteVector32,
                                   paymentType: String,
-                                  pathIds: Map[PublicKey, ByteVector],
+                                  pathIds: Option[Map[PublicKey, ByteVector]],
                                   createdAt: TimestampMilli,
                                   status: IncomingPaymentStatus) extends IncomingPayment
 

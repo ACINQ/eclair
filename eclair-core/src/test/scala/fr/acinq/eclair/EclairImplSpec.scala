@@ -72,6 +72,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val channelsListener = TestProbe()
     val balanceActor = TestProbe()
     val postman = TestProbe()
+    val offerManager = TestProbe()
     val kit = Kit(
       TestConstants.Alice.nodeParams,
       system,
@@ -86,6 +87,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       channelsListener.ref.toTyped,
       balanceActor.ref.toTyped,
       postman.ref.toTyped,
+      offerManager.ref.toTyped,
       new DummyOnChainWallet()
     )
     withFixture(test.toNoArgTest(FixtureParam(register, relayer, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
@@ -319,7 +321,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
     import f._
 
-    val kitWithPaymentHandler = kit.copy(paymentHandler = system.actorOf(PaymentHandler.props(Alice.nodeParams, TestProbe().ref)))
+    val kitWithPaymentHandler = kit.copy(paymentHandler = system.actorOf(PaymentHandler.props(Alice.nodeParams, TestProbe().ref, TestProbe().ref)))
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32()
 

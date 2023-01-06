@@ -663,14 +663,14 @@ class PaymentsDbSpec extends AnyFunSuite {
       val expiredInvoice3 = Bolt12Invoice(TlvStream(InvoiceRequestMetadata(randomBytes(5)), OfferDescription("invoice #3"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(3 unixsec), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), InvoiceNodeId(randomKey().publicKey), Signature(ByteVector64.Zeroes)))
       val expiredPayment1 = IncomingStandardPayment(expiredInvoice1, randomBytes32(), PaymentType.Standard, expiredInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
       val expiredPayment2 = IncomingStandardPayment(expiredInvoice2, randomBytes32(), PaymentType.Standard, expiredInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
-      val expiredPayment3 = IncomingBlindedPayment(expiredInvoice3, randomBytes32(), PaymentType.Blinded, Map(randomKey().publicKey -> hex"2a2a2a2a"), expiredInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
+      val expiredPayment3 = IncomingBlindedPayment(expiredInvoice3, randomBytes32(), PaymentType.Blinded, Some(Map(randomKey().publicKey -> hex"2a2a2a2a")), expiredInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
 
       val pendingInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #4"), CltvExpiryDelta(18), timestamp = TimestampSecond.now() - 10.seconds)
       val pendingInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #5"), CltvExpiryDelta(18), expirySeconds = Some(30), timestamp = TimestampSecond.now() - 9.seconds)
       val pendingInvoice3 = Bolt12Invoice(TlvStream(InvoiceRequestMetadata(randomBytes(5)), OfferDescription("invoice #6"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(TimestampSecond.now() - 8.seconds), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), InvoiceNodeId(randomKey().publicKey), Signature(ByteVector64.Zeroes)))
       val pendingPayment1 = IncomingStandardPayment(pendingInvoice1, randomBytes32(), PaymentType.Standard, pendingInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
       val pendingPayment2 = IncomingStandardPayment(pendingInvoice2, randomBytes32(), PaymentType.SwapIn, pendingInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
-      val pendingPayment3 = IncomingBlindedPayment(pendingInvoice3, randomBytes32(), PaymentType.Blinded, Map(randomKey().publicKey -> hex"deaddead"), pendingInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
+      val pendingPayment3 = IncomingBlindedPayment(pendingInvoice3, randomBytes32(), PaymentType.Blinded, Some(Map(randomKey().publicKey -> hex"deaddead")), pendingInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
 
       val paidInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #7"), CltvExpiryDelta(18), timestamp = TimestampSecond.now() - 5.seconds)
       val paidInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #8"), CltvExpiryDelta(18), expirySeconds = Some(60), timestamp = TimestampSecond.now() - 4.seconds)
@@ -680,17 +680,17 @@ class PaymentsDbSpec extends AnyFunSuite {
       val receivedAt3 = TimestampMilli.now() + 3.milli
       val payment1 = IncomingStandardPayment(paidInvoice1, randomBytes32(), PaymentType.Standard, paidInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(561 msat, receivedAt2))
       val payment2 = IncomingStandardPayment(paidInvoice2, randomBytes32(), PaymentType.Standard, paidInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(1111 msat, receivedAt2))
-      val payment3 = IncomingBlindedPayment(paidInvoice3, randomBytes32(), PaymentType.Blinded, Map(randomKey().publicKey -> hex"beefbeef"), paidInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(1730 msat, receivedAt3))
+      val payment3 = IncomingBlindedPayment(paidInvoice3, randomBytes32(), PaymentType.Blinded, Some(Map(randomKey().publicKey -> hex"beefbeef")), paidInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(1730 msat, receivedAt3))
 
       db.addIncomingPayment(pendingInvoice1, pendingPayment1.paymentPreimage)
       db.addIncomingPayment(pendingInvoice2, pendingPayment2.paymentPreimage, PaymentType.SwapIn)
-      db.addIncomingBlindedPayment(pendingInvoice3, pendingPayment3.paymentPreimage, pendingPayment3.pathIds, PaymentType.Blinded)
+      db.addIncomingBlindedPayment(pendingInvoice3, pendingPayment3.paymentPreimage, pendingPayment3.pathIds.get, PaymentType.Blinded)
       db.addIncomingPayment(expiredInvoice1, expiredPayment1.paymentPreimage)
       db.addIncomingPayment(expiredInvoice2, expiredPayment2.paymentPreimage)
-      db.addIncomingBlindedPayment(expiredInvoice3, expiredPayment3.paymentPreimage, expiredPayment3.pathIds, PaymentType.Blinded)
+      db.addIncomingBlindedPayment(expiredInvoice3, expiredPayment3.paymentPreimage, expiredPayment3.pathIds.get, PaymentType.Blinded)
       db.addIncomingPayment(paidInvoice1, payment1.paymentPreimage)
       db.addIncomingPayment(paidInvoice2, payment2.paymentPreimage)
-      db.addIncomingBlindedPayment(paidInvoice3, payment3.paymentPreimage, payment3.pathIds, PaymentType.Blinded)
+      db.addIncomingBlindedPayment(paidInvoice3, payment3.paymentPreimage, payment3.pathIds.get, PaymentType.Blinded)
 
       assert(db.getIncomingPayment(pendingInvoice1.paymentHash).contains(pendingPayment1))
       assert(db.getIncomingPayment(pendingInvoice3.paymentHash).contains(pendingPayment3))
