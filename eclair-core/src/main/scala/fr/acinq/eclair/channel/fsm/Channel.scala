@@ -1600,15 +1600,17 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => handleRemoteSpentFuture(tx, d)
 
-    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
-
-    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
-
-    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) if tx.txid == d.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid =>
-      log.warning(s"processing local commit spent in catch-all handler")
-      spendLocalCurrent(d)
-
-    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) => handleRemoteSpentOther(tx, d)
+    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) =>
+      if (tx.txid == d.commitments.remoteCommit.txid) {
+        handleRemoteSpentCurrent(tx, d)
+      } else if (d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) {
+        handleRemoteSpentNext(tx, d)
+      } else if (tx.txid == d.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid) {
+        log.warning(s"processing local commit spent from the outside")
+        spendLocalCurrent(d)
+      } else {
+        handleRemoteSpentOther(tx, d)
+      }
   }
 
   onTransition {
