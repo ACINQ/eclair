@@ -1608,12 +1608,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       log.warning(s"processing local commit spent in catch-all handler")
       spendLocalCurrent(d)
 
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleInformationLeak(tx, d)
-
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_CHANNEL_READY) => handleInformationLeak(tx, d)
-
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_READY) => handleInformationLeak(tx, d)
-
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) => handleRemoteSpentOther(tx, d)
   }
 

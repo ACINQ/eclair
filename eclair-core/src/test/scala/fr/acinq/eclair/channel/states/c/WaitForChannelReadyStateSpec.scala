@@ -245,11 +245,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
 
   test("recv WatchFundingSpentTriggered (other commit)") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    alice2bob.expectMsgType[Error]
-    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
-    alice2blockchain.expectMsgType[TxPublisher.PublishTx]
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
   }
 

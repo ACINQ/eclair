@@ -799,6 +799,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
+  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+    import f._
+    alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
+    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+  }
+
   def disconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel]): Unit = {
     alice ! INPUT_DISCONNECTED
     bob ! INPUT_DISCONNECTED
