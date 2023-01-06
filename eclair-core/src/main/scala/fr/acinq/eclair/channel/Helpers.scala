@@ -1049,11 +1049,12 @@ object Helpers {
           // txNumber must be lesser than 48 bits long
           None
         } else {
-          log.warning(s"a revoked commit has been published with txnumber=$txNumber")
           // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
           remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber)
             .map(d => PrivateKey(d))
             .map(remotePerCommitmentSecret => {
+              log.warning(s"a revoked commit has been published with txnumber=$txNumber")
+
               val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey
               val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
               val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
