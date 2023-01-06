@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.ZeroConf
 import fr.acinq.eclair.channel.ChannelTypes.AnchorOutputsZeroFeeHtlcTx
-import fr.acinq.eclair.channel.{NORMAL, PersistentChannelData}
+import fr.acinq.eclair.channel.{DATA_NORMAL, NORMAL, PersistentChannelData, SupportedChannelType}
 import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import org.scalatest.concurrent.IntegrationPatience
@@ -43,15 +43,23 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     fixture.cleanup()
   }
 
+  private def createChannel(f: FixtureParam, channelType_opt: Option[SupportedChannelType] = None): ByteVector32 = {
+    import f._
+
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob), confirm = false, deepConfirm = false))
+    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob), confirm = false, deepConfirm = false))
+
+    connect(alice, bob)
+    openChannel(alice, bob, 100_000 sat, channelType_opt).channelId
+  }
+
   test("open a channel alice-bob (zero-conf disabled on both sides)") { f =>
     import f._
 
     assert(!alice.nodeParams.features.activated.contains(ZeroConf))
     assert(!bob.nodeParams.features.activated.contains(ZeroConf))
 
-    connect(alice, bob)
-    val channelId = openChannel(alice, bob, 100_000 sat).channelId
-
+    val channelId = createChannel(f)
     assert(!getChannelData(alice, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
     assert(!getChannelData(bob, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
   }
@@ -76,12 +84,13 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(!alice.nodeParams.features.activated.contains(ZeroConf))
     assert(bob.nodeParams.features.activated.contains(ZeroConf))
 
-    connect(alice, bob)
     val channelType = AnchorOutputsZeroFeeHtlcTx(zeroConf = true)
-    val channelId = openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
+    val channelId = createChannel(f, channelType_opt = Some(channelType))
 
-    assert(getChannelData(alice, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
-    assert(getChannelData(bob, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
+    eventually {
+      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.hasFeature(ZeroConf))
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.hasFeature(ZeroConf))
+    }
   }
 
   test("open a channel alice-bob (zero-conf enabled on bob, not requested via channel type by alice)", Tag(ZeroConfBob)) { f =>
@@ -90,9 +99,8 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(!alice.nodeParams.features.activated.contains(ZeroConf))
     assert(bob.nodeParams.features.activated.contains(ZeroConf))
 
-    connect(alice, bob)
     val channelType = AnchorOutputsZeroFeeHtlcTx()
-    val channelId = openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
+    val channelId = createChannel(f, channelType_opt = Some(channelType))
 
     // Bob has activated support for 0-conf with Alice, so he doesn't wait for the funding tx to confirm regardless of
     // the channel type and activated feature bits. Since Alice has full control over the funding tx, she accepts Bob's
@@ -109,12 +117,13 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(alice.nodeParams.features.activated.contains(ZeroConf))
     assert(bob.nodeParams.features.activated.contains(ZeroConf))
 
-    connect(alice, bob)
     val channelType = AnchorOutputsZeroFeeHtlcTx()
-    val channelId = openChannel(alice, bob, 100_000 sat, channelType_opt = Some(channelType)).channelId
+    val channelId = createChannel(f, channelType_opt = Some(channelType))
 
-    assert(getChannelData(alice, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
-    assert(getChannelData(bob, channelId).asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(ZeroConf))
+    eventually {
+      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.hasFeature(ZeroConf))
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.hasFeature(ZeroConf))
+    }
   }
 
 }

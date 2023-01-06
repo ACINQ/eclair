@@ -145,6 +145,10 @@ object ZmqWatcher {
   case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: ByteVector32, outputIndex: Int, hints: Set[ByteVector32]) extends WatchSpent[WatchOutputSpentTriggered]
   case class WatchOutputSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
 
+  /** Waiting for a wallet transaction to be published guarantees that bitcoind won't double-spend it in the future, unless we explicitly call abandontransaction. */
+  case class WatchPublished(replyTo: ActorRef[WatchPublishedTriggered], txId: ByteVector32) extends Watch[WatchPublishedTriggered]
+  case class WatchPublishedTriggered(tx: Transaction) extends WatchTriggered
+
   case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
   case class WatchFundingConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
@@ -156,10 +160,6 @@ object ZmqWatcher {
 
   case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
   case class WatchParentTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
-
-  // TODO: not implemented yet: notify me if confirmation number gets below minDepth?
-  case class WatchFundingLost(replyTo: ActorRef[WatchFundingLostTriggered], txId: ByteVector32, minDepth: Long) extends Watch[WatchFundingLostTriggered]
-  case class WatchFundingLostTriggered(txId: ByteVector32) extends WatchTriggered
 
   private sealed trait AddWatchResult
   private case object Keep extends AddWatchResult
@@ -233,9 +233,12 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
             case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
             case w: WatchFundingSpent => context.self ! TriggerEvent(w.replyTo, w, WatchFundingSpentTriggered(tx))
             case w: WatchOutputSpent => context.self ! TriggerEvent(w.replyTo, w, WatchOutputSpentTriggered(tx))
+            case _: WatchPublished => // nothing to do
             case _: WatchConfirmed[_] => // nothing to do
-            case _: WatchFundingLost => // nothing to do
           }
+        watches.collect {
+          case w: WatchPublished if w.txId == tx.txid => context.self ! TriggerEvent(w.replyTo, w, WatchPublishedTriggered(tx))
+        }
         Behaviors.same
 
       case ProcessNewBlock(blockHash) =>
@@ -275,7 +278,10 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         }
         // TODO: beware of the herd effect
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
-          Future.sequence(watches.collect { case w: WatchConfirmed[_] => checkConfirmed(w) })
+          Future.sequence(watches.collect {
+            case w: WatchPublished => checkPublished(w)
+            case w: WatchConfirmed[_] => checkConfirmed(w)
+          })
         }
         Behaviors.same
 
@@ -316,9 +322,9 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           case w: WatchConfirmed[_] =>
             checkConfirmed(w)
             Keep
-          case _: WatchFundingLost =>
-            // TODO: not implemented, we ignore it silently
-            Ignore
+          case w: WatchPublished =>
+            checkPublished(w)
+            Keep
         }
         result match {
           case Keep =>
@@ -350,7 +356,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
     }
   }
 
-  def checkSpentBasic(w: WatchSpentBasic[_ <: WatchSpentBasicTriggered]): Future[Unit] = {
+  private def checkSpentBasic(w: WatchSpentBasic[_ <: WatchSpentBasicTriggered]): Future[Unit] = {
     // NB: we assume parent tx was published, we just need to make sure this particular output has not been spent
     client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
       case false =>
@@ -361,7 +367,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
     }
   }
 
-  def checkSpent(w: WatchSpent[_ <: WatchSpentTriggered]): Future[Unit] = {
+  private def checkSpent(w: WatchSpent[_ <: WatchSpentTriggered]): Future[Unit] = {
     // first let's see if the parent tx was published or not
     client.getTxConfirmations(w.txId).collect {
       case Some(_) =>
@@ -399,7 +405,12 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
     }
   }
 
-  def checkConfirmed(w: WatchConfirmed[_ <: WatchConfirmedTriggered]): Future[Unit] = {
+  private def checkPublished(w: WatchPublished): Future[Unit] = {
+    log.debug("checking publication of txid={}", w.txId)
+    client.getTransaction(w.txId).map(tx => context.self ! TriggerEvent(w.replyTo, w, WatchPublishedTriggered(tx)))
+  }
+
+  private def checkConfirmed(w: WatchConfirmed[_ <: WatchConfirmedTriggered]): Future[Unit] = {
     log.debug("checking confirmations of txid={}", w.txId)
     // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
     // matter because this only happens once, when the watched transaction has reached min_depth

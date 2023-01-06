@@ -264,9 +264,9 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
    * An autopilot method for the watcher, that handled funding confirmation requests from the channel and channel
    * validation requests from the router
    */
-  def watcherAutopilot(knownFundingTxs: () => Iterable[Transaction], deepConfirm: Boolean = true)(implicit system: ActorSystem): TestActor.AutoPilot = {
+  def watcherAutopilot(knownFundingTxs: () => Iterable[Transaction], confirm: Boolean = true, deepConfirm: Boolean = true)(implicit system: ActorSystem): TestActor.AutoPilot = {
     // we forward messages to an actor to emulate a stateful autopilot
-    val fundingTxWatcher = system.spawnAnonymous(FundingTxWatcher(knownFundingTxs, deepConfirm = deepConfirm))
+    val fundingTxWatcher = system.spawnAnonymous(FundingTxWatcher(knownFundingTxs, confirm = confirm, deepConfirm = deepConfirm))
     (_, msg) =>
       msg match {
         case msg: ZmqWatcher.Command => fundingTxWatcher ! msg
@@ -278,7 +278,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   // When opening a channel, only one of the two nodes publishes the funding transaction, which creates a race when the
   // other node sets a watch before that happens. We simply retry until the funding transaction is published.
   private object FundingTxWatcher {
-    def apply(knownFundingTxs: () => Iterable[Transaction], deepConfirm: Boolean): Behavior[ZmqWatcher.Command] = {
+    def apply(knownFundingTxs: () => Iterable[Transaction], confirm: Boolean, deepConfirm: Boolean): Behavior[ZmqWatcher.Command] = {
       Behaviors.setup { _ =>
         Behaviors.withTimers { timers =>
           Behaviors.receiveMessagePartial {
@@ -289,7 +289,13 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
               }
               vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
               Behaviors.same
-            case watch: ZmqWatcher.WatchFundingConfirmed =>
+            case watch: ZmqWatcher.WatchPublished =>
+              knownFundingTxs().find(_.txid == watch.txId) match {
+                case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchPublishedTriggered(fundingTx)
+                case None => timers.startSingleTimer(watch, 10 millis)
+              }
+              Behaviors.same
+            case watch: ZmqWatcher.WatchFundingConfirmed if confirm =>
               val realScid = deterministicShortId(watch.txId)
               knownFundingTxs().find(_.txid == watch.txId) match {
                 case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
