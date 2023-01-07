@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
@@ -24,7 +24,6 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{BtcDouble, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
-import fr.acinq.eclair.InterceptedMessageType.InterceptOpenChannel
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
@@ -44,6 +43,7 @@ import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId
 import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.DurationInt
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -418,11 +418,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
         val upfrontShutdownScript = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.UpfrontShutdownScript)
         val localParams = createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight = false)
-        if (nodeParams.pluginInterceptedMessages.contains(InterceptOpenChannel)) {
-          // plugin should reply to peer with either SpawnChannelNonInitiator or OutgoingMessage(Error)
-          context.system.eventStream.publish(OpenChannelReceived(selfRef, open, channelType, localParams, d.connectionInfo))
-        } else {
-          selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
+        nodeParams.pluginOpenChannelInterceptor match {
+          case None => selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
+          // TODO: add channel interceptor timeout parameter to node params
+          case Some(plugin) => context.spawnAnonymous(OpenChannelInterceptor(context.self.toTyped, plugin, 1 minute, d, temporaryChannelId, localParams, Some(fundingAmount), open, channelType))
         }
       case Left(ex) =>
         log.warning("ignoring remote channel open: {}", ex.getMessage)

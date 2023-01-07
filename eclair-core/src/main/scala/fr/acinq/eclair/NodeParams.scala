@@ -93,7 +93,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
-  val pluginInterceptedMessages: Set[InterceptedMessageType.Value] = pluginParams.collect { case p: InterceptMessagePlugin => p.canIntercept }.toSet.flatten
+  val pluginOpenChannelInterceptor: Option[InterceptOpenChannelPlugin] = pluginParams.collectFirst { case p: InterceptOpenChannelPlugin => p }
 
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
 
@@ -345,10 +345,8 @@ object NodeParams extends Logging {
     require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
     require(pluginFeatureSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
 
-    val interceptMessagePlugins = pluginParams.collect { case p: InterceptMessagePlugin => p }
-    // can only have one plugin that intercepts each message type
-    val dups = interceptMessagePlugins.flatMap(_.canIntercept).groupBy(identity).collect { case (k, c) if c.size > 1 => k }
-    require(dups.isEmpty, s"More than one plugin found that intercepts the message: ${dups.mkString(", ")}")
+    val interceptOpenChannelPlugins = pluginParams.collect { case p: InterceptOpenChannelPlugin => p }
+    require(interceptOpenChannelPlugins.size <= 1, s"More than one plugin found that intercepts open channel messages: ${interceptOpenChannelPlugins.map(_.getClass.getSimpleName).mkString(", ")}")
 
     val coreAndPluginFeatures: Features[Feature] = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
 

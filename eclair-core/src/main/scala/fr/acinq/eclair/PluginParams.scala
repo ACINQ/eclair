@@ -16,10 +16,14 @@
 
 package fr.acinq.eclair
 
+import akka.actor.typed.ActorRef
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.channel.Origin
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.eclair.channel.{LocalParams, Origin}
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
+import fr.acinq.eclair.wire.protocol.{Error, OpenChannel, OpenDualFundedChannel}
+
+import scala.concurrent.duration.FiniteDuration
 
 /** Custom plugin parameters. */
 trait PluginParams {
@@ -56,16 +60,13 @@ trait CustomCommitmentsPlugin extends PluginParams {
   def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc], nodeParams: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]]
 }
 
-/**
- * Each intercepted message type must be handled by at most one plugin.
- */
-object InterceptedMessageType extends Enumeration {
-  type InterceptedMessageType = Value
-  val InterceptOpenChannel: InterceptedMessageType.Value = Value(1, "InterceptOpenChannel")
-  val InterceptUpdateAddHtlc: InterceptedMessageType.Value = Value(2, "InterceptUpdateAddHtlc")
-}
+// @formatter:off
+case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], open: Either[OpenChannel, OpenDualFundedChannel], temporaryChannelId: ByteVector32, localParams: LocalParams, fundingAmount_opt: Option[Satoshi])
+sealed trait InterceptOpenChannelResponse
+case class AcceptOpenChannel(temporaryChannelId: ByteVector32, localParams: LocalParams, fundingAmount_opt: Option[Satoshi]) extends InterceptOpenChannelResponse
+case class RejectOpenChannel(temporaryChannelId: ByteVector32, error: Error) extends InterceptOpenChannelResponse
+// @formatter:on
 
-trait InterceptMessagePlugin extends PluginParams {
-  // set of message types that can be intercepted by this plugin
-  def canIntercept: Set[InterceptedMessageType.Value]
+trait InterceptOpenChannelPlugin extends PluginParams {
+  def getOpenChannelInterceptor: ActorRef[InterceptOpenChannelReceived]
 }

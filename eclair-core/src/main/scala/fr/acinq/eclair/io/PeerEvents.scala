@@ -37,5 +37,3 @@ case class LastChannelClosed(peer: ActorRef, nodeId: PublicKey) extends PeerEven
 case class PongReceived(nodeId: PublicKey, latency: FiniteDuration) extends PeerEvent
 
 case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage, connectionInfo: ConnectionInfo) extends PeerEvent
-
-case class OpenChannelReceived(peer: ActorRef, open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelType: SupportedChannelType, localParams: LocalParams, connectionInfo: ConnectionInfo) extends PeerEvent
