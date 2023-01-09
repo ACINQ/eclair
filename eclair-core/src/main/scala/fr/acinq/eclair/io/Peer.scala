@@ -420,7 +420,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         val localParams = createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight = false)
         nodeParams.pluginOpenChannelInterceptor match {
           case None => selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
-          // TODO: add channel interceptor timeout parameter to node params
           case Some(plugin) => context.spawnAnonymous(OpenChannelInterceptor(context.self.toTyped, plugin, 1 minute, d, temporaryChannelId, localParams, Some(fundingAmount), open, channelType))
         }
       case Left(ex) =>
