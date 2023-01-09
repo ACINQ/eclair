@@ -60,6 +60,7 @@ private class OpenChannelInterceptor(replyTo: ActorRef[Any], plugin: InterceptOp
 
     Behaviors.receiveMessage {
       case PluginTimeout =>
+        context.log.error(s"plugin ${plugin.name} timed out while intercepting open channel")
         replyTo ! OutgoingMessage(Error(temporaryChannelId, "plugin timeout"), connectedData.peerConnection)
         Behaviors.stopped
       case WrappedOpenChannelResponse(a: AcceptOpenChannel) =>
