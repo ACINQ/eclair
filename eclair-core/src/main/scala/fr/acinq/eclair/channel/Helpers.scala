@@ -1040,8 +1040,10 @@ object Helpers {
        */
       def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, commitTx: Transaction, db: ChannelsDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
         import commitments._
+        // a valid tx will always have at least one input, but this ensures we don't throw in tests
+        val sequence = commitTx.txIn.headOption.map(_.sequence).getOrElse(0L)
+        val obscuredTxNumber = Transactions.decodeTxNumber(sequence, commitTx.lockTime)
         val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-        val obscuredTxNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
         val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
         // this tx has been published by remote, so we need to invert local/remote params
         val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isInitiator, remoteParams.paymentBasepoint, localPaymentPoint)
