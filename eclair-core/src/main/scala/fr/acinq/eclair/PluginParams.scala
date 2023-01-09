@@ -61,9 +61,9 @@ trait CustomCommitmentsPlugin extends PluginParams {
 }
 
 // @formatter:off
-case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], open: Either[OpenChannel, OpenDualFundedChannel], temporaryChannelId: ByteVector32, localParams: LocalParams, fundingAmount_opt: Option[Satoshi])
+case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], open: Either[OpenChannel, OpenDualFundedChannel], temporaryChannelId: ByteVector32, localParams: LocalParams, fundingAmount: Satoshi)
 sealed trait InterceptOpenChannelResponse
-case class AcceptOpenChannel(temporaryChannelId: ByteVector32, localParams: LocalParams, fundingAmount_opt: Option[Satoshi]) extends InterceptOpenChannelResponse
+case class AcceptOpenChannel(temporaryChannelId: ByteVector32, localParams: LocalParams) extends InterceptOpenChannelResponse
 case class RejectOpenChannel(temporaryChannelId: ByteVector32, error: Error) extends InterceptOpenChannelResponse
 // @formatter:on
 

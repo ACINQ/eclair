@@ -57,7 +57,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
       }
     }
 
-    val openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command] = testKit.spawn(OpenChannelInterceptor(peer.ref, plugin, 10 millis, connectedData, temporaryChannelId, localParams, Some(10 sat), Left(openChannel), ChannelTypes.Standard()))
+    val openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command] = testKit.spawn(OpenChannelInterceptor(peer.ref, plugin, 10 millis, connectedData, temporaryChannelId, localParams, 10 sat, Left(openChannel), ChannelTypes.Standard()))
     withFixture(test.toNoArgTest(FixtureParam(openChannelInterceptor, peer, pluginInterceptor)))
   }
 
@@ -72,7 +72,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     import f._
 
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived]
-    openChannelInterceptor ! WrappedOpenChannelResponse(AcceptOpenChannel(temporaryChannelId, localParams, Some(fundingAmount)))
+    openChannelInterceptor ! WrappedOpenChannelResponse(AcceptOpenChannel(temporaryChannelId, localParams))
     assert(peer.expectMessageType[SpawnChannelNonInitiator].localParams == localParams)
   }
 
