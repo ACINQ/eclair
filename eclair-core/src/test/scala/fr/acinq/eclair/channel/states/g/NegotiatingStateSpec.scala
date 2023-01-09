@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.g
 
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -545,6 +545,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx == mutualCloseTx)
     awaitCond(alice.stateName == CLOSING)
     awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+    import f._
+    alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
+    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
   }
 
   test("recv Error") { f =>

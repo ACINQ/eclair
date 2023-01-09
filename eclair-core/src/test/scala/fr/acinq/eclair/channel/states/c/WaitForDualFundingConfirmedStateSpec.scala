@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.c
 import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel.InteractiveTxBuilder.FullySignedSharedTransaction
@@ -572,6 +572,12 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx1.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainBob.tx.txid)
     awaitCond(bob2.stateName == CLOSING)
+  }
+
+  test("recv WatchFundingSpentTriggered (other commit)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+    alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
+    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
   }
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>

@@ -3256,6 +3256,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(addSettled.htlc == htlc3)
   }
 
+  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+    import f._
+    alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
+    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+  }
+
   test("recv Error") { f =>
     import f._
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
