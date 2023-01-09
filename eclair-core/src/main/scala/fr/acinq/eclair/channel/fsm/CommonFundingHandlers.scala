@@ -18,13 +18,13 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuried, WatchFundingLost, WatchFundingSpent}
+import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuried, WatchFundingSpent}
 import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
-import fr.acinq.eclair.{ShortChannelId, ToMilliSatoshiConversion}
 
 import scala.concurrent.duration.DurationInt
 
@@ -37,14 +37,11 @@ trait CommonFundingHandlers extends CommonHandlers {
   this: Channel =>
 
   def watchFundingTx(commitments: Commitments, additionalKnownSpendingTxs: Set[ByteVector32] = Set.empty): Unit = {
-    // TODO: should we wait for an acknowledgment from the watcher?
-    // TODO: implement WatchFundingLost?
     val knownSpendingTxs = Set(commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments.remoteCommit.txid) ++ commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit.txid).toSet ++ additionalKnownSpendingTxs
     blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, knownSpendingTxs)
   }
 
   def acceptFundingTx(commitments: Commitments, realScidStatus: RealScidStatus): (ShortIds, ChannelReady) = {
-    blockchain ! WatchFundingLost(self, commitments.fundingTxId, nodeParams.channelConf.minDepthBlocks)
     // the alias will use in our peer's channel_update message, the goal is to be able to use our channel as soon
     // as it reaches NORMAL state, and before it is announced on the network
     val shortIds = ShortIds(realScidStatus, ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)

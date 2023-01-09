@@ -71,17 +71,20 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
       alice2blockchain.expectMsgType[WatchFundingSpent]
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob2blockchain.expectMsgType[WatchFundingSpent]
-      if (!test.tags.contains(ChannelStateTestsTags.ZeroConf)) {
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+      awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx_opt.get
+      if (test.tags.contains(ChannelStateTestsTags.ZeroConf)) {
+        alice2blockchain.expectMsgType[WatchPublished]
+        bob2blockchain.expectMsgType[WatchPublished]
+        alice ! WatchPublishedTriggered(fundingTx)
+        bob ! WatchPublishedTriggered(fundingTx)
+      } else {
         alice2blockchain.expectMsgType[WatchFundingConfirmed]
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
-        awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx_opt.get
         alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
         bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       }
-      alice2blockchain.expectMsgType[WatchFundingLost]
-      bob2blockchain.expectMsgType[WatchFundingLost]
       alice2bob.expectMsgType[ChannelReady]
       awaitCond(alice.stateName == WAIT_FOR_CHANNEL_READY)
       awaitCond(bob.stateName == WAIT_FOR_CHANNEL_READY)

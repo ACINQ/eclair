@@ -49,9 +49,11 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val aliceListener = TestProbe()
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionPublished])
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionConfirmed])
+    alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ShortChannelIdAssigned])
     val bobListener = TestProbe()
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionPublished])
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionConfirmed])
+    bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ShortChannelIdAssigned])
 
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags.Private
@@ -100,13 +102,18 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
       bob2alice.forward(alice)
       // Alice publishes the funding tx.
       val fundingTx = aliceListener.expectMsgType[TransactionPublished].tx
-      assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
       alice2bob.expectMsgType[TxSignatures]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
       // Bob publishes the funding tx.
       assert(bobListener.expectMsgType[TransactionPublished].tx.txid == fundingTx.txid)
-      assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
+      if (test.tags.contains(ChannelStateTestsTags.ZeroConf)) {
+        assert(alice2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)
+        assert(bob2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)
+      } else {
+        assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
+        assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
+      }
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, aliceListener, bobListener, wallet)))
     }
   }
@@ -149,6 +156,26 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
+  test("recv WatchPublishedTriggered (initiator)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    alice ! WatchPublishedTriggered(fundingTx)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    alice2bob.expectMsgType[ChannelReady]
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].shortIds.real == RealScidStatus.Unknown)
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+  }
+
+  test("recv WatchPublishedTriggered (non-initiator)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    bob ! WatchPublishedTriggered(fundingTx)
+    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    bob2alice.expectMsgType[ChannelReady]
+    assert(bobListener.expectMsgType[ShortChannelIdAssigned].shortIds.real == RealScidStatus.Unknown)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+  }
+
   test("recv WatchFundingConfirmedTriggered (initiator)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
@@ -156,6 +183,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
     alice2bob.expectMsgType[ChannelReady]
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
@@ -166,6 +194,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
     bob2alice.expectMsgType[ChannelReady]
+    assert(bobListener.expectMsgType[ShortChannelIdAssigned].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
@@ -444,10 +473,13 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
     assert(bobChannelReady.alias_opt.isDefined)
     bob2alice.forward(alice)
+    assert(alice2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)
+    alice ! WatchPublishedTriggered(fundingTx)
+    val scids = aliceListener.expectMsgType[ShortChannelIdAssigned].shortIds
+    assert(scids.real == RealScidStatus.Unknown)
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
-    assert(aliceChannelReady.alias_opt.isDefined)
+    assert(aliceChannelReady.alias_opt.contains(scids.localAlias))
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchFundingLost].txId == fundingTx.txid)
     assert(alice2blockchain.expectMsgType[WatchFundingDeeplyBuried].txId == fundingTx.txid)
     awaitCond(alice.stateName == NORMAL)
   }

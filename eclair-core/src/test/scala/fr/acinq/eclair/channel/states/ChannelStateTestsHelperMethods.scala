@@ -256,17 +256,21 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
       bob2blockchain.expectMsgType[WatchFundingSpent]
       val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
-      if (!channelType.features.contains(Features.ZeroConf)) {
+      eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
+      eventually(assert(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED))
+      if (channelType.features.contains(Features.ZeroConf)) {
+        alice2blockchain.expectMsgType[WatchPublished]
+        bob2blockchain.expectMsgType[WatchPublished]
+        alice ! WatchPublishedTriggered(fundingTx)
+        bob ! WatchPublishedTriggered(fundingTx)
+      } else {
         alice2blockchain.expectMsgType[WatchFundingConfirmed]
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
-        eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
         alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
         bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       }
       eventually(assert(alice.stateName == WAIT_FOR_CHANNEL_READY))
       eventually(assert(bob.stateName == WAIT_FOR_CHANNEL_READY))
-      alice2blockchain.expectMsgType[WatchFundingLost]
-      bob2blockchain.expectMsgType[WatchFundingLost]
       alice2bob.expectMsgType[ChannelReady]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[ChannelReady]
@@ -302,18 +306,21 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       alice2bob.expectMsgType[TxSignatures]
       alice2bob.forward(bob)
       val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
-      if (!channelType.features.contains(Features.ZeroConf)) {
-        eventually(assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
-        eventually(assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
+      eventually(assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
+      eventually(assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
+      if (channelType.features.contains(Features.ZeroConf)) {
+        alice2blockchain.expectMsgType[WatchPublished]
+        bob2blockchain.expectMsgType[WatchPublished]
+        alice ! WatchPublishedTriggered(fundingTx)
+        bob ! WatchPublishedTriggered(fundingTx)
+      } else {
         alice2blockchain.expectMsgType[WatchFundingConfirmed]
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
         alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
         bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       }
       alice2blockchain.expectMsgType[WatchFundingSpent]
-      alice2blockchain.expectMsgType[WatchFundingLost]
       bob2blockchain.expectMsgType[WatchFundingSpent]
-      bob2blockchain.expectMsgType[WatchFundingLost]
       alice2bob.expectMsgType[ChannelReady]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[ChannelReady]

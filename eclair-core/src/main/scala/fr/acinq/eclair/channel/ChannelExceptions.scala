@@ -70,6 +70,7 @@ case class InvalidRbfFeerate                       (override val channelId: Byte
 case class InvalidRbfAlreadyInProgress             (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid rbf attempt: the current rbf attempt must be completed or aborted first")
 case class InvalidRbfTxConfirmed                   (override val channelId: ByteVector32) extends ChannelException(channelId, "no need to rbf, transaction is already confirmed")
 case class InvalidRbfNonInitiator                  (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot initiate rbf: we're not the initiator of this interactive-tx attempt")
+case class InvalidRbfZeroConf                      (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot initiate rbf: we're using zero-conf for this interactive-tx attempt")
 case class InvalidRbfAttempt                       (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid rbf attempt")
 case class NoMoreHtlcsClosingInProgress            (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class NoMoreFeeUpdateClosingInProgress        (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot send new update_fee, closing in progress")

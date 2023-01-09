@@ -93,8 +93,6 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx_opt.get
       alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-      alice2blockchain.expectMsgType[WatchFundingLost]
-      bob2blockchain.expectMsgType[WatchFundingLost]
       awaitCond(alice.stateName == NORMAL, 1 minute)
       awaitCond(bob.stateName == NORMAL, 1 minute)
     }

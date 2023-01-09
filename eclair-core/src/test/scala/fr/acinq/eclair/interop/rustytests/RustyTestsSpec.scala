@@ -91,8 +91,6 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
       val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx_opt.get
       alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-      alice2blockchain.expectMsgType[WatchFundingLost]
-      bob2blockchain.expectMsgType[WatchFundingLost]
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
       pipe ! new File(getClass.getResource(s"/scenarii/${test.name}.script").getFile)

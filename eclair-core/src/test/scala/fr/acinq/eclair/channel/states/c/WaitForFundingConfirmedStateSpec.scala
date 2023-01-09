@@ -89,7 +89,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     // test starts here
     bob2alice.forward(alice)
     // alice stops waiting for confirmations since bob is accepting the channel
-    alice2blockchain.expectMsgType[WatchFundingLost]
+    assert(alice2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)
+    alice ! WatchPublishedTriggered(fundingTx)
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
     assert(aliceChannelReady.alias_opt.nonEmpty)
@@ -137,7 +138,6 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
     assert(listener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     awaitCond(alice.stateName == WAIT_FOR_CHANNEL_READY)
-    alice2blockchain.expectMsgType[WatchFundingLost]
     val channelReady = alice2bob.expectMsgType[ChannelReady]
     // we always send an alias
     assert(channelReady.alias_opt.isDefined)
@@ -157,7 +157,6 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(txPublished.miningFee == 0.sat) // bob is fundee
     assert(listener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     awaitCond(bob.stateName == WAIT_FOR_CHANNEL_READY)
-    bob2blockchain.expectMsgType[WatchFundingLost]
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     // we always send an alias
     assert(channelReady.alias_opt.isDefined)
