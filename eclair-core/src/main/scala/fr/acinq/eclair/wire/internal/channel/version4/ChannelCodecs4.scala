@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire.internal.channel.version3
+package fr.acinq.eclair.wire.internal.channel.version4
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
@@ -32,9 +32,9 @@ import scodec.codecs._
 import scodec.{Attempt, Codec}
 import shapeless.{::, HNil}
 
-private[channel] object ChannelCodecs3 {
+private[channel] object ChannelCodecs4 {
 
-  private[version3] object Codecs {
+  private[version4] object Codecs {
 
     val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
@@ -72,12 +72,9 @@ private[channel] object ChannelCodecs3 {
         ("maxAcceptedHtlcs" | uint16) ::
         ("isInitiator" | bool8) ::
         ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
+        ("actualFinalScriptPubKey" | lengthDelimited(bytes)) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelFeatures.paysDirectlyToWallet), publicKey)) ::
-        ("features" | combinedFeaturesCodec)).xmap({
-      case nodeId :: channelPath :: dustLimit :: maxHtlcValueInFlightMsat :: channelReserve :: htlcMinimum :: toSelfDelay :: maxAcceptedHtlcs :: isInitiator :: defaultFinalScriptPubKey :: walletStaticPaymentBasepoint :: features :: HNil =>
-        LocalParams(nodeId, channelPath, dustLimit, maxHtlcValueInFlightMsat, channelReserve, htlcMinimum, toSelfDelay, maxAcceptedHtlcs, isInitiator, defaultFinalScriptPubKey, defaultFinalScriptPubKey, walletStaticPaymentBasepoint, features)
-
-    }, (lp => lp.nodeId :: lp.fundingKeyPath :: lp.dustLimit :: lp.maxHtlcValueInFlightMsat :: lp.requestedChannelReserve_opt :: lp.htlcMinimum :: lp.toSelfDelay :: lp.maxAcceptedHtlcs :: lp.isInitiator :: lp.defaultFinalScriptPubKey :: lp.walletStaticPaymentBasepoint :: lp.initFeatures :: HNil))
+        ("features" | combinedFeaturesCodec)).as[LocalParams]
 
     def remoteParamsCodec(channelFeatures: ChannelFeatures): Codec[RemoteParams] = (
       ("nodeId" | publicKey) ::

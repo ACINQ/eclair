@@ -595,6 +595,7 @@ object Peer {
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
       isInitiator = isInitiator,
       defaultFinalScriptPubKey = defaultFinalScriptPubkey,
+      actualFinalScriptPubKey = defaultFinalScriptPubkey,
       walletStaticPaymentBasepoint = walletStaticPaymentBasepoint,
       initFeatures = initFeatures)
   }

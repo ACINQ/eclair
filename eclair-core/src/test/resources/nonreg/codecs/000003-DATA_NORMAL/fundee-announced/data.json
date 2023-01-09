@@ -17,6 +17,7 @@
       "maxAcceptedHtlcs" : 30,
       "isInitiator" : false,
       "defaultFinalScriptPubKey" : "a9144805d016e47885dc7c852710cdd8cd0d576f57ec87",
+      "actualFinalScriptPubKey" : "a9144805d016e47885dc7c852710cdd8cd0d576f57ec87",
       "initFeatures" : {
         "activated" : {
           "option_data_loss_protect" : "optional",

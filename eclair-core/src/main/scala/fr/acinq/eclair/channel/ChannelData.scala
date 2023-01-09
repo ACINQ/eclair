@@ -564,6 +564,7 @@ case class LocalParams(nodeId: PublicKey,
                        maxAcceptedHtlcs: Int,
                        isInitiator: Boolean,
                        defaultFinalScriptPubKey: ByteVector,
+                       actualFinalScriptPubKey: ByteVector,
                        walletStaticPaymentBasepoint: Option[PublicKey],
                        initFeatures: Features[InitFeature])
 

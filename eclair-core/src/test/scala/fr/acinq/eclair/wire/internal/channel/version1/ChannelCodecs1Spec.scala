@@ -58,6 +58,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       assert(localParams == decoded.value)
     }
 
+    val finalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
     val o = LocalParams(
       nodeId = randomKey().publicKey,
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
@@ -67,7 +68,8 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey)),
+      defaultFinalScriptPubKey = finalScriptPubKey,
+      actualFinalScriptPubKey = finalScriptPubKey,
       walletStaticPaymentBasepoint = None,
       isInitiator = Random.nextBoolean(),
       initFeatures = Features(randomBytes(256)).initFeatures())

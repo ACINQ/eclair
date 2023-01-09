@@ -62,7 +62,12 @@ private[channel] object ChannelCodecs1 {
         ("isInitiator" | bool8) ::
         ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
-        ("features" | combinedFeaturesCodec)).as[LocalParams]
+        ("features" | combinedFeaturesCodec)).xmap(
+      {
+        case nodeId :: channelPath :: dustLimit :: maxHtlcValueInFlightMsat :: channelReserve :: htlcMinimum :: toSelfDelay :: maxAcceptedHtlcs :: isInitiator :: defaultFinalScriptPubKey :: walletStaticPaymentBasepoint :: features :: HNil =>
+          LocalParams(nodeId, channelPath, dustLimit, maxHtlcValueInFlightMsat, channelReserve, htlcMinimum, toSelfDelay, maxAcceptedHtlcs, isInitiator, defaultFinalScriptPubKey, defaultFinalScriptPubKey, walletStaticPaymentBasepoint, features)
+
+      }, (lp => lp.nodeId :: lp.fundingKeyPath :: lp.dustLimit :: lp.maxHtlcValueInFlightMsat :: lp.requestedChannelReserve_opt :: lp.htlcMinimum :: lp.toSelfDelay :: lp.maxAcceptedHtlcs :: lp.isInitiator :: lp.defaultFinalScriptPubKey :: lp.walletStaticPaymentBasepoint :: lp.initFeatures :: HNil))
 
     val remoteParamsCodec: Codec[RemoteParams] = (
       ("nodeId" | publicKey) ::

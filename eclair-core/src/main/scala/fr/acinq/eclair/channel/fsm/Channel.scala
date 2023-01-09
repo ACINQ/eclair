@@ -581,28 +581,29 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             stay() using d.copy(remoteShutdown = Some(remoteShutdown))
           } else {
             // so we don't have any unsigned outgoing changes
-            val (localShutdown, sendList) = d.localShutdown match {
+            val (commitments, localShutdown, sendList) = d.localShutdown match {
               case Some(localShutdown) =>
-                (localShutdown, Nil)
+                (d.commitments, localShutdown, Nil)
               case None =>
+                val actualFinalScriptPubKey = if (d.commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) d.commitments.localParams.defaultFinalScriptPubKey else nodeParams.currentFinalScriptPubKey
                 val localShutdown = Shutdown(d.channelId, d.commitments.localParams.defaultFinalScriptPubKey)
                 // we need to send our shutdown if we didn't previously
-                (localShutdown, localShutdown :: Nil)
+                (d.commitments.copy(localParams = d.commitments.localParams.copy(actualFinalScriptPubKey = actualFinalScriptPubKey)), localShutdown, localShutdown :: Nil)
             }
             // are there pending signed changes on either side? we need to have received their last revocation!
-            if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
+            if (commitments.hasNoPendingHtlcsOrFeeUpdate) {
               // there are no pending signed changes, let's go directly to NEGOTIATING
-              if (d.commitments.localParams.isInitiator) {
+              if (commitments.localParams.isInitiator) {
                 // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
-                val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdownScript, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, d.closingFeerates)
-                goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending sendList :+ closingSigned
+                val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, commitments, localShutdown.scriptPubKey, remoteShutdownScript, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, d.closingFeerates)
+                goto(NEGOTIATING) using DATA_NEGOTIATING(commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending sendList :+ closingSigned
               } else {
                 // we are not the channel initiator, will wait for their closing_signed
-                goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending sendList
+                goto(NEGOTIATING) using DATA_NEGOTIATING(commitments, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending sendList
               }
             } else {
               // there are some pending signed changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
-              goto(SHUTDOWN) using DATA_SHUTDOWN(d.commitments, localShutdown, remoteShutdown, d.closingFeerates) storing() sending sendList
+              goto(SHUTDOWN) using DATA_SHUTDOWN(commitments, localShutdown, remoteShutdown, d.closingFeerates) storing() sending sendList
             }
           }
       }

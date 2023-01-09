@@ -118,6 +118,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
       50,
       Random.nextBoolean(),
       hex"deadbeef",
+      hex"deadbeef",
       None,
       Features().initFeatures())
     val remoteParams = RemoteParams(

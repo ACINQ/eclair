@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystem
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Script}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
@@ -112,6 +112,8 @@ class Setup(val datadir: File,
    */
   val blockHeight = new AtomicLong(0)
 
+  val finalScriptPubKey = new AtomicReference[ByteVector](ByteVector.empty)
+
   /**
    * This holds the current feerates, in satoshi-per-kilobytes.
    * The value is read by all actors, hence it needs to be thread-safe.
@@ -132,7 +134,7 @@ class Setup(val datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, finalScriptPubKey, pluginParams)
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
@@ -188,9 +190,10 @@ class Setup(val datadir: File,
         case "signet" => bitcoinClient.invoke("getrawtransaction", "ff1027486b628b2d160859205a3401fb2ee379b43527153b0b50a92c17ee7955") // coinbase of #5000
         case "regtest" => Future.successful(())
       }
-    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
+      finalAddress <- bitcoinClient.invoke("getnewaddress").map(_.extract[String])
+    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, finalAddress)
     // blocking sanity checks
-    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, finalAddress) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
     assert(bitcoinVersion >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
     assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
     assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
@@ -201,6 +204,8 @@ class Setup(val datadir: File,
     }
     logger.info(s"current blockchain height=$blocks")
     blockHeight.set(blocks)
+    logger.info(s"initial final onchain address = $finalAddress")
+    finalScriptPubKey.set(Script.write(addressToPublicKeyScript(finalAddress, chainHash)))
     bitcoinClient
   }
 

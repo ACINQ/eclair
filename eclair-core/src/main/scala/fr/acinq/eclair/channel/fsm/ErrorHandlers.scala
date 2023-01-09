@@ -177,14 +177,20 @@ trait ErrorHandlers extends CommonHandlers {
       log.warning("we have an outdated commitment: will not publish our local tx")
       stay()
     } else {
-      val commitTx = d.commitments.fullySignedLocalCommitTx(keyManager).tx
-      val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
+      // check wether we've already updated the final pubkey script
+      val commitments1 = if (d.commitments.localParams.actualFinalScriptPubKey == d.commitments.localParams.defaultFinalScriptPubKey) {
+        d.commitments.copy(localParams = d.commitments.localParams.copy(actualFinalScriptPubKey = nodeParams.currentFinalScriptPubKey))
+      } else {
+        d.commitments
+      }
+      val commitTx = commitments1.fullySignedLocalCommitTx(keyManager).tx
+      val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments1, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
       val nextData = d match {
-        case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
-        case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))
-        case waitForFundingConfirmed: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_CLOSING(d.commitments, fundingTx = waitForFundingConfirmed.fundingTx_opt.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
-        case waitForFundingConfirmed: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => DATA_CLOSING(d.commitments, fundingTx = Some(DualFundedUnconfirmedFundingTx(waitForFundingConfirmed.fundingTx)), waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = waitForFundingConfirmed.previousFundingTxs, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
-        case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
+        case closing: DATA_CLOSING => closing.copy(commitments = commitments1, localCommitPublished = Some(localCommitPublished))
+        case negotiating: DATA_NEGOTIATING => DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))
+        case waitForFundingConfirmed: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_CLOSING(commitments1, fundingTx = waitForFundingConfirmed.fundingTx_opt.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
+        case waitForFundingConfirmed: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => DATA_CLOSING(commitments1, fundingTx = Some(DualFundedUnconfirmedFundingTx(waitForFundingConfirmed.fundingTx)), waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = waitForFundingConfirmed.previousFundingTxs, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
+        case _ => DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
       }
       goto(CLOSING) using nextData storing() calling doPublish(localCommitPublished, d.commitments)
     }
@@ -223,29 +229,40 @@ trait ErrorHandlers extends CommonHandlers {
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
+    // check wether we've already updated the final pubkey script
+    val commitments1 = if (d.commitments.localParams.actualFinalScriptPubKey == d.commitments.localParams.defaultFinalScriptPubKey) {
+      d.commitments.copy(localParams = d.commitments.localParams.copy(actualFinalScriptPubKey = nodeParams.currentFinalScriptPubKey))
+    } else {
+      d.commitments
+    }
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isInitiator), "remote-commit"))
-    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
+    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
     val nextData = d match {
-      case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
-      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), remoteCommitPublished = Some(remoteCommitPublished))
-      case waitForFundingConfirmed: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_CLOSING(d.commitments, fundingTx = waitForFundingConfirmed.fundingTx_opt.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
-      case waitForFundingConfirmed: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => DATA_CLOSING(d.commitments, fundingTx = Some(DualFundedUnconfirmedFundingTx(waitForFundingConfirmed.fundingTx)), waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = waitForFundingConfirmed.previousFundingTxs, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
-      case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
+      case closing: DATA_CLOSING => closing.copy(commitments = commitments1, remoteCommitPublished = Some(remoteCommitPublished))
+      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), remoteCommitPublished = Some(remoteCommitPublished))
+      case waitForFundingConfirmed: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_CLOSING(commitments1, fundingTx = waitForFundingConfirmed.fundingTx_opt.map(tx => SingleFundedUnconfirmedFundingTx(tx)), waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
+      case waitForFundingConfirmed: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => DATA_CLOSING(commitments1, fundingTx = Some(DualFundedUnconfirmedFundingTx(waitForFundingConfirmed.fundingTx)), waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = waitForFundingConfirmed.previousFundingTxs, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
+      case _ => DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
     }
     goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
   }
 
   def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
     log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
+    val commitments1 = if (d.commitments.localParams.actualFinalScriptPubKey == d.commitments.localParams.defaultFinalScriptPubKey) {
+      d.commitments.copy(localParams = d.commitments.localParams.copy(actualFinalScriptPubKey = nodeParams.currentFinalScriptPubKey))
+    } else {
+      d.commitments
+    }
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isInitiator), "future-remote-commit"))
     val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
     val remoteCommitPublished = RemoteCommitPublished(
       commitTx = commitTx,
-      claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets),
+      claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, commitments1, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets),
       claimHtlcTxs = Map.empty,
       claimAnchorTxs = List.empty,
       irrevocablySpent = Map.empty)
-    val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, Nil, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
+    val nextData = DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, Nil, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
     goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
   }
 
@@ -256,13 +273,18 @@ trait ErrorHandlers extends CommonHandlers {
     val remoteCommit = waitingForRevocation.nextRemoteCommit
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
+    val commitments1 = if (d.commitments.localParams.actualFinalScriptPubKey == d.commitments.localParams.defaultFinalScriptPubKey) {
+      d.commitments.copy(localParams = d.commitments.localParams.copy(actualFinalScriptPubKey = nodeParams.currentFinalScriptPubKey))
+    } else {
+      d.commitments
+    }
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isInitiator), "next-remote-commit"))
-    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
+    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitments1, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
     val nextData = d match {
-      case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
-      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), nextRemoteCommitPublished = Some(remoteCommitPublished))
+      case closing: DATA_CLOSING => closing.copy(commitments = commitments1, nextRemoteCommitPublished = Some(remoteCommitPublished))
+      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), nextRemoteCommitPublished = Some(remoteCommitPublished))
       // NB: if there is a next commitment, we can't be in DATA_WAIT_FOR_FUNDING_CONFIRMED so we don't have the case where fundingTx is defined
-      case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, nextRemoteCommitPublished = Some(remoteCommitPublished))
+      case _ => DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, nextRemoteCommitPublished = Some(remoteCommitPublished))
     }
     goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
   }
@@ -287,7 +309,12 @@ trait ErrorHandlers extends CommonHandlers {
 
   def handleRemoteSpentOther(tx: Transaction, d: PersistentChannelData) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
-    Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
+    val commitments1 = if (d.commitments.localParams.actualFinalScriptPubKey == d.commitments.localParams.defaultFinalScriptPubKey) {
+      d.commitments.copy(localParams = d.commitments.localParams.copy(actualFinalScriptPubKey = nodeParams.currentFinalScriptPubKey))
+    } else {
+      d.commitments
+    }
+    Closing.RevokedClose.claimCommitTxOutputs(keyManager, commitments1, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.commitInput, tx, d.commitments.localParams.isInitiator), "revoked-commit"))
@@ -295,10 +322,10 @@ trait ErrorHandlers extends CommonHandlers {
         val error = Error(d.channelId, exc.getMessage)
 
         val nextData = d match {
-          case closing: DATA_CLOSING => closing.copy(revokedCommitPublished = closing.revokedCommitPublished :+ revokedCommitPublished)
-          case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), revokedCommitPublished = revokedCommitPublished :: Nil)
+          case closing: DATA_CLOSING => closing.copy(commitments = commitments1, revokedCommitPublished = closing.revokedCommitPublished :+ revokedCommitPublished)
+          case negotiating: DATA_NEGOTIATING => DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), revokedCommitPublished = revokedCommitPublished :: Nil)
           // NB: if there is a revoked commitment, we can't be in DATA_WAIT_FOR_FUNDING_CONFIRMED so we don't have the case where fundingTx is defined
-          case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, revokedCommitPublished = revokedCommitPublished :: Nil)
+          case _ => DATA_CLOSING(commitments1, fundingTx = None, waitingSince = nodeParams.currentBlockHeight, alternativeCommitments = Nil, mutualCloseProposed = Nil, revokedCommitPublished = revokedCommitPublished :: Nil)
         }
         goto(CLOSING) using nextData storing() calling doPublish(revokedCommitPublished) sending error
       case None =>
