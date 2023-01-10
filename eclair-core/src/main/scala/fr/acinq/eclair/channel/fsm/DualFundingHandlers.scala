@@ -80,8 +80,9 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   /**
-   * We could just ignore the event and handle it after the next reconnection, but this allows us to eagerly rollback
-   * and forget deprecated funding transactions.
+   * If one of the funding txs confirms while we are disconnected, we need to put a watch on its output, because our
+   * counterparty could force-close using a previous commitment. We can also rollback and forget deprecated funding
+   * transactions immediately.
    */
   def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
     pruneCommitments(w, d) match {
