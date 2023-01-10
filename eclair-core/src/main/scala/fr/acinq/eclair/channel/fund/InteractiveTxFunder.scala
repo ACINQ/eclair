@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.fund
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
-import fr.acinq.eclair.channel.InteractiveTxBuilder.{InteractiveTxParams, SignedSharedTransaction, toOutPoint}
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, SignedSharedTransaction, toOutPoint}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.{TxAddInput, TxAddOutput}
 import fr.acinq.eclair.{Logs, UInt64}

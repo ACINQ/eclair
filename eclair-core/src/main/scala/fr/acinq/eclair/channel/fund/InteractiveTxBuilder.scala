@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.fund
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.OnChainWallet.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions
@@ -325,7 +326,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def send(session: InteractiveTxSession): Behavior[Command] = {
+  private def send(session: InteractiveTxSession): Behavior[Command] = {
     session.toSend match {
       case Left(addInput) +: tail =>
         replyTo ! SendMessage(addInput)
@@ -346,7 +347,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def receive(session: InteractiveTxSession): Behavior[Command] = {
+  private def receive(session: InteractiveTxSession): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case ReceiveTxMessage(msg) => msg match {
         case msg: HasSerialId if msg.serialId.toByteVector.bits.last != fundingParams.isInitiator =>
@@ -682,17 +683,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  def unlockAndStop(session: InteractiveTxSession): Behavior[Command] = {
+  private def unlockAndStop(session: InteractiveTxSession): Behavior[Command] = {
     val localInputs = session.localInputs ++ session.toSend.collect { case Left(addInput) => addInput }
     unlockAndStop(localInputs.map(toOutPoint).toSet)
   }
 
-  def unlockAndStop(tx: SharedTransaction): Behavior[Command] = {
+  private def unlockAndStop(tx: SharedTransaction): Behavior[Command] = {
     val localInputs = tx.localInputs.map(toOutPoint).toSet
     unlockAndStop(localInputs)
   }
 
-  def unlockAndStop(txInputs: Set[OutPoint]): Behavior[Command] = {
+  private def unlockAndStop(txInputs: Set[OutPoint]): Behavior[Command] = {
     // We don't unlock previous inputs as the corresponding funding transaction may confirm.
     val previousInputs = previousTransactions.flatMap(_.tx.localInputs.map(toOutPoint)).toSet
     val toUnlock = txInputs -- previousInputs
