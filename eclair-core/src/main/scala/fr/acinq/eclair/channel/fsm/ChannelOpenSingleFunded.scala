@@ -19,8 +19,7 @@ package fr.acinq.eclair.channel.fsm
 import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.pattern.pipe
-import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -34,7 +33,7 @@ import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, Cha
 import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, UInt64, randomKey, toLongId}
 import scodec.bits.ByteVector
 
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success}
 
 /**
  * Created by t-bast on 28/03/2022.
@@ -380,32 +379,13 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
 
     case Event(WatchPublishedTriggered(fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      Try(Transaction.correctlySpends(d.commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
-        case Success(_) =>
-          log.info("funding txid={} was successfully published for zero-conf channelId={}", fundingTx.txid, d.channelId)
-          if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
-          val (shortIds, channelReady) = acceptFundingTx(d.commitments, RealScidStatus.Unknown)
-          d.deferred.foreach(self ! _)
-          goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(d.commitments, shortIds, channelReady) storing() sending channelReady
-        case Failure(t) =>
-          log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
-          goto(CLOSED)
-      }
+      log.info("funding txid={} was successfully published for zero-conf channelId={}", fundingTx.txid, d.channelId)
+      acceptSingleFundingTx(d, fundingTx, RealScidStatus.Unknown)
 
-    case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx), d@DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _, deferred, _)) =>
-      Try(Transaction.correctlySpends(commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
-        case Success(_) =>
-          log.info(s"channelId=${d.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
-          if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
-          context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
-          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
-          val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
-          deferred.foreach(self ! _)
-          goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments, shortIds, channelReady) storing() sending channelReady
-        case Failure(t) =>
-          log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
-          goto(CLOSED)
-      }
+    case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      log.info(s"channelId=${d.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
+      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt))
+      acceptSingleFundingTx(d, fundingTx, realScidStatus)
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
       delayEarlyAnnouncementSigs(remoteAnnSigs)

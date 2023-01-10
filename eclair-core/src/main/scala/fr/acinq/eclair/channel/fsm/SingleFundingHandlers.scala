@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse}
@@ -26,7 +27,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
 import fr.acinq.eclair.wire.protocol.Error
 
 import scala.concurrent.duration.DurationInt
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 28/03/2022.
@@ -111,6 +112,25 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     val error = Error(d.channelId, exc.getMessage)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(exc), isFatal = true))
     goto(CLOSED) sending error
+  }
+
+  def acceptSingleFundingTx(d: DATA_WAIT_FOR_FUNDING_CONFIRMED, fundingTx: Transaction, realScidStatus: RealScidStatus) = {
+    // As fundee, it is the first time we see the full funding tx, we must verify that it is valid (it pays the correct amount to the correct script)
+    // We also check as funder even if it's not really useful
+    Try(Transaction.correctlySpends(d.commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+      case Success(_) =>
+        realScidStatus match {
+          case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
+          case _ => () // zero-conf channel
+        }
+        val shortIds = createShortIds(d.channelId, realScidStatus)
+        val channelReady = createChannelReady(shortIds, d.commitments)
+        d.deferred.foreach(self ! _)
+        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(d.commitments, shortIds, channelReady) storing() sending channelReady
+      case Failure(t) =>
+        log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
+        goto(CLOSED)
+    }
   }
 
 }

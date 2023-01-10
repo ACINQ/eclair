@@ -41,13 +41,12 @@ trait CommonFundingHandlers extends CommonHandlers {
     blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, knownSpendingTxs)
   }
 
-  def acceptFundingTx(commitments: Commitments, realScidStatus: RealScidStatus): (ShortIds, ChannelReady) = {
+  def createShortIds(channelId: ByteVector32, realScidStatus: RealScidStatus): ShortIds = {
     // the alias will use in our peer's channel_update message, the goal is to be able to use our channel as soon
     // as it reaches NORMAL state, and before it is announced on the network
     val shortIds = ShortIds(realScidStatus, ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
-    context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds, remoteNodeId))
-    val channelReady = createChannelReady(shortIds, commitments)
-    (shortIds, channelReady)
+    context.system.eventStream.publish(ShortChannelIdAssigned(self, channelId, shortIds, remoteNodeId))
+    shortIds
   }
 
   def createChannelReady(shortIds: ShortIds, commitments: Commitments): ChannelReady = {

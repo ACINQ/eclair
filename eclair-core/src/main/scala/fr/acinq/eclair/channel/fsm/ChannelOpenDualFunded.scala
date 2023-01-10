@@ -562,27 +562,18 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         stay() using d.copy(rbfStatus = RbfStatus.NoRbf) sending TxAbort(d.channelId, f.cause.getMessage)
     }
 
-    case Event(WatchPublishedTriggered(publishedTx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      log.info("funding txid={} was successfully published for zero-conf channelId={}", publishedTx.txid, d.channelId)
-      watchFundingTx(d.commitments)
-      val (shortIds, channelReady) = acceptFundingTx(d.commitments, RealScidStatus.Unknown)
-      d.deferred.foreach(self ! _)
-      val d1 = DATA_WAIT_FOR_DUAL_FUNDING_READY(d.commitments, shortIds, channelReady)
-      goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending channelReady
+    case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
+      acceptDualFundingTx(d, w.tx, RealScidStatus.Unknown) match {
+        case Some((d1, channelReady)) => goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending channelReady
+        case None => stay()
+      }
 
-    case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, confirmedTx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      // We find which funding transaction got confirmed.
-      val allFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
-      allFundingTxs.find(_.commitments.fundingTxId == confirmedTx.txid) match {
-        case Some(DualFundingTx(_, commitments)) =>
-          log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, blockHeight, txIndex, confirmedTx.txid)
-          watchFundingTx(commitments)
-          context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, confirmedTx))
-          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt))
-          val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
-          d.deferred.foreach(self ! _)
-          val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != confirmedTx.txid).map(_.fundingTx)
-          rollbackDualFundingTxs(otherFundingTxs)
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.blockHeight, w.txIndex, w.tx.txid)
+      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.commitInput.outPoint.index.toInt))
+      acceptDualFundingTx(d, w.tx, realScidStatus) match {
+        case Some((d1, channelReady)) =>
           val toSend = d.rbfStatus match {
             case RbfStatus.RbfInProgress(txBuilder) =>
               txBuilder ! InteractiveTxBuilder.Abort
@@ -593,11 +584,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             case RbfStatus.NoRbf =>
               Seq(channelReady)
           }
-          goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending toSend
+          goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending toSend
         case None =>
-          log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${confirmedTx.bin}")
-          rollbackDualFundingTxs(allFundingTxs.map(_.fundingTx))
-          goto(CLOSED)
+          stay()
       }
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleNewBlockDualFundingUnconfirmed(c, d)

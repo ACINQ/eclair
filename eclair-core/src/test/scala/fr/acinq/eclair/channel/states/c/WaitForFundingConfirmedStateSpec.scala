@@ -152,9 +152,6 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     // make bob send a ChannelReady msg
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx_opt.get
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
-    val txPublished = listener.expectMsgType[TransactionPublished]
-    assert(txPublished.tx == fundingTx)
-    assert(txPublished.miningFee == 0.sat) // bob is fundee
     assert(listener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     awaitCond(bob.stateName == WAIT_FOR_CHANNEL_READY)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
