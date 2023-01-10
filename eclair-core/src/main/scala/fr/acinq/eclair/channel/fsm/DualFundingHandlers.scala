@@ -82,7 +82,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       case DualFundingTx(_, commitments) =>
         watchFundingTx(commitments)
         if (realScidStatus.isInstanceOf[RealScidStatus.Temporary]) context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
-        val shortIds = acceptFundingTx(commitments, realScidStatus)
+        val shortIds = createShortIds(d.channelId, realScidStatus)
         val channelReady = createChannelReady(shortIds, commitments)
         d.deferred.foreach(self ! _)
         (DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady), channelReady)

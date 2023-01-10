@@ -121,7 +121,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
       case Success(_) =>
         if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
         if (realScidStatus.isInstanceOf[RealScidStatus.Temporary]) context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
-        val shortIds = acceptFundingTx(d.commitments, realScidStatus)
+        val shortIds = createShortIds(d.channelId, realScidStatus)
         val channelReady = createChannelReady(shortIds, d.commitments)
         d.deferred.foreach(self ! _)
         goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(d.commitments, shortIds, channelReady) storing() sending channelReady
