@@ -763,8 +763,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
       LexicographicalOrdering.isLessThan(commitments.localParams.nodeId.value, commitments.remoteNodeId.value)
     } else {
-      // The peer with the lowest total of input amount must transmit its `tx_signatures` first.
-      completeTx.localAmountIn < completeTx.remoteAmountIn
+      // If our peer didn't contribute to the transaction, we don't need to wait for their `tx_signatures`.
+      // Otherwise, the peer with the lowest total of input amount must transmit its `tx_signatures` first.
+      completeTx.remoteAmountIn == 0.sat || completeTx.localAmountIn < completeTx.remoteAmountIn
     }
     if (shouldSignFirst) {
       signTx(completeTx, None)
@@ -782,9 +783,15 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         }
       case SignTransactionResult(signedTx, None) =>
         // We return as soon as we sign the tx, because we need to be able to handle the case where remote publishes the
-        // tx right away without properly sending us their signature.
-        log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
-        replyTo ! Succeeded(fundingParams, signedTx, commitments)
+        // tx right away without properly sending us their signatures.
+        if (completeTx.remoteAmountIn == 0.sat) {
+          log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
+          val remoteSigs = TxSignatures(signedTx.localSigs.channelId, signedTx.localSigs.txHash, Nil)
+          replyTo ! Succeeded(fundingParams, FullySignedSharedTransaction(signedTx.tx, signedTx.localSigs, remoteSigs), commitments)
+        } else {
+          log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
+          replyTo ! Succeeded(fundingParams, signedTx, commitments)
+        }
         Behaviors.stopped
       case ReceiveTxSigs(remoteSigs) =>
         signTx(completeTx, Some(remoteSigs))
