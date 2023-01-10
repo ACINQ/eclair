@@ -20,7 +20,7 @@ import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.FundingTxStatus.DualFundedUnconfirmedFundingTx
+import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
@@ -407,19 +407,19 @@ object RealScidStatus {
  */
 case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Option[Alias])
 
-sealed trait FundingTxStatus { def signedTx_opt: Option[Transaction] }
-object FundingTxStatus {
+sealed trait LocalFundingStatus { def signedTx_opt: Option[Transaction] }
+object LocalFundingStatus {
   /** Needed for backward compat */
-  case object UnknownFundingTx extends FundingTxStatus {
+  case object UnknownFundingTx extends LocalFundingStatus {
     override def signedTx_opt: Option[Transaction] = None
   }
-  sealed trait UnconfirmedFundingTx extends FundingTxStatus
+  sealed trait UnconfirmedFundingTx extends LocalFundingStatus
   /** In single-funding, fundees only know the funding txid */
   case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx
   case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction) extends UnconfirmedFundingTx {
     override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
   }
-  case class ConfirmedFundingTx(tx: Transaction) extends FundingTxStatus {
+  case class ConfirmedFundingTx(tx: Transaction) extends LocalFundingStatus {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
 }
@@ -501,7 +501,7 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments: MetaCommitment
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData {
-  def fundingTx_opt: Option[Transaction] = commitments.fundingTxStatus.signedTx_opt
+  def fundingTx_opt: Option[Transaction] = commitments.localFundingStatus.signedTx_opt
 }
 final case class DATA_WAIT_FOR_CHANNEL_READY(metaCommitments: MetaCommitments,
                                              shortIds: ShortIds) extends PersistentChannelData
@@ -525,8 +525,8 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments: MetaCommi
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfStatus: RbfStatus,
                                                       deferred: Option[ChannelReady]) extends PersistentChannelData {
-  def mainFundingTx: SignedSharedTransaction = metaCommitments.main.fundingTxStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx
-  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.all.drop(1).map(_.fundingTxStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
+  def mainFundingTx: SignedSharedTransaction = metaCommitments.main.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx
+  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.all.drop(1).map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
   def allFundingTxs: Seq[SignedSharedTransaction] = mainFundingTx +: previousFundingTxs
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments: MetaCommitments,

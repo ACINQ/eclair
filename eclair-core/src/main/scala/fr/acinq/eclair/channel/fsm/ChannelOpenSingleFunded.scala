@@ -22,7 +22,7 @@ import akka.pattern.pipe
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.FundingTxStatus.SingleFundedUnconfirmedFundingTx
+import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._

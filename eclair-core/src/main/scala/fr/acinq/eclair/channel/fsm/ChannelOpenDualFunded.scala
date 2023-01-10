@@ -21,7 +21,7 @@ import akka.actor.{ActorRef, Status}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.FundingTxStatus.DualFundedUnconfirmedFundingTx
+import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
@@ -381,7 +381,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {
     case Event(txSigs: TxSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      d.metaCommitments.main.fundingTxStatus match {
+      d.metaCommitments.main.localFundingStatus match {
         case DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction) => InteractiveTxBuilder.addRemoteSigs(d.fundingParams, fundingTx, txSigs) match {
           case Left(cause) =>
             val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
@@ -391,7 +391,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
           case Right(fundingTx) =>
             log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
-            val metaCommitments1 = d.metaCommitments.modify(_.commitments.at(0).fundingTxStatus).setTo(DualFundedUnconfirmedFundingTx(fundingTx))
+            val metaCommitments1 = d.metaCommitments.modify(_.commitments.at(0).localFundingStatus).setTo(DualFundedUnconfirmedFundingTx(fundingTx))
             val d1 = d.copy(metaCommitments = metaCommitments1)
             stay() using d1 storing() calling publishFundingTx(d.fundingParams, fundingTx)
         }

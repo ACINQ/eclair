@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.FundingTxStatus.UnknownFundingTx
+import fr.acinq.eclair.channel.LocalFundingStatus.UnknownFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.keymanager.LocalChannelKeyManager
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc, UpdateFailHtlc}
-import fr.acinq.eclair.{TestKitBaseClass, _}
+import fr.acinq.eclair._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -504,7 +504,7 @@ object CommitmentsSpec {
       remoteNextHtlcId = 1,
       originChannels = Map.empty,
       remoteNextCommitInfo = Right(randomKey().publicKey),
-      fundingTxStatus = UnknownFundingTx,
+      localFundingStatus = UnknownFundingTx,
       remoteFundingStatus = RemoteFundingStatus.Locked,
       remotePerCommitmentSecrets = ShaChain.init)
   }
@@ -529,7 +529,7 @@ object CommitmentsSpec {
       remoteNextHtlcId = 1,
       originChannels = Map.empty,
       remoteNextCommitInfo = Right(randomKey().publicKey),
-      fundingTxStatus = UnknownFundingTx,
+      localFundingStatus = UnknownFundingTx,
       remoteFundingStatus = RemoteFundingStatus.Locked,
       remotePerCommitmentSecrets = ShaChain.init)
   }

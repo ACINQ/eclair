@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.internal.channel
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Satoshi, SatoshiLong, Transaction, TxIn}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.FundingTxStatus.UnknownFundingTx
+import fr.acinq.eclair.channel.LocalFundingStatus.UnknownFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -31,7 +31,7 @@ import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat,
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
 import fr.acinq.eclair.wire.protocol.{CommonCodecs, UpdateAddHtlc}
-import fr.acinq.eclair.{RealShortChannelId, _}
+import fr.acinq.eclair._
 import org.json4s.jackson.Serialization
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
@@ -327,7 +327,7 @@ object ChannelCodecsSpec {
       remoteNextHtlcId = 4L,
       originChannels = origins,
       remoteNextCommitInfo = Right(randomKey().publicKey),
-      fundingTxStatus = UnknownFundingTx,
+      localFundingStatus = UnknownFundingTx,
       remoteFundingStatus = RemoteFundingStatus.NotLocked,
       remotePerCommitmentSecrets = ShaChain.init)
 

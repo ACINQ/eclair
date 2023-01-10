@@ -21,7 +21,7 @@ import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
-import fr.acinq.eclair.channel.FundingTxStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx}
+import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
@@ -63,14 +63,14 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   def pruneCommitments(metaCommitments: MetaCommitments, fundingTx: Transaction): Option[MetaCommitments] = {
     // We can forget other funding attempts now that one of the funding txs is confirmed.
     val otherFundingTxs = metaCommitments.all
-      .map(_.fundingTxStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
+      .map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
       .filter(_.txId != fundingTx.txid)
     rollbackDualFundingTxs(otherFundingTxs)
     // We find which funding transaction got confirmed.
     metaCommitments.all.find(_.fundingTxId == fundingTx.txid) match {
       case Some(commitments) =>
         // we consider the funding tx as confirmed (even in the zero-conf case)
-        val commitments1 = commitments.copy(fundingTxStatus = ConfirmedFundingTx(fundingTx))
+        val commitments1 = commitments.copy(localFundingStatus = ConfirmedFundingTx(fundingTx))
         val metaCommitments1 = metaCommitments.copy(
           commitments = commitments1.commitment +: Nil // this is the only remaining commitment
         )

@@ -278,7 +278,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               // if commitment number is zero, we also need to make sure that the funding tx has been published
               if (closing.commitments.localCommit.index == 0 && closing.commitments.remoteCommit.index == 0) {
                 if (closing.commitments.channelFeatures.hasFeature(Features.DualFunding)) {
-                  closing.commitments.fundingTxStatus.signedTx_opt.foreach(tx => wallet.publishTransaction(tx))
+                  closing.commitments.localFundingStatus.signedTx_opt.foreach(tx => wallet.publishTransaction(tx))
                 } else {
                   blockchain ! GetTxWithMeta(self, closing.commitments.fundingTxId)
                 }
@@ -1052,7 +1052,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       // NB: waitingSinceBlock contains the block at which closing was initiated, not the block at which funding was initiated.
       // That means we're lenient with our peer and give its funding tx more time to confirm, to avoid having to store two distinct
       // waitingSinceBlock (e.g. closingWaitingSinceBlock and fundingWaitingSinceBlock).
-      handleGetFundingTx(getTxResponse, d.waitingSince, d.commitments.fundingTxStatus.signedTx_opt)
+      handleGetFundingTx(getTxResponse, d.waitingSince, d.commitments.localFundingStatus.signedTx_opt)
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_CLOSING) => handleFundingPublishFailed(d)
 

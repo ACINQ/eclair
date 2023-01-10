@@ -24,8 +24,8 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, LexicographicalOrdering, OutP
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.OnChainWallet.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.FundingTxStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -601,7 +601,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                   localNextHtlcId = 0L, remoteNextHtlcId = 0L,
                   originChannels = Map.empty,
                   remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
-                  fundingTxStatus = null, // TODO: hacky, but we don't have the funding tx yet
+                  localFundingStatus = null, // TODO: hacky, but we don't have the funding tx yet
                   remoteFundingStatus = RemoteFundingStatus.NotLocked,
                   ShaChain.init)
                 signFundingTx(completeTx, commitments)
@@ -641,7 +641,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             unlockAndStop(completeTx)
           case Right(fullySignedTx) =>
             log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
-            replyTo ! Succeeded(fundingParams, fullySignedTx, commitments.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(fullySignedTx)))
+            replyTo ! Succeeded(fundingParams, fullySignedTx, commitments.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(fullySignedTx)))
             Behaviors.stopped
         }
       case SignTransactionResult(signedTx, None) =>
@@ -651,11 +651,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
           val remoteSigs = TxSignatures(signedTx.localSigs.channelId, signedTx.localSigs.txHash, Nil)
           val signedTx1 = FullySignedSharedTransaction(signedTx.tx, signedTx.localSigs, remoteSigs)
-          val commitments1 = commitments.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(signedTx1))
+          val commitments1 = commitments.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(signedTx1))
           replyTo ! Succeeded(fundingParams, signedTx1, commitments1)
         } else {
           log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
-          val commitments1 = commitments.copy(fundingTxStatus = DualFundedUnconfirmedFundingTx(signedTx))
+          val commitments1 = commitments.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(signedTx))
           replyTo ! Succeeded(fundingParams, signedTx, commitments1)
         }
         Behaviors.stopped

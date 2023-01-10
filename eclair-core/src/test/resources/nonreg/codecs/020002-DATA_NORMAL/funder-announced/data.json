@@ -106,7 +106,7 @@
     "remoteNextHtlcId" : 0,
     "originChannels" : { },
     "remoteNextCommitInfo" : "03fd10fe44564e2d7e1550099785c2c1bad32a5ae0feeef6e27f0c108d18b4931d",
-    "fundingTxStatus" : {
+    "localFundingStatus" : {
       "status" : "unknown"
     },
     "remoteFundingStatus" : {
