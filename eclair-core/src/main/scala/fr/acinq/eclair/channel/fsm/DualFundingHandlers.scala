@@ -81,7 +81,10 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     pruneCommitments(d, fundingTx) map {
       case DualFundingTx(_, commitments) =>
         watchFundingTx(commitments)
-        if (realScidStatus.isInstanceOf[RealScidStatus.Temporary]) context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
+        realScidStatus match {
+          case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
+          case _ => () // zero-conf channel
+        }
         val shortIds = createShortIds(d.channelId, realScidStatus)
         val channelReady = createChannelReady(shortIds, commitments)
         d.deferred.foreach(self ! _)

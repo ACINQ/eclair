@@ -119,8 +119,10 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     // We also check as funder even if it's not really useful
     Try(Transaction.correctlySpends(d.commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
       case Success(_) =>
-        if (!d.commitments.localParams.isInitiator) context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, fundingTx, 0 sat, "funding"))
-        if (realScidStatus.isInstanceOf[RealScidStatus.Temporary]) context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
+        realScidStatus match {
+          case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
+          case _ => () // zero-conf channel
+        }
         val shortIds = createShortIds(d.channelId, realScidStatus)
         val channelReady = createChannelReady(shortIds, d.commitments)
         d.deferred.foreach(self ! _)
