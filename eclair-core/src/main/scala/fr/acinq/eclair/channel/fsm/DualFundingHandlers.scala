@@ -67,7 +67,6 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     // We find which funding transaction got confirmed.
     allFundingTxs.find(_.commitments.fundingTxId == w.tx.txid) match {
       case Some(dft: DualFundingTx) =>
-        log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
         watchFundingTx(dft.commitments)
         context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
         Some(dft)
@@ -82,11 +81,14 @@ trait DualFundingHandlers extends CommonFundingHandlers {
 
   /**
    * We could just ignore the event and handle it after the next reconnection, but this allows us to eagerly rollback
-   * deprecated funding transactions
+   * and forget deprecated funding transactions.
    */
   def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
     pruneCommitments(w, d) match {
       case Some(DualFundingTx(fundingTx, commitments)) =>
+        if (d.previousFundingTxs.nonEmpty) {
+          log.info(s"funding txid={} was confirmed in state disconnected, cleaning up {} alternative txs", w.tx.txid, d.previousFundingTxs.size)
+        }
         stay() using d.copy(commitments = commitments, fundingTx = fundingTx, previousFundingTxs = Nil) storing()
       case None =>
         stay()
