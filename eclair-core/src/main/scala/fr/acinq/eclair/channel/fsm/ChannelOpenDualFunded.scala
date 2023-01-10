@@ -29,8 +29,6 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, RealShortChannelId, ToMilliSatoshiConversion, UInt64}
 
-import scala.util.{Failure, Success}
-
 /**
  * Created by t-bast on 19/04/2022.
  */
@@ -564,21 +562,18 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         stay() using d.copy(rbfStatus = RbfStatus.NoRbf) sending TxAbort(d.channelId, f.cause.getMessage)
     }
 
-    case Event(WatchPublishedTriggered(publishedTx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      log.info("funding txid={} was successfully published for zero-conf channelId={}", publishedTx.txid, d.channelId)
-      watchFundingTx(d.commitments)
-      val (shortIds, channelReady) = acceptFundingTx(d.commitments, RealScidStatus.Unknown)
-      d.deferred.foreach(self ! _)
-      val d1 = DATA_WAIT_FOR_DUAL_FUNDING_READY(d.commitments, shortIds, channelReady)
-      goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending channelReady
+    case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
+      acceptDualFundingTx(d, w.tx, RealScidStatus.Unknown) match {
+        case Some((d1, channelReady)) => goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending channelReady
+        case None => stay()
+      }
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      pruneCommitments(w, d) match {
-        case Some(DualFundingTx(_, commitments)) =>
-          log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.blockHeight, w.txIndex, w.tx.txid)
-          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitments.commitInput.outPoint.index.toInt))
-          val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
-          d.deferred.foreach(self ! _)
+      log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.blockHeight, w.txIndex, w.tx.txid)
+      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.commitInput.outPoint.index.toInt))
+      acceptDualFundingTx(d, w.tx, realScidStatus) match {
+        case Some((d1, channelReady)) =>
           val toSend = d.rbfStatus match {
             case RbfStatus.RbfInProgress(txBuilder) =>
               txBuilder ! InteractiveTxBuilder.Abort
@@ -589,7 +584,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             case RbfStatus.NoRbf =>
               Seq(channelReady)
           }
-          goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending toSend
+          goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending toSend
         case None =>
           stay()
       }
