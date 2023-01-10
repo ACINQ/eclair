@@ -574,7 +574,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       pruneCommitments(w, d) match {
-        case Success(DualFundingTx(_, commitments)) =>
+        case Some(DualFundingTx(_, commitments)) =>
           val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitments.commitInput.outPoint.index.toInt))
           val (shortIds, channelReady) = acceptFundingTx(commitments, realScidStatus = realScidStatus)
           d.deferred.foreach(self ! _)
@@ -589,8 +589,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               Seq(channelReady)
           }
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, shortIds, channelReady) storing() sending toSend
-        case Failure(t) =>
-          handleLocalError(t, d, Some(w))
+        case None =>
+          stay()
       }
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleNewBlockDualFundingUnconfirmed(c, d)

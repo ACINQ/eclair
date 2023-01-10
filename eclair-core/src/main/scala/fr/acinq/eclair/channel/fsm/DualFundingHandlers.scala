@@ -59,7 +59,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
-  def pruneCommitments(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Try[DualFundingTx] = {
+  def pruneCommitments(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Option[DualFundingTx] = {
     val allFundingTxs: Seq[DualFundingTx] = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
     // We can forget other funding attempts now that one of the funding txs is confirmed.
     val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != w.tx.txid).map(_.fundingTx)
@@ -70,10 +70,13 @@ trait DualFundingHandlers extends CommonFundingHandlers {
         log.info("channelId={} was confirmed at blockHeight={} txIndex={} with funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
         watchFundingTx(dft.commitments)
         context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-        Success(dft)
+        Some(dft)
       case None =>
-        val t = new RuntimeException(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${w.tx.bin}")
-        Failure(t)
+        // An unknown funding tx has been confirmed, this should never happen. Note that this isn't a case of
+        // ERR_INFORMATION_LEAK, because here we receive a response from the watcher from a WatchConfirmed that we put
+        // ourselves and somehow forgot.
+        log.error(s"internal error: the funding tx that confirmed doesn't match any of our funding txs: ${w.tx.bin}")
+        None
     }
   }
 
@@ -83,10 +86,10 @@ trait DualFundingHandlers extends CommonFundingHandlers {
    */
   def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
     pruneCommitments(w, d) match {
-      case Success(DualFundingTx(fundingTx, commitments)) =>
+      case Some(DualFundingTx(fundingTx, commitments)) =>
         stay() using d.copy(commitments = commitments, fundingTx = fundingTx, previousFundingTxs = Nil) storing()
-      case Failure(t) =>
-        handleLocalError(t, d, Some(w))
+      case None =>
+        stay()
     }
   }
 
