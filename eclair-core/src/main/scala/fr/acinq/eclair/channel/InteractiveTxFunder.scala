@@ -133,15 +133,13 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           // We're keeping unusable inputs locked to ensure that bitcoind doesn't use them for funding, otherwise we
           // could be stuck in an infinite loop where bitcoind constantly adds the same inputs that we cannot use.
           log.error("could not fund interactive tx: bitcoind included already known unusable inputs that should have been locked: {}", lockedUnusableInputs.mkString(","))
-          replyTo ! FundingFailed
-          unlockAndStop(currentInputs.map(toOutPoint).toSet ++ fundedTx.txIn.map(_.outPoint) ++ unusableInputs.map(_.outpoint))
+          sendResultAndStop(FundingFailed, currentInputs.map(toOutPoint).toSet ++ fundedTx.txIn.map(_.outPoint) ++ unusableInputs.map(_.outpoint))
         } else {
           filterInputs(fundedTx, currentInputs, unusableInputs)
         }
       case WalletFailure(t) =>
         log.error("could not fund interactive tx: ", t)
-        replyTo ! FundingFailed
-        unlockAndStop(currentInputs.map(toOutPoint).toSet ++ unusableInputs.map(_.outpoint))
+        sendResultAndStop(FundingFailed, currentInputs.map(toOutPoint).toSet ++ unusableInputs.map(_.outpoint))
     }
   }
 
@@ -158,12 +156,10 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         // The transaction should still contain the funding output, with at most one change output added by bitcoind.
         if (fundingOutputs.length != 1) {
           log.error("funded transaction is missing the funding output: {}", fundedTx)
-          replyTo ! FundingFailed
-          unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
+          sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
         } else if (otherOutputs.length > 1) {
           log.error("funded transaction contains unexpected outputs: {}", fundedTx)
-          replyTo ! FundingFailed
-          unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
+          sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
         } else {
           val changeOutput_opt = otherOutputs.headOption.map(txOut => TxAddOutput(fundingParams.channelId, UInt64(0), txOut.amount, txOut.publicKeyScript))
           val outputs = if (fundingParams.isInitiator) {
@@ -197,9 +193,9 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           val serialIdParity = if (fundingParams.isInitiator) 0 else 1
           val txAddInputs = inputDetails.usableInputs.zipWithIndex.map { case (input, i) => input.copy(serialId = UInt64(2 * i + serialIdParity)) }
           val txAddOutputs = outputs.zipWithIndex.map { case (output, i) => output.copy(serialId = UInt64(2 * (i + txAddInputs.length) + serialIdParity)) }
-          replyTo ! FundingContributions(txAddInputs, txAddOutputs)
+          val result = FundingContributions(txAddInputs, txAddOutputs)
           // We unlock the unusable inputs (if any) as they can be used outside of interactive-tx sessions.
-          unlockAndStop(unusableInputs.map(_.outpoint))
+          sendResultAndStop(result, unusableInputs.map(_.outpoint))
         }
       case inputDetails: InputDetails if inputDetails.unusableInputs.nonEmpty =>
         // Some wallet inputs are unusable, so we must fund again to obtain usable inputs instead.
@@ -212,8 +208,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         fund(sanitizedTx, inputDetails.usableInputs, unusableInputs ++ inputDetails.unusableInputs)
       case WalletFailure(t) =>
         log.error("could not get input details: ", t)
-        replyTo ! FundingFailed
-        unlockAndStop(fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
+        sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
     }
   }
 
@@ -239,18 +234,21 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     }
   }
 
-  private def unlockAndStop(inputs: Set[OutPoint]): Behavior[Command] = {
+  private def sendResultAndStop(result: Response, toUnlock: Set[OutPoint]): Behavior[Command] = {
     // We don't unlock previous inputs as the corresponding funding transaction may confirm.
     val previousInputs = previousTransactions.flatMap(_.tx.localInputs.map(toOutPoint)).toSet
-    val toUnlock = inputs -- previousInputs
-    if (toUnlock.isEmpty) {
+    val toUnlock1 = toUnlock -- previousInputs
+    if (toUnlock1.isEmpty) {
+      replyTo ! result
       Behaviors.stopped
     } else {
-      log.debug("unlocking inputs: {}", toUnlock.map(o => s"${o.txid}:${o.index}").mkString(","))
-      val dummyTx = Transaction(2, toUnlock.toSeq.map(o => TxIn(o, Nil, 0)), Nil, 0)
+      log.debug("unlocking inputs: {}", toUnlock1.map(o => s"${o.txid}:${o.index}").mkString(","))
+      val dummyTx = Transaction(2, toUnlock1.toSeq.map(o => TxIn(o, Nil, 0)), Nil, 0)
       context.pipeToSelf(wallet.rollback(dummyTx))(_ => UtxosUnlocked)
       Behaviors.receiveMessagePartial {
-        case UtxosUnlocked => Behaviors.stopped
+        case UtxosUnlocked =>
+          replyTo ! result
+          Behaviors.stopped
       }
     }
   }

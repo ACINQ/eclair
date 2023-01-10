@@ -280,33 +280,37 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private val log = context.log
 
   def start(): Behavior[Command] = {
-    val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, wallet))
-    txFunder ! InteractiveTxFunder.FundTransaction(context.messageAdapter[InteractiveTxFunder.Response](r => FundTransactionResult(r)), previousTransactions)
-    Behaviors.receiveMessagePartial {
-      case FundTransactionResult(result) => result match {
-        case InteractiveTxFunder.FundingFailed =>
-          if (previousTransactions.nonEmpty && !fundingParams.isInitiator) {
-            // We don't have enough funds to reach the desired feerate, but this is an RBF attempt that we did not initiate.
-            // It still makes sense for us to contribute whatever we're able to (by using our previous set of inputs and
-            // outputs): the final feerate will be less than what the initiator intended, but it's still better than being
-            // stuck with a low feerate transaction that won't confirm.
-            log.warn("could not fund interactive tx at {}, re-using previous inputs and outputs", fundingParams.targetFeerate)
-            val previousTx = previousTransactions.head.tx
-            stash.unstashAll(buildTx(InteractiveTxFunder.FundingContributions(previousTx.localInputs, previousTx.localOutputs)))
-          } else {
-            // We use a generic exception and don't send the internal error to the peer.
-            replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
-            Behaviors.stopped
-          }
-        case fundingContributions: InteractiveTxFunder.FundingContributions =>
-          stash.unstashAll(buildTx(fundingContributions))
+    if (!fundingParams.isInitiator && fundingParams.localAmount == 0.sat) {
+      buildTx(InteractiveTxFunder.FundingContributions(Nil, Nil))
+    } else {
+      val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, wallet))
+      txFunder ! InteractiveTxFunder.FundTransaction(context.messageAdapter[InteractiveTxFunder.Response](r => FundTransactionResult(r)), previousTransactions)
+      Behaviors.receiveMessagePartial {
+        case FundTransactionResult(result) => result match {
+          case InteractiveTxFunder.FundingFailed =>
+            if (previousTransactions.nonEmpty && !fundingParams.isInitiator) {
+              // We don't have enough funds to reach the desired feerate, but this is an RBF attempt that we did not initiate.
+              // It still makes sense for us to contribute whatever we're able to (by using our previous set of inputs and
+              // outputs): the final feerate will be less than what the initiator intended, but it's still better than being
+              // stuck with a low feerate transaction that won't confirm.
+              log.warn("could not fund interactive tx at {}, re-using previous inputs and outputs", fundingParams.targetFeerate)
+              val previousTx = previousTransactions.head.tx
+              stash.unstashAll(buildTx(InteractiveTxFunder.FundingContributions(previousTx.localInputs, previousTx.localOutputs)))
+            } else {
+              // We use a generic exception and don't send the internal error to the peer.
+              replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
+              Behaviors.stopped
+            }
+          case fundingContributions: InteractiveTxFunder.FundingContributions =>
+            stash.unstashAll(buildTx(fundingContributions))
+        }
+        case msg: ReceiveMessage =>
+          stash.stash(msg)
+          Behaviors.same
+        case Abort =>
+          stash.stash(Abort)
+          Behaviors.same
       }
-      case msg: ReceiveMessage =>
-        stash.stash(msg)
-        Behaviors.same
-      case Abort =>
-        stash.stash(Abort)
-        Behaviors.same
     }
   }
 
