@@ -535,6 +535,7 @@ final case class DATA_NEGOTIATING(metaCommitments: MetaCommitments,
 }
 final case class DATA_CLOSING(metaCommitments: MetaCommitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing
+                              finalScriptPubKey: ByteVector, // where to send all on-chain funds                              mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[ClosingTx] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,

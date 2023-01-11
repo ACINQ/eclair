@@ -1084,7 +1084,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
             val commitTx = commitments.fullySignedLocalCommitTx(keyManager).tx
             val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
-            val d1 = DATA_CLOSING(metaCommitments, d.waitingSince, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
+            val d1 = DATA_CLOSING(metaCommitments, d.waitingSince, d.finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
             stay() using d1 storing() calling doPublish(localCommitPublished, commitments)
           }
         case None =>

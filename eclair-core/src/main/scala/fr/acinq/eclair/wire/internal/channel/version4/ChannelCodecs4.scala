@@ -389,6 +389,7 @@ private[channel] object ChannelCodecs4 {
     val DATA_CLOSING_07_Codec: Codec[DATA_CLOSING] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
         ("waitingSince" | blockHeight) ::
+        ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
         ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::

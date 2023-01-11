@@ -331,7 +331,7 @@ private[channel] object ChannelCodecs2 {
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case metaCommitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
         val metaCommitments1 = metaCommitments.modify(_.commitments.at(0).localFundingStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx_opt))
-        DATA_CLOSING(metaCommitments1, waitingSince, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+        DATA_CLOSING(metaCommitments1, waitingSince, metaCommitments1.params.localParams.defaultFinalScriptPubKey, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_06_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
