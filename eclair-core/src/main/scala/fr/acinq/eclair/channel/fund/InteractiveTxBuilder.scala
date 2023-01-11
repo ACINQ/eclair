@@ -565,7 +565,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private def signCommitTx(completeTx: SharedTransaction, fundingOutputIndex: Int): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
-    Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, fundingParams.channelId, localParams, remoteParams, fundingParams.localAmount, fundingParams.remoteAmount, localPushAmount, remotePushAmount, commitTxFeerate, fundingTx.hash, fundingOutputIndex, remoteFirstPerCommitmentPoint) match {
+    Funding.makeCommitTxsWithoutHtlcs(keyManager, channelConfig, channelFeatures, fundingParams.channelId, localParams, remoteParams,
+      fundingAmount = fundingParams.fundingAmount,
+      toLocal = fundingParams.localAmount - localPushAmount + remotePushAmount,
+      toRemote = fundingParams.remoteAmount - remotePushAmount + localPushAmount,
+      commitTxFeerate, fundingTx.hash, fundingOutputIndex, remoteFirstPerCommitmentPoint, commitmentIndex = 0) match {
       case Left(cause) =>
         replyTo ! RemoteFailure(cause)
         unlockAndStop(completeTx)
