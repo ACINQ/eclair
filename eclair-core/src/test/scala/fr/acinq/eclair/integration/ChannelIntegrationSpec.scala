@@ -166,11 +166,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataC.commitments.commitmentFormat == commitmentFormat)
-    val finalAddressC = scriptPubKeyToAddress(dataC.commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressC = scriptPubKeyToAddress(nodes("C").nodeParams.currentFinalScriptPubKey)
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataF.commitments.commitmentFormat == commitmentFormat)
-    val finalAddressF = scriptPubKeyToAddress(dataF.commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressF = scriptPubKeyToAddress(nodes("F").nodeParams.currentFinalScriptPubKey)
     ForceCloseFixture(sender, paymentSender, stateListenerC, stateListenerF, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
 
@@ -180,6 +180,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    val previouslyReceivedByF = listReceivedByAddress(finalAddressF, sender)
     // we then kill the connection between C and F
     disconnectCF(htlc.channelId, sender)
     // we then have C unilaterally close the channel (which will make F redeem the htlc onchain)
@@ -201,7 +202,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF)
-      receivedByF.size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
+      (receivedByF diff previouslyReceivedByF).size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -217,6 +218,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    val previouslyReceivedByF = listReceivedByAddress(finalAddressF, sender)
     // we then kill the connection between C and F
     disconnectCF(htlc.channelId, sender)
     // then we have F unilaterally close the channel
@@ -238,7 +240,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      receivedByF.size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
+      (receivedByF diff previouslyReceivedByF).size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -254,6 +256,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    val previouslyReceivedByF = listReceivedByAddress(finalAddressF, sender)
     // we then kill the connection between C and F; otherwise F would send an error message to C when it detects the htlc
     // timeout. When that happens C would broadcast his commit tx, and if it gets to the mempool before F's commit tx we
     // won't be testing the right scenario.
@@ -287,7 +290,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      receivedByF.size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
+      (receivedByF diff previouslyReceivedByF).size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -303,6 +306,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    val previouslyReceivedByF = listReceivedByAddress(finalAddressF, sender)
     // we then kill the connection between C and F to ensure the close can only be detected on-chain
     disconnectCF(htlc.channelId, sender)
     // we ask F to unilaterally close the channel
@@ -339,7 +343,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      receivedByF.size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
+      (receivedByF diff previouslyReceivedByF).size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
     generateBlocks(2, Some(minerAddress))
@@ -435,7 +439,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(outgoingHtlcExpiry.toLong.toInt - getBlockHeight().toInt + 1)
     // we retrieve C's default final address
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], commitmentsF.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey)
+    sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
+    val finalAddressC = scriptPubKeyToAddress(nodes("C").nodeParams.currentFinalScriptPubKey)
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
     val channelKeyPathF = keyManagerF.keyPath(commitmentsF.localParams, commitmentsF.channelConfig)
@@ -627,6 +632,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     // at this point C should have 6 recv transactions: its previous main output, F's main output and all htlc outputs (taken as punishment)
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
+      println((receivedByC diff previouslyReceivedByC).size)
       (receivedByC diff previouslyReceivedByC).size == 6
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm

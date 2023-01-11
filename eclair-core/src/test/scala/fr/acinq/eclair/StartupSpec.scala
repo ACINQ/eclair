@@ -17,8 +17,8 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee.{DustTolerance, FeeratePerByte, FeeratePerKw, FeerateTolerance}
@@ -27,7 +27,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.jdk.CollectionConverters._
 import scala.util.Try
 
@@ -37,11 +37,12 @@ class StartupSpec extends AnyFunSuite {
 
   def makeNodeParamsWithDefaults(conf: Config): NodeParams = {
     val blockCount = new AtomicLong(0)
+    val finalScriptPubKey = new AtomicReference[ByteVector](Script.write(Script.pay2wpkh(PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey)))
     val nodeKeyManager = new LocalNodeKeyManager(randomBytes32(), chainHash = Block.TestnetGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(randomBytes32(), chainHash = Block.TestnetGenesisBlock.hash)
     val feeEstimator = new TestFeeEstimator()
     val db = TestDatabases.inMemoryDb()
-    NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), nodeKeyManager, channelKeyManager, None, db, blockCount, feeEstimator)
+    NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), nodeKeyManager, channelKeyManager, None, db, blockCount, feeEstimator, finalScriptPubKey)
   }
 
   test("check configuration") {

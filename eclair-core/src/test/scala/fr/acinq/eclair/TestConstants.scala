@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
@@ -35,7 +36,7 @@ import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration._
 
 /**
@@ -208,7 +209,8 @@ object TestConstants {
         relayPolicy = RelayAll,
         timeout = 1 minute
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      finalScriptPubKey = new AtomicReference[ByteVector](Script.write(Script.pay2wpkh(PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey)))
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -357,7 +359,8 @@ object TestConstants {
         relayPolicy = RelayAll,
         timeout = 1 minute
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      finalScriptPubKey = new AtomicReference[ByteVector](Script.write(Script.pay2wpkh(PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey)))
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(

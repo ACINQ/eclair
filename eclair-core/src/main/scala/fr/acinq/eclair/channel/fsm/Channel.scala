@@ -510,7 +510,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
           if (d.remoteShutdown.isDefined && !metaCommitments1.common.localHasUnsignedOutgoingHtlcs) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
-            val localShutdown = Shutdown(d.channelId, metaCommitments1.main.localParams.defaultFinalScriptPubKey)
+            val finalScriptPubKey = if (metaCommitments1.params.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) metaCommitments1.params.localParams.defaultFinalScriptPubKey else nodeParams.currentFinalScriptPubKey
+            val localShutdown = Shutdown(d.channelId, finalScriptPubKey)
             // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
             require(metaCommitments1.main.remoteCommit.spec.htlcs.nonEmpty, "we must have just signed new htlcs, otherwise we would have sent our Shutdown earlier")
             goto(SHUTDOWN) using DATA_SHUTDOWN(metaCommitments1, localShutdown, d.remoteShutdown.get, d.closingFeerates) storing() sending localShutdown
@@ -523,7 +524,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(r: RevocationTimeout, d: DATA_NORMAL) => handleRevocationTimeout(r, d)
 
     case Event(c: CMD_CLOSE, d: DATA_NORMAL) =>
-      d.metaCommitments.params.getLocalShutdownScript(c.scriptPubKey) match {
+      d.metaCommitments.params.getLocalShutdownScript(c.scriptPubKey, nodeParams.currentFinalScriptPubKey) match {
         case Left(e) => handleCommandError(e, c)
         case Right(localShutdownScript) =>
           if (d.localShutdown.isDefined) {
@@ -1146,7 +1147,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         }
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
-        val (rev1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(keyManager, d.commitments, rev, tx, nodeParams.onChainFeeConf.feeEstimator)
+        val (rev1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(keyManager, d.commitments, d.finalScriptPubKey, rev, tx, nodeParams.onChainFeeConf.feeEstimator)
         penaltyTxs.foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
         penaltyTxs.foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, hints = Set(claimTx.tx.txid)))
         rev1
@@ -1160,7 +1161,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       val d1 = d.copy(
         localCommitPublished = d.localCommitPublished.map(localCommitPublished => {
           // If the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
-          val (localCommitPublished1, claimHtlcTx_opt) = Closing.LocalClose.claimHtlcDelayedOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+          val (localCommitPublished1, claimHtlcTx_opt) = Closing.LocalClose.claimHtlcDelayedOutput(localCommitPublished, keyManager, d.commitments, d.finalScriptPubKey, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
           claimHtlcTx_opt.foreach(claimHtlcTx => {
             txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
             blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepthBlocks)

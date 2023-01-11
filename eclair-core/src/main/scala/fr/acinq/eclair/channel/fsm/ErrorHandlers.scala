@@ -178,7 +178,7 @@ trait ErrorHandlers extends CommonHandlers {
       stay()
     } else {
       val commitTx = d.metaCommitments.main.fullySignedLocalCommitTx(keyManager).tx
-      val finalScriptPubKey = d.commitments.localParams.defaultFinalScriptPubKey
+      val finalScriptPubKey = nodeParams.currentFinalScriptPubKey
       val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, d.metaCommitments.main, finalScriptPubKey, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
       val nextData = d match {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
@@ -222,7 +222,7 @@ trait ErrorHandlers extends CommonHandlers {
     val commitments = d.metaCommitments.main
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == commitments.remoteCommit.txid, "txid mismatch")
-    val finalScriptPubKey = d.commitments.localParams.defaultFinalScriptPubKey
+    val finalScriptPubKey = nodeParams.currentFinalScriptPubKey
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput, commitTx, commitments.localParams.isInitiator), "remote-commit"))
     val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitments, finalScriptPubKey, commitments.remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
     val nextData = d match {
@@ -236,7 +236,7 @@ trait ErrorHandlers extends CommonHandlers {
   def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
     log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(d.commitments.commitInput, commitTx, d.commitments.localParams.isInitiator), "future-remote-commit"))
-    val finalScriptPubKey = d.commitments.localParams.defaultFinalScriptPubKey
+    val finalScriptPubKey = nodeParams.currentFinalScriptPubKey
     val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
     val remoteCommitPublished = RemoteCommitPublished(
       commitTx = commitTx,
@@ -256,7 +256,7 @@ trait ErrorHandlers extends CommonHandlers {
     val remoteCommit = waitingForRevocation.nextRemoteCommit
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
-    val finalScriptPubKey = d.commitments.localParams.defaultFinalScriptPubKey
+    val finalScriptPubKey = nodeParams.currentFinalScriptPubKey
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput, commitTx, commitments.localParams.isInitiator), "next-remote-commit"))
     val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitments, finalScriptPubKey, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
     val nextData = d match {
@@ -289,13 +289,13 @@ trait ErrorHandlers extends CommonHandlers {
   def handleRemoteSpentOther(tx: Transaction, d: PersistentChannelData) = {
     val commitments = d.metaCommitments.main
     log.warning(s"funding tx spent in txid=${tx.txid}")
-    Closing.RevokedClose.claimCommitTxOutputs(keyManager, commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
+    Closing.RevokedClose.claimCommitTxOutputs(keyManager, commitments,  nodeParams.currentFinalScriptPubKey, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitments.commitInput, tx, commitments.localParams.isInitiator), "revoked-commit"))
         val exc = FundingTxSpent(d.channelId, tx.txid)
         val error = Error(d.channelId, exc.getMessage)
-        val finalScriptPubKey = d.commitments.localParams.defaultFinalScriptPubKey
+        val finalScriptPubKey = nodeParams.currentFinalScriptPubKey
         val nextData = d match {
           case closing: DATA_CLOSING => closing.copy(revokedCommitPublished = closing.revokedCommitPublished :+ revokedCommitPublished)
           case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.metaCommitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), revokedCommitPublished = revokedCommitPublished :: Nil)

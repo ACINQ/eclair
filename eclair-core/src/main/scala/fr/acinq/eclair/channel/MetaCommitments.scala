@@ -51,14 +51,15 @@ case class Params(channelId: ByteVector32,
    * @param scriptPubKey optional local script pubkey provided in CMD_CLOSE
    * @return the actual local shutdown script that we should use
    */
-  def getLocalShutdownScript(scriptPubKey: Option[ByteVector]): Either[ChannelException, ByteVector] = {
+  def getLocalShutdownScript(scriptPubKey: Option[ByteVector], defaultScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
     (channelFeatures.hasFeature(Features.UpfrontShutdownScript), scriptPubKey) match {
       case (true, Some(script)) if script != localParams.defaultFinalScriptPubKey => Left(InvalidFinalScript(channelId))
+      case (true, _) => Right(localParams.defaultFinalScriptPubKey)
       case (false, Some(script)) if !Closing.MutualClose.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
       case (false, Some(script)) => Right(script)
-      case _ => Right(localParams.defaultFinalScriptPubKey)
+      case (false, None) => Right(defaultScriptPubKey)
     }
   }
 
