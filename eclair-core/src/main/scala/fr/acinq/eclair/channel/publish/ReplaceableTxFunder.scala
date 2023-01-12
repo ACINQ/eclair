@@ -236,7 +236,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
   }
 
-  def bump(previousTx: FundedTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  private def bump(previousTx: FundedTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
     adjustPreviousTxOutput(previousTx, targetFeerate, cmd.commitments) match {
       case AdjustPreviousTxOutputResult.Skip(reason) =>
         log.warn("skipping {} fee bumping: {} (feerate={})", cmd.desc, reason, targetFeerate)
@@ -253,7 +253,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
   }
 
-  def addWalletInputs(txWithWitnessData: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  private def addWalletInputs(txWithWitnessData: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw): Behavior[Command] = {
     context.pipeToSelf(addInputs(txWithWitnessData, targetFeerate, cmd.commitments)) {
       case Success((fundedTx, totalAmountIn)) => AddInputsOk(fundedTx, totalAmountIn)
       case Failure(reason) => AddInputsFailed(reason)
@@ -279,7 +279,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
   }
 
-  def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
+  private def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
     val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
     fundedTx match {
       case ClaimLocalAnchorWithWitnessData(anchorTx) =>
@@ -313,7 +313,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
   }
 
-  def signWalletInputs(locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
+  private def signWalletInputs(locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
     val inputInfo = BitcoinCoreClient.PreviousTx(locallySignedTx.txInfo.input, locallySignedTx.txInfo.tx.txIn.head.witness)
     context.pipeToSelf(bitcoinClient.signTransaction(locallySignedTx.txInfo.tx, Seq(inputInfo))) {
       case Success(signedTx) => SignWalletInputsOk(signedTx.tx)
@@ -361,7 +361,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     val txNotFunded = anchorTx.txInfo.tx.copy(txOut = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil)
     // The anchor transaction is paying for the weight of the commitment transaction.
     val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight + commitTx.weight()))
-    bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, lockUtxos = true, inputWeights = anchorWeight)).flatMap(fundTxResponse => {
+    bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = anchorWeight)).flatMap(fundTxResponse => {
       // We merge the outputs if there's more than one.
       fundTxResponse.changePosition match {
         case Some(changePos) =>
@@ -390,7 +390,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
       case _: HtlcSuccessTx => commitments.commitmentFormat.htlcSuccessInputWeight
       case _: HtlcTimeoutTx => commitments.commitmentFormat.htlcTimeoutInputWeight
     }))
-    bitcoinClient.fundTransaction(htlcTx.txInfo.tx, FundTransactionOptions(targetFeerate, lockUtxos = true, changePosition = Some(1), inputWeights = htlcInputWeight)).map(fundTxResponse => {
+    bitcoinClient.fundTransaction(htlcTx.txInfo.tx, FundTransactionOptions(targetFeerate, changePosition = Some(1), inputWeights = htlcInputWeight)).map(fundTxResponse => {
       val unsignedTx = htlcTx.updateTx(fundTxResponse.tx)
       (unsignedTx, fundTxResponse.amountIn)
     })

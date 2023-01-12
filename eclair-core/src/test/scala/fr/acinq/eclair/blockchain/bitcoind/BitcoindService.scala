@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, Satoshi, Transaction, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB}
 import fr.acinq.eclair.integration.IntegrationSpec
 import fr.acinq.eclair.{BlockHeight, TestUtils, randomKey}
 import grizzled.slf4j.Logging
@@ -66,7 +67,11 @@ trait BitcoindService extends Logging {
   var bitcoinrpcauthmethod: BitcoinJsonRPCAuthMethod = _
   var bitcoincli: ActorRef = _
 
-  def startBitcoind(useCookie: Boolean = false, defaultAddressType_opt: Option[String] = None, mempoolSize_opt: Option[Int] = None, startupFlags: String = ""): Unit = {
+  def startBitcoind(useCookie: Boolean = false,
+                    defaultAddressType_opt: Option[String] = None,
+                    mempoolSize_opt: Option[Int] = None, // mempool size in MB
+                    mempoolMinFeerate_opt: Option[FeeratePerByte] = None, // transactions below this feerate won't be accepted in the mempool
+                    startupFlags: String = ""): Unit = {
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
     if (!Files.exists(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)) {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
@@ -79,6 +84,7 @@ trait BitcoindService extends Logging {
           .appendedAll(defaultAddressType_opt.map(addressType => s"addresstype=$addressType\n").getOrElse(""))
           .appendedAll(defaultAddressType_opt.map(addressType => s"changetype=$addressType\n").getOrElse(""))
           .appendedAll(mempoolSize_opt.map(mempoolSize => s"maxmempool=$mempoolSize\n").getOrElse(""))
+          .appendedAll(mempoolMinFeerate_opt.map(mempoolMinFeerate => s"minrelaytxfee=${FeeratePerKB(mempoolMinFeerate).feerate.toBtc.toBigDecimal}\n").getOrElse(""))
         if (useCookie) {
           defaultConf
             .replace("rpcuser=foo", "")
