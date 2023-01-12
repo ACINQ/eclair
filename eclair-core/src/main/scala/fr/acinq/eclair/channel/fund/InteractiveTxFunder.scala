@@ -121,7 +121,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * inputs.
    */
   private def fund(txNotFunded: Transaction, currentInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
-    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, lockUtxos = true)) {
+    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx)
     }
