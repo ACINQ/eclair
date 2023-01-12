@@ -34,11 +34,11 @@ import scala.concurrent.duration.FiniteDuration
 //  Note: we don't fully trust plugins to be correctly implemented, and we need to respond to our peer even if the plugin fails to tell us what to do
 
 object OpenChannelInterceptor {
-  def apply(replyTo: ActorRef[Any], plugin: InterceptOpenChannelPlugin, timeout: FiniteDuration, connectedData: ConnectedData, temporaryChannelId: ByteVector32, localParams: LocalParams, fundingAmount: Satoshi, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType): Behavior[Command] = {
+  def apply(replyTo: ActorRef[Any], plugin: InterceptOpenChannelPlugin, timeout: FiniteDuration, connectedData: ConnectedData, temporaryChannelId: ByteVector32, localParams: LocalParams, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         timers.startSingleTimer(PluginTimeout, timeout)
-        new OpenChannelInterceptor(replyTo, plugin, connectedData, temporaryChannelId, localParams, fundingAmount, open, channelType, context).start()
+        new OpenChannelInterceptor(replyTo, plugin, connectedData, temporaryChannelId, localParams, open, channelType, context).start()
       }
     }
   }
@@ -50,13 +50,13 @@ object OpenChannelInterceptor {
   // @formatter:on
 }
 
-private class OpenChannelInterceptor(replyTo: ActorRef[Any], plugin: InterceptOpenChannelPlugin, connectedData: ConnectedData, temporaryChannelId: ByteVector32, localParams: LocalParams, fundingAmount: Satoshi, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType, context: ActorContext[OpenChannelInterceptor.Command]) {
+private class OpenChannelInterceptor(replyTo: ActorRef[Any], plugin: InterceptOpenChannelPlugin, connectedData: ConnectedData, temporaryChannelId: ByteVector32, localParams: LocalParams, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType, context: ActorContext[OpenChannelInterceptor.Command]) {
 
   import OpenChannelInterceptor._
 
   private def start(): Behavior[Command] = {
     val pluginResponseAdapter = context.messageAdapter[InterceptOpenChannelResponse](WrappedOpenChannelResponse)
-    plugin.getOpenChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, open, temporaryChannelId, localParams, fundingAmount)
+    plugin.getOpenChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, open, temporaryChannelId, localParams)
 
     Behaviors.receiveMessage {
       case PluginTimeout =>

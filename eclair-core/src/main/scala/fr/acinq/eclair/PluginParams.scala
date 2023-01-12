@@ -61,7 +61,13 @@ trait CustomCommitmentsPlugin extends PluginParams {
 }
 
 // @formatter:off
-case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], open: Either[OpenChannel, OpenDualFundedChannel], temporaryChannelId: ByteVector32, localParams: LocalParams, fundingAmount: Satoshi)
+case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], open: Either[OpenChannel, OpenDualFundedChannel], temporaryChannelId: ByteVector32, localParams: LocalParams) {
+  val remoteFundingAmount: Satoshi = open match {
+    case Left(open: OpenChannel) => open.fundingSatoshis
+    case Right(open: OpenDualFundedChannel) => open.fundingAmount
+  }
+}
+
 sealed trait InterceptOpenChannelResponse
 case class AcceptOpenChannel(temporaryChannelId: ByteVector32, localParams: LocalParams) extends InterceptOpenChannelResponse
 case class RejectOpenChannel(temporaryChannelId: ByteVector32, error: Error) extends InterceptOpenChannelResponse
