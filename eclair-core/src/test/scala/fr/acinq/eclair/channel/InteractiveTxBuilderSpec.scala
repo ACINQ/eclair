@@ -407,7 +407,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       f.forwardBob2Alice[CommitSig]
       f.forwardAlice2Bob[CommitSig]
       val txB = bob2alice.expectMsgType[Succeeded].sharedTx.asInstanceOf[PartiallySignedSharedTransaction]
-      alice ! ReceiveTxSigs(txB.localSigs)
+      // Alice doesn't wait to receive Bob's signatures: they are empty anyway.
       val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
 
       // The resulting transaction is valid and has the right feerate.
@@ -1356,17 +1356,17 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("invalid tx_signatures") {
     val (alice2bob, bob2alice) = (TestProbe(), TestProbe())
     val wallet = new SingleKeyOnChainWallet()
-    val params = createChannelParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
+    val params = createChannelParams(100_000 sat, 25_000 sat, FeeratePerKw(5000 sat), 330 sat, 0)
     val alice = params.spawnTxBuilderAlice(params.fundingParamsA, TestConstants.anchorOutputsFeeratePerKw, wallet)
     val bob = params.spawnTxBuilderBob(params.fundingParamsB, TestConstants.anchorOutputsFeeratePerKw, wallet)
     alice ! Start(alice2bob.ref, Nil)
     bob ! Start(bob2alice.ref, Nil)
     // Alice --- tx_add_input --> Bob
     bob ! ReceiveTxMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddInput])
-    alice ! ReceiveTxMessage(bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxComplete])
+    alice ! ReceiveTxMessage(bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxAddInput])
     // Alice --- tx_add_output --> Bob
     bob ! ReceiveTxMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddOutput])
-    alice ! ReceiveTxMessage(bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxComplete])
+    alice ! ReceiveTxMessage(bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxAddOutput])
     // Alice --- tx_add_output --> Bob
     bob ! ReceiveTxMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddOutput])
     alice ! ReceiveTxMessage(bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxComplete])
