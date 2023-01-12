@@ -28,7 +28,7 @@ import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.io.Peer.PeerInfoResponse
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.wire.protocol.{OnionMessage, UnknownMessage}
+import fr.acinq.eclair.wire.protocol.OnionMessage
 import fr.acinq.eclair.{SubscriptionsComplete, NodeParams}
 
 /**
@@ -115,12 +115,6 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case RelayMessage(messageId, prevNodeId, nextNodeId, dataToRelay, relayPolicy, replyTo) =>
       val relay = context.spawn(Behaviors.supervise(MessageRelay()).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
       relay ! MessageRelay.RelayMessage(messageId, self, prevNodeId.getOrElse(nodeParams.nodeId), nextNodeId, dataToRelay, relayPolicy, replyTo)
-
-    case ForwardUnknownMessage(remoteNodeId, msg) =>
-      getPeer(remoteNodeId) match {
-        case Some(peer) => peer ! Peer.RelayUnknownMessage(msg)
-        case None => log.error(s"Peer $remoteNodeId not found, could not forward unknown message: $msg")
-      }
   }
 
   /**
@@ -175,8 +169,6 @@ object Switchboard {
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
 
   case class RelayMessage(messageId: ByteVector32, prevNodeId: Option[PublicKey], nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy, replyTo_opt: Option[typed.ActorRef[MessageRelay.Status]])
-
-  case class ForwardUnknownMessage(nodeId: PublicKey, msg: UnknownMessage)
   // @formatter:on
 
 }
