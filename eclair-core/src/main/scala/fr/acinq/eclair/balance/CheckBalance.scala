@@ -225,7 +225,7 @@ object CheckBalance {
                   // Normally this would mean that we don't actually have an output, but due to a migration
                   // the data might not be accurate, see [[ChannelTypes0.migrateClosingTx]]
                   // As a (hackish) workaround, we use the pubkeyscript to retrieve our output
-                  Transactions.findPubKeyScriptIndex(mutualClose.tx, d.commitments.localParams.defaultFinalScriptPubKey) match {
+                  Transactions.findPubKeyScriptIndex(mutualClose.tx, d.finalScriptPubKey) match {
                     case Right(outputIndex) => mutualClose.tx.txOut(outputIndex).amount
                     case _ => 0.sat // either we don't have an output (below dust), or we have used a non-default pubkey script
                   }

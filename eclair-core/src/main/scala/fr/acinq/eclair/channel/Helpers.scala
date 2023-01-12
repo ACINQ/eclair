@@ -786,7 +786,7 @@ object Helpers {
        * @param commitments our commitment data, which include payment preimages
        * @return a list of transactions (one per output of the commit tx that we can claim)
        */
-      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, finalScriptPubKey: ByteVector, tx: Transaction, currentBlockHeight: BlockHeight, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): LocalCommitPublished = {
+      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, currentBlockHeight: BlockHeight, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): LocalCommitPublished = {
         import commitments._
         require(localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
         val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
@@ -877,7 +877,7 @@ object Helpers {
        * NB: with anchor outputs, it's possible to have transactions that spend *many* HTLC outputs at once, but we're not
        * doing that because it introduces a lot of subtle edge cases.
        */
-      def claimHtlcDelayedOutput(localCommitPublished: LocalCommitPublished, keyManager: ChannelKeyManager, commitments: Commitments, finalScriptPubKey: ByteVector, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): (LocalCommitPublished, Option[HtlcDelayedTx]) = {
+      def claimHtlcDelayedOutput(localCommitPublished: LocalCommitPublished, keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (LocalCommitPublished, Option[HtlcDelayedTx]) = {
         import commitments._
         if (isHtlcSuccess(tx, localCommitPublished) || isHtlcTimeout(tx, localCommitPublished)) {
           val feeratePerKwDelayed = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
@@ -910,10 +910,10 @@ object Helpers {
        * @param tx           the remote commitment transaction that has just been published
        * @return a list of transactions (one per output of the commit tx that we can claim)
        */
-      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, finalScriptPubKey: ByteVector, remoteCommit: RemoteCommit, tx: Transaction, currentBlockHeight: BlockHeight, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, currentBlockHeight: BlockHeight, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): RemoteCommitPublished = {
         require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
 
-        val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitments, finalScriptPubKey, remoteCommit, onChainFeeConf.feeEstimator)
+        val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitments, remoteCommit, onChainFeeConf.feeEstimator, finalScriptPubKey)
 
         val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (spendAnchors) {
@@ -934,7 +934,7 @@ object Helpers {
 
         RemoteCommitPublished(
           commitTx = tx,
-          claimMainOutputTx = claimMainOutput(keyManager, commitments, finalScriptPubKey, remoteCommit.remotePerCommitmentPoint, tx, onChainFeeConf.feeEstimator, onChainFeeConf.feeTargets),
+          claimMainOutputTx = claimMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, onChainFeeConf.feeEstimator, onChainFeeConf.feeTargets, finalScriptPubKey),
           claimHtlcTxs = htlcTxs,
           claimAnchorTxs = claimAnchorTxs,
           irrevocablySpent = Map.empty
@@ -951,7 +951,7 @@ object Helpers {
        * @param tx                       the remote commitment transaction that has just been published
        * @return an optional [[ClaimRemoteCommitMainOutputTx]] transaction claiming our main output
        */
-      def claimMainOutput(keyManager: ChannelKeyManager, commitments: Commitments, finalScriptPubKey: ByteVector, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[ClaimRemoteCommitMainOutputTx] = {
+      def claimMainOutput(keyManager: ChannelKeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteCommitMainOutputTx] = {
         if (commitments.channelFeatures.paysDirectlyToWallet) {
           // the commitment tx sends funds directly to our wallet, no claim tx needed
           None
@@ -981,7 +981,7 @@ object Helpers {
       /**
        * Claim our htlc outputs only
        */
-      def claimHtlcOutputs(keyManager: ChannelKeyManager, commitments: Commitments, finalScriptPubKey: ByteVector, remoteCommit: RemoteCommit, feeEstimator: FeeEstimator)(implicit log: LoggingAdapter): Map[OutPoint, Option[ClaimHtlcTx]] = {
+      def claimHtlcOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, feeEstimator: FeeEstimator, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Map[OutPoint, Option[ClaimHtlcTx]] = {
         val (remoteCommitTx, _) = Commitment.makeRemoteTxs(keyManager, commitments.channelConfig, commitments.channelFeatures, remoteCommit.index, commitments.localParams, commitments.remoteParams, commitments.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
         require(remoteCommitTx.tx.txid == remoteCommit.txid, "txid mismatch, cannot recompute the current remote commit tx")
         val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
@@ -1050,7 +1050,7 @@ object Helpers {
        *
        * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
        */
-      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, finalScriptPubKey: ByteVector, commitTx: Transaction, db: ChannelsDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
+      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, commitTx: Transaction, db: ChannelsDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
         import commitments._
         // a valid tx will always have at least one input, but this ensures we don't throw in tests
         val sequence = commitTx.txIn.headOption.map(_.sequence).getOrElse(0L)
@@ -1155,7 +1155,7 @@ object Helpers {
        * NB: when anchor outputs is used, htlc transactions can be aggregated in a single transaction if they share the same
        * lockTime (thanks to the use of sighash_single | sighash_anyonecanpay), so we may need to claim multiple outputs.
        */
-      def claimHtlcTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, finalScriptPubKey: ByteVector, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feeEstimator: FeeEstimator)(implicit log: LoggingAdapter): (RevokedCommitPublished, Seq[ClaimHtlcDelayedOutputPenaltyTx]) = {
+      def claimHtlcTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feeEstimator: FeeEstimator, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (RevokedCommitPublished, Seq[ClaimHtlcDelayedOutputPenaltyTx]) = {
         val isHtlcTx = htlcTx.txIn.map(_.outPoint.txid).contains(revokedCommitPublished.commitTx.txid) &&
           htlcTx.txIn.map(_.witness).collect(Scripts.extractPreimageFromHtlcSuccess.orElse(Scripts.extractPaymentHashFromHtlcTimeout)).nonEmpty
         if (isHtlcTx) {
