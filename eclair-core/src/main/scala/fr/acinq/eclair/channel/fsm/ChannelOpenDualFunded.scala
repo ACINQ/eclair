@@ -21,9 +21,10 @@ import akka.actor.{ActorRef, Status}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.channel.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs}
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._

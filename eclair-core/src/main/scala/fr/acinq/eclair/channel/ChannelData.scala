@@ -20,7 +20,8 @@ import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.InteractiveTxBuilder._
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
