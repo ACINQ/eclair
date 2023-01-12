@@ -762,10 +762,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val shouldSignFirst = if (completeTx.localAmountIn == completeTx.remoteAmountIn) {
       // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
       LexicographicalOrdering.isLessThan(commitments.localParams.nodeId.value, commitments.remoteNodeId.value)
+    } else if (completeTx.remoteAmountIn == 0.sat) {
+      // If our peer didn't contribute to the transaction, we don't need to wait for their `tx_signatures`, they will be
+      // empty anyway.
+      true
     } else {
-      // If our peer didn't contribute to the transaction, we don't need to wait for their `tx_signatures`.
       // Otherwise, the peer with the lowest total of input amount must transmit its `tx_signatures` first.
-      completeTx.remoteAmountIn == 0.sat || completeTx.localAmountIn < completeTx.remoteAmountIn
+      completeTx.localAmountIn < completeTx.remoteAmountIn
     }
     if (shouldSignFirst) {
       signTx(completeTx, None)
