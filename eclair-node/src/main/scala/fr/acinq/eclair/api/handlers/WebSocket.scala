@@ -23,7 +23,7 @@ import akka.http.scaladsl.server.Route
 import akka.stream.OverflowStrategy
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import fr.acinq.eclair.api.Service
-import fr.acinq.eclair.channel.{ChannelClosed, ChannelCreated, ChannelStateChanged, WAIT_FOR_INIT_INTERNAL}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentEvent
 
@@ -52,6 +52,7 @@ trait WebSocket {
       override def preStart: Unit = {
         context.system.eventStream.subscribe(self, classOf[PaymentEvent])
         context.system.eventStream.subscribe(self, classOf[ChannelCreated])
+        context.system.eventStream.subscribe(self, classOf[ChannelOpened])
         context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
         context.system.eventStream.subscribe(self, classOf[ChannelClosed])
         context.system.eventStream.subscribe(self, classOf[OnionMessages.ReceiveMessage])
@@ -60,6 +61,7 @@ trait WebSocket {
       def receive: Receive = {
         case message: PaymentEvent => flowInput.offer(serialization.write(message))
         case message: ChannelCreated => flowInput.offer(serialization.write(message))
+        case message: ChannelOpened => flowInput.offer(serialization.write(message))
         case message: ChannelStateChanged =>
           if (message.previousState != WAIT_FOR_INIT_INTERNAL) {
             flowInput.offer(serialization.write(message))

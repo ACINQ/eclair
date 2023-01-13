@@ -445,12 +445,17 @@ object JavaUUIDSerializer extends MinimalSerializer({
 
 object ChannelEventSerializer extends MinimalSerializer({
   case e: ChannelCreated => JObject(
-    JField("type", JString("channel-opened")),
+    JField("type", JString("channel-created")),
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
     JField("isInitiator", JBool(e.isInitiator)),
     JField("temporaryChannelId", JString(e.temporaryChannelId.toHex)),
     JField("commitTxFeeratePerKw", JLong(e.commitTxFeerate.toLong)),
     JField("fundingTxFeeratePerKw", e.fundingTxFeerate.map(f => JLong(f.toLong)).getOrElse(JNothing))
+  )
+  case e: ChannelOpened => JObject(
+    JField("type", JString("channel-opened")),
+    JField("remoteNodeId", JString(e.remoteNodeId.toString())),
+    JField("channelId", JString(e.channelId.toHex)),
   )
   case e: ChannelStateChanged => JObject(
     JField("type", JString("channel-state-changed")),
