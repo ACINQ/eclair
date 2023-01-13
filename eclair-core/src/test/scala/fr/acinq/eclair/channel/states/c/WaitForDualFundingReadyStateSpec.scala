@@ -19,9 +19,9 @@ package fr.acinq.eclair.channel.states.c
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
@@ -109,11 +109,18 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     alice.underlyingActor.nodeParams.db.peers.addOrUpdateRelayFees(bob.underlyingActor.nodeParams.nodeId, RelayFees(20 msat, 125))
     bob.underlyingActor.nodeParams.db.peers.addOrUpdateRelayFees(alice.underlyingActor.nodeParams.nodeId, RelayFees(25 msat, 90))
 
+    val listenerA = TestProbe()
+    alice.underlying.system.eventStream.subscribe(listenerA.ref, classOf[ChannelOpened])
+    val listenerB = TestProbe()
+    bob.underlying.system.eventStream.subscribe(listenerB.ref, classOf[ChannelOpened])
+
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob, aliceChannelReady)
+    listenerB.expectMsg(ChannelOpened(bob, alice.underlyingActor.nodeParams.nodeId, channelId(bob)))
     awaitCond(bob.stateName == NORMAL)
     val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice, bobChannelReady)
+    listenerA.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     awaitCond(alice.stateName == NORMAL)
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
@@ -142,11 +149,18 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv ChannelReady (zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
+    val listenerA = TestProbe()
+    alice.underlying.system.eventStream.subscribe(listenerA.ref, classOf[ChannelOpened])
+    val listenerB = TestProbe()
+    bob.underlying.system.eventStream.subscribe(listenerB.ref, classOf[ChannelOpened])
+
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob, aliceChannelReady)
+    listenerB.expectMsg(ChannelOpened(bob, alice.underlyingActor.nodeParams.nodeId, channelId(bob)))
     awaitCond(bob.stateName == NORMAL)
     val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice, bobChannelReady)
+    listenerA.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     awaitCond(alice.stateName == NORMAL)
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)

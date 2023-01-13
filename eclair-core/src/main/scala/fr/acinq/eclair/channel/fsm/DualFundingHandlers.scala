@@ -22,9 +22,9 @@ import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.wire.protocol.{ChannelReady, Error}
 
 import scala.concurrent.Future
@@ -59,7 +59,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
-  def pruneCommitments(d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, fundingTx: Transaction): Option[DualFundingTx] = {
+  private def pruneCommitments(d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, fundingTx: Transaction): Option[DualFundingTx] = {
     val allFundingTxs: Seq[DualFundingTx] = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
     // We can forget other funding attempts now that one of the funding txs is confirmed.
     val otherFundingTxs = allFundingTxs.filter(_.commitments.fundingTxId != fundingTx.txid).map(_.fundingTx)
@@ -78,7 +78,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def acceptDualFundingTx(d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, fundingTx: Transaction, realScidStatus: RealScidStatus): Option[(DATA_WAIT_FOR_DUAL_FUNDING_READY, ChannelReady)] = {
-    pruneCommitments(d, fundingTx) map {
+    pruneCommitments(d, fundingTx).map {
       case DualFundingTx(_, commitments) =>
         watchFundingTx(commitments)
         realScidStatus match {

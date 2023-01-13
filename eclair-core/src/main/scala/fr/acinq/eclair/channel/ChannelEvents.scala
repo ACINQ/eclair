@@ -49,6 +49,9 @@ case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, tempora
  */
 case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey) extends ChannelEvent
 
+/** This event will be sent once a channel has been successfully opened and is ready to process payments. */
+case class ChannelOpened(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
+
 case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends ChannelEvent {
   /**
    * We always include the local alias because we must always be able to route based on it.
