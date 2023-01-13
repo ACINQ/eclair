@@ -420,7 +420,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         val localParams = createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight = false)
         nodeParams.pluginOpenChannelInterceptor match {
           case None => selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
-          case Some(plugin) => context.spawnAnonymous(OpenChannelInterceptor(context.self.toTyped, plugin, 1 minute, d, temporaryChannelId, localParams, fundingAmount, open, channelType))
+          case Some(plugin) => context.spawnAnonymous(OpenChannelInterceptor(context.self.toTyped, plugin, 1 minute, d.peerConnection.toTyped, temporaryChannelId, localParams, open, channelType))
         }
       case Left(ex) =>
         log.warning("ignoring remote channel open: {}", ex.getMessage)

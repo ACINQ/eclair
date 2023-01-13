@@ -49,13 +49,14 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
   override def withFixture(test: OneArgTest): Outcome = {
     val peer = TestProbe[Any]()
+    val peerConnection = TestProbe[Any]()
     val pluginInterceptor = TestProbe[InterceptOpenChannelReceived]()
     val plugin = new InterceptOpenChannelPlugin {
       override def name: String = "OpenChannelInterceptorPlugin"
       override def openChannelInterceptor: ActorRef[InterceptOpenChannelReceived] = pluginInterceptor.ref
     }
 
-    val openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command] = testKit.spawn(OpenChannelInterceptor(peer.ref, plugin, 10 millis, connectedData, temporaryChannelId, localParams, Left(openChannel), ChannelTypes.Standard()))
+    val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, plugin, 10 millis, peerConnection.ref, temporaryChannelId, localParams, Left(openChannel), ChannelTypes.Standard()))
     withFixture(test.toNoArgTest(FixtureParam(openChannelInterceptor, peer, pluginInterceptor)))
   }
 
