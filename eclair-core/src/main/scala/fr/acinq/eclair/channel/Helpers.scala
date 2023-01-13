@@ -404,7 +404,7 @@ object Helpers {
     }
 
     /**
-     * Creates both sides' first commitment transaction
+     * Creates both sides' first commitment transaction.
      *
      * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
      */
@@ -414,13 +414,30 @@ object Helpers {
                            localPushAmount: MilliSatoshi, remotePushAmount: MilliSatoshi,
                            commitTxFeerate: FeeratePerKw,
                            fundingTxHash: ByteVector32, fundingTxOutputIndex: Int,
-                           remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
-      val fundingAmount = localFundingAmount + remoteFundingAmount
-      val toLocalMsat = localFundingAmount.toMilliSatoshi - localPushAmount + remotePushAmount
-      val toRemoteMsat = remoteFundingAmount.toMilliSatoshi + localPushAmount - remotePushAmount
+                           remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] =
+      makeCommitTxsWithoutHtlcs(keyManager, channelConfig, channelFeatures, temporaryChannelId,
+        localParams, remoteParams,
+        fundingAmount = localFundingAmount + remoteFundingAmount,
+        toLocal = localFundingAmount.toMilliSatoshi - localPushAmount + remotePushAmount,
+        toRemote = remoteFundingAmount.toMilliSatoshi + localPushAmount - remotePushAmount,
+        commitTxFeerate, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, commitmentIndex = 0)
 
-      val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toLocalMsat, toRemote = toRemoteMsat)
-      val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toRemoteMsat, toRemote = toLocalMsat)
+
+    /**
+     * This creates commitment transactions for both sides at an arbitrary `commitmentIndex`. There are no htlcs, only
+     * local/remote balances are provided.
+     */
+    def makeCommitTxsWithoutHtlcs(keyManager: ChannelKeyManager, channelConfig: ChannelConfig, channelFeatures: ChannelFeatures, channelId: ByteVector32,
+                                  localParams: LocalParams, remoteParams: RemoteParams,
+                                  fundingAmount: Satoshi,
+                                  toLocal: MilliSatoshi, toRemote: MilliSatoshi,
+                                  commitTxFeerate: FeeratePerKw,
+                                  fundingTxHash: ByteVector32, fundingTxOutputIndex: Int,
+                                  remoteFirstPerCommitmentPoint: PublicKey,
+                                  commitmentIndex: Long): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
+
+      val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
+      val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
       if (!localParams.isInitiator) {
         // they initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
@@ -430,18 +447,18 @@ object Helpers {
         } else {
           localParams.requestedChannelReserve_opt.get
         }
-        val missing = toRemoteMsat.truncateToSatoshi - reserve - fees
+        val missing = toRemote.truncateToSatoshi - reserve - fees
         if (missing < 0.sat) {
-          return Left(CannotAffordFees(temporaryChannelId, missing = -missing, reserve = reserve, fees = fees))
+          return Left(CannotAffordFees(channelId, missing = -missing, reserve = reserve, fees = fees))
         }
       }
 
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
-      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
-      val (localCommitTx, _) = Commitments.makeLocalTxs(keyManager, channelConfig, channelFeatures, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, channelConfig, channelFeatures, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitmentIndex)
+      val (localCommitTx, _) = Commitments.makeLocalTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
+      val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
       Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
