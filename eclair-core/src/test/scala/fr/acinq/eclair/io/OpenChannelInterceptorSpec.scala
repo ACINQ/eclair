@@ -52,9 +52,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val pluginInterceptor = TestProbe[InterceptOpenChannelReceived]()
     val plugin = new InterceptOpenChannelPlugin {
       override def name: String = "OpenChannelInterceptorPlugin"
-      override def getOpenChannelInterceptor: ActorRef[InterceptOpenChannelReceived] = {
-        pluginInterceptor.ref
-      }
+      override def openChannelInterceptor: ActorRef[InterceptOpenChannelReceived] = pluginInterceptor.ref
     }
 
     val openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command] = testKit.spawn(OpenChannelInterceptor(peer.ref, plugin, 10 millis, connectedData, temporaryChannelId, localParams, Left(openChannel), ChannelTypes.Standard()))

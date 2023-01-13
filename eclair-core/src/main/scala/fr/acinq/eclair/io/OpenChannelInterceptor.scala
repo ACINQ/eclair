@@ -57,7 +57,7 @@ private class OpenChannelInterceptor(replyTo: ActorRef[Any], plugin: InterceptOp
 
   private def start(): Behavior[Command] = {
     val pluginResponseAdapter = context.messageAdapter[InterceptOpenChannelResponse](WrappedOpenChannelResponse)
-    plugin.getOpenChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, open, temporaryChannelId, localParams)
+    plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, open, temporaryChannelId, localParams)
 
     Behaviors.receiveMessage {
       case PluginTimeout =>

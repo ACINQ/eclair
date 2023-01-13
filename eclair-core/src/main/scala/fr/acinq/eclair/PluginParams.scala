@@ -74,5 +74,5 @@ case class RejectOpenChannel(temporaryChannelId: ByteVector32, error: Error) ext
 // @formatter:on
 
 trait InterceptOpenChannelPlugin extends PluginParams {
-  def getOpenChannelInterceptor: ActorRef[InterceptOpenChannelReceived]
+  def openChannelInterceptor: ActorRef[InterceptOpenChannelReceived]
 }
