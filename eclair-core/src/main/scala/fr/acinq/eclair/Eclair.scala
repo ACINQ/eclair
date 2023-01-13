@@ -102,6 +102,8 @@ trait Eclair {
 
   def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
+  def node(nodeId: PublicKey)(implicit timeout: Timeout): Future[Option[Router.PublicNode]]
+
   def nodes(nodeIds_opt: Option[Set[PublicKey]] = None)(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
 
   def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[Bolt11Invoice]
@@ -222,6 +224,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     peers <- (appKit.switchboard ? Switchboard.GetPeers).mapTo[Iterable[ActorRef]]
     peerinfos <- Future.sequence(peers.map(peer => (peer ? GetPeerInfo(None)).mapTo[PeerInfo]))
   } yield peerinfos
+
+  override def node(nodeId: PublicKey)(implicit timeout: Timeout): Future[Option[Router.PublicNode]] = {
+    (appKit.router ? Router.GetNode(nodeId)).mapTo[Router.GetNodeResponse].map {
+      case n: PublicNode => Some(n)
+      case _: UnknownNode => None
+    }
+  }
 
   override def nodes(nodeIds_opt: Option[Set[PublicKey]])(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = {
     (appKit.router ? Router.GetNodes)
