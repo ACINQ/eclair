@@ -416,11 +416,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         // NB: we need to capture parameters in a val to use them in andThen
         val selfRef = self
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
+        val channelConfig = ChannelConfig.standard
         val upfrontShutdownScript = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.UpfrontShutdownScript)
         val localParams = createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight = false)
         nodeParams.pluginOpenChannelInterceptor match {
-          case None => selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
-          case Some(plugin) => context.spawnAnonymous(OpenChannelInterceptor(context.self.toTyped, plugin, 1 minute, d.peerConnection.toTyped, temporaryChannelId, localParams, open, channelType))
+          case None => selfRef ! SpawnChannelNonInitiator(open, channelConfig, channelType, localParams)
+          case Some(plugin) => context.spawnAnonymous(OpenChannelInterceptor(context.self.toTyped, plugin, 1 minute, d.peerConnection.toTyped, temporaryChannelId, localParams, open, channelType, channelConfig))
         }
       case Left(ex) =>
         log.warning("ignoring remote channel open: {}", ex.getMessage)

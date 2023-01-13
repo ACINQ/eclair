@@ -42,17 +42,17 @@ object OpenChannelInterceptor {
   case class WrappedOpenChannelResponse(pluginResponse: InterceptOpenChannelResponse) extends Command
   // @formatter:on
 
-  def apply(peer: ActorRef[Any], plugin: InterceptOpenChannelPlugin, timeout: FiniteDuration, peerConnection: ActorRef[Any], temporaryChannelId: ByteVector32, localParams: LocalParams, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType): Behavior[Command] = {
+  def apply(peer: ActorRef[Any], plugin: InterceptOpenChannelPlugin, timeout: FiniteDuration, peerConnection: ActorRef[Any], temporaryChannelId: ByteVector32, localParams: LocalParams, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType, channelConfig: ChannelConfig): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         timers.startSingleTimer(PluginTimeout, timeout)
-        new OpenChannelInterceptor(peer, plugin, peerConnection, temporaryChannelId, localParams, open, channelType, context).start()
+        new OpenChannelInterceptor(peer, plugin, peerConnection, temporaryChannelId, localParams, open, channelType, channelConfig, context).start()
       }
     }
   }
 }
 
-private class OpenChannelInterceptor(peer: ActorRef[Any], plugin: InterceptOpenChannelPlugin, peerConnection: ActorRef[Any], temporaryChannelId: ByteVector32, localParams: LocalParams, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType, context: ActorContext[OpenChannelInterceptor.Command]) {
+private class OpenChannelInterceptor(peer: ActorRef[Any], plugin: InterceptOpenChannelPlugin, peerConnection: ActorRef[Any], temporaryChannelId: ByteVector32, localParams: LocalParams, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType, channelConfig: ChannelConfig, context: ActorContext[OpenChannelInterceptor.Command]) {
 
   import OpenChannelInterceptor._
 
@@ -66,7 +66,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any], plugin: InterceptOpenC
         peer ! OutgoingMessage(Error(temporaryChannelId, "plugin timeout"), peerConnection.ref.toClassic)
         Behaviors.stopped
       case WrappedOpenChannelResponse(a: AcceptOpenChannel) =>
-        peer ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, a.localParams)
+        peer ! SpawnChannelNonInitiator(open, channelConfig, channelType, a.localParams)
         Behaviors.stopped
       case WrappedOpenChannelResponse(r: RejectOpenChannel) =>
         peer ! OutgoingMessage(r.error, peerConnection.ref.toClassic)

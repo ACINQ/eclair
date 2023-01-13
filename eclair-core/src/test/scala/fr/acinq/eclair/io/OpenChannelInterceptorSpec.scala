@@ -23,7 +23,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, DeterministicWallet, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes, LocalParams}
+import fr.acinq.eclair.channel.{ChannelConfig, ChannelFlags, ChannelTypes, LocalParams}
 import fr.acinq.eclair.io.OpenChannelInterceptor.WrappedOpenChannelResponse
 import fr.acinq.eclair.io.Peer.{ChannelId, OutgoingMessage, SpawnChannelNonInitiator}
 import fr.acinq.eclair.wire.protocol.{Error, NodeAddress, OpenChannel}
@@ -56,7 +56,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
       override def openChannelInterceptor: ActorRef[InterceptOpenChannelReceived] = pluginInterceptor.ref
     }
 
-    val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, plugin, 10 millis, peerConnection.ref, temporaryChannelId, localParams, Left(openChannel), ChannelTypes.Standard()))
+    val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, plugin, 10 millis, peerConnection.ref, temporaryChannelId, localParams, Left(openChannel), ChannelTypes.Standard(), ChannelConfig.standard))
     withFixture(test.toNoArgTest(FixtureParam(openChannelInterceptor, peer, pluginInterceptor)))
   }
 
