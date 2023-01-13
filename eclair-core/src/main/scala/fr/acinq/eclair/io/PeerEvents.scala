@@ -18,7 +18,6 @@ package fr.acinq.eclair.io
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.channel.{LocalParams, SupportedChannelType}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{NodeAddress, UnknownMessage}
 
