@@ -30,7 +30,7 @@ import scala.concurrent.duration.FiniteDuration
  * Child actor of a Peer that handles the interactions with an InterceptOpenChannelPlugin:
  *  - sends OpenChannelReceived to the plugin
  *  - waits for its response and translates it to the Peer data format (either SpawnChannelNonInitiator or an outgoing Error)
- *  - reject the channel open after a timeout (configurable in eclair.conf)
+ *  - reject the channel open after a timeout
  *
  * Note: we don't fully trust plugins to be correctly implemented, and we need to respond to our peer even if the plugin fails to tell us what to do
  */
