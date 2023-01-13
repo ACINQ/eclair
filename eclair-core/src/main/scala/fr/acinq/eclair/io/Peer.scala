@@ -191,7 +191,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
             stay()
         }
 
-        case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
+      case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
             handleOpenChannel(Right(open), open.temporaryChannelId, open.fundingAmount, open.channelFlags, open.channelType_opt, d)
