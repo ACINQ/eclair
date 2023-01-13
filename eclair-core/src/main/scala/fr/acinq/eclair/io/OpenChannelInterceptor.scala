@@ -33,7 +33,12 @@ import scala.concurrent.duration.FiniteDuration
  *  - waits for its response and translates it to the Peer data format (either SpawnChannelNonInitiator or an outgoing Error)
  *  - reject the channel open after a timeout
  *
- * Note: we don't fully trust plugins to be correctly implemented, and we need to respond to our peer even if the plugin fails to tell us what to do
+ * Note: If the remote peer disconnects before the plugin fails or continues the `open_channel` flow, according to the
+ * Lightning spec the flow should be canceled. Therefore any response sent by this actor with a different `peerConnection`
+ * should be ignored and not forwarded to the remote peer.
+ *
+ * Note: We have a timeout that will reject the channel open if the plugin does not respond. We do not fully trust plugins
+ * to be correctly implemented; we need to respond to our peer even if the plugin fails to tell us what to do.
  */
 object OpenChannelInterceptor {
   // @formatter:off
