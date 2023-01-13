@@ -36,6 +36,12 @@ import scala.concurrent.duration.FiniteDuration
  * Note: we don't fully trust plugins to be correctly implemented, and we need to respond to our peer even if the plugin fails to tell us what to do
  */
 object OpenChannelInterceptor {
+  // @formatter:off
+  sealed trait Command
+  case object PluginTimeout extends Command
+  case class WrappedOpenChannelResponse(pluginResponse: InterceptOpenChannelResponse) extends Command
+  // @formatter:on
+
   def apply(peer: ActorRef[Any], plugin: InterceptOpenChannelPlugin, timeout: FiniteDuration, peerConnection: ActorRef[Any], temporaryChannelId: ByteVector32, localParams: LocalParams, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
@@ -44,12 +50,6 @@ object OpenChannelInterceptor {
       }
     }
   }
-
-  // @formatter:off
-  sealed trait Command
-  case object PluginTimeout extends Command
-  case class WrappedOpenChannelResponse(pluginResponse: InterceptOpenChannelResponse) extends Command
-  // @formatter:on
 }
 
 private class OpenChannelInterceptor(peer: ActorRef[Any], plugin: InterceptOpenChannelPlugin, peerConnection: ActorRef[Any], temporaryChannelId: ByteVector32, localParams: LocalParams, open: Either[OpenChannel, OpenDualFundedChannel], channelType: SupportedChannelType, context: ActorContext[OpenChannelInterceptor.Command]) {
