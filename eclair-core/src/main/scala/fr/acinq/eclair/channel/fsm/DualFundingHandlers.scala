@@ -89,7 +89,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       metaCommitments =>
         // after pruning, there is only one commitments
         val commitments = metaCommitments.main
-        watchFundingTx(commitments)
+        watchFundingTx(commitments.commitment)
         realScidStatus match {
           case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
           case _ => () // zero-conf channel
@@ -111,7 +111,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       case Some(metaCommitments) =>
         // after pruning, there is only one commitments
         val commitments = metaCommitments.main
-        watchFundingTx(commitments)
+        watchFundingTx(commitments.commitment)
         context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
         if (d.previousFundingTxs.nonEmpty) {
           log.info(s"funding txid={} was confirmed in state disconnected, cleaning up {} alternative txs", w.tx.txid, d.metaCommitments.all.size - 1)

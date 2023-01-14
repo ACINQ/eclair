@@ -263,7 +263,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               doPublish(c.revokedCommitPublished)
             case None =>
               // in all other cases we need to be ready for any type of closing
-              watchFundingTx(data.metaCommitments.main, closing.spendingTxs.map(_.txid).toSet)
+              watchFundingTx(data.metaCommitments.main.commitment, closing.spendingTxs.map(_.txid).toSet)
               if (closing.metaCommitments.all.size > 1) {
                 // We wait watch all potential funding transactions
                 closing.metaCommitments.all.foreach(c => blockchain ! WatchFundingConfirmed(self, c.fundingTxId, nodeParams.channelConf.minDepthBlocks))
@@ -288,7 +288,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           goto(CLOSING) using closing
 
         case normal: DATA_NORMAL =>
-          watchFundingTx(data.metaCommitments.main)
+          watchFundingTx(data.metaCommitments.main.commitment)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.shortIds, remoteNodeId))
 
           // we check the configuration because the values for channel_update may have changed while eclair was down
@@ -307,7 +307,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           goto(OFFLINE) using normal
 
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-          watchFundingTx(funding.commitments)
+          watchFundingTx(funding.commitments.commitment)
           // we make sure that the funding tx has been published
           blockchain ! GetTxWithMeta(self, funding.commitments.fundingTxId)
           goto(OFFLINE) using funding
@@ -320,7 +320,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           goto(OFFLINE) using funding
 
         case _ =>
-          watchFundingTx(data.metaCommitments.main)
+          watchFundingTx(data.metaCommitments.main.commitment)
           goto(OFFLINE) using data
       }
   })
@@ -1079,7 +1079,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             // to negotiate a mutual close.
             log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
             val commitments = metaCommitments.main
-            watchFundingTx(commitments)
+            watchFundingTx(commitments.commitment)
             context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
             val commitTx = commitments.fullySignedLocalCommitTx(keyManager).tx
             val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf)
