@@ -460,43 +460,29 @@ final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_I
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel) extends TransientChannelData {
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32,
-                                                localParams: LocalParams,
-                                                remoteParams: RemoteParams,
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: Params,
                                                 fundingAmount: Satoshi,
                                                 pushAmount: MilliSatoshi,
                                                 commitTxFeerate: FeeratePerKw,
-                                                remoteFirstPerCommitmentPoint: PublicKey,
-                                                channelConfig: ChannelConfig,
-                                                channelFeatures: ChannelFeatures,
-                                                lastSent: OpenChannel) extends TransientChannelData {
-  val channelId: ByteVector32 = temporaryChannelId
+                                                remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
+  val channelId: ByteVector32 = params.channelId
 }
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
-                                               localParams: LocalParams,
-                                               remoteParams: RemoteParams,
+final case class DATA_WAIT_FOR_FUNDING_CREATED(params: Params,
                                                fundingAmount: Satoshi,
                                                pushAmount: MilliSatoshi,
                                                commitTxFeerate: FeeratePerKw,
-                                               remoteFirstPerCommitmentPoint: PublicKey,
-                                               channelFlags: ChannelFlags,
-                                               channelConfig: ChannelConfig,
-                                               channelFeatures: ChannelFeatures,
-                                               lastSent: AcceptChannel) extends TransientChannelData {
-  val channelId: ByteVector32 = temporaryChannelId
+                                               remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
+  val channelId: ByteVector32 = params.channelId
 }
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
-                                              localParams: LocalParams,
-                                              remoteParams: RemoteParams,
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: Params,
                                               fundingTx: Transaction,
                                               fundingTxFee: Satoshi,
                                               localSpec: CommitmentSpec,
                                               localCommitTx: CommitTx,
                                               remoteCommit: RemoteCommit,
-                                              channelFlags: ChannelFlags,
-                                              channelConfig: ChannelConfig,
-                                              channelFeatures: ChannelFeatures,
-                                              lastSent: FundingCreated) extends TransientChannelData
+                                              lastSent: FundingCreated) extends TransientChannelData {
+  val channelId: ByteVector32 = params.channelId
+}
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments: MetaCommitments,
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[ChannelReady],

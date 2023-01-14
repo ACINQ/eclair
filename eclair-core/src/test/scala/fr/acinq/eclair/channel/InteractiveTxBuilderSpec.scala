@@ -83,17 +83,17 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       nodeParamsA.nodeId,
       fundingParams, nodeParamsA.channelKeyManager,
       0 msat, 0 msat,
-      localParamsA, remoteParamsB,
+      Params(fundingParams.channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public),
       commitFeerate, firstPerCommitmentPointB,
-      ChannelFlags.Public, ChannelConfig.standard, channelFeatures, wallet))
+      wallet))
 
     def spawnTxBuilderBob(fundingParams: InteractiveTxParams, commitFeerate: FeeratePerKw, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       nodeParamsB.nodeId,
       fundingParams, nodeParamsB.channelKeyManager,
       0 msat, 0 msat,
-      localParamsB, remoteParamsA,
+      Params(fundingParams.channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public),
       commitFeerate, firstPerCommitmentPointA,
-      ChannelFlags.Public, ChannelConfig.standard, channelFeatures, wallet))
+      wallet))
   }
 
   private def createChannelParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)): ChannelParams = {

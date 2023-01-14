@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse}
 import fr.acinq.eclair.channel.LocalFundingStatus.ConfirmedFundingTx
@@ -41,11 +41,11 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
 
   this: Channel =>
 
-  def publishFundingTx(commitments: Commitments, fundingTx: Transaction, fundingTxFee: Satoshi): Unit = {
+  def publishFundingTx(channelId: ByteVector32, fundingTx: Transaction, fundingTxFee: Satoshi): Unit = {
     wallet.commit(fundingTx).onComplete {
       case Success(true) =>
-        context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
-        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(commitments.channelId)))
+        context.system.eventStream.publish(TransactionPublished(channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
+        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(channelId)))
       case Success(false) =>
         channelOpenReplyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
         self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published

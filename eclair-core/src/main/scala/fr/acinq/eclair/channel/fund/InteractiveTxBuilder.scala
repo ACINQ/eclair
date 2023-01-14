@@ -199,13 +199,9 @@ object InteractiveTxBuilder {
             keyManager: ChannelKeyManager,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
-            localParams: LocalParams,
-            remoteParams: RemoteParams,
+            params: Params,
             commitTxFeerate: FeeratePerKw,
             remoteFirstPerCommitmentPoint: PublicKey,
-            channelFlags: ChannelFlags,
-            channelConfig: ChannelConfig,
-            channelFeatures: ChannelFeatures,
             wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       // The stash is used to buffer messages that arrive while we're funding the transaction.
@@ -215,7 +211,7 @@ object InteractiveTxBuilder {
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
             case Start(replyTo, previousTransactions) =>
-              val actor = new InteractiveTxBuilder(replyTo, remoteNodeId, fundingParams, keyManager, localPushAmount, remotePushAmount, localParams, remoteParams, commitTxFeerate, remoteFirstPerCommitmentPoint, channelFlags, channelConfig, channelFeatures, wallet, previousTransactions, stash, context)
+              val actor = new InteractiveTxBuilder(replyTo, remoteNodeId, fundingParams, keyManager, localPushAmount, remotePushAmount, params, commitTxFeerate, remoteFirstPerCommitmentPoint, wallet, previousTransactions, stash, context)
               actor.start()
             case Abort => Behaviors.stopped
           }
@@ -268,13 +264,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                                    keyManager: ChannelKeyManager,
                                    localPushAmount: MilliSatoshi,
                                    remotePushAmount: MilliSatoshi,
-                                   localParams: LocalParams,
-                                   remoteParams: RemoteParams,
+                                   params: Params,
                                    commitTxFeerate: FeeratePerKw,
                                    remoteFirstPerCommitmentPoint: PublicKey,
-                                   channelFlags: ChannelFlags,
-                                   channelConfig: ChannelConfig,
-                                   channelFeatures: ChannelFeatures,
                                    wallet: OnChainChannelFunder,
                                    previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction],
                                    stash: StashBuffer[InteractiveTxBuilder.Command],
@@ -569,7 +561,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private def signCommitTx(completeTx: SharedTransaction, fundingOutputIndex: Int): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
-    Funding.makeCommitTxsWithoutHtlcs(keyManager, channelConfig, channelFeatures, fundingParams.channelId, localParams, remoteParams,
+    Funding.makeCommitTxsWithoutHtlcs(keyManager, params,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = fundingParams.localAmount - localPushAmount + remotePushAmount,
       toRemote = fundingParams.remoteAmount - remotePushAmount + localPushAmount,
@@ -579,31 +571,34 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         unlockAndStop(completeTx)
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
-        val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-        val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, channelFeatures.commitmentFormat)
-        val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath), TxOwner.Remote, channelFeatures.commitmentFormat)
+        val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath)
+        val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.channelFeatures.commitmentFormat)
+        val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath), TxOwner.Remote, params.channelFeatures.commitmentFormat)
         val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, Nil)
         replyTo ! SendMessage(localCommitSig)
         Behaviors.receiveMessagePartial {
           case ReceiveCommitSig(remoteCommitSig) =>
-            val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteCommitSig.signature)
+            val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, params.remoteParams.fundingPubKey, localSigOfLocalTx, remoteCommitSig.signature)
             Transactions.checkSpendable(signedLocalCommitTx) match {
               case Failure(_) =>
                 replyTo ! RemoteFailure(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid))
                 unlockAndStop(completeTx)
               case Success(_) =>
-                val commitments = Commitments(
-                  fundingParams.channelId, channelConfig, channelFeatures,
-                  localParams, remoteParams, channelFlags,
-                  LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteCommitSig.signature), htlcTxsAndRemoteSigs = Nil),
-                  RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
-                  LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+                val common = Common(
+                  localChanges = LocalChanges(Nil, Nil, Nil), remoteChanges = RemoteChanges(Nil, Nil, Nil),
                   localNextHtlcId = 0L, remoteNextHtlcId = 0L,
                   originChannels = Map.empty,
-                  remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
-                  localFundingStatus = null, // TODO: hacky, but we don't have the funding tx yet
+                  remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
+                  remotePerCommitmentSecrets = ShaChain.init
+                )
+                val commitment = Commitment(
+                  localFundingStatus = LocalFundingStatus.UnknownFundingTx, // hacky, but we don't have the signed funding tx yet, we'll learn it at the next step
                   remoteFundingStatus = RemoteFundingStatus.NotLocked,
-                  ShaChain.init)
+                  localCommit = LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteCommitSig.signature), htlcTxsAndRemoteSigs = Nil),
+                  remoteCommit = RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
+                  nextRemoteCommit_opt = None
+                )
+                val commitments = Commitments(params, common, commitment)
                 signFundingTx(completeTx, commitments)
             }
           case ReceiveTxSigs(_) =>

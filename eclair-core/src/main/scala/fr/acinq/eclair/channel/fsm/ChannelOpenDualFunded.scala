@@ -21,8 +21,8 @@ import akka.actor.{ActorRef, Status}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
@@ -214,13 +214,13 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             open.fundingFeerate,
             RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs)
           )
+          val params = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
             accept.pushAmount, open.pushAmount,
-            localParams, remoteParams,
+            params,
             open.commitmentFeerate,
             open.firstPerCommitmentPoint,
-            open.channelFlags, d.init.channelConfig, channelFeatures,
             wallet
           ))
           txBuilder ! InteractiveTxBuilder.Start(self, Nil)
@@ -277,13 +277,13 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.lastSent.fundingFeerate,
             RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
           )
+          val params = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, d.lastSent.channelFlags)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
             d.lastSent.pushAmount, accept.pushAmount,
-            localParams, remoteParams,
+            params,
             d.lastSent.commitmentFeerate,
             accept.firstPerCommitmentPoint,
-            d.lastSent.channelFlags, d.init.channelConfig, channelFeatures,
             wallet
           ))
           txBuilder ! InteractiveTxBuilder.Start(self, Nil)
@@ -470,10 +470,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
             d.localPushAmount, d.remotePushAmount,
-            d.commitments.localParams, d.commitments.remoteParams,
+            d.metaCommitments.params,
             d.commitments.localCommit.spec.commitTxFeerate,
             d.commitments.remoteCommit.remotePerCommitmentPoint,
-            d.commitments.channelFlags, d.commitments.channelConfig, d.commitments.channelFeatures,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, d.allFundingTxs)
           stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder)) sending TxAckRbf(d.channelId, fundingParams.localAmount)
@@ -504,10 +503,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             remoteNodeId, fundingParams, keyManager,
             d.localPushAmount, d.remotePushAmount,
-            d.commitments.localParams, d.commitments.remoteParams,
+            d.metaCommitments.params,
             d.commitments.localCommit.spec.commitTxFeerate,
             d.commitments.remoteCommit.remotePerCommitmentPoint,
-            d.commitments.channelFlags, d.commitments.channelConfig, d.commitments.channelFeatures,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, d.allFundingTxs)
           stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder))
