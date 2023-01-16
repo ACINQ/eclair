@@ -235,9 +235,9 @@ class Setup(val datadir: File,
       smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
       feeProvider = nodeParams.chainHash match {
         case Block.RegtestGenesisBlock.hash =>
-          new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
+          FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
+          FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
       _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(() => feeProvider.getFeerates.onComplete {
         case Success(feerates) =>

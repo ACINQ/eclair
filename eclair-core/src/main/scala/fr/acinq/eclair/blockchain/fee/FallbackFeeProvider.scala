@@ -27,7 +27,7 @@ import scala.concurrent.{ExecutionContext, Future}
  * @param providers         a sequence of providers; they will be tried one after the others until one of them succeeds
  * @param minFeeratePerByte a configurable minimum value for feerates
  */
-class FallbackFeeProvider(providers: Seq[FeeProvider], minFeeratePerByte: FeeratePerByte)(implicit ec: ExecutionContext) extends FeeProvider with Logging {
+case class FallbackFeeProvider(providers: Seq[FeeProvider], minFeeratePerByte: FeeratePerByte)(implicit ec: ExecutionContext) extends FeeProvider with Logging {
   require(providers.nonEmpty, "need at least one fee provider")
   require(minFeeratePerByte.feerate > 0.sat, "minimum fee rate must be strictly greater than 0")
 

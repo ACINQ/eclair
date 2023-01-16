@@ -21,7 +21,7 @@ import scala.concurrent.Future
 /**
   * Created by PM on 09/07/2017.
   */
-class ConstantFeeProvider(feerates: FeeratesPerKB) extends FeeProvider {
+case class ConstantFeeProvider(feerates: FeeratesPerKB) extends FeeProvider {
 
   override def getFeerates: Future[FeeratesPerKB] = Future.successful(feerates)
 

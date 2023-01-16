@@ -30,7 +30,13 @@ trait FeeEstimator {
   // @formatter:on
 }
 
-case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, commitmentWithoutHtlcsBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int, safeUtxosThreshold: Int)
+case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, commitmentWithoutHtlcsBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int, safeUtxosThreshold: Int) {
+  require(fundingBlockTarget > 0)
+  require(commitmentBlockTarget > 0)
+  require(commitmentWithoutHtlcsBlockTarget > 0)
+  require(mutualCloseBlockTarget > 0)
+  require(claimMainBlockTarget > 0)
+}
 
 /**
  * @param maxExposure              maximum exposure to pending dust htlcs we tolerate: we will automatically fail HTLCs when going above this threshold.

@@ -71,7 +71,7 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
   }
 
   test("ensure minimum feerate") {
-    val constantFeeProvider = new ConstantFeeProvider(FeeratesPerKB(FeeratePerKB(64000 sat), FeeratePerKB(32000 sat), FeeratePerKB(16000 sat), FeeratePerKB(8000 sat), FeeratePerKB(4000 sat), FeeratePerKB(2000 sat), FeeratePerKB(1500 sat), FeeratePerKB(1000 sat), FeeratePerKB(1000 sat)))
+    val constantFeeProvider = ConstantFeeProvider(FeeratesPerKB(FeeratePerKB(64000 sat), FeeratePerKB(32000 sat), FeeratePerKB(16000 sat), FeeratePerKB(8000 sat), FeeratePerKB(4000 sat), FeeratePerKB(2000 sat), FeeratePerKB(1500 sat), FeeratePerKB(1000 sat), FeeratePerKB(1000 sat)))
     val minFeeratePerByte = FeeratePerByte(2 sat)
     val minFeeratePerKB = FeeratePerKB(minFeeratePerByte)
     val fallbackFeeProvider = new FallbackFeeProvider(constantFeeProvider :: Nil, minFeeratePerByte)
