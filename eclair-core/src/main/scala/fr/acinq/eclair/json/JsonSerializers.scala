@@ -485,8 +485,10 @@ object OriginSerializer extends MinimalSerializer({
   })
 })
 
-// TODO: we only display current commitments
-object MetaCommitmentsSerializer extends ConvertClassSerializer[MetaCommitments](m => m.main)
+// @formatter:off
+case class CommitmentJson(fundingTx: InputInfo, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
+object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.commitInput, c.localFundingStatus, c.remoteFundingStatus, c.localCommit, c.remoteCommit, c.nextRemoteCommit_opt))
+// @formatter:on
 
 // @formatter:off
 private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
@@ -586,8 +588,8 @@ object CustomTypeHints {
 
   val remoteFundingStatuses: CustomTypeHints = CustomTypeHints(Map(
     classOf[RemoteFundingStatus.Unknown.type] -> "unknown",
-    classOf[RemoteFundingStatus.NotLocked.type ] -> "not-locked",
-    classOf[RemoteFundingStatus.Locked.type ] -> "locked",
+    classOf[RemoteFundingStatus.NotLocked.type] -> "not-locked",
+    classOf[RemoteFundingStatus.Locked.type] -> "locked",
   ), typeHintFieldName = "status")
 }
 
@@ -654,6 +656,6 @@ object JsonSerializers {
     OnionMessageReceivedSerializer +
     ShortIdsSerializer +
     FundingTxStatusSerializer +
-    MetaCommitmentsSerializer
+    CommitmentSerializer
 
 }
