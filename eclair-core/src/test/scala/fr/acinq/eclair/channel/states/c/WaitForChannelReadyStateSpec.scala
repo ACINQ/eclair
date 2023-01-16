@@ -101,7 +101,10 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(bobIds.real.isInstanceOf[RealScidStatus.Temporary])
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
+    val listener = TestProbe()
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelOpened])
     bob2alice.forward(alice)
+    listener.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
@@ -147,7 +150,10 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(bobIds.real == RealScidStatus.Unknown)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
+    val listener = TestProbe()
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelOpened])
     bob2alice.forward(alice)
+    listener.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)

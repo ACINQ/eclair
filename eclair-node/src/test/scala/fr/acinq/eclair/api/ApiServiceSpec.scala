@@ -33,7 +33,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.api.directives.{EclairDirectives, ErrorResponse}
 import fr.acinq.eclair.api.serde.JsonSupport
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelOpenResponse.ChannelOpened
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -276,7 +275,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpenResponse.ChannelOpened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002").toEntity) ~>
@@ -312,7 +311,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpenResponse.ChannelOpened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "standard").toEntity) ~>
@@ -332,7 +331,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpenResponse.ChannelOpened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "static_remotekey").toEntity) ~>
@@ -352,7 +351,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpenResponse.ChannelOpened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "anchor_outputs").toEntity) ~>
@@ -1165,10 +1164,16 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         wsClient.expectMessage(expectedSerializedPset)
 
         val chcr = ChannelCreated(system.deadLetters, system.deadLetters, bobNodeId, isInitiator = true, ByteVector32.One, FeeratePerKw(25 sat), Some(FeeratePerKw(20 sat)))
-        val expectedSerializedChcr = """{"type":"channel-opened","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","isInitiator":true,"temporaryChannelId":"0100000000000000000000000000000000000000000000000000000000000000","commitTxFeeratePerKw":25,"fundingTxFeeratePerKw":20}"""
+        val expectedSerializedChcr = """{"type":"channel-created","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","isInitiator":true,"temporaryChannelId":"0100000000000000000000000000000000000000000000000000000000000000","commitTxFeeratePerKw":25,"fundingTxFeeratePerKw":20}"""
         assert(serialization.write(chcr) == expectedSerializedChcr)
         system.eventStream.publish(chcr)
         wsClient.expectMessage(expectedSerializedChcr)
+
+        val chop = ChannelOpened(system.deadLetters, bobNodeId, ByteVector32.One)
+        val expectedSerializedChop = """{"type":"channel-opened","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","channelId":"0100000000000000000000000000000000000000000000000000000000000000"}"""
+        assert(serialization.write(chop) == expectedSerializedChop)
+        system.eventStream.publish(chop)
+        wsClient.expectMessage(expectedSerializedChop)
 
         val chsc = ChannelStateChanged(system.deadLetters, ByteVector32.One, system.deadLetters, bobNodeId, OFFLINE, NORMAL, null)
         val expectedSerializedChsc = """{"type":"channel-state-changed","channelId":"0100000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","previousState":"OFFLINE","currentState":"NORMAL"}"""

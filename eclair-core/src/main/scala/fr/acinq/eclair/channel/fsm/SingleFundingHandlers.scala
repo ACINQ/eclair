@@ -58,7 +58,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
    * When we are funder, we use this function to detect when our funding tx has been double-spent (by another transaction
    * that we made for some reason). If the funding tx has been double spent we can forget about the channel.
    */
-  def checkDoubleSpent(fundingTx: Transaction): Unit = {
+  private def checkDoubleSpent(fundingTx: Transaction): Unit = {
     log.debug(s"checking status of funding tx txid=${fundingTx.txid}")
     wallet.doubleSpent(fundingTx).onComplete {
       case Success(true) =>

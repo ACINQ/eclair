@@ -12,6 +12,8 @@
 - `sendtoroute` removes the `--trampolineNodes` argument and implicitly uses a single trampoline hop (#2480)
 - `payinvoice` always returns the payment result when used with `--blocking`, even when using MPP (#2525)
 - `node` returns high-level information about a remote node (#2568)
+- `channel-created` is a new websocket event that is published when a channel's funding transaction has been broadcast (#2567)
+- `channel-opened` websocket event was updated to contain the final `channel_id` and be published when a channel is ready to process payments (#2567)
 
 ### Miscellaneous improvements and bug fixes
 

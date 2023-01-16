@@ -60,6 +60,8 @@ trait CommonFundingHandlers extends CommonHandlers {
     val shortIds1 = shortIds.copy(remoteAlias_opt = channelReady.alias_opt)
     shortIds1.remoteAlias_opt.foreach(_ => context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds = shortIds1, remoteNodeId = remoteNodeId)))
     log.info("shortIds: real={} localAlias={} remoteAlias={}", shortIds1.real.toOption.getOrElse("none"), shortIds1.localAlias, shortIds1.remoteAlias_opt.getOrElse("none"))
+    // we notify that the channel is now ready to route payments
+    context.system.eventStream.publish(ChannelOpened(self, remoteNodeId, commitments.channelId))
     // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
     val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, shortIds1.localAlias)
     log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
