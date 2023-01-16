@@ -22,10 +22,10 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong, Sc
 import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchPublished}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, PartiallySignedSharedTransaction}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, PartiallySignedSharedTransaction}
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, CommitSig, Error, Init, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxInitRbf, TxSignatures, Warning}
@@ -220,13 +220,13 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     // Invalid serial_id.
     alice2bob.forward(bob, inputA.copy(serialId = UInt64(1)))
-    bob2alice.expectMsgType[Error]
+    bob2alice.expectMsgType[TxAbort]
     awaitCond(wallet.rolledback.length == 1)
     awaitCond(bob.stateName == CLOSED)
 
     // Below dust.
     bob2alice.forward(alice, TxAddOutput(channelId(bob), UInt64(1), 150 sat, Script.write(Script.pay2wpkh(randomKey().publicKey))))
-    alice2bob.expectMsgType[Error]
+    alice2bob.expectMsgType[TxAbort]
     awaitCond(wallet.rolledback.length == 2)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
@@ -253,13 +253,13 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
 
     bob2alice.forward(alice, bobCommitSig.copy(signature = ByteVector64.Zeroes))
-    alice2bob.expectMsgType[Error]
+    alice2bob.expectMsgType[TxAbort]
     awaitCond(wallet.rolledback.length == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
 
     alice2bob.forward(bob, aliceCommitSig.copy(signature = ByteVector64.Zeroes))
-    bob2alice.expectMsgType[Error]
+    bob2alice.expectMsgType[TxAbort]
     awaitCond(wallet.rolledback.length == 2)
     awaitCond(bob.stateName == CLOSED)
   }
@@ -289,7 +289,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     val bobSigs = bob2alice.expectMsgType[TxSignatures]
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
     bob2alice.forward(alice, bobSigs.copy(txHash = randomBytes32(), witnesses = Nil))
-    alice2bob.expectMsgType[Error]
+    alice2bob.expectMsgType[TxAbort]
     awaitCond(wallet.rolledback.size == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
@@ -306,10 +306,11 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     alice2bob.expectMsgType[TxAddInput]
     alice2bob.forward(bob, TxAbort(channelId(alice), hex"deadbeef"))
+    val bobTxAbort = bob2alice.expectMsgType[TxAbort]
     awaitCond(wallet.rolledback.size == 1)
     awaitCond(bob.stateName == CLOSED)
 
-    bob2alice.forward(alice, TxAbort(channelId(bob), hex"deadbeef"))
+    bob2alice.forward(alice, bobTxAbort)
     awaitCond(wallet.rolledback.size == 2)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
