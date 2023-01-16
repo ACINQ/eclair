@@ -201,6 +201,18 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       sender() ! d.excludedChannels
       stay()
 
+    case Event(GetNode(nodeId), d) =>
+      d.nodes.get(nodeId) match {
+        case Some(announcement) =>
+          // This only provides a lower bound on the number of channels this peer has: disabled channels will be filtered out.
+          val activeChannels = d.graphWithBalances.graph.getIncomingEdgesOf(nodeId)
+          val totalCapacity = activeChannels.map(_.capacity).sum
+          sender() ! PublicNode(announcement, activeChannels.size, totalCapacity)
+        case None =>
+          sender() ! UnknownNode(nodeId)
+      }
+      stay()
+
     case Event(GetNodes, d) =>
       sender() ! d.nodes.values
       stay()
@@ -639,12 +651,11 @@ object Router {
   /** This is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed) */
   case class ExcludeChannel(desc: ChannelDesc, duration_opt: Option[FiniteDuration])
   case class LiftChannelExclusion(desc: ChannelDesc)
+  case object GetExcludedChannels
 
   sealed trait ExcludedChannelStatus
   case object ExcludedForever extends ExcludedChannelStatus
   case class ExcludedUntil(liftExclusionAt: TimestampSecond, timer: Cancellable) extends ExcludedChannelStatus
-
-  case object GetExcludedChannels
   // @formatter:on
 
   // @formatter:off
@@ -658,6 +669,11 @@ object Router {
   case object GetChannels
   case object GetChannelsMap
   case object GetChannelUpdates
+
+  case class GetNode(nodeId: PublicKey)
+  sealed trait GetNodeResponse
+  case class PublicNode(announcement: NodeAnnouncement, activeChannels: Int, totalCapacity: Satoshi) extends GetNodeResponse
+  case class UnknownNode(nodeId: PublicKey) extends GetNodeResponse
   // @formatter:on
 
   // @formatter:off

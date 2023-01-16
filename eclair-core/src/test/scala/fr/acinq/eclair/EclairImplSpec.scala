@@ -150,6 +150,25 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assertThrows[IllegalArgumentException](Await.result(eclair.send(None, 123 msat, expiredInvoice), 50 millis))
   }
 
+  test("return node details") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val ann = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "ACINQ", Nil)
+    val remoteNode = Router.PublicNode(ann, 7, 561_000 sat)
+    eclair.node(ann.nodeId).pipeTo(sender.ref)
+    assert(router.expectMsgType[Router.GetNode].nodeId == ann.nodeId)
+    router.reply(remoteNode)
+    sender.expectMsg(Some(remoteNode))
+
+    val unknownNode = Router.UnknownNode(randomKey().publicKey)
+    eclair.node(unknownNode.nodeId).pipeTo(sender.ref)
+    assert(router.expectMsgType[Router.GetNode].nodeId == unknownNode.nodeId)
+    router.reply(unknownNode)
+    sender.expectMsg(None)
+  }
+
   test("return node announcements") { f =>
     import f._
 

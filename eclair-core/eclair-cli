@@ -56,6 +56,7 @@ and COMMAND is one of the available commands:
     - findroute
     - findroutetonode
     - findroutebetweennodes
+    - node
     - nodes
 
   === Invoice ===
