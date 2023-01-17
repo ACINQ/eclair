@@ -94,7 +94,7 @@
         "status" : "unknown"
       },
       "remoteFunding" : {
-        "status" : "unknown"
+        "status" : "locked"
       },
       "localCommit" : {
         "index" : 4,

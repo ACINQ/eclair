@@ -274,7 +274,7 @@ private[channel] object ChannelCodecs3 {
             ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
             ("commitInput" | inputInfoCodec.map(_ => ()).decodeOnly) ::
             ("fundingTxStatus" | provide(UnknownFundingTx).upcast[LocalFundingStatus]) ::
-            ("remoteFundingTxStatus" | provide(RemoteFundingStatus.Unknown).upcast[RemoteFundingStatus]) ::
+            ("remoteFundingTxStatus" | provide(RemoteFundingStatus.Locked).upcast[RemoteFundingStatus]) ::
             ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
         })).as[Commitments].decodeOnly
 
