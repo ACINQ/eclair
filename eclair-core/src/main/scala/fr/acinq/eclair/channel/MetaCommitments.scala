@@ -41,7 +41,7 @@ case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
   /**
    * When reconnecting, we drop all unsigned changes.
    */
-  def discardUnsignedUpdates(implicit log: LoggingAdapter): Common = {
+  def discardUnsignedUpdates()(implicit log: LoggingAdapter): Common = {
     log.debug("discarding proposed OUT: {}", localChanges.proposed.map(msg2String(_)).mkString(","))
     log.debug("discarding proposed IN: {}", remoteChanges.proposed.map(msg2String(_)).mkString(","))
     val common1 = copy(
@@ -49,8 +49,8 @@ case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
       remoteChanges = remoteChanges.copy(proposed = Nil),
       localNextHtlcId = localNextHtlcId - localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
       remoteNextHtlcId = remoteNextHtlcId - remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
-    log.debug(s"localNextHtlcId=${localNextHtlcId}->${common1.localNextHtlcId}")
-    log.debug(s"remoteNextHtlcId=${remoteNextHtlcId}->${common1.remoteNextHtlcId}")
+    log.debug(s"localNextHtlcId=$localNextHtlcId->${common1.localNextHtlcId}")
+    log.debug(s"remoteNextHtlcId=$remoteNextHtlcId->${common1.remoteNextHtlcId}")
     common1
   }
 }
@@ -64,8 +64,7 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
 }
 
 /**
- *
- * @param all                   all potentially valid commitments
+ * @param commitments           all potentially valid commitments
  * @param remoteChannelData_opt peer backup
  */
 case class MetaCommitments(params: Params,
@@ -156,7 +155,7 @@ case class MetaCommitments(params: Params,
         val tlv = AlternativeCommitSigsTlv(res.foldLeft(List.empty[AlternativeCommitSig]) {
           case (sigs, (commitments, commitSig)) => AlternativeCommitSig(commitments.fundingTxId, commitSig.signature, commitSig.htlcSignatures) +: sigs
         })
-        // we set all commit_sigs as tlv of the first commit_sig (the first sigs will we duplicated)
+        // we set all commit_sigs as tlv of the first commit_sig (the first sigs will be duplicated)
         val commitSig = res.head._2.modify(_.tlvStream.records).usingIf(tlv.commitSigs.size > 1)(tlv +: _.toList)
         val common = res.head._1.common
         val commitments = res.map(_._1.commitment)
@@ -187,8 +186,8 @@ case class MetaCommitments(params: Params,
       .map { case (common, commitments, actions) => (this.copy(common = common, commitments = commitments), actions) }
   }
 
-  def discardUnsignedUpdates(implicit log: LoggingAdapter): MetaCommitments = {
-    this.copy(common = common.discardUnsignedUpdates)
+  def discardUnsignedUpdates()(implicit log: LoggingAdapter): MetaCommitments = {
+    this.copy(common = common.discardUnsignedUpdates())
   }
 
   def localHasChanges: Boolean = main.localHasChanges

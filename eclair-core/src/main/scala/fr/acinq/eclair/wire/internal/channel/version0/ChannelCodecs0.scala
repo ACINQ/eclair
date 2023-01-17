@@ -372,8 +372,6 @@ private[channel] object ChannelCodecs0 {
         DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments1, waitingSince, deferred, lastSent)
     }.decodeOnly
 
-      .as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
-
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_08_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
         ("fundingTx_opt" | optional(bool, txCodec)) ::

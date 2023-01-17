@@ -265,7 +265,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               // in all other cases we need to be ready for any type of closing
               watchFundingTx(data.metaCommitments.main.commitment, closing.spendingTxs.map(_.txid).toSet)
               if (closing.metaCommitments.all.size > 1) {
-                // We wait watch all potential funding transactions
+                // If we have more than one commitment, some of them must be unconfirmed: we watch all of them to be
+                // able to prune obsolete ones.
                 closing.metaCommitments.all.foreach(c => blockchain ! WatchFundingConfirmed(self, c.fundingTxId, nodeParams.channelConf.minDepthBlocks))
               }
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isInitiator))
@@ -345,10 +346,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       d.metaCommitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
-        case Right((metaCommitments1, adds)) =>
+        case Right((metaCommitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1.main))
-          handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)) sending adds
+          handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }
 
@@ -1373,7 +1374,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           sendQueue = sendQueue ++ syncSuccess.retransmit
 
           // then we clean up unsigned updates
-          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates
+          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
 
           metaCommitments1.main.remoteNextCommitInfo match {
             case Left(_) =>
@@ -1442,7 +1443,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case syncFailure: SyncResult.Failure =>
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
-          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates
+          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
           val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ d.localShutdown
           // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
           goto(SHUTDOWN) using d.copy(metaCommitments = metaCommitments1) sending sendQueue

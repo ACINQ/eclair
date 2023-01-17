@@ -381,8 +381,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {
     case Event(txSigs: TxSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      d.metaCommitments.main.localFundingStatus match {
-        case DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction) => InteractiveTxBuilder.addRemoteSigs(d.fundingParams, fundingTx, txSigs) match {
+      d.metaCommitments.main.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx match {
+        case fundingTx: PartiallySignedSharedTransaction => InteractiveTxBuilder.addRemoteSigs(d.fundingParams, fundingTx, txSigs) match {
           case Left(cause) =>
             val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
             log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", txSigs.txId, unsignedFundingTx.txid, cause.getMessage)
@@ -391,11 +391,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
           case Right(fundingTx) =>
             log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
-            val metaCommitments1 = d.metaCommitments.modify(_.commitments.at(0).localFundingStatus).setTo(DualFundedUnconfirmedFundingTx(fundingTx))
-            val d1 = d.copy(metaCommitments = metaCommitments1)
+            val d1 = d.modify(_.metaCommitments.commitments.at(0).localFundingStatus).setTo(DualFundedUnconfirmedFundingTx(fundingTx))
             stay() using d1 storing() calling publishFundingTx(d.fundingParams, fundingTx)
         }
-        case DualFundedUnconfirmedFundingTx(_: FullySignedSharedTransaction) =>
+        case _: FullySignedSharedTransaction =>
           d.rbfStatus match {
             case RbfStatus.RbfInProgress(txBuilder) =>
               txBuilder ! InteractiveTxBuilder.ReceiveTxSigs(txSigs)
@@ -405,7 +404,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               log.debug("ignoring duplicate tx_signatures for txid={}", txSigs.txId)
               stay()
           }
-        case _ => ??? // impossible
       }
 
     case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
