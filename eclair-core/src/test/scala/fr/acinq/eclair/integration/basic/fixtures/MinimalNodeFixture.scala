@@ -23,7 +23,7 @@ import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
-import fr.acinq.eclair.payment.relay.{ChannelRelayer, Relayer}
+import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
@@ -95,6 +95,9 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val switchboard = system.actorOf(Switchboard.props(nodeParams, peerFactory), "switchboard")
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
+    val channels = nodeParams.db.channels.listLocalChannels()
+    switchboard ! Switchboard.Init(channels)
+    relayer ! PostRestartHtlcCleaner.Init(channels)
     readyListener.expectMsgAllOf(
       SubscriptionsComplete(classOf[Router]),
       SubscriptionsComplete(classOf[Register]),

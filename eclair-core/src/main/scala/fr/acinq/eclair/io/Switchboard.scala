@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
-import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, typed}
+import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
@@ -29,13 +29,13 @@ import fr.acinq.eclair.io.Peer.PeerInfoResponse
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.protocol.OnionMessage
-import fr.acinq.eclair.{SubscriptionsComplete, NodeParams}
+import fr.acinq.eclair.{NodeParams, SubscriptionsComplete}
 
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) extends Actor with Stash with ActorLogging {
 
   import Switchboard._
 
@@ -43,24 +43,25 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
   context.system.eventStream.subscribe(self, classOf[LastChannelClosed])
   context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
-  // we load channels from database
-  private def initialPeersWithChannels(): Set[PublicKey] = {
-    // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
-    // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
-    // Closed channels will be removed, other channels will be restored.
-    val (channels, closedChannels) = nodeParams.db.channels.listLocalChannels().partition(c => Closing.isClosed(c, None).isEmpty)
-    closedChannels.foreach(c => {
-      log.info(s"closing channel ${c.channelId}")
-      nodeParams.db.channels.removeChannel(c.channelId)
-    })
+  def receive: Receive = {
+    case init: Init =>
+      // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
+      // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
+      // Closed channels will be removed, other channels will be restored.
+      val (channels, closedChannels) = init.channels.partition(c => Closing.isClosed(c, None).isEmpty)
+      closedChannels.foreach(c => {
+        log.info(s"closing channel ${c.channelId}")
+        nodeParams.db.channels.removeChannel(c.channelId)
+      })
 
-    val peerChannels = channels.groupBy(_.metaCommitments.main.remoteParams.nodeId)
-    peerChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
-    log.info("restoring {} peer(s) with {} channel(s)", peerChannels.size, channels.size)
-    peerChannels.keySet
+      val peerChannels = channels.groupBy(_.metaCommitments.params.remoteParams.nodeId)
+      peerChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
+      log.info("restoring {} peer(s) with {} channel(s)", peerChannels.size, channels.size)
+      unstashAll()
+      context.become(normal(peerChannels.keySet))
+    case _ =>
+      stash()
   }
-
-  def receive: Receive = normal(initialPeersWithChannels())
 
   def normal(peersWithChannels: Set[PublicKey]): Receive = {
 
@@ -162,6 +163,8 @@ object Switchboard {
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   // @formatter:off
+  case class Init(channels: Seq[PersistentChannelData])
+
   case object GetPeers
   case class GetPeerInfo(replyTo: typed.ActorRef[PeerInfoResponse], remoteNodeId: PublicKey)
 
