@@ -1,7 +1,6 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
 
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel.LocalFundingStatus._
@@ -13,11 +12,10 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc,
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
-import fr.acinq.eclair.{Alias, BlockHeight, FeatureSupport, Features, PermanentChannelFeature}
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-import shapeless.{::, HNil}
 
 
 private[channel] object ChannelCodecs4 {
@@ -264,8 +262,7 @@ private[channel] object ChannelCodecs4 {
         })).as[Params]
 
     val waitForRevCodec: Codec[WaitForRev] = (
-      ("nextRemoteCommitIndex" | uint64overflow) ::
-        ("sent" | lengthDelimited(commitSigCodec)) ::
+      ("sent" | lengthDelimited(commitSigCodec)) ::
         ("sentAfterLocalCommitIndex" | uint64overflow)
       ).as[WaitForRev]
 

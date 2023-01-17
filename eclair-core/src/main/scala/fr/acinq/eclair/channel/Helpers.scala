@@ -489,7 +489,7 @@ object Helpers {
       // step 2: we check the remote commitment
       def checkRemoteCommit(remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
         common.remoteNextCommitInfo match {
-          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommitIndex =>
+          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == common.nextRemoteCommitIndex =>
             // we just sent a new commit_sig but they didn't receive it
             // we resend the same updates and the same sig, and preserve the same ordering
             val signedUpdates = common.localChanges.signed
@@ -502,16 +502,16 @@ object Helpers {
               case Some(revocation) =>
                 SyncResult.Success(retransmit = revocation +: signedUpdates :+ commitSig)
             }
-          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == (waitingForRevocation.nextRemoteCommitIndex + 1) =>
+          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == (common.nextRemoteCommitIndex + 1) =>
             // we just sent a new commit_sig, they have received it but we haven't received their revocation
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
-          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber < waitingForRevocation.nextRemoteCommitIndex =>
+          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber < common.nextRemoteCommitIndex =>
             // they are behind
             SyncResult.RemoteLate
           case Left(waitingForRevocation) =>
             // we are behind
             SyncResult.LocalLateUnproven(
-              ourRemoteCommitmentNumber = waitingForRevocation.nextRemoteCommitIndex,
+              ourRemoteCommitmentNumber = common.nextRemoteCommitIndex,
               theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
             )
           case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (common.remoteCommitIndex + 1) =>
@@ -1337,7 +1337,7 @@ object Helpers {
      * If a commitment tx reaches min_depth, we need to fail the outgoing htlcs that will never reach the blockchain.
      * It could be because only us had signed them, or because a revoked commitment got confirmed.
      */
-    def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction): Set[UpdateAddHtlc] = {
       val localCommit = d.commitments.localCommit
       val remoteCommit = d.commitments.remoteCommit
       val nextRemoteCommit_opt = d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
