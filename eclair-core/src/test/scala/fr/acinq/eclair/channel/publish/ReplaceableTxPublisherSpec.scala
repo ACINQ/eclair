@@ -290,23 +290,6 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  // TODO: this test doesn't work anymore because tweaking the commitInput invalidates sigs of the local commitment
-  ignore("funding tx not found, skipping anchor output") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
-      import f._
-
-      val (_, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
-      // We simulate an unconfirmed funding transaction that cannot be found in the mempool either.
-      // This may happen when using 0-conf channels if the funding transaction is evicted from the mempool for some reason.
-      val cmd = anchorTx.modify(_.commitments.localCommit.commitTxAndRemoteSig.commitTx.input).setTo(InputInfo(OutPoint(randomBytes32(), 1), TxOut(0 sat, Nil), Nil))
-      publisher ! Publish(probe.ref, cmd)
-      val result = probe.expectMsgType[TxRejected]
-      assert(result.cmd == cmd)
-      // We should keep retrying until the funding transaction is available.
-      assert(result.reason == TxSkipped(retryNextBlock = true))
-    }
-  }
-
   test("not enough funds to increase commit tx feerate") {
     withFixture(Seq(10.4 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
