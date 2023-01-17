@@ -284,6 +284,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val common = Common(
                 localChanges = LocalChanges(Nil, Nil, Nil), remoteChanges = RemoteChanges(Nil, Nil, Nil),
                 localNextHtlcId = 0L, remoteNextHtlcId = 0L,
+                localCommitIndex = 0L, remoteCommitIndex = 0L,
                 originChannels = Map.empty,
                 remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
                 remotePerCommitmentSecrets = ShaChain.init
@@ -335,6 +336,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val common = Common(
             localChanges = LocalChanges(Nil, Nil, Nil), remoteChanges = RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
+            localCommitIndex = 0L, remoteCommitIndex = 0L,
             originChannels = Map.empty,
             remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
             remotePerCommitmentSecrets = ShaChain.init

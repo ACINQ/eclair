@@ -29,11 +29,12 @@ case class Params(channelId: ByteVector32,
   )
 }
 
-case class WaitForRev(sent: CommitSig, sentAfterLocalCommitIndex: Long)
+case class WaitForRev(nextRemoteCommitIndex: Long, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 
 /** Dynamic values shared by all commitments, independently of the funding tx. */
 case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
                   localNextHtlcId: Long, remoteNextHtlcId: Long,
+                  localCommitIndex: Long, remoteCommitIndex: Long,
                   originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                   remoteNextCommitInfo: Either[WaitForRev, PublicKey], // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit_opt
                   remotePerCommitmentSecrets: ShaChain) {

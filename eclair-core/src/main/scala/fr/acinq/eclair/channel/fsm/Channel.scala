@@ -1353,7 +1353,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
-      Syncing.checkSync(keyManager, d, channelReestablish) match {
+      Syncing.checkSync(keyManager, d.metaCommitments.params, d.metaCommitments.common, channelReestablish) match {
         case syncFailure: SyncResult.Failure =>
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
@@ -1438,7 +1438,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) =>
-      Syncing.checkSync(keyManager, d, channelReestablish) match {
+      Syncing.checkSync(keyManager, d.metaCommitments.params, d.metaCommitments.common, channelReestablish) match {
         case syncFailure: SyncResult.Failure =>
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
