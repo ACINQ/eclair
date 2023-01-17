@@ -587,7 +587,6 @@ object CustomTypeHints {
   ), typeHintFieldName = "status")
 
   val remoteFundingStatuses: CustomTypeHints = CustomTypeHints(Map(
-    classOf[RemoteFundingStatus.Unknown.type] -> "unknown",
     classOf[RemoteFundingStatus.NotLocked.type] -> "not-locked",
     classOf[RemoteFundingStatus.Locked.type] -> "locked",
   ), typeHintFieldName = "status")

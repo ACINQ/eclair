@@ -426,7 +426,6 @@ object LocalFundingStatus {
 
 sealed trait RemoteFundingStatus
 object RemoteFundingStatus {
-  case object Unknown extends RemoteFundingStatus // backward compat
   case object NotLocked extends RemoteFundingStatus
   case object Locked extends RemoteFundingStatus
 }

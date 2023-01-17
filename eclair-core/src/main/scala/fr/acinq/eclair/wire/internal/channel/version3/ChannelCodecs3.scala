@@ -274,7 +274,7 @@ private[channel] object ChannelCodecs3 {
             ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
             ("commitInput" | inputInfoCodec.map(_ => ()).decodeOnly) ::
             ("fundingTxStatus" | provide(UnknownFundingTx).upcast[LocalFundingStatus]) ::
-            ("remoteFundingTxStatus" | provide(RemoteFundingStatus.Unknown).upcast[RemoteFundingStatus]) ::
+            ("remoteFundingTxStatus" | provide(RemoteFundingStatus.Locked).upcast[RemoteFundingStatus]) ::
             ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
         })).as[Commitments].decodeOnly
 
@@ -319,7 +319,6 @@ private[channel] object ChannelCodecs3 {
     val unconfirmedFundingTxCodec: Codec[UnconfirmedFundingTx] = fundingTxStatusCodec.downcast[UnconfirmedFundingTx].decodeOnly
 
     val remoteFundingStatusCodec: Codec[RemoteFundingStatus] = discriminated[RemoteFundingStatus].by(uint8)
-      .typecase(0x00, provide(RemoteFundingStatus.Unknown))
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))
       .typecase(0x02, provide(RemoteFundingStatus.Locked))
 
