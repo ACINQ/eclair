@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -37,7 +37,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
