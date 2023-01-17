@@ -83,7 +83,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(recv.finalPayload.replyPath_opt.nonEmpty)
-    bob.sendOnionMessage(Nil, Right(recv.finalPayload.replyPath_opt.get.blindedRoute), None, hex"1d01ab")
+    bob.sendOnionMessage(Nil, Right(recv.finalPayload.replyPath_opt.get), None, hex"1d01ab")
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
     assert(res.failureMessage.isEmpty)
