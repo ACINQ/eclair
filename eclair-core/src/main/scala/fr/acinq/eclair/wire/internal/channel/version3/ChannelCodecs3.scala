@@ -332,7 +332,6 @@ private[channel] object ChannelCodecs3 {
         })).as[Params]
 
     val waitForRevCodec: Codec[WaitForRev] = (
-      ("nextRemoteCommitIndex" | uint64overflow) ::
         ("sent" | lengthDelimited(commitSigCodec)) ::
         ("sentAfterLocalCommitIndex" | uint64overflow)
       ).as[WaitForRev]
