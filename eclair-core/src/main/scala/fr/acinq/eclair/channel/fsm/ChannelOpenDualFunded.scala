@@ -216,13 +216,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           )
           val params = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
-            remoteNodeId, fundingParams, keyManager,
+            remoteNodeId, nodeParams, fundingParams,
             accept.pushAmount, open.pushAmount,
             params,
             open.commitmentFeerate,
             open.firstPerCommitmentPoint,
-            wallet
-          ))
+            wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, Nil)
           goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, accept.pushAmount, open.pushAmount, txBuilder, None) sending accept
       }
@@ -279,13 +278,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           )
           val params = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, d.lastSent.channelFlags)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
-            remoteNodeId, fundingParams, keyManager,
+            remoteNodeId, nodeParams, fundingParams,
             d.lastSent.pushAmount, accept.pushAmount,
             params,
             d.lastSent.commitmentFeerate,
             accept.firstPerCommitmentPoint,
-            wallet
-          ))
+            wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, Nil)
           goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, d.lastSent.pushAmount, accept.pushAmount, txBuilder, None)
       }
@@ -391,7 +389,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
           case Right(fundingTx) =>
             log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
-            val d1 = d.modify(_.metaCommitments.commitments.at(0).localFundingStatus).setTo(DualFundedUnconfirmedFundingTx(fundingTx))
+            val d1 = d.modify(_.metaCommitments.commitments.at(0).localFundingStatus).setTo(DualFundedUnconfirmedFundingTx(fundingTx, nodeParams.currentBlockHeight))
             stay() using d1 storing() calling publishFundingTx(d.fundingParams, fundingTx)
         }
         case _: FullySignedSharedTransaction =>
@@ -466,7 +464,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.fundingParams.requireConfirmedInputs,
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
-            remoteNodeId, fundingParams, keyManager,
+            remoteNodeId, nodeParams, fundingParams,
             d.localPushAmount, d.remotePushAmount,
             d.metaCommitments.params,
             d.commitments.localCommit.spec.commitTxFeerate,
@@ -499,7 +497,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             d.fundingParams.requireConfirmedInputs,
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
-            remoteNodeId, fundingParams, keyManager,
+            remoteNodeId, nodeParams, fundingParams,
             d.localPushAmount, d.remotePushAmount,
             d.metaCommitments.params,
             d.commitments.localCommit.spec.commitTxFeerate,

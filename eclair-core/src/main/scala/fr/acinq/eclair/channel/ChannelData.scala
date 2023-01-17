@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, RealShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -416,7 +416,7 @@ object LocalFundingStatus {
   sealed trait UnconfirmedFundingTx extends LocalFundingStatus
   /** In single-funding, fundees only know the funding txid */
   case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx
-  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction) extends UnconfirmedFundingTx {
+  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight) extends UnconfirmedFundingTx {
     override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
   }
   case class ConfirmedFundingTx(tx: Transaction) extends LocalFundingStatus {
@@ -511,7 +511,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments: MetaCommi
                                                       rbfStatus: RbfStatus,
                                                       deferred: Option[ChannelReady]) extends PersistentChannelData {
   def mainFundingTx: SignedSharedTransaction = metaCommitments.main.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx
-  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.all.drop(1).map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
+  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.all.drop(1).map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx, _) => sharedTx }
   def allFundingTxs: Seq[SignedSharedTransaction] = mainFundingTx +: previousFundingTxs
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments: MetaCommitments,

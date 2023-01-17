@@ -242,9 +242,13 @@ private[channel] object ChannelCodecs4 {
       .typecase(0x01, partiallySignedSharedTransactionCodec)
       .typecase(0x02, fullySignedSharedTransactionCodec)
 
+    private val dualFundedUnconfirmedFundingTxCodec: Codec[DualFundedUnconfirmedFundingTx] = (
+      ("sharedTx" | signedSharedTransactionCodec) ::
+        ("createdAt" | blockHeight)).as[DualFundedUnconfirmedFundingTx]
+
     val fundingTxStatusCodec: Codec[LocalFundingStatus] = discriminated[LocalFundingStatus].by(uint8)
       .typecase(0x01, optional(bool8, txCodec).as[SingleFundedUnconfirmedFundingTx])
-      .typecase(0x02, signedSharedTransactionCodec.as[DualFundedUnconfirmedFundingTx])
+      .typecase(0x02, dualFundedUnconfirmedFundingTxCodec)
       .typecase(0x03, txCodec.as[ConfirmedFundingTx])
       .typecase(0x04, provide(UnknownFundingTx))
 

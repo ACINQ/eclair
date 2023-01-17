@@ -63,7 +63,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   def pruneCommitments(metaCommitments: MetaCommitments, fundingTx: Transaction): Option[MetaCommitments] = {
     // We can forget other funding attempts now that one of the funding txs is confirmed.
     val otherFundingTxs = metaCommitments.all
-      .map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx) => sharedTx }
+      .map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx, _) => sharedTx }
       .filter(_.txId != fundingTx.txid)
     rollbackDualFundingTxs(otherFundingTxs)
     // We find which funding transaction got confirmed.

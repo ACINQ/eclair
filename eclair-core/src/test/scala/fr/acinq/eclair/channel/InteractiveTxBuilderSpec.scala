@@ -80,16 +80,16 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val channelId = fundingParamsA.channelId
 
     def spawnTxBuilderAlice(fundingParams: InteractiveTxParams, commitFeerate: FeeratePerKw, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsA.nodeId,
-      fundingParams, nodeParamsA.channelKeyManager,
+      nodeParamsB.nodeId,
+      nodeParamsA, fundingParams,
       0 msat, 0 msat,
       Params(fundingParams.channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public),
       commitFeerate, firstPerCommitmentPointB,
       wallet))
 
     def spawnTxBuilderBob(fundingParams: InteractiveTxParams, commitFeerate: FeeratePerKw, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsB.nodeId,
-      fundingParams, nodeParamsB.channelKeyManager,
+      nodeParamsA.nodeId,
+      nodeParamsB, fundingParams,
       0 msat, 0 msat,
       Params(fundingParams.channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public),
       commitFeerate, firstPerCommitmentPointA,
