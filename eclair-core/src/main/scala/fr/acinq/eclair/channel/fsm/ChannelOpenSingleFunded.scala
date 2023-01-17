@@ -419,9 +419,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.fundingTx_opt match {
       case Some(_) => stay() // we are funder, we're still waiting for the funding tx to be confirmed
       case None if c.blockHeight - d.waitingSince > FUNDING_TIMEOUT_FUNDEE =>
-        log.warning(s"funding tx hasn't been published in ${
-          c.blockHeight - d.waitingSince
-        } blocks")
+        log.warning(s"funding tx hasn't been published in ${c.blockHeight - d.waitingSince} blocks")
         self ! BITCOIN_FUNDING_TIMEOUT
         stay()
       case None => stay() // let's wait longer
