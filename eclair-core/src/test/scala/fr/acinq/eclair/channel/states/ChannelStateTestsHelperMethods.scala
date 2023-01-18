@@ -25,10 +25,10 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.bitcoind.{OnchainAddressManager, OnchainAddressManagerSpec}
+import fr.acinq.eclair.blockchain.bitcoind.OnchainPubkeyRefresher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainAddressGenerator, OnChainWallet, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnchainPubkeyCache, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -100,7 +100,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
                           alice2relayer: TestProbe,
                           bob2relayer: TestProbe,
                           channelUpdateListener: TestProbe,
-                          wallet: OnChainWallet,
+                          wallet: OnChainWallet with OnchainPubkeyCache,
                           alicePeer: TestProbe,
                           bobPeer: TestProbe) {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
@@ -120,7 +120,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   system.registerOnTermination(TestKit.shutdownActorSystem(systemA))
   system.registerOnTermination(TestKit.shutdownActorSystem(systemB))
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet_opt: Option[OnChainWallet] = None, tags: Set[String] = Set.empty): SetupFixture = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet_opt: Option[OnChainWallet with OnchainPubkeyCache] = None, tags: Set[String] = Set.empty): SetupFixture = {
     val aliceOrigin = TestProbe()
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
@@ -500,12 +500,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
     localCommit.htlcTxsAndRemoteSigs.foreach(_.htlcTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull)))
     val probe = TestProbe()
-    systemA.eventStream.subscribe(probe.ref, classOf[OnchainAddressManager.Command])
+    systemA.eventStream.subscribe(probe.ref, classOf[OnchainPubkeyRefresher.Command])
 
     val commitTx = localCommit.commitTxAndRemoteSig.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
     eventually(assert(s.stateName == CLOSING))
-    probe.expectMsg(OnchainAddressManager.Renew)
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get

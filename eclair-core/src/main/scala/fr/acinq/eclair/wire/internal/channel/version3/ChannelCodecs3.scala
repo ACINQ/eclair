@@ -483,6 +483,8 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x01, txCodec.map(tx => SingleFundedUnconfirmedFundingTx(Some(tx))).decodeOnly)
       .typecase(0x02, (signedSharedTransactionCodec :: provide(BlockHeight(0))).as[DualFundedUnconfirmedFundingTx])
 
+    // codec used before localParams.upfrontShutdownScript was made optional
+    // commitments.localParams.upfrontShutdownScript_opt is always present for data serialized with this codec, and was used as the final script pubkey to send onchain funds to
     val DATA_CLOSING_0d_Codec: Codec[DATA_CLOSING] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
         ("fundingTx_opt" | optional(bool8, unconfirmedFundingTxCodec)) ::
@@ -499,7 +501,7 @@ private[channel] object ChannelCodecs3 {
         val metaCommitments1 = metaCommitments
           .modify(_.commitments.at(0).localFundingStatus).setTo(fundingTx_opt.getOrElse(UnknownFundingTx))
           .modify(_.commitments).using(_ ++ alternativeCommitments.map { case DualFundingTx(f, c) => c.commitment.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(f, BlockHeight(0))) })
-        DATA_CLOSING(metaCommitments1, waitingSince, metaCommitments1.params.localParams.upfrontShutdownScript_opt.get, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+        DATA_CLOSING(metaCommitments1, waitingSince, metaCommitments.params.localParams.upfrontShutdownScript_opt.get, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
     val DATA_CLOSING_0e_Codec: Codec[DATA_CLOSING] = (

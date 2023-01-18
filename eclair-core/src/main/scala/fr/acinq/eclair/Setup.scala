@@ -23,13 +23,13 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Satoshi, Script}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.{OnchainAddressManager, ZmqWatcher}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
+import fr.acinq.eclair.blockchain.bitcoind.{OnchainPubkeyRefresher, ZmqWatcher}
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.channel.fsm.Channel
@@ -46,7 +46,6 @@ import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.protocol.NodeAddress
-import fr.acinq.secp256k1.Secp256k1
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
@@ -140,8 +139,7 @@ class Setup(val datadir: File,
     // @formatter:on
   }
 
-  val finalPubkey = new AtomicReference[PublicKey](PublicKey(ByteVector.fromValidHex("0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8")))
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, finalPubkey, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
@@ -195,7 +193,6 @@ class Setup(val datadir: File,
         case "signet" => bitcoinClient.invoke("getrawtransaction", "ff1027486b628b2d160859205a3401fb2ee379b43527153b0b50a92c17ee7955") // coinbase of #5000
         case "regtest" => Future.successful(())
       }
-      finalPubkey <- bitcoinClient.invoke("getnewaddress").map(_.extract[String])
     } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
     // blocking sanity checks
     val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
@@ -266,7 +263,19 @@ class Setup(val datadir: File,
       })
       _ <- feeratesRetrieved.future
 
-      bitcoinClient = new BitcoinCoreClient(bitcoin)
+      finalPubkey = new AtomicReference[PublicKey](null)
+      pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
+      bitcoinClient = new BitcoinCoreClient(bitcoin) with OnchainPubkeyCache {
+        val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
+
+        override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
+          val key = finalPubkey.get()
+          if (renew) refresher ! OnchainPubkeyRefresher.Renew
+          key
+        }
+      }
+      initialPubkey <- bitcoinClient.getP2wpkhPubkey()
+      _ = finalPubkey.set(initialPubkey)
 
       // If we started funding a transaction and restarted before signing it, we may have utxos that stay locked forever.
       // We want to do something about it: we can unlock them automatically, or let the node operator decide what to do.
@@ -363,9 +372,6 @@ class Setup(val datadir: File,
       balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
       postman = system.spawn(Behaviors.supervise(Postman(switchboard.toTyped)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
-      pubkey <- bitcoinClient.getP2wpkhPubkey()
-      _ = finalPubkey.set(pubkey)
-      _ = system.spawn(Behaviors.supervise(OnchainAddressManager(bitcoinClient, finalPubkey, 15 seconds)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
       kit = Kit(
         nodeParams = nodeParams,
@@ -449,7 +455,7 @@ case class Kit(nodeParams: NodeParams,
                channelsListener: typed.ActorRef[ChannelsListener.Command],
                balanceActor: typed.ActorRef[BalanceActor.Command],
                postman: typed.ActorRef[Postman.Command],
-               wallet: OnChainWallet)
+               wallet: OnChainWallet with OnchainPubkeyCache)
 
 object Kit {
 

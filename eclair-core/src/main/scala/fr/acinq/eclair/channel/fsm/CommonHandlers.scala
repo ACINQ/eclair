@@ -17,11 +17,12 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.{FSM, Status}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Script}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.{HtlcSettlementMessage, LightningMessage, UpdateMessage}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
 
@@ -109,6 +110,22 @@ trait CommonHandlers {
       state
     }
 
+  }
+
+  /** We don't regenerate the final address if we already have one. */
+  def getOrGenerateFinalScriptPubKey(data: PersistentChannelData): ByteVector = data match {
+    case d: DATA_NORMAL if d.localShutdown.isDefined => d.localShutdown.get.scriptPubKey
+    case d: DATA_SHUTDOWN => d.localShutdown.scriptPubKey
+    case d: DATA_NEGOTIATING => d.localShutdown.scriptPubKey
+    case d: DATA_CLOSING => d.finalScriptPubKey
+    case d => d.commitments.localParams.upfrontShutdownScript_opt.getOrElse(generateFinalScriptPubKey())
+  }
+
+  private def generateFinalScriptPubKey(): ByteVector = {
+    val finalPubKey = wallet.getP2wpkhPubkey()
+    val finalScriptPubKey = Script.write(Script.pay2wpkh(finalPubKey))
+    log.info(s"requested finalScriptPubkey=$finalScriptPubKey")
+    finalScriptPubKey
   }
 
 }

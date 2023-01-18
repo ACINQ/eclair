@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Satoshi, Script}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.ChannelFlags
@@ -45,7 +45,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
@@ -56,7 +56,6 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
-                      private val finalPubkey: AtomicReference[PublicKey],
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -95,10 +94,6 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
-
-  def currentFinalPubkey: PublicKey = finalPubkey.get()
-
-  def currentFinalScriptPubKey: ByteVector = Script.write(Script.pay2wpkh(currentFinalPubkey))
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
@@ -209,7 +204,7 @@ object NodeParams extends Logging {
   }
 
   def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
-                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator, finalPubkey: AtomicReference[PublicKey],
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator,
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
@@ -450,7 +445,6 @@ object NodeParams extends Logging {
       channelKeyManager = channelKeyManager,
       instanceId = instanceId,
       blockHeight = blockHeight,
-      finalPubkey = finalPubkey,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
@@ -560,6 +554,7 @@ object NodeParams extends Logging {
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval)
+      purgeInvoicesInterval = purgeInvoicesInterval
+    )
   }
 }

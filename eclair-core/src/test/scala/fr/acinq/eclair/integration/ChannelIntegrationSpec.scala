@@ -21,9 +21,9 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, SatoshiLong, Script, Transaction}
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, ScriptFlags}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, computeBIP84Address}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel._
@@ -39,7 +39,6 @@ import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
-import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -62,19 +61,6 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
       sender.send(nodes("A").router, Router.GetChannelUpdates)
       sender.expectMsgType[Iterable[ChannelUpdate]].size == 2 * channels
     }, max = 60 seconds, interval = 1 second)
-  }
-
-  /**
-   * We currently use p2pkh script Helpers.getFinalScriptPubKey
-   */
-  def scriptPubKeyToAddress(scriptPubKey: ByteVector): String = Script.parse(scriptPubKey) match {
-    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
-      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash.toArray)
-    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
-      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash.toArray)
-    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash.toArray)
-    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash.toArray)
-    case _ => ???
   }
 
   def listReceivedByAddress(address: String, sender: TestProbe = TestProbe()): Seq[ByteVector32] = {
@@ -166,11 +152,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataC.commitments.commitmentFormat == commitmentFormat)
-    val finalAddressC = scriptPubKeyToAddress(nodes("C").nodeParams.currentFinalScriptPubKey)
+    val finalAddressC = computeBIP84Address(nodes("C").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataF.commitments.commitmentFormat == commitmentFormat)
-    val finalAddressF = scriptPubKeyToAddress(nodes("F").nodeParams.currentFinalScriptPubKey)
+    val finalAddressF = computeBIP84Address(nodes("F").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     ForceCloseFixture(sender, paymentSender, stateListenerC, stateListenerF, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
 
@@ -440,7 +426,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we retrieve C's default final address
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], commitmentsF.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
-    val finalAddressC = scriptPubKeyToAddress(nodes("C").nodeParams.currentFinalScriptPubKey)
+    val finalAddressC = computeBIP84Address(nodes("C").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
     val channelKeyPathF = keyManagerF.keyPath(commitmentsF.localParams, commitmentsF.channelConfig)
@@ -574,12 +560,11 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     // close that wumbo channel
     sender.send(funder.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val commitmentsC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments
-    val finalPubKeyScriptC = commitmentsC.localParams.upfrontShutdownScript_opt.getOrElse(nodes("C").nodeParams.currentFinalScriptPubKey)
     val fundingOutpoint = commitmentsC.commitInput.outPoint
-    sender.send(fundee.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
-    val finalPubKeyScriptF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.upfrontShutdownScript_opt.getOrElse(nodes("F").nodeParams.currentFinalScriptPubKey)
+    val finalPubKeyScriptC = Script.write(Script.pay2wpkh(nodes("C").wallet.getP2wpkhPubkey(false)))
+    val finalPubKeyScriptF = Script.write(Script.pay2wpkh(nodes("F").wallet.getP2wpkhPubkey(false)))
 
-    fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, Some(finalPubKeyScriptF), None))
+    fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, None, None))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // we then wait for C and F to negotiate the closing fee
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)

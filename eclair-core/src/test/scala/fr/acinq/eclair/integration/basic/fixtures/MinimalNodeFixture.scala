@@ -71,7 +71,6 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       database = TestDatabases.inMemoryDb(),
       blockHeight = new AtomicLong(400_000),
       feeEstimator = new TestFeeEstimator(FeeratePerKw(253 sat)),
-      finalPubkey = new AtomicReference[PublicKey](PrivateKey(seed).publicKey)
     ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)

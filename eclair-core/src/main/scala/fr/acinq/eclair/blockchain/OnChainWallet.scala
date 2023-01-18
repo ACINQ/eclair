@@ -89,6 +89,10 @@ trait OnChainAddressGenerator {
 
 }
 
+trait OnchainPubkeyCache {
+    def getP2wpkhPubkey(renew: Boolean = true): PublicKey
+}
+
 /** This trait lets users check the wallet's on-chain balance. */
 trait OnChainBalanceChecker {
 

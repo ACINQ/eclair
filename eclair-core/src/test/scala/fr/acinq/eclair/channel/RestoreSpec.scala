@@ -2,7 +2,6 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin
