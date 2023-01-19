@@ -37,7 +37,6 @@ class DummyOnChainWallet extends OnChainWallet {
 
   val funded = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
   val published = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
-  var rolledback = Set.empty[Transaction]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -65,14 +64,13 @@ class DummyOnChainWallet extends OnChainWallet {
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).map(_ => true)
 
+  override def lockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+
+  override def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+
   override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("transaction not found"))
 
   override def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.failed(new RuntimeException("transaction not found"))
-
-  override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
-    rolledback = rolledback + tx
-    Future.successful(true)
-  }
 
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
 
@@ -82,7 +80,6 @@ class NoOpOnChainWallet extends OnChainWallet {
 
   import DummyOnChainWallet._
 
-  var rolledback = Seq.empty[Transaction]
   var doubleSpent = Set.empty[ByteVector32]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
@@ -101,14 +98,13 @@ class NoOpOnChainWallet extends OnChainWallet {
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
+  override def lockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+
+  override def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+
   override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Promise().future // will never be completed
 
   override def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Promise().future // will never be completed
-
-  override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
-    rolledback = rolledback :+ tx
-    Future.successful(true)
-  }
 
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 
@@ -119,7 +115,6 @@ class SingleKeyOnChainWallet extends OnChainWallet {
   val pubkey = privkey.publicKey
   // We create a new dummy input transaction for every funding request.
   var inputs = Seq.empty[Transaction]
-  var rolledback = Seq.empty[Transaction]
   var doubleSpent = Set.empty[ByteVector32]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
@@ -173,6 +168,10 @@ class SingleKeyOnChainWallet extends OnChainWallet {
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
+  override def lockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+
+  override def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+
   override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = synchronized {
     inputs.find(_.txid == txId) match {
       case Some(tx) => Future.successful(tx)
@@ -181,11 +180,6 @@ class SingleKeyOnChainWallet extends OnChainWallet {
   }
 
   override def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(None)
-
-  override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
-    rolledback = rolledback :+ tx
-    Future.successful(true)
-  }
 
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 }

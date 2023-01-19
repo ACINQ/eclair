@@ -417,7 +417,6 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock))
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
-    awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -431,7 +430,6 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock))
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
-    awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
     awaitCond(alice.stateName == CLOSED)
   }
 

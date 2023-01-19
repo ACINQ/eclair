@@ -263,38 +263,14 @@ class Setup(val datadir: File,
 
       bitcoinClient = new BitcoinCoreClient(bitcoin)
 
-      // If we started funding a transaction and restarted before signing it, we may have utxos that stay locked forever.
-      // We want to do something about it: we can unlock them automatically, or let the node operator decide what to do.
-      //
-      // The only drawback that this may have is if we have funded and signed a funding transaction but didn't publish
-      // it and we accidentally double-spend it after a restart. This shouldn't be an issue because:
-      //  - locks are automatically removed when the transaction is published anyway
-      //  - funding transactions are republished at startup if they aren't in the blockchain or in the mempool
-      //  - funding transactions detect when they are double-spent and abort the channel creation
-      //  - the only case where double-spending a funding transaction causes a loss of funds is when we accept a 0-conf
-      //    channel and our peer double-spends it, but we should never accept 0-conf channels from peers we don't trust
-      lockedUtxosBehavior = config.getString("bitcoind.startup-locked-utxos-behavior").toLowerCase
-      _ <- bitcoinClient.listLockedOutpoints().flatMap { lockedOutpoints =>
-        if (lockedOutpoints.isEmpty) {
-          Future.successful(true)
-        } else if (lockedUtxosBehavior == "unlock") {
-          logger.info(s"unlocking utxos: ${lockedOutpoints.map(o => s"${o.txid}:${o.index}").mkString(", ")}")
-          bitcoinClient.unlockOutpoints(lockedOutpoints.toSeq)
-        } else if (lockedUtxosBehavior == "stop") {
-          logger.warn(s"cannot start eclair with locked utxos: ${lockedOutpoints.map(o => s"${o.txid}:${o.index}").mkString(", ")}")
-          NotificationsLogger.logFatalError(
-            """aborting startup as configured strategy for locked utxos
-              |
-              |If you want eclair to automatically unlock utxos at startup, set 'eclair.bitcoind.startup-locked-utxos-behavior = "unlock"' in your eclair.conf and restart.
-              |If you want to start eclair without unlocking those utxos, set 'eclair.bitcoind.startup-locked-utxos-behavior = "ignore"' in your eclair.conf and restart.
-              |
-              |Otherwise, run the following command to unlock them and restart eclair: 'bitcoin-cli lockunspent true'
-              |""".stripMargin, new RuntimeException("cannot start with locked utxos"))
-          throw new RuntimeException("cannot start with locked utxos: see notifications.log for detailed instructions to fix it")
-        } else {
-          logger.warn(s"ignoring locked utxos: ${lockedOutpoints.map(o => s"${o.txid}:${o.index}").mkString(", ")}")
-          Future.successful(true)
-        }
+      // If eclair stopped at the wrong time, we may have locked utxos and not unlocked them, which freezes some
+      // liquidity that could otherwise be useful. We warn the node operator when that happens.
+      _ <- bitcoinClient.listLockedOutpoints().map {
+        case lockedOutpoints if lockedOutpoints.nonEmpty =>
+          val message = s"some utxos are locked in the bitcoind wallet (${lockedOutpoints.map(o => s"${o.txid}:${o.index}").mkString(", ")}): if that is not intentional, run the following command to unlock them: 'bitcoin-cli lockunspent true'"
+          system.eventStream.publish(NotificationsLogger.NotifyNodeOperator(NotificationsLogger.Warning, message))
+          logger.warn(message)
+        case _ => // nothing to do
       }
 
       watcher = {

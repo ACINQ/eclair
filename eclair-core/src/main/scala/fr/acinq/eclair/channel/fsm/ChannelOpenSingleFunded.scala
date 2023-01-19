@@ -328,8 +328,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, params.remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
-          // we rollback the funding tx, it will never be published
-          wallet.rollback(fundingTx)
           channelOpenReplyToUser(Left(LocalError(cause)))
           handleLocalError(InvalidCommitmentSignature(d.channelId, signedLocalCommitTx.tx.txid), d, Some(msg))
         case Success(_) =>
@@ -365,26 +363,18 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
-      // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
       channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
       handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
-      // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
       channelOpenReplyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
-      // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
-      // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
   })

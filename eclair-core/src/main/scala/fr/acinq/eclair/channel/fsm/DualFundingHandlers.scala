@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
+import fr.acinq.bitcoin.scalacompat.Transaction
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
@@ -61,11 +61,6 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   }
 
   def pruneCommitments(metaCommitments: MetaCommitments, fundingTx: Transaction): Option[MetaCommitments] = {
-    // We can forget other funding attempts now that one of the funding txs is confirmed.
-    val otherFundingTxs = metaCommitments.all
-      .map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx, _) => sharedTx }
-      .filter(_.txId != fundingTx.txid)
-    rollbackDualFundingTxs(otherFundingTxs)
     // We find which funding transaction got confirmed.
     metaCommitments.all.find(_.fundingTxId == fundingTx.txid) match {
       case Some(commitments) =>
@@ -151,25 +146,12 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     val fundingTxIds = d.metaCommitments.all.map(_.fundingTxId).toSet
     if (fundingTxIds.subsetOf(e.fundingTxIds)) {
       log.warning("{} funding attempts have been double-spent, forgetting channel", fundingTxIds.size)
-      d.allFundingTxs.map(_.tx.buildUnsignedTx()).foreach(tx => wallet.rollback(tx))
       channelOpenReplyToUser(Left(LocalError(FundingTxDoubleSpent(d.channelId))))
       goto(CLOSED) sending Error(d.channelId, FundingTxDoubleSpent(d.channelId).getMessage)
     } else {
       // Not all funding attempts have been double-spent, the channel may still confirm.
       // For example, we may have published an RBF attempt while we were checking if funding attempts were double-spent.
       stay()
-    }
-  }
-
-  /**
-   * In most cases we don't need to explicitly rollback funding transactions, as the locks are automatically removed by
-   * bitcoind when transactions are published. But if we couldn't publish those transactions (e.g. because our peer
-   * never sent us their signatures, or the transaction wasn't accepted in our mempool), their inputs may still be locked.
-   */
-  def rollbackDualFundingTxs(txs: Seq[SignedSharedTransaction]): Unit = {
-    val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(toOutPoint(i), Nil, 0))
-    if (inputs.nonEmpty) {
-      wallet.rollback(Transaction(2, inputs, Nil, 0))
     }
   }
 

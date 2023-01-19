@@ -24,7 +24,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -464,7 +463,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.main.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
-        case Left(waitForRevocation) =>
+        case Left(_) =>
           log.debug("already in the process of signing, will sign again as soon as possible")
           stay()
       }
@@ -823,7 +822,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.main.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
-        case Left(waitForRevocation) =>
+        case Left(_) =>
           log.debug("already in the process of signing, will sign again as soon as possible")
           stay()
       }
@@ -1245,12 +1244,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       }
       log.info("shutting down")
       stop(FSM.Normal)
-
-    case Event(MakeFundingTxResponse(fundingTx, _, _), _) =>
-      // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
-      // in that case we rollback the tx
-      wallet.rollback(fundingTx)
-      stay()
 
     case Event(INPUT_DISCONNECTED, _) => stay() // we are disconnected, but it doesn't matter anymore
   })

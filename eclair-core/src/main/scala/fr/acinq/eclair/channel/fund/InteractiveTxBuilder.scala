@@ -88,7 +88,6 @@ object InteractiveTxBuilder {
   private case object ValidateSharedTx extends Command
   private case class SignTransactionResult(signedTx: PartiallySignedSharedTransaction, remoteSigs_opt: Option[TxSignatures]) extends Command
   private case class WalletFailure(t: Throwable) extends Command
-  private case object UtxosUnlocked extends Command
 
   sealed trait Response
   case class SendMessage(msg: LightningMessage) extends Response
@@ -350,26 +349,26 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case ReceiveTxMessage(msg) => msg match {
         case msg: HasSerialId if msg.serialId.toByteVector.bits.last != fundingParams.isInitiator =>
           replyTo ! RemoteFailure(InvalidSerialId(fundingParams.channelId, msg.serialId))
-          unlockAndStop(session)
+          Behaviors.stopped
         case addInput: TxAddInput =>
           if (session.inputsReceivedCount + 1 >= MAX_INPUTS_OUTPUTS_RECEIVED) {
             replyTo ! RemoteFailure(TooManyInteractiveTxRounds(fundingParams.channelId))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else if (session.remoteInputs.exists(_.serialId == addInput.serialId)) {
             replyTo ! RemoteFailure(DuplicateSerialId(fundingParams.channelId, addInput.serialId))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else if (addInput.previousTx.txOut.length <= addInput.previousTxOutput) {
             replyTo ! RemoteFailure(InputOutOfBounds(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else if (session.localInputs.exists(i => toOutPoint(i) == toOutPoint(addInput)) || session.remoteInputs.exists(i => toOutPoint(i) == toOutPoint(addInput))) {
             replyTo ! RemoteFailure(DuplicateInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else if (addInput.sequence > 0xfffffffdL) {
             replyTo ! RemoteFailure(NonReplaceableInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput, addInput.sequence))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else if (!Script.isNativeWitnessScript(addInput.previousTx.txOut(addInput.previousTxOutput.toInt).publicKeyScript)) {
             replyTo ! RemoteFailure(NonSegwitInput(fundingParams.channelId, addInput.serialId, addInput.previousTx.txid, addInput.previousTxOutput))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else {
             val next = session.copy(
               remoteInputs = session.remoteInputs :+ addInput,
@@ -381,13 +380,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case addOutput: TxAddOutput =>
           if (session.outputsReceivedCount + 1 >= MAX_INPUTS_OUTPUTS_RECEIVED) {
             replyTo ! RemoteFailure(TooManyInteractiveTxRounds(fundingParams.channelId))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else if (session.remoteOutputs.exists(_.serialId == addOutput.serialId)) {
             replyTo ! RemoteFailure(DuplicateSerialId(fundingParams.channelId, addOutput.serialId))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else if (addOutput.amount < fundingParams.dustLimit) {
             replyTo ! RemoteFailure(OutputBelowDust(fundingParams.channelId, addOutput.serialId, addOutput.amount, fundingParams.dustLimit))
-            unlockAndStop(session)
+            Behaviors.stopped
           } else {
             val next = session.copy(
               remoteOutputs = session.remoteOutputs :+ addOutput,
@@ -406,7 +405,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
               send(next)
             case None =>
               replyTo ! RemoteFailure(UnknownSerialId(fundingParams.channelId, removeInput.serialId))
-              unlockAndStop(session)
+              Behaviors.stopped
           }
         case removeOutput: TxRemoveOutput =>
           session.remoteOutputs.find(_.serialId == removeOutput.serialId) match {
@@ -418,7 +417,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
               send(next)
             case None =>
               replyTo ! RemoteFailure(UnknownSerialId(fundingParams.channelId, removeOutput.serialId))
-              unlockAndStop(session)
+              Behaviors.stopped
           }
         case _: TxComplete =>
           val next = session.copy(txCompleteReceived = true)
@@ -430,12 +429,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       }
       case _: ReceiveCommitSig =>
         replyTo ! RemoteFailure(UnexpectedCommitSig(fundingParams.channelId))
-        unlockAndStop(session)
+        Behaviors.stopped
       case _: ReceiveTxSigs =>
         replyTo ! RemoteFailure(UnexpectedFundingSignatures(fundingParams.channelId))
-        unlockAndStop(session)
+        Behaviors.stopped
       case Abort =>
-        unlockAndStop(session)
+        Behaviors.stopped
     }
   }
 
@@ -454,24 +453,24 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case ValidateSharedTx => validateTx(session) match {
         case Left(cause) =>
           replyTo ! RemoteFailure(cause)
-          unlockAndStop(session)
+          Behaviors.stopped
         case Right((completeTx, fundingOutputIndex)) =>
           stash.unstashAll(signCommitTx(completeTx, fundingOutputIndex))
       }
       case _: WalletFailure =>
         replyTo ! RemoteFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
-        unlockAndStop(session)
+        Behaviors.stopped
       case msg: ReceiveCommitSig =>
         stash.stash(msg)
         Behaviors.same
       case ReceiveTxSigs(_) =>
         replyTo ! RemoteFailure(UnexpectedFundingSignatures(fundingParams.channelId))
-        unlockAndStop(session)
+        Behaviors.stopped
       case ReceiveTxMessage(msg) =>
         replyTo ! RemoteFailure(UnexpectedInteractiveTxMessage(fundingParams.channelId, msg))
-        unlockAndStop(session)
+        Behaviors.stopped
       case Abort =>
-        unlockAndStop(session)
+        Behaviors.stopped
     }
   }
 
@@ -570,7 +569,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       commitTxFeerate, fundingTx.hash, fundingOutputIndex, remoteFirstPerCommitmentPoint, commitmentIndex = 0) match {
       case Left(cause) =>
         replyTo ! RemoteFailure(cause)
-        unlockAndStop(completeTx)
+        Behaviors.stopped
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
         val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath)
@@ -584,7 +583,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             Transactions.checkSpendable(signedLocalCommitTx) match {
               case Failure(_) =>
                 replyTo ! RemoteFailure(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid))
-                unlockAndStop(completeTx)
+                Behaviors.stopped
               case Success(_) =>
                 val common = Common(
                   localChanges = LocalChanges(Nil, Nil, Nil), remoteChanges = RemoteChanges(Nil, Nil, Nil),
@@ -606,12 +605,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             }
           case ReceiveTxSigs(_) =>
             replyTo ! RemoteFailure(UnexpectedFundingSignatures(fundingParams.channelId))
-            unlockAndStop(completeTx)
+            Behaviors.stopped
           case ReceiveTxMessage(msg) =>
             replyTo ! RemoteFailure(UnexpectedInteractiveTxMessage(fundingParams.channelId, msg))
-            unlockAndStop(completeTx)
+            Behaviors.stopped
           case Abort =>
-            unlockAndStop(completeTx)
+            Behaviors.stopped
         }
     }
   }
@@ -636,7 +635,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         addRemoteSigs(fundingParams, signedTx, remoteSigs) match {
           case Left(cause) =>
             replyTo ! RemoteFailure(cause)
-            unlockAndStop(completeTx)
+            Behaviors.stopped
           case Right(fullySignedTx) =>
             log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
             replyTo ! Succeeded(fundingParams, fullySignedTx, commitments.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(fullySignedTx, nodeParams.currentBlockHeight)))
@@ -664,15 +663,15 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         log.error("could not sign funding transaction: ", t)
         // We use a generic exception and don't send the internal error to the peer.
         replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
-        unlockAndStop(completeTx)
+        Behaviors.stopped
       case ReceiveCommitSig(_) =>
         replyTo ! RemoteFailure(UnexpectedCommitSig(fundingParams.channelId))
-        unlockAndStop(completeTx)
+        Behaviors.stopped
       case ReceiveTxMessage(msg) =>
         replyTo ! RemoteFailure(UnexpectedInteractiveTxMessage(fundingParams.channelId, msg))
-        unlockAndStop(completeTx)
+        Behaviors.stopped
       case Abort =>
-        unlockAndStop(completeTx)
+        Behaviors.stopped
     }
   }
 
@@ -690,36 +689,6 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case Failure(t) => WalletFailure(t)
         case Success(signedTx) => SignTransactionResult(signedTx, remoteSigs_opt)
       }
-    }
-  }
-
-  private def unlockAndStop(session: InteractiveTxSession): Behavior[Command] = {
-    val localInputs = session.localInputs ++ session.toSend.collect { case Left(addInput) => addInput }
-    unlockAndStop(localInputs.map(toOutPoint).toSet)
-  }
-
-  private def unlockAndStop(tx: SharedTransaction): Behavior[Command] = {
-    val localInputs = tx.localInputs.map(toOutPoint).toSet
-    unlockAndStop(localInputs)
-  }
-
-  private def unlockAndStop(txInputs: Set[OutPoint]): Behavior[Command] = {
-    // We don't unlock previous inputs as the corresponding funding transaction may confirm.
-    val previousInputs = previousTransactions.flatMap(_.tx.localInputs.map(toOutPoint)).toSet
-    val toUnlock = txInputs -- previousInputs
-    log.debug("unlocking inputs: {}", toUnlock.map(o => s"${o.txid}:${o.index}").mkString(","))
-    context.pipeToSelf(unlock(toUnlock))(_ => UtxosUnlocked)
-    Behaviors.receiveMessagePartial {
-      case UtxosUnlocked => Behaviors.stopped
-    }
-  }
-
-  private def unlock(inputs: Set[OutPoint]): Future[Boolean] = {
-    if (inputs.isEmpty) {
-      Future.successful(true)
-    } else {
-      val dummyTx = Transaction(2, inputs.toSeq.map(o => TxIn(o, Nil, 0)), Nil, 0)
-      wallet.rollback(dummyTx)
     }
   }
 

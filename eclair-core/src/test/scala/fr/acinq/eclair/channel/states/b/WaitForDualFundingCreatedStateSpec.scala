@@ -221,13 +221,11 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     // Invalid serial_id.
     alice2bob.forward(bob, inputA.copy(serialId = UInt64(1)))
     bob2alice.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.length == 1)
     awaitCond(bob.stateName == CLOSED)
 
     // Below dust.
     bob2alice.forward(alice, TxAddOutput(channelId(bob), UInt64(1), 150 sat, Script.write(Script.pay2wpkh(randomKey().publicKey))))
     alice2bob.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.length == 2)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -254,13 +252,11 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     bob2alice.forward(alice, bobCommitSig.copy(signature = ByteVector64.Zeroes))
     alice2bob.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.length == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
 
     alice2bob.forward(bob, aliceCommitSig.copy(signature = ByteVector64.Zeroes))
     bob2alice.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.length == 2)
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -290,7 +286,6 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
     bob2alice.forward(alice, bobSigs.copy(txHash = randomBytes32(), witnesses = Nil))
     alice2bob.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.size == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
 
@@ -307,11 +302,9 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[TxAddInput]
     alice2bob.forward(bob, TxAbort(channelId(alice), hex"deadbeef"))
     val bobTxAbort = bob2alice.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.size == 1)
     awaitCond(bob.stateName == CLOSED)
 
     bob2alice.forward(alice, bobTxAbort)
-    awaitCond(wallet.rolledback.size == 2)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -328,7 +321,6 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[Warning]
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
     aliceOrigin.expectNoMessage(100 millis)
-    assert(wallet.rolledback.isEmpty)
   }
 
   test("recv TxAckRbf", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -343,7 +335,6 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[Warning]
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
     aliceOrigin.expectNoMessage(100 millis)
-    assert(wallet.rolledback.isEmpty)
   }
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -351,12 +342,10 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     val finalChannelId = channelId(alice)
     alice ! Error(finalChannelId, "oops")
-    awaitCond(wallet.rolledback.size == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
 
     bob ! Error(finalChannelId, "oops")
-    awaitCond(wallet.rolledback.size == 2)
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -369,13 +358,11 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     alice ! c
     sender.expectMsg(RES_SUCCESS(c, finalChannelId))
-    awaitCond(wallet.rolledback.size == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelClosed]
 
     bob ! c
     sender.expectMsg(RES_SUCCESS(c, finalChannelId))
-    awaitCond(wallet.rolledback.size == 2)
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -383,19 +370,16 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     import f._
 
     alice ! INPUT_DISCONNECTED
-    awaitCond(wallet.rolledback.size == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
 
     bob ! INPUT_DISCONNECTED
-    awaitCond(wallet.rolledback.size == 2)
     awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv TickChannelOpenTimeout", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     alice ! TickChannelOpenTimeout
-    awaitCond(wallet.rolledback.size == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }

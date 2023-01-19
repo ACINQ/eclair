@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactionOptions, InputWeight}
@@ -52,7 +52,6 @@ object ReplaceableTxFunder {
   private case class AddInputsFailed(reason: Throwable) extends Command
   private case class SignWalletInputsOk(signedTx: Transaction) extends Command
   private case class SignWalletInputsFailed(reason: Throwable) extends Command
-  private case object UtxosUnlocked extends Command
   // @formatter:on
 
   case class FundedTx(signedTxWithWitnessData: ReplaceableTxWithWitnessData, totalAmountIn: Satoshi, feerate: FeeratePerKw) {
@@ -326,20 +325,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         Behaviors.stopped
       case SignWalletInputsFailed(reason) =>
         log.error(s"cannot sign ${cmd.desc}: ", reason)
-        // We reply with the failure only once the utxos are unlocked, otherwise there is a risk that our parent stops
-        // itself, which will automatically stop us before we had a chance to unlock them.
-        unlockAndStop(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
-    }
-  }
-
-  def unlockAndStop(input: OutPoint, tx: Transaction, failure: TxPublisher.TxRejectedReason): Behavior[Command] = {
-    val toUnlock = tx.txIn.filterNot(_.outPoint == input).map(_.outPoint)
-    log.debug("unlocking utxos={}", toUnlock.mkString(", "))
-    context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock))(_ => UtxosUnlocked)
-    Behaviors.receiveMessagePartial {
-      case UtxosUnlocked =>
-        log.debug("utxos unlocked")
-        replyTo ! FundingFailed(failure)
+        replyTo ! FundingFailed(TxPublisher.TxRejectedReason.UnknownTxFailure)
         Behaviors.stopped
     }
   }

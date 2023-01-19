@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -59,14 +59,17 @@ trait OnChainChannelFunder {
    */
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
+  /** Lock some wallet inputs to avoid using them when funding a transaction. */
+  def lockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean]
+
+  /** Unlock some wallet inputs. */
+  def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean]
+
   /** Return the transaction if it exists, either in the blockchain or in the mempool. */
   def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction]
 
   /** Get the number of confirmations of a given transaction. */
   def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]]
-
-  /** Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos". */
-  def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
   /**
    * Tests whether the inputs of the provided transaction have been spent by another transaction.

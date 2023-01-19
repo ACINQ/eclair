@@ -235,7 +235,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
       fundTxResponse <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate))
       // now let's sign the funding tx
-      SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(fundTxResponse.tx)
+      SignTransactionResponse(fundingTx, true) <- signTransaction(fundTxResponse.tx)
       // there will probably be a change output, so we need to find which output is ours
       outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript) match {
         case Right(outputIndex) => Future.successful(outputIndex)
@@ -249,10 +249,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     case Success(_) => Future.successful(true)
     case Failure(e) =>
       logger.warn(s"txid=${tx.txid} error=$e")
-      getTransaction(tx.txid).transformWith {
-        case Success(_) => Future.successful(true) // tx is in the mempool, we consider that it was published
-        case Failure(_) => rollback(tx).transform(_ => Success(false)) // we use transform here because we want to return false in all cases even if rollback fails
-      }
+      getTransaction(tx.txid)
+        .map(_ => true) // tx is in the mempool, we consider that it was published
+        .recover(_ => false)
   }
 
   //------------------------- SIGNING  -------------------------//
@@ -278,20 +277,6 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       }
       SignTransactionResponse(Transaction.read(hex), complete)
     })
-  }
-
-  private def signTransactionOrUnlock(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
-    val f = signTransaction(tx)
-    // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
-    f.recoverWith { case _ =>
-      unlockOutpoints(tx.txIn.map(_.outPoint))
-        .recover { case t: Throwable => // no-op, just add a log in case of failure
-          logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", t)
-          t
-        }
-        .flatMap(_ => f) // return signTransaction error
-        .recoverWith { case _ => f } // return signTransaction error
-    }
   }
 
   //------------------------- PUBLISHING  -------------------------//
@@ -337,29 +322,44 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   }
 
   /**
+   * Warning: this method should only be used to lock inputs when you don't want them to be used in a funding attempt.
+   * It doesn't guarantee that another transaction won't use those inputs, so it shouldn't be used to protect against
+   * accidentally double-spending ourselves, because it won't always work.
+   *
+   * @param outPoints outpoints to lock.
+   * @return true if all inputs were successfully locked, false otherwise.
+   */
+  def lockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
+    // we lock utxos one by one and not as a list as it would fail at the first utxo that is not actually unlocked and the rest would not be processed
+    val futures = outPoints.distinct.map(outPoint => LockUnlockOutpoint(outPoint.txid, outPoint.index)).map(utxo =>
+      rpcClient
+        .invoke("lockunspent", /* unlock */ false, List(utxo))
+        .mapTo[JBool]
+        .transformWith {
+          case Success(JBool(result)) => Future.successful(result)
+          case Failure(JsonRPCError(error)) if error.message.contains("output already locked") => Future.successful(true)
+          case Failure(_) => Future.successful(false)
+        })
+    Future.sequence(futures).map(_.forall(b => b))
+  }
+
+  /**
    * @param outPoints outpoints to unlock.
    * @return true if all outpoints were successfully unlocked, false otherwise.
    */
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
     // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually locked and the rest would not be processed
-    val futures = outPoints
-      .map(outPoint => UnlockOutpoint(outPoint.txid, outPoint.index))
-      .map(utxo => rpcClient
-        .invoke("lockunspent", true, List(utxo))
+    val futures = outPoints.distinct.map(outPoint => LockUnlockOutpoint(outPoint.txid, outPoint.index)).map(utxo =>
+      rpcClient
+        .invoke("lockunspent", /* unlock */ true, List(utxo))
         .mapTo[JBool]
         .transformWith {
           case Success(JBool(result)) => Future.successful(result)
-          case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
-            Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
-          case Failure(_) =>
-            Future.successful(false)
+          case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") => Future.successful(true)
+          case Failure(_) => Future.successful(false)
         })
-    val future = Future.sequence(futures)
-    // return true if all outpoints were unlocked false otherwise
-    future.map(_.forall(b => b))
+    Future.sequence(futures).map(_.forall(b => b))
   }
-
-  def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
 
   //------------------------- ADDRESSES  -------------------------//
 
@@ -468,11 +468,12 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       val JBool(safe) = utxo \ "safe"
       val JDecimal(amount) = utxo \ "amount"
       val JString(txid) = utxo \ "txid"
+      val JInt(vout) = utxo \ "vout"
       val label = utxo \ "label" match {
         case JString(label) => Some(label)
         case _ => None
       }
-      Utxo(ByteVector32.fromValidHex(txid), (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
+      Utxo(ByteVector32.fromValidHex(txid), vout.toLong, (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
     })
   }
 
@@ -490,22 +491,20 @@ object BitcoinCoreClient {
     def apply(outPoint: OutPoint, weight: Long): InputWeight = InputWeight(outPoint.txid.toHex, outPoint.index, weight)
   }
 
-  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
+  /**
+   * Note that we don't allow manually locking utxos. This is done on purpose, to protect against malicious peers
+   * "freezing" some of our liquidity by making us lock utxos for transactions that end up never being published.
+   * Callers should always consider that a transaction may be double-spent until it has been successfully published.
+   * Once published, the bitcoind wallet will internally lock the corresponding utxos and won't reuse them for other
+   * funding attempts, until the transaction either confirms or abandonTransaction is called.
+   */
+  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
 
   object FundTransactionOptions {
     def apply(feerate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, inputWeights: Seq[InputWeight] = Nil): FundTransactionOptions = {
       FundTransactionOptions(
         BigDecimal(FeeratePerKB(feerate).toLong).bigDecimal.scaleByPowerOfTen(-8),
         replaceable,
-        // We must *always* lock inputs selected for funding, otherwise locking wouldn't work at all, as the following
-        // scenario highlights:
-        //  - we fund a transaction for which we don't lock utxos
-        //  - we fund another unrelated transaction for which we lock utxos
-        //  - the second transaction ends up using the same utxos as the first one
-        //  - but the first transaction confirms, invalidating the second one
-        // This would break the assumptions of the second transaction: its inputs are locked, so it doesn't expect to
-        // potentially be double-spent.
-        lockUnspents = true,
         changePosition,
         if (inputWeights.isEmpty) None else Some(inputWeights)
       )
@@ -542,9 +541,9 @@ object BitcoinCoreClient {
 
   case class WalletTx(address: String, amount: Satoshi, fees: Satoshi, blockHash: ByteVector32, confirmations: Long, txid: ByteVector32, timestamp: Long)
 
-  case class UnlockOutpoint(txid: ByteVector32, vout: Long)
+  case class LockUnlockOutpoint(txid: ByteVector32, vout: Long)
 
-  case class Utxo(txid: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
+  case class Utxo(txid: ByteVector32, vout: Long, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
