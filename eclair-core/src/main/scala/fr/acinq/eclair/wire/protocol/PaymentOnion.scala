@@ -386,11 +386,10 @@ object PaymentOnion {
         Standard(TlvStream(tlvs, customTlvs))
       }
 
-      def createKeySendPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, preimage: ByteVector32, customTlvs: Seq[GenericTlv] = Nil): Standard = {
+      def createKeySendPayload(amount: MilliSatoshi, expiry: CltvExpiry, preimage: ByteVector32, customTlvs: Seq[GenericTlv] = Nil): Standard = {
         val tlvs = Seq(
           AmountToForward(amount),
           OutgoingCltv(expiry),
-          PaymentData(preimage, totalAmount),
           KeySend(preimage)
         )
         Standard(TlvStream(tlvs, customTlvs))

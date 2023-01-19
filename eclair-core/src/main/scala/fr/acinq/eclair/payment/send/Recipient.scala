@@ -110,7 +110,7 @@ case class SpontaneousRecipient(nodeId: PublicKey,
 
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     ClearRecipient.validateRoute(nodeId, route).map(_ => {
-      val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createKeySendPayload(route.amount, totalAmount, expiry, preimage, customTlvs))
+      val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createKeySendPayload(route.amount, expiry, preimage, customTlvs))
       Recipient.buildPayloads(totalAmount, expiry, Seq(finalPayload), route.hops)
     })
   }
