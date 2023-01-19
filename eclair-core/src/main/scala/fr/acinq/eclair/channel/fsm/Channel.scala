@@ -1374,7 +1374,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           sendQueue = sendQueue ++ syncSuccess.retransmit
 
           // then we clean up unsigned updates
-          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
+          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates
 
           metaCommitments1.main.remoteNextCommitInfo match {
             case Left(_) =>
@@ -1443,7 +1443,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case syncFailure: SyncResult.Failure =>
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
-          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
+          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates
           val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ d.localShutdown
           // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
           goto(SHUTDOWN) using d.copy(metaCommitments = metaCommitments1) sending sendQueue

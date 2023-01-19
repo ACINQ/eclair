@@ -41,7 +41,7 @@ case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
   /**
    * When reconnecting, we drop all unsigned changes.
    */
-  def discardUnsignedUpdates()(implicit log: LoggingAdapter): Common = {
+  def discardUnsignedUpdates(implicit log: LoggingAdapter): Common = {
     log.debug("discarding proposed OUT: {}", localChanges.proposed.map(msg2String(_)).mkString(","))
     log.debug("discarding proposed IN: {}", remoteChanges.proposed.map(msg2String(_)).mkString(","))
     val common1 = copy(
@@ -186,8 +186,8 @@ case class MetaCommitments(params: Params,
       .map { case (common, commitments, actions) => (this.copy(common = common, commitments = commitments), actions) }
   }
 
-  def discardUnsignedUpdates()(implicit log: LoggingAdapter): MetaCommitments = {
-    this.copy(common = common.discardUnsignedUpdates())
+  def discardUnsignedUpdates(implicit log: LoggingAdapter): MetaCommitments = {
+    this.copy(common = common.discardUnsignedUpdates)
   }
 
   def localHasChanges: Boolean = main.localHasChanges

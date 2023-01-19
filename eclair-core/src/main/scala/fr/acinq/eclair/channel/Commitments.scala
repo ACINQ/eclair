@@ -823,22 +823,6 @@ case class Commitments(channelId: ByteVector32,
     }
   }
 
-  /**
-   * When reconnecting, we drop all unsigned changes.
-   */
-  def discardUnsignedUpdates()(implicit log: LoggingAdapter): Commitments = {
-    log.debug("discarding proposed OUT: {}", localChanges.proposed.map(msg2String(_)).mkString(","))
-    log.debug("discarding proposed IN: {}", remoteChanges.proposed.map(msg2String(_)).mkString(","))
-    val commitments1 = copy(
-      localChanges = localChanges.copy(proposed = Nil),
-      remoteChanges = remoteChanges.copy(proposed = Nil),
-      localNextHtlcId = localNextHtlcId - localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
-      remoteNextHtlcId = remoteNextHtlcId - remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
-    log.debug(s"localNextHtlcId=${localNextHtlcId}->${commitments1.localNextHtlcId}")
-    log.debug(s"remoteNextHtlcId=${remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
-    commitments1
-  }
-
   def changes2String: String = {
     s"""commitments:
        |    localChanges:
