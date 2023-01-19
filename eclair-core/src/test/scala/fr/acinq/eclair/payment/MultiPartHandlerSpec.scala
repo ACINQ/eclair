@@ -800,6 +800,27 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) == IncomingPaymentStatus.Received(amountMsat, 0 unixms))
   }
 
+  test("PaymentHandler should handle single-part KeySend payment without payment secret") { f =>
+    import f._
+
+    val amountMsat = 42000 msat
+    val paymentPreimage = randomBytes32()
+    val paymentHash = Crypto.sha256(paymentPreimage)
+    val payload = FinalPayload.Standard(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.KeySend(paymentPreimage)))
+
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
+
+    val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
+    sender.send(handlerWithKeySend, IncomingPaymentPacket.FinalPacket(add, payload))
+    register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+
+    val paymentReceived = eventListener.expectMsgType[PaymentReceived]
+    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) == PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
+    val received = nodeParams.db.payments.getIncomingPayment(paymentHash)
+    assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) == IncomingPaymentStatus.Received(amountMsat, 0 unixms))
+  }
+
   test("PaymentHandler should reject KeySend payment when feature is disabled") { f =>
     import f._
 

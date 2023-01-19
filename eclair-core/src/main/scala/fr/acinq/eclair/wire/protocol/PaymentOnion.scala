@@ -362,7 +362,7 @@ object PaymentOnion {
         case totalAmount => totalAmount
       }).getOrElse(amount)
       override val expiry = records.get[OutgoingCltv].get.cltv
-      val paymentSecret = records.get[PaymentData].get.secret
+      val paymentSecret = records.get[PaymentData].map(_.secret).orElse(records.get[KeySend].map(_.paymentPreimage)).get
       val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
       val paymentMetadata = records.get[PaymentMetadata].map(_.data)
     }
@@ -371,7 +371,8 @@ object PaymentOnion {
       def validate(records: TlvStream[OnionPaymentPayloadTlv]): Either[InvalidTlvPayload, Standard] = {
         if (records.get[AmountToForward].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
         if (records.get[OutgoingCltv].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
-        if (records.get[PaymentData].isEmpty) return Left(MissingRequiredTlv(UInt64(8)))
+        // KeySend payments don't provide a payment secret, but they don't need one: the preimage act as secret.
+        if (records.get[PaymentData].isEmpty && records.get[KeySend].isEmpty) return Left(MissingRequiredTlv(UInt64(8)))
         Right(Standard(records))
       }
 
