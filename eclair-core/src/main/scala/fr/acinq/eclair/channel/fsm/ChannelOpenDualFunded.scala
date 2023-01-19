@@ -599,8 +599,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      // TODO: if we support using the channel during splices, we could support zero-conf rbf, it's basically the same:
-      //       we need to verify that any operation work on all commitments
       // We can skip waiting for confirmations if:
       //  - there is a single version of the funding tx (otherwise we don't know which one to use)
       //  - they didn't contribute to the funding output or we trust them to not double-spend
