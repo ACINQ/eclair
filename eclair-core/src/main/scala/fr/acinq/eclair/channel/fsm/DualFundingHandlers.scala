@@ -133,7 +133,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       handleFundingTimeout(d)
     } else if (d.lastChecked + 6 < c.blockHeight) {
       log.debug("checking if funding transactions have been double-spent")
-      val fundingTxs = d.allFundingTxs.flatMap(_.signedTx_opt)
+      val fundingTxs = d.allFundingTxs.map(_.tx.buildUnsignedTx())
       // We check whether *all* funding attempts have been double-spent.
       // Since we only consider a transaction double-spent when the spending transaction is confirmed, this will not
       // return false positives when one of our transactions is confirmed, because its individual result will be false.
@@ -151,7 +151,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     val fundingTxIds = d.metaCommitments.all.map(_.fundingTxId).toSet
     if (fundingTxIds.subsetOf(e.fundingTxIds)) {
       log.warning("{} funding attempts have been double-spent, forgetting channel", fundingTxIds.size)
-      d.allFundingTxs.flatMap(_.signedTx_opt).foreach(tx => wallet.rollback(tx))
+      d.allFundingTxs.map(_.tx.buildUnsignedTx()).foreach(tx => wallet.rollback(tx))
       channelOpenReplyToUser(Left(LocalError(FundingTxDoubleSpent(d.channelId))))
       goto(CLOSED) sending Error(d.channelId, FundingTxDoubleSpent(d.channelId).getMessage)
     } else {
