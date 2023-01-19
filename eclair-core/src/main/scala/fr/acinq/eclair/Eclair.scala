@@ -559,6 +559,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
                                 recipient: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute],
                                 replyPath: Option[Seq[PublicKey]],
                                 userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
+    if (replyPath.nonEmpty && (replyPath.get.isEmpty || replyPath.get.last != appKit.nodeParams.nodeId)) {
+      return Future.failed(new Exception("Reply path must end at our node."))
+    }
     TlvCodecs.tlvStream(MessageOnionCodecs.onionTlvCodec).decode(userCustomContent.bits) match {
       case Attempt.Successful(DecodeResult(userTlvs, _)) =>
         val destination = recipient match {
