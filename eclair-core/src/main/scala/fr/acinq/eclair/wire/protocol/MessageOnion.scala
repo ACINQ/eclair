@@ -90,10 +90,7 @@ object MessageOnion {
   /** Per-hop payload for a final node. */
   case class FinalPayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends PerHopPayload {
     val pathId_opt: Option[ByteVector] = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
-    val replyPath_opt: Option[ReplyPath] = records.get[ReplyPath]
-    val invoiceRequest_opt: Option[OfferTypes.InvoiceRequest] = records.get[InvoiceRequest].map(_.tlvs).map(OfferTypes.InvoiceRequest(_))
-    val invoice_opt: Option[Bolt12Invoice] = records.get[Invoice].map(_.tlvs).map(Bolt12Invoice(_))
-    val invoiceError_opt: Option[OfferTypes.InvoiceError] = records.get[InvoiceError].map(_.tlvs).map(OfferTypes.InvoiceError(_))
+    val replyPath_opt: Option[BlindedRoute] = records.get[ReplyPath].map(_.blindedRoute)
   }
 
   object FinalPayload {
@@ -132,7 +129,7 @@ object MessageOnionCodecs {
 
   private val encryptedDataCodec: Codec[EncryptedData] = tlvField(bytes)
 
-  private val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
+  val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
     .typecase(UInt64(2), replyPathCodec)
     .typecase(UInt64(4), encryptedDataCodec)
     .typecase(UInt64(64), OfferCodecs.invoiceRequestCodec)

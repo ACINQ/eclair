@@ -49,13 +49,12 @@ import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
-import scodec.{Attempt, DecodeResult, codecs}
+import scodec.{Attempt, DecodeResult}
 
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.util.{Failure, Success}
 
 case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features[Feature], chainHash: ByteVector32, network: String, blockHeight: Int, publicAddresses: Seq[NodeAddress], onionAddress: Option[NodeAddress], instanceId: String)
 
@@ -557,30 +556,25 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def sendOnionMessage(intermediateNodes: Seq[PublicKey],
-                                destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute],
+                                recipient: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute],
                                 replyPath: Option[Seq[PublicKey]],
                                 userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
-    codecs.list(TlvCodecs.genericTlv).decode(userCustomContent.bits) match {
-      case Attempt.Successful(DecodeResult(userCustomTlvs, _)) =>
-        val replyPathId = randomBytes32()
-        val replyRoute = replyPath.map(hops => OnionMessages.buildRoute(randomKey(), hops.map(OnionMessages.IntermediateNode(_)), OnionMessages.Recipient(appKit.nodeParams.nodeId, Some(replyPathId))))
-        OnionMessages.buildMessage(
-          randomKey(),
-          randomKey(),
-          intermediateNodes.map(OnionMessages.IntermediateNode(_)),
-          destination match { case Left(key) => OnionMessages.Recipient(key, None) case Right(route) => OnionMessages.BlindedPath(route) },
-          replyRoute.map(OnionMessagePayloadTlv.ReplyPath(_) :: Nil).getOrElse(Nil),
-          userCustomTlvs) match {
-          case Success((nextNodeId, message)) =>
-            appKit.postman.ask(ref => Postman.SendMessage(nextNodeId, message, replyPath.map(_ => replyPathId), ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
-              case Postman.Response(payload) =>
-                val encodedReplyPath = payload.replyPath_opt.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex)
-                SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath_opt.map(_.blindedRoute), payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
-              case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
-              case Postman.SendingStatus(MessageRelay.Sent(_)) => SendOnionMessageResponse(sent = true, None, None)
-              case Postman.SendingStatus(failure: MessageRelay.Failure) => SendOnionMessageResponse(sent = false, Some(failure.toString), None)
-            }
-          case Failure(error) => Future.successful(SendOnionMessageResponse(sent = false, failureMessage = Some(error.toString), response = None))
+    if (replyPath.nonEmpty && (replyPath.get.isEmpty || replyPath.get.last != appKit.nodeParams.nodeId)) {
+      return Future.failed(new Exception("Reply path must end at our node."))
+    }
+    TlvCodecs.tlvStream(MessageOnionCodecs.onionTlvCodec).decode(userCustomContent.bits) match {
+      case Attempt.Successful(DecodeResult(userTlvs, _)) =>
+        val destination = recipient match {
+          case Left(key) => OnionMessages.Recipient(key, None)
+          case Right(route) => OnionMessages.BlindedPath(route)
+        }
+        appKit.postman.ask(ref => Postman.SendMessage(intermediateNodes, destination, replyPath, userTlvs, ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
+          case Postman.Response(payload) =>
+            val encodedReplyPath = payload.replyPath_opt.map(route => blindedRouteCodec.encode(route).require.bytes.toHex)
+            SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath_opt, payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
+          case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
+          case Postman.MessageSent => SendOnionMessageResponse(sent = true, None, None)
+          case Postman.MessageFailed(failure: String) => SendOnionMessageResponse(sent = false, Some(failure), None)
         }
       case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, failureMessage = Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}"), response = None))
     }
