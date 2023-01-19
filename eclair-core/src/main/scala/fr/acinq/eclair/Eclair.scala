@@ -568,7 +568,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           case Left(key) => OnionMessages.Recipient(key, None)
           case Right(route) => OnionMessages.BlindedPath(route)
         }
-        appKit.postman.ask(ref => Postman.SendMessage(intermediateNodes, destination, replyPath.map(_ :+ appKit.nodeParams.nodeId), userTlvs, ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
+        appKit.postman.ask(ref => Postman.SendMessage(intermediateNodes, destination, replyPath, userTlvs, ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
           case Postman.Response(payload) =>
             val encodedReplyPath = payload.replyPath_opt.map(route => blindedRouteCodec.encode(route).require.bytes.toHex)
             SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath_opt, payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
