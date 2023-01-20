@@ -436,7 +436,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CMD_SIGN, d: DATA_NORMAL) =>
       d.commitments.remoteNextCommitInfo match {
-        case _ if !d.metaCommitments.localHasChanges =>
+        case _ if !d.metaCommitments.common.localHasChanges =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
         case Right(_) =>
@@ -800,7 +800,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CMD_SIGN, d: DATA_SHUTDOWN) =>
       d.commitments.remoteNextCommitInfo match {
-        case _ if !d.metaCommitments.localHasChanges =>
+        case _ if !d.metaCommitments.common.localHasChanges =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
         case Right(_) =>
@@ -844,7 +844,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               goto(NEGOTIATING) using DATA_NEGOTIATING(metaCommitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending revocation
             }
           } else {
-            if (metaCommitments1.localHasChanges) {
+            if (metaCommitments1.common.localHasChanges) {
               // if we have newly acknowledged changes let's sign them
               self ! CMD_SIGN()
             }
@@ -884,7 +884,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               goto(NEGOTIATING) using DATA_NEGOTIATING(metaCommitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing()
             }
           } else {
-            if (metaCommitments1.localHasChanges) {
+            if (metaCommitments1.common.localHasChanges) {
               self ! CMD_SIGN()
             }
             stay() using d.copy(metaCommitments = metaCommitments1) storing()
@@ -1374,7 +1374,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           sendQueue = sendQueue ++ syncSuccess.retransmit
 
           // then we clean up unsigned updates
-          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates
+          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
 
           metaCommitments1.main.remoteNextCommitInfo match {
             case Left(_) =>
@@ -1384,7 +1384,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
 
           // do I have something to sign?
-          if (metaCommitments1.localHasChanges) {
+          if (metaCommitments1.common.localHasChanges) {
             self ! CMD_SIGN()
           }
 
@@ -1443,7 +1443,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case syncFailure: SyncResult.Failure =>
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
-          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates
+          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
           val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ d.localShutdown
           // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
           goto(SHUTDOWN) using d.copy(metaCommitments = metaCommitments1) sending sendQueue

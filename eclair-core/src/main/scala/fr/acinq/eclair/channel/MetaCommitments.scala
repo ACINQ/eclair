@@ -7,10 +7,11 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.Commitments.{PostRevocationAction, msg2String}
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Transactions}
 import fr.acinq.eclair.wire.protocol.CommitSigTlv.{AlternativeCommitSig, AlternativeCommitSigsTlv}
 import fr.acinq.eclair.wire.protocol._
@@ -91,6 +92,13 @@ case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
                   remoteNextCommitInfo: Either[WaitForRev, PublicKey], // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit_opt
                   remotePerCommitmentSecrets: ShaChain) {
   val nextRemoteCommitIndex = remoteCommitIndex + 1
+
+  val localHasChanges: Boolean = remoteChanges.acked.nonEmpty || localChanges.proposed.nonEmpty
+  val remoteHasChanges: Boolean = localChanges.acked.nonEmpty || remoteChanges.proposed.nonEmpty
+  val localHasUnsignedOutgoingHtlcs: Boolean = localChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
+  val remoteHasUnsignedOutgoingHtlcs: Boolean = remoteChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
+  val localHasUnsignedOutgoingUpdateFee: Boolean = localChanges.proposed.collectFirst { case u: UpdateFee => u }.isDefined
+  val remoteHasUnsignedOutgoingUpdateFee: Boolean = remoteChanges.proposed.collectFirst { case u: UpdateFee => u }.isDefined
 
   def addLocalProposal(proposal: UpdateMessage): Common = copy(localChanges = localChanges.copy(proposed = localChanges.proposed :+ proposal))
 
@@ -485,19 +493,46 @@ case class MetaCommitments(params: Params,
       .map { case (common, commitments) => this.copy(common = common, commitments = commitments) }
   }
 
-  /** We need to send signatures for each commitments. */
   def sendCommit(keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, CommitSig)] = {
-    sequence(all.map(_.sendCommit(keyManager)))
-      .map { res: List[(Commitments, CommitSig)] =>
-        val tlv = AlternativeCommitSigsTlv(res.foldLeft(List.empty[AlternativeCommitSig]) {
-          case (sigs, (commitments, commitSig)) => AlternativeCommitSig(commitments.fundingTxId, commitSig.signature, commitSig.htlcSignatures) +: sigs
-        })
-        // we set all commit_sigs as tlv of the first commit_sig (the first sigs will be duplicated)
-        val commitSig = res.head._2.modify(_.tlvStream.records).usingIf(tlv.commitSigs.size > 1)(tlv +: _.toList)
-        val common = res.head._1.common
-        val commitments = res.map(_._1.commitment)
-        (this.copy(common = common, commitments = commitments), commitSig)
-      }
+    common.remoteNextCommitInfo match {
+      case Right(_) if !common.localHasChanges =>
+        Left(CannotSignWithoutChanges(channelId))
+      case Right(remoteNextPerCommitmentPoint) =>
+        val (commitments1, commitSigs) = commitments.map(c => {
+          // remote commitment will includes all local changes + remote acked changes
+          val spec = CommitmentSpec.reduce(c.remoteCommit.spec, common.remoteChanges.acked, common.localChanges.proposed)
+          val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, c.remoteCommit.index + 1, params.localParams, params.remoteParams, c.commitInput, remoteNextPerCommitmentPoint, spec)
+          val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath), Transactions.TxOwner.Remote, params.commitmentFormat)
+
+          val sortedHtlcTxs: Seq[TransactionWithInputInfo] = htlcTxs.sortBy(_.input.outPoint.index)
+          val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
+          val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, Transactions.TxOwner.Remote, params.commitmentFormat))
+
+          // NB: IN/OUT htlcs are inverted because this is the remote commit
+          log.info(s"built remote commit number=${c.remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), remoteCommitTx.tx)
+          Metrics.recordHtlcsInFlight(spec, c.remoteCommit.spec)
+
+          val commitment1 = c.copy(nextRemoteCommit_opt = Some(RemoteCommit(c.remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)))
+          (commitment1, AlternativeCommitSig(commitment1.fundingTxId, sig, htlcSigs.toList))
+        }).unzip
+        val commitSig = if (commitments1.size > 1) {
+          // we set all commit_sigs as tlv of the first commit_sig (the first sigs will be duplicated)
+          CommitSig(channelId, commitSigs.head.signature, commitSigs.head.htlcSignatures, TlvStream(AlternativeCommitSigsTlv(commitSigs)))
+        } else {
+          CommitSig(channelId, commitSigs.head.signature, commitSigs.head.htlcSignatures)
+        }
+        val metaCommitments1 = copy(
+          common = common.copy(
+            localChanges = common.localChanges.copy(proposed = Nil, signed = common.localChanges.proposed),
+            remoteChanges = common.remoteChanges.copy(acked = Nil, signed = common.remoteChanges.acked),
+            remoteNextCommitInfo = Left(WaitForRev(commitSig, common.localCommitIndex)),
+          ),
+          commitments = commitments1,
+        )
+        Right(metaCommitments1, commitSig)
+      case Left(_) =>
+        Left(CannotSignBeforeRevocation(channelId))
+    }
   }
 
   def receiveCommit(sig: CommitSig, keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, RevokeAndAck)] = {
@@ -523,11 +558,9 @@ case class MetaCommitments(params: Params,
       .map { case (common, commitments, actions) => (this.copy(common = common, commitments = commitments), actions) }
   }
 
-  def discardUnsignedUpdates(implicit log: LoggingAdapter): MetaCommitments = {
+  def discardUnsignedUpdates()(implicit log: LoggingAdapter): MetaCommitments = {
     this.copy(common = common.discardUnsignedUpdates())
   }
-
-  def localHasChanges: Boolean = main.localHasChanges
 
 }
 

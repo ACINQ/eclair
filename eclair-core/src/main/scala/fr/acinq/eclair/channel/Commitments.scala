@@ -333,38 +333,6 @@ case class Commitments(channelId: ByteVector32,
 
   def remoteHasChanges: Boolean = localChanges.acked.nonEmpty || remoteChanges.proposed.nonEmpty
 
-  def sendCommit(keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, CommitSig)] = {
-    remoteNextCommitInfo match {
-      case Right(_) if !localHasChanges =>
-        Left(CannotSignWithoutChanges(channelId))
-      case Right(remoteNextPerCommitmentPoint) =>
-        // remote commitment will includes all local changes + remote acked changes
-        val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-        val (remoteCommitTx, htlcTxs) = makeRemoteTxs(keyManager, channelConfig, channelFeatures, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath), TxOwner.Remote, commitmentFormat)
-
-        val sortedHtlcTxs: Seq[TransactionWithInputInfo] = htlcTxs.sortBy(_.input.outPoint.index)
-        val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-        val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, TxOwner.Remote, commitmentFormat))
-
-        // NB: IN/OUT htlcs are inverted because this is the remote commit
-        log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.collect(outgoing).map(_.id).mkString(","), spec.htlcs.collect(incoming).map(_.id).mkString(","), remoteCommitTx.tx)
-        Metrics.recordHtlcsInFlight(spec, remoteCommit.spec)
-
-        val commitSig = CommitSig(
-          channelId = channelId,
-          signature = sig,
-          htlcSignatures = htlcSigs.toList)
-        val commitments1 = copy(
-          remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, localCommit.index)),
-          localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
-          remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
-        Right(commitments1, commitSig)
-      case Left(_) =>
-        Left(CannotSignBeforeRevocation(channelId))
-    }
-  }
-
   def receiveCommit(commit: CommitSig, keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, RevokeAndAck)] = {
     // they sent us a signature for *their* view of *our* next commit tx
     // so in terms of rev.hashes and indexes we have:
