@@ -9,8 +9,8 @@ import fr.acinq.eclair.channel.Commitments.{PostRevocationAction, msg2String}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
+import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Transactions}
 import fr.acinq.eclair.wire.protocol.CommitSigTlv.{AlternativeCommitSig, AlternativeCommitSigsTlv}
@@ -535,21 +535,91 @@ case class MetaCommitments(params: Params,
     }
   }
 
-  def receiveCommit(sig: CommitSig, keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, RevokeAndAck)] = {
-    val sigs: Map[ByteVector32, CommitSig] = sig.alternativeCommitSigs match {
-      case Nil => Map(all.head.fundingTxId -> sig) // no alternative sigs: we use the commit_sig message as-is, we assume it is for the first commitments
-      case alternativeCommitSig =>
+  def receiveCommit(commit: CommitSig, keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, RevokeAndAck)] = {
+    // they sent us a signature for *their* view of *our* next commit tx
+    // so in terms of rev.hashes and indexes we have:
+    // ourCommit.index -> our current revocation hash, which is about to become our old revocation hash
+    // ourCommit.index + 1 -> our next revocation hash, used by *them* to build the sig we've just received, and which
+    // is about to become our current revocation hash
+    // ourCommit.index + 2 -> which is about to become our next revocation hash
+    // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
+    // and will increment our index
+
+    // lnd sometimes sends a new signature without any changes, which is a (harmless) spec violation
+    if (!common.remoteHasChanges) {
+      //  throw CannotSignWithoutChanges(channelId)
+      log.warning("received a commit sig with no changes (probably coming from lnd)")
+    }
+
+    val sigs: Map[ByteVector32, CommitSig] = commit.alternativeCommitSigs match {
+      case Nil => Map(commitments.head.fundingTxId -> commit) // no alternative sigs: we use the commit_sig message as-is, we assume it is for the first commitments
+      case alternativeCommitSigs =>
         // if there are alternative sigs, then we expand the sigs to build n individual commit_sig that we will apply to the corresponding commitments
-        alternativeCommitSig.map { altSig =>
-          altSig.fundingTxId -> sig
+        alternativeCommitSigs.map { altSig =>
+          altSig.fundingTxId -> commit
             .modify(_.signature).setTo(altSig.signature)
             .modify(_.htlcSignatures).setTo(altSig.htlcSignatures)
             .modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[AlternativeCommitSigsTlv]))
         }.toMap
     }
-    sequence(all.map(c => c.receiveCommit(sigs(c.fundingTxId), keyManager)))
-      .map { res: List[(Commitments, RevokeAndAck)] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
-      .map { case (common, commitments, rev) => (this.copy(common = common, commitments = commitments), rev) }
+
+    val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
+    val commitments1 = commitments.map(c => {
+      val spec = CommitmentSpec.reduce(c.localCommit.spec, common.localChanges.acked, common.remoteChanges.proposed)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, c.localCommit.index + 1)
+      val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, c.localCommit.index + 1, params.localParams, params.remoteParams, c.commitInput, localPerCommitmentPoint, spec)
+      sigs.get(c.fundingTxId) match {
+        case Some(sig) =>
+          log.info(s"built local commit number=${c.localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), localCommitTx.tx)
+          if (!Transactions.checkSig(localCommitTx, sig.signature, params.remoteParams.fundingPubKey, Transactions.TxOwner.Remote, params.commitmentFormat)) {
+            return Left(InvalidCommitmentSignature(channelId, localCommitTx.tx.txid))
+          }
+
+          val sortedHtlcTxs: Seq[Transactions.HtlcTx] = htlcTxs.sortBy(_.input.outPoint.index)
+          if (sig.htlcSignatures.size != sortedHtlcTxs.size) {
+            return Left(HtlcSigCountMismatch(channelId, sortedHtlcTxs.size, sig.htlcSignatures.size))
+          }
+
+          val remoteHtlcPubkey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, localPerCommitmentPoint)
+          val htlcTxsAndRemoteSigs = sortedHtlcTxs.zip(sig.htlcSignatures).toList.map {
+            case (htlcTx: Transactions.HtlcTx, remoteSig) =>
+              if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, Transactions.TxOwner.Remote, params.commitmentFormat)) {
+                return Left(InvalidHtlcSignature(channelId, htlcTx.tx.txid))
+              }
+              HtlcTxAndRemoteSig(htlcTx, remoteSig)
+          }
+
+          // update our commitment data
+          c.copy(localCommit = LocalCommit(
+            index = c.localCommit.index + 1,
+            spec,
+            commitTxAndRemoteSig = CommitTxAndRemoteSig(localCommitTx, sig.signature),
+            htlcTxsAndRemoteSigs = htlcTxsAndRemoteSigs
+          ))
+        case None =>
+          return Left(InvalidCommitmentSignature(channelId, localCommitTx.tx.txid))
+      }
+    })
+
+    // we will send our revocation preimage + our next revocation hash
+    val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, common.localCommitIndex)
+    val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, common.localCommitIndex + 2)
+    val revocation = RevokeAndAck(
+      channelId = channelId,
+      perCommitmentSecret = localPerCommitmentSecret,
+      nextPerCommitmentPoint = localNextPerCommitmentPoint
+    )
+
+    val metaCommitments1 = copy(
+      common = common.copy(
+        localChanges = common.localChanges.copy(acked = Nil),
+        remoteChanges = common.remoteChanges.copy(proposed = Nil, acked = common.remoteChanges.acked ++ common.remoteChanges.proposed),
+        localCommitIndex = common.localCommitIndex + 1,
+      ),
+      commitments = commitments1
+    )
+
+    Right(metaCommitments1, revocation)
   }
 
   def receiveRevocation(revocation: RevokeAndAck, maxDustExposure: Satoshi): Either[ChannelException, (MetaCommitments, Seq[PostRevocationAction])] = {
