@@ -32,7 +32,7 @@ object DBChecker extends Logging {
   def checkChannelsDB(nodeParams: NodeParams): Unit = {
     Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(channels) =>
-        channels.foreach(data => if (!data.commitments.validateSeed(nodeParams.channelKeyManager)) throw InvalidChannelSeedException(data.channelId))
+        channels.foreach(data => if (!data.metaCommitments.main.validateSeed(nodeParams.channelKeyManager)) throw InvalidChannelSeedException(data.channelId))
       case Failure(_) => throw IncompatibleDBException
     }
   }

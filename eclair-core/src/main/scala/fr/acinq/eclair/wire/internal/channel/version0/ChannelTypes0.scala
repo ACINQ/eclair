@@ -215,7 +215,8 @@ private[channel] object ChannelTypes0 {
         localNextHtlcId, remoteNextHtlcId,
         originChannels,
         remoteNextCommitInfo,
-        commitInput,
+        LocalFundingStatus.UnknownFundingTx,
+        RemoteFundingStatus.Locked,
         remotePerCommitmentSecrets)
     }
   }

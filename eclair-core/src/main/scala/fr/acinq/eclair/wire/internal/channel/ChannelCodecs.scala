@@ -21,6 +21,7 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3
+import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4
 import grizzled.slf4j.Logging
 import scodec.Codec
 import scodec.codecs.{byte, discriminated}
@@ -45,7 +46,7 @@ import scodec.codecs.{byte, discriminated}
 
        }
 
-       val stateDataCodec: Codec[HasCommitments] = ...
+       val channelDataCodec: Codec[PersistentChannelData] = ...
  * }}}
  *
  * Notice that the outer class has a visibility restricted to package [[fr.acinq.eclair.wire.internal.channel]], while the inner class has a
@@ -66,7 +67,8 @@ object ChannelCodecs extends Logging {
    * More info here: https://github.com/scodec/scodec/issues/122
    */
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(byte)
-    .typecase(3, ChannelCodecs3.channelDataCodec)
+    .typecase(4, ChannelCodecs4.channelDataCodec)
+    .typecase(3, ChannelCodecs3.channelDataCodec.decodeOnly)
     .typecase(2, ChannelCodecs2.channelDataCodec.decodeOnly)
     .typecase(1, ChannelCodecs1.channelDataCodec.decodeOnly)
     .typecase(0, ChannelCodecs0.channelDataCodec.decodeOnly)

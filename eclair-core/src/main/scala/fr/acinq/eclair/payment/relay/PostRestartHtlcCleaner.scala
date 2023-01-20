@@ -339,7 +339,7 @@ object PostRestartHtlcCleaner {
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     channels
-      .flatMap(_.commitments.remoteCommit.spec.htlcs)
+      .flatMap(_.metaCommitments.main.remoteCommit.spec.htlcs)
       .collect(outgoing)
       .map(IncomingPaymentPacket.decrypt(_, privateKey, features))
       .collect(decryptedIncomingHtlcs(paymentsDb))
@@ -397,7 +397,7 @@ object PostRestartHtlcCleaner {
             overriddenHtlcs ++ timedOutHtlcs
           case _ => Set.empty
         }
-        c.commitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
+        c.metaCommitments.main.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
       }
     groupByOrigin(htlcsOut, htlcsIn)
   }

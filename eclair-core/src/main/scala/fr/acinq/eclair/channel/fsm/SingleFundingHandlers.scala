@@ -18,9 +18,10 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithMetaResponse}
+import fr.acinq.eclair.channel.LocalFundingStatus.ConfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT, FUNDING_TIMEOUT_FUNDEE}
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
@@ -40,11 +41,11 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
 
   this: Channel =>
 
-  def publishFundingTx(commitments: Commitments, fundingTx: Transaction, fundingTxFee: Satoshi): Unit = {
+  def publishFundingTx(channelId: ByteVector32, fundingTx: Transaction, fundingTxFee: Satoshi): Unit = {
     wallet.commit(fundingTx).onComplete {
       case Success(true) =>
-        context.system.eventStream.publish(TransactionPublished(commitments.channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
-        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(commitments.channelId)))
+        context.system.eventStream.publish(TransactionPublished(channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
+        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(channelId)))
       case Success(false) =>
         channelOpenReplyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
         self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
@@ -119,14 +120,17 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     // We also check as funder even if it's not really useful
     Try(Transaction.correctlySpends(d.commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
       case Success(_) =>
+        // we consider the funding tx as confirmed (even in the zero-conf case)
+        val commitments1 = d.commitments.copy(localFundingStatus = ConfirmedFundingTx(fundingTx))
+        val metaCommitments1 = d.metaCommitments.copy(commitments = commitments1.commitment :: Nil)
         realScidStatus match {
           case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
           case _ => () // zero-conf channel
         }
         val shortIds = createShortIds(d.channelId, realScidStatus)
-        val channelReady = createChannelReady(shortIds, d.commitments)
+        val channelReady = createChannelReady(shortIds, commitments1)
         d.deferred.foreach(self ! _)
-        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(d.commitments, shortIds, channelReady) storing() sending channelReady
+        goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds) storing() sending channelReady
       case Failure(t) =>
         log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
         goto(CLOSED)

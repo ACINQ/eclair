@@ -16,10 +16,11 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{publicKey, varint}
-import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
 import scodec.bits.HexStringSyntax
 import scodec.codecs._
@@ -60,7 +61,26 @@ object UpdateFailMalformedHtlcTlv {
 sealed trait CommitSigTlv extends Tlv
 
 object CommitSigTlv {
-  val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint))
+
+  case class AlternativeCommitSig(fundingTxId: ByteVector32, signature: ByteVector64, htlcSignatures: List[ByteVector64])
+
+  object AlternativeCommitSig {
+    val codec: Codec[AlternativeCommitSig] = (
+      ("fundingTxId" | bytes32) ::
+        ("signature" | bytes64) ::
+        ("htlcSignatures" | listofsignatures)
+      ).as[AlternativeCommitSig]
+  }
+
+  case class AlternativeCommitSigsTlv(commitSigs: List[AlternativeCommitSig]) extends CommitSigTlv
+
+  object AlternativeCommitSigsTlv {
+    val codec: Codec[AlternativeCommitSigsTlv] = tlvField(listOfN(uint8, AlternativeCommitSig.codec))
+  }
+
+  val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint)
+    .typecase(UInt64(0x47010003), AlternativeCommitSigsTlv.codec)
+  )
 }
 
 sealed trait RevokeAndAckTlv extends Tlv

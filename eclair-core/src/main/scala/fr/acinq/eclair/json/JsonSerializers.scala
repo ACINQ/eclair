@@ -329,7 +329,7 @@ object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](rout
   val hops = route.hops.map(_.shortChannelId)
   val finalHop = route.finalHop_opt.map {
     case _: NodeHop => "trampoline"
-    case _: BlindedHop => "blinded"  
+    case _: BlindedHop => "blinded"
   }
   RouteShortChannelIdsJson(route.amount, hops, finalHop)
 })
@@ -486,6 +486,11 @@ object OriginSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
+case class CommitmentJson(fundingTx: InputInfo, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
+object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.commitInput, c.localFundingStatus, c.remoteFundingStatus, c.localCommit, c.remoteCommit, c.nextRemoteCommit_opt))
+// @formatter:on
+
+// @formatter:off
 private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
 object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
 
@@ -500,6 +505,15 @@ object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessag
 /** this is cosmetic, just to not have a '_opt' field in json, which will only appear if the option is defined anyway */
 private case class ShortIdsJson(real: RealScidStatus, localAlias: Alias, remoteAlias: Option[ShortChannelId])
 object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real, s.localAlias, s.remoteAlias_opt))
+// @formatter:on
+
+// @formatter:off
+private case class FundingTxStatusJson(status: String, tx: Option[Transaction])
+object FundingTxStatusSerializer extends ConvertClassSerializer[LocalFundingStatus]({
+  case LocalFundingStatus.UnknownFundingTx => FundingTxStatusJson("unknown", None)
+  case s: LocalFundingStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt)
+  case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt)
+})
 // @formatter:on
 
 case class CustomTypeHints(custom: Map[Class[_], String], override val typeHintFieldName: String = "type") extends TypeHints {
@@ -571,6 +585,11 @@ object CustomTypeHints {
     classOf[RealScidStatus.Temporary] -> "temporary",
     classOf[RealScidStatus.Final] -> "final",
   ), typeHintFieldName = "status")
+
+  val remoteFundingStatuses: CustomTypeHints = CustomTypeHints(Map(
+    classOf[RemoteFundingStatus.NotLocked.type] -> "not-locked",
+    classOf[RemoteFundingStatus.Locked.type] -> "locked",
+  ), typeHintFieldName = "status")
 }
 
 object JsonSerializers {
@@ -585,6 +604,7 @@ object JsonSerializers {
     CustomTypeHints.channelSources +
     CustomTypeHints.channelStates +
     CustomTypeHints.realScidStatuses +
+    CustomTypeHints.remoteFundingStatuses +
     ByteVectorSerializer +
     ByteVector32Serializer +
     ByteVector64Serializer +
@@ -633,6 +653,8 @@ object JsonSerializers {
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
     OnionMessageReceivedSerializer +
-    ShortIdsSerializer
+    ShortIdsSerializer +
+    FundingTxStatusSerializer +
+    CommitmentSerializer
 
 }

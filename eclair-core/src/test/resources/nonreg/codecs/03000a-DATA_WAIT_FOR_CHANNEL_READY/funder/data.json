@@ -1,14 +1,14 @@
 {
-  "type" : "DATA_WAIT_FOR_FUNDING_CONFIRMED",
+  "type" : "DATA_WAIT_FOR_CHANNEL_READY",
   "metaCommitments" : {
     "params" : {
-      "channelId" : "e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f4",
+      "channelId" : "83a6dea8adf975b60df17738937034a2f96cb8b784da01e2934e9e172244317d",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
       "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
         "fundingKeyPath" : {
-          "path" : [ 4092535092, 4227137620, 3959690417, 2298849496, 2106263857, 1090614243, 1495530077, 1280982866, 2147483649 ]
+          "path" : [ 303987973, 3198768511, 3783619274, 2277156978, 1699864653, 63358126, 3265052696, 516813756, 2147483649 ]
         },
         "dustLimit" : 1100,
         "maxHtlcValueInFlightMsat" : 500000000,
@@ -17,9 +17,10 @@
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 100,
         "isInitiator" : true,
-        "defaultFinalScriptPubKey" : "0014fec406ef7a0258cb503fe1f1803787d971eeb4d1",
+        "defaultFinalScriptPubKey" : "0014c59265957886e166f37c863dca15b49aa42d75b4",
         "initFeatures" : {
           "activated" : {
+            "option_route_blinding" : "optional",
             "payment_secret" : "mandatory",
             "gossip_queries_ex" : "optional",
             "option_data_loss_protect" : "optional",
@@ -33,18 +34,19 @@
       "remoteParams" : {
         "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
         "dustLimit" : 1000,
-        "maxHtlcValueInFlightMsat" : 18446744073709551615,
+        "maxHtlcValueInFlightMsat" : 1000000000,
         "requestedChannelReserve_opt" : 20000,
         "htlcMinimum" : 1000,
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 30,
-        "fundingPubKey" : "02e3048a4918587b33fb380e3061b7ac38ef4038551c0f098850d43e45ab1cb283",
-        "revocationBasepoint" : "02f7c3bf47cdc640304eda4c761a26dfebfee561de15ba106f3d9982d3ef3fbe10",
-        "paymentBasepoint" : "02be361b7bf1bdfb283cff3f83bf16f6f8fb67d3f480b541e76518939f667ab834",
-        "delayedPaymentBasepoint" : "03fcaec5443dd423f160c9b77a48b2585b186f2d850147f57210d3f8a8c8d754a7",
-        "htlcBasepoint" : "021eecb7915d4a3f2b391b9b1fbccbaad2006a1e67a0a03aa041721a817e9a0874",
+        "fundingPubKey" : "02b9da90e1ed391bd7b419b509f9499d09c52156c5deba6c927791c0074c1d18ff",
+        "revocationBasepoint" : "033b164d14b54f08a951f9e40fb84e637021f376c9ae2907975f9ff0795431205d",
+        "paymentBasepoint" : "03759da3f6bdcc2f595e1a98eb4803729743ab8608e28788cfe96726b5328c214c",
+        "delayedPaymentBasepoint" : "03abc3ae99fac104e94f79cafcd70247cc336cdc21a53d4c3a4c321b54e20902e7",
+        "htlcBasepoint" : "02d457910d53f6a735571f09b85a25797f5cb06df20be8b3c39412b3fe18a0f6f9",
         "initFeatures" : {
           "activated" : {
+            "option_route_blinding" : "optional",
             "payment_secret" : "mandatory",
             "gossip_queries_ex" : "optional",
             "option_data_loss_protect" : "optional",
@@ -75,20 +77,16 @@
       "localCommitIndex" : 0,
       "remoteCommitIndex" : 0,
       "originChannels" : { },
-      "remoteNextCommitInfo" : "030af74aa1e98668a504d50fe6f664aff3fbdb5c8681f0667c34cdb80024fb950f",
+      "remoteNextCommitInfo" : "0209317c45de4cff05adbf9d69edbc334a1c89325bade86f4194c6665336b7e9f8",
       "remotePerCommitmentSecrets" : null
     },
     "commitments" : [ {
       "fundingTx" : {
-        "outPoint" : "f4e3ba374da1a85abcd12a86c9a25b1391bda144619c770fe03f3881c6ad17e9:0",
+        "outPoint" : "7d314422179e4e93e201da84b7b86cf9a23470933877f10db675f9ada8dea683:0",
         "amountSatoshis" : 1000000
       },
       "localFunding" : {
-        "status" : "unconfirmed",
-        "tx" : {
-          "txid" : "f4e3ba374da1a85abcd12a86c9a25b1391bda144619c770fe03f3881c6ad17e9",
-          "tx" : "020000000101010101010101010101010101010101010101010101010101010101010101012a00000000ffffffff0140420f0000000000220020a5fb8f636bb73759b4c7e5edd55fd8e9e8e5467c7079709cd22fb519c79ab8b300000000"
-        }
+        "status" : "unknown"
       },
       "remoteFunding" : {
         "status" : "locked"
@@ -103,10 +101,10 @@
         },
         "commitTxAndRemoteSig" : {
           "commitTx" : {
-            "txid" : "c6fe6bc0a5a9c149a03a907d2351714aa27fc98a485e981343cea08a1904ee26",
-            "tx" : "0200000001e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f40000000000fd11418002400d0300000000001600142276cff9d96f4696d6e504568db62088428706e0b8180c0000000000220020ad1b593fc0780225407ba65c612b974b4b66610e129f21064cb8ada0ffe4c8d2b7262120"
+            "txid" : "a591186503570022767b96fc4e02448e2c2d95f9e83f06c526f810886b02dedd",
+            "tx" : "020000000183a6dea8adf975b60df17738937034a2f96cb8b784da01e2934e9e172244317d0000000000fc10bb8002400d03000000000016001434b58af5c6bf8472898ef7ed44f65bce2e4a6101b8180c00000000002200206bf6eeedf2e93dee452c92c0c1e2421cc064bf8f70b432c6e36459215576d24decab0320"
           },
-          "remoteSig" : "1ea9cffd2af82f6c14251bd59ffa3e876178c7b263f16d12790c33fc093eaed053dd9e0d49f79558aeb3c2fe7fe84f95a91eecbea2679fb65916ad9632df07b4"
+          "remoteSig" : "8ccca40bbf6c859ceb2d5288153801426e19f8b119c2d1d4ba6d82511c7816aa0eaa8e41eafb179818d1ba7b0cfdce2da5fa002921df00a1fb4e1458d0b9042c"
         },
         "htlcTxsAndRemoteSigs" : [ ]
       },
@@ -118,20 +116,16 @@
           "toLocal" : 200000000,
           "toRemote" : 800000000
         },
-        "txid" : "10e4205393672b61bbde4261441a2cf8d08ae50fdb813df8efaac6c6090ef290",
-        "remotePerCommitmentPoint" : "032a992c123095216f7937a8b0baf442211eeb57942d586854a61a0dc6b01ca6ee"
+        "txid" : "839b92423077adb38eeaa118dd6ba0e6daf8c1e0add666ddd18f57b517a2d750",
+        "remotePerCommitmentPoint" : "0324b50221ad635b97f597802fbe5b2d6414fdf41f224ac1869d3772314e9fbfa5"
       }
     } ]
   },
-  "waitingSince" : 400000,
-  "lastSent" : {
-    "temporaryChannelId" : "0000000000000000000000000000000000000000000000000000000000000000",
-    "fundingTxid" : "e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f4",
-    "fundingOutputIndex" : 0,
-    "signature" : "bd55d8660f54a1be6e123e2ed9cd6669d90b830d99dc6f9addd9ae65c447ea6b657e2fe39841f66c1d6a2fc80ad59e6f3d9bfaf177f4e95a579f0683bf3e9790",
-    "tlvStream" : {
-      "records" : [ ],
-      "unknown" : [ ]
-    }
+  "shortIds" : {
+    "real" : {
+      "status" : "temporary",
+      "realScid" : "400000x42x0"
+    },
+    "localAlias" : "0x3dab1f7dc6942fd"
   }
 }

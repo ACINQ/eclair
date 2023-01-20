@@ -1,6 +1,7 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
+import com.softwaremill.quicklens._
 import com.zaxxer.hikari.HikariConfig
 import fr.acinq.eclair.TestDatabases.TestPgDatabases.getNewDatabase
 import fr.acinq.eclair.channel._
@@ -54,7 +55,7 @@ object TestDatabases {
    *
    * This will help catch codec errors that would not be caught by unit tests because we don't test much how codecs interact with each other
    *
-   * @param innerDb actual database instance 
+   * @param innerDb actual database instance
    */
   class SqliteChannelsDbWithValidation(innerDb: SqliteChannelsDb) extends SqliteChannelsDb(innerDb.sqlite) {
     override def addOrUpdateChannel(data: PersistentChannelData): Unit = {
@@ -66,20 +67,21 @@ object TestDatabases {
         case c: Origin.Cold => c
       }
 
-      def freeze2(input: Commitments): Commitments = input.copy(originChannels = input.originChannels.view.mapValues(o => freeze1(o)).toMap)
+      def freeze2(input: MetaCommitments): MetaCommitments = input
+        .modifyAll(_.common.originChannels.each).using(freeze1)
 
       // payment origins are always "cold" when deserialized, so to compare a "live" channel state against a state that has been
       // serialized and deserialized we need to turn "hot" payments into cold ones
       def freeze3(input: PersistentChannelData): PersistentChannelData = input match {
-        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_NEGOTIATING => d.copy(commitments = freeze2(d.commitments))
-        case d: DATA_SHUTDOWN => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_NORMAL => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_CLOSING => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_NEGOTIATING => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_SHUTDOWN => d.copy(metaCommitments = freeze2(d.metaCommitments))
       }
 
       super.addOrUpdateChannel(data)

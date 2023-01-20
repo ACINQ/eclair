@@ -80,20 +80,20 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val channelId = fundingParamsA.channelId
 
     def spawnTxBuilderAlice(fundingParams: InteractiveTxParams, commitFeerate: FeeratePerKw, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsA.nodeId,
-      fundingParams, nodeParamsA.channelKeyManager,
+      nodeParamsB.nodeId,
+      nodeParamsA, fundingParams,
       0 msat, 0 msat,
-      localParamsA, remoteParamsB,
+      Params(fundingParams.channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public),
       commitFeerate, firstPerCommitmentPointB,
-      ChannelFlags.Public, ChannelConfig.standard, channelFeatures, wallet))
+      wallet))
 
     def spawnTxBuilderBob(fundingParams: InteractiveTxParams, commitFeerate: FeeratePerKw, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsB.nodeId,
-      fundingParams, nodeParamsB.channelKeyManager,
+      nodeParamsA.nodeId,
+      nodeParamsB, fundingParams,
       0 msat, 0 msat,
-      localParamsB, remoteParamsA,
+      Params(fundingParams.channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public),
       commitFeerate, firstPerCommitmentPointA,
-      ChannelFlags.Public, ChannelConfig.standard, channelFeatures, wallet))
+      wallet))
   }
 
   private def createChannelParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)): ChannelParams = {
@@ -246,7 +246,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
 
       // The resulting transaction is valid and has the right feerate.
-      assert(txA.signedTx.txid == txB.tx.buildUnsignedTx().txid)
+      assert(txA.signedTx.txid == txB.txId)
       assert(txA.signedTx.lockTime == aliceParams.lockTime)
       assert(txA.tx.localAmountIn == utxosA.sum)
       assert(txA.tx.remoteAmountIn == utxosB.sum)
@@ -412,7 +412,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
 
       // The resulting transaction is valid and has the right feerate.
-      assert(txA.signedTx.txid == txB.tx.buildUnsignedTx().txid)
+      assert(txA.signedTx.txid == txB.txId)
       assert(txA.signedTx.lockTime == aliceParams.lockTime)
       assert(txA.tx.localAmountIn == utxosA.sum)
       assert(txA.tx.remoteAmountIn == 0.sat)
@@ -507,7 +507,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val txA = alice2bob.expectMsgType[Succeeded].sharedTx.asInstanceOf[FullySignedSharedTransaction]
 
       // The resulting transaction doesn't contain Bob's removed inputs and outputs.
-      assert(txA.signedTx.txid == txB.tx.buildUnsignedTx().txid)
+      assert(txA.signedTx.txid == txB.txId)
       assert(txA.signedTx.lockTime == aliceParams.lockTime)
       assert(txA.signedTx.txIn.map(_.outPoint) == Seq(toOutPoint(inputA)))
       assert(txA.signedTx.txOut.length == 2)

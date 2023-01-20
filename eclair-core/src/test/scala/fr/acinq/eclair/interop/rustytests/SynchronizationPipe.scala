@@ -128,7 +128,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       exec(script.drop(1), a, b)
     case RES_GET_CHANNEL_DATA(d: DATA_NORMAL) if script.head.endsWith(":dump") =>
       def rtrim(s: String) = s.replaceAll("\\s+$", "")
-      import d.commitments._
+      import d.metaCommitments.main._
       val l = List(
         "LOCAL COMMITS:",
         s" Commit ${d.commitments.localCommit.index}:",

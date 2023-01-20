@@ -81,7 +81,8 @@ case class Commitments(channelId: ByteVector32,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
-                       commitInput: InputInfo,
+                       localFundingStatus: LocalFundingStatus,
+                       remoteFundingStatus: RemoteFundingStatus,
                        remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
 
   import Commitments._
@@ -202,6 +203,8 @@ case class Commitments(channelId: ByteVector32,
     require(Transactions.checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
     commitTx
   }
+
+  val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
 
   val fundingTxId: ByteVector32 = commitInput.outPoint.txid
 
@@ -820,22 +823,6 @@ case class Commitments(channelId: ByteVector32,
     }
   }
 
-  /**
-   * When reconnecting, we drop all unsigned changes.
-   */
-  def discardUnsignedUpdates(implicit log: LoggingAdapter): Commitments = {
-    log.debug("discarding proposed OUT: {}", localChanges.proposed.map(msg2String(_)).mkString(","))
-    log.debug("discarding proposed IN: {}", remoteChanges.proposed.map(msg2String(_)).mkString(","))
-    val commitments1 = copy(
-      localChanges = localChanges.copy(proposed = Nil),
-      remoteChanges = remoteChanges.copy(proposed = Nil),
-      localNextHtlcId = localNextHtlcId - localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
-      remoteNextHtlcId = remoteNextHtlcId - remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
-    log.debug(s"localNextHtlcId=${localNextHtlcId}->${commitments1.localNextHtlcId}")
-    log.debug(s"remoteNextHtlcId=${remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
-    commitments1
-  }
-
   def changes2String: String = {
     s"""commitments:
        |    localChanges:
@@ -877,17 +864,36 @@ case class Commitments(channelId: ByteVector32,
     commitInput.redeemScript == fundingScript
   }
 
-  /**
-   * We update local/global features at reconnection
-   */
-  def updateFeatures(localInit: Init, remoteInit: Init): Commitments = copy(
-    localParams = localParams.copy(initFeatures = localInit.features),
-    remoteParams = remoteParams.copy(initFeatures = remoteInit.features)
-  )
+  def params: Params = Params(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
+
+  def common: Common = Common(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId, localCommit.index, remoteCommit.index, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
+
+  def commitment: Commitment = Commitment(localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.swap.map(_.nextRemoteCommit).toOption)
 
 }
 
 object Commitments {
+
+  /** A 1:1 conversion helper to facilitate migration, nothing smart here. */
+  def apply(params: Params, common: Common, commitment: Commitment): Commitments = Commitments(
+    channelId = params.channelId,
+    channelConfig = params.channelConfig,
+    channelFeatures = params.channelFeatures,
+    localParams = params.localParams,
+    remoteParams = params.remoteParams,
+    channelFlags = params.channelFlags,
+    localCommit = commitment.localCommit,
+    remoteCommit = commitment.remoteCommit,
+    localChanges = common.localChanges,
+    remoteChanges = common.remoteChanges,
+    localNextHtlcId = common.localNextHtlcId,
+    remoteNextHtlcId = common.remoteNextHtlcId,
+    originChannels = common.originChannels,
+    remoteNextCommitInfo = common.remoteNextCommitInfo.swap.map(waitForRev => WaitingForRevocation(commitment.nextRemoteCommit_opt.get, waitForRev.sent, waitForRev.sentAfterLocalCommitIndex)).swap,
+    localFundingStatus = commitment.localFundingStatus,
+    remoteFundingStatus = commitment.remoteFundingStatus,
+    remotePerCommitmentSecrets = common.remotePerCommitmentSecrets
+  )
 
   def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
     case u: UpdateFulfillHtlc => id == u.id

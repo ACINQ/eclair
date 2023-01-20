@@ -18,8 +18,10 @@ package fr.acinq.eclair.wire.internal.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Satoshi, SatoshiLong, Transaction, TxIn}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.LocalFundingStatus.UnknownFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.ShaChain
@@ -30,7 +32,6 @@ import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat,
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
 import fr.acinq.eclair.wire.protocol.{CommonCodecs, UpdateAddHtlc}
-import fr.acinq.eclair.{RealShortChannelId, _}
 import org.json4s.jackson.Serialization
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
@@ -93,7 +94,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // and re-encode it with the new codec
     val bin_new = ByteVector(channelDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format
-    assert(bin_new.startsWith(hex"030000"))
+    assert(bin_new.startsWith(hex"040000"))
     // now let's decode it again
     val data_new2 = channelDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
@@ -177,7 +178,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // and we encode with the new codec
       val newBin = channelDataCodec.encode(decoded1).require.bytes
       // make sure that encoding used the new codec
-      assert(newBin.startsWith(hex"0300"))
+      assert(newBin.startsWith(hex"0400"))
       // make sure that round-trip yields the same data
       val decoded2 = channelDataCodec.decode(newBin.bits).require.value
       assert(decoded1 == decoded2)
@@ -326,10 +327,11 @@ object ChannelCodecsSpec {
       remoteNextHtlcId = 4L,
       originChannels = origins,
       remoteNextCommitInfo = Right(randomKey().publicKey),
-      commitInput = commitmentInput,
+      localFundingStatus = UnknownFundingTx,
+      remoteFundingStatus = RemoteFundingStatus.NotLocked,
       remotePerCommitmentSecrets = ShaChain.init)
 
-    DATA_NORMAL(commitments, ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None)
+    DATA_NORMAL(MetaCommitments(commitments), ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None)
   }
 
 }
