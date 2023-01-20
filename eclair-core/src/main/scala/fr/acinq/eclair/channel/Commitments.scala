@@ -161,119 +161,6 @@ case class Commitments(channelId: ByteVector32,
     commitTx
   }
 
-  val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
-
-  val fundingTxId: ByteVector32 = commitInput.outPoint.txid
-
-  val commitmentFormat: CommitmentFormat = channelFeatures.commitmentFormat
-
-  val channelType: SupportedChannelType = channelFeatures.channelType
-
-  val localNodeId: PublicKey = localParams.nodeId
-
-  val remoteNodeId: PublicKey = remoteParams.nodeId
-
-  val announceChannel: Boolean = channelFlags.announceChannel
-
-  val capacity: Satoshi = commitInput.txOut.amount
-
-  // We can safely cast to millisatoshis since we verify that it's less than a valid millisatoshi amount.
-  val maxHtlcAmount: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toBigInt.min(localParams.maxHtlcValueInFlightMsat.toLong).toLong.msat
-
-  /** Channel reserve that applies to our funds. */
-  val localChannelReserve: Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
-    (capacity / 100).max(remoteParams.dustLimit)
-  } else {
-    remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Commitments
-  }
-
-  /** Channel reserve that applies to our peer's funds. */
-  val remoteChannelReserve: Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
-    (capacity / 100).max(localParams.dustLimit)
-  } else {
-    localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Commitments
-  }
-
-  // NB: when computing availableBalanceForSend and availableBalanceForReceive, the initiator keeps an extra buffer on
-  // top of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see
-  // https://github.com/lightningnetwork/lightning-rfc/issues/728 for details).
-  //
-  // This extra buffer (which we call "funder fee buffer") is calculated as follows:
-  //  1) Simulate a x2 feerate increase and compute the corresponding commit tx fee (note that it may trim some HTLCs)
-  //  2) Add the cost of adding a new untrimmed HTLC at that increased feerate. This ensures that we'll be able to
-  //     actually use the channel to add new HTLCs if the feerate doubles.
-  //
-  // If for example the current feerate is 1000 sat/kw, the dust limit 546 sat, and we have 3 pending outgoing HTLCs for
-  // respectively 1250 sat, 2000 sat and 2500 sat.
-  // commit tx fee = commitWeight * feerate + 3 * htlcOutputWeight * feerate = 724 * 1000 + 3 * 172 * 1000 = 1240 sat
-  // To calculate the funder fee buffer, we first double the feerate and calculate the corresponding commit tx fee.
-  // By doubling the feerate, the first HTLC becomes trimmed so the result is: 724 * 2000 + 2 * 172 * 2000 = 2136 sat
-  // We then add the additional fee for a potential new untrimmed HTLC: 172 * 2000 = 344 sat
-  // The funder fee buffer is 2136 + 344 = 2480 sat
-  //
-  // If there are many pending HTLCs that are only slightly above the trim threshold, the funder fee buffer may be
-  // smaller than the current commit tx fee because those HTLCs will be trimmed and the commit tx weight will decrease.
-  // For example if we have 10 outgoing HTLCs of 1250 sat:
-  //  - commit tx fee = 724 * 1000 + 10 * 172 * 1000 = 2444 sat
-  //  - commit tx fee at twice the feerate = 724 * 2000 = 1448 sat (all HTLCs have been trimmed)
-  //  - cost of an additional untrimmed HTLC = 172 * 2000 = 344 sat
-  //  - funder fee buffer = 1448 + 344 = 1792 sat
-  // In that case the current commit tx fee is higher than the funder fee buffer and will dominate the balance restrictions.
-
-  lazy val availableBalanceForSend: MilliSatoshi = {
-    // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-    val remoteCommit1 = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
-    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
-    val balanceNoFees = (reduced.toRemote - localChannelReserve).max(0 msat)
-    if (localParams.isInitiator) {
-      // The initiator always pays the on-chain fees, so we must subtract that from the amount we can send.
-      val commitFees = commitTxTotalCostMsat(remoteParams.dustLimit, reduced, commitmentFormat)
-      // the initiator needs to keep a "funder fee buffer" (see explanation above)
-      val funderFeeBuffer = commitTxTotalCostMsat(remoteParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
-      val amountToReserve = commitFees.max(funderFeeBuffer)
-      if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced, commitmentFormat)) {
-        // htlc will be trimmed
-        (balanceNoFees - amountToReserve).max(0 msat)
-      } else {
-        // htlc will have an output in the commitment tx, so there will be additional fees.
-        val commitFees1 = commitFees + htlcOutputFee(reduced.commitTxFeerate, commitmentFormat)
-        // we take the additional fees for that htlc output into account in the fee buffer at a x2 feerate increase
-        val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
-        val amountToReserve1 = commitFees1.max(funderFeeBuffer1)
-        (balanceNoFees - amountToReserve1).max(0 msat)
-      }
-    } else {
-      // The non-initiator doesn't pay on-chain fees.
-      balanceNoFees
-    }
-  }
-
-  lazy val availableBalanceForReceive: MilliSatoshi = {
-    val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val balanceNoFees = (reduced.toRemote - remoteChannelReserve).max(0 msat)
-    if (localParams.isInitiator) {
-      // The non-initiator doesn't pay on-chain fees so we don't take those into account when receiving.
-      balanceNoFees
-    } else {
-      // The initiator always pays the on-chain fees, so we must subtract that from the amount we can receive.
-      val commitFees = commitTxTotalCostMsat(localParams.dustLimit, reduced, commitmentFormat)
-      // we expected the initiator to keep a "funder fee buffer" (see explanation above)
-      val funderFeeBuffer = commitTxTotalCostMsat(localParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
-      val amountToReserve = commitFees.max(funderFeeBuffer)
-      if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(localParams.dustLimit, reduced, commitmentFormat)) {
-        // htlc will be trimmed
-        (balanceNoFees - amountToReserve).max(0 msat)
-      } else {
-        // htlc will have an output in the commitment tx, so there will be additional fees.
-        val commitFees1 = commitFees + htlcOutputFee(reduced.commitTxFeerate, commitmentFormat)
-        // we take the additional fees for that htlc output into account in the fee buffer at a x2 feerate increase
-        val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
-        val amountToReserve1 = commitFees1.max(funderFeeBuffer1)
-        (balanceNoFees - amountToReserve1).max(0 msat)
-      }
-    }
-  }
-
   /**
    * Add a change to our proposed change list.
    *
@@ -780,21 +667,6 @@ case class Commitments(channelId: ByteVector32,
     }
   }
 
-  def changes2String: String = {
-    s"""commitments:
-       |    localChanges:
-       |        proposed: ${localChanges.proposed.map(msg2String(_)).mkString(" ")}
-       |        signed: ${localChanges.signed.map(msg2String(_)).mkString(" ")}
-       |        acked: ${localChanges.acked.map(msg2String(_)).mkString(" ")}
-       |    remoteChanges:
-       |        proposed: ${remoteChanges.proposed.map(msg2String(_)).mkString(" ")}
-       |        acked: ${remoteChanges.acked.map(msg2String(_)).mkString(" ")}
-       |        signed: ${remoteChanges.signed.map(msg2String(_)).mkString(" ")}
-       |    nextHtlcId:
-       |        local: $localNextHtlcId
-       |        remote: $remoteNextHtlcId""".stripMargin
-  }
-
   def specs2String: String = {
     s"""specs:
        |localcommit:
@@ -826,6 +698,32 @@ case class Commitments(channelId: ByteVector32,
   def common: Common = Common(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId, localCommit.index, remoteCommit.index, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
 
   def commitment: Commitment = Commitment(localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.swap.map(_.nextRemoteCommit).toOption)
+
+  def commitInput: InputInfo = commitment.commitInput
+
+  def fundingTxId: ByteVector32 = commitment.fundingTxId
+
+  def commitmentFormat: CommitmentFormat = params.commitmentFormat
+
+  def channelType: SupportedChannelType = params.channelType
+
+  def localNodeId: PublicKey = params.localNodeId
+
+  def remoteNodeId: PublicKey = params.remoteNodeId
+
+  def announceChannel: Boolean = params.announceChannel
+
+  def capacity: Satoshi = commitment.capacity
+
+  def maxHtlcAmount: MilliSatoshi = params.maxHtlcAmount
+
+  def localChannelReserve: Satoshi = commitment.localChannelReserve(params)
+
+  def remoteChannelReserve: Satoshi = commitment.remoteChannelReserve(params)
+
+  def availableBalanceForSend: MilliSatoshi = commitment.availableBalanceForSend(params, common)
+
+  def availableBalanceForReceive: MilliSatoshi = commitment.availableBalanceForReceive(params, common)
 
 }
 
