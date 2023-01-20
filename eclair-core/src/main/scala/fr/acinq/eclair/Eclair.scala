@@ -225,7 +225,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   } yield peerinfos
 
   override def node(nodeId: PublicKey)(implicit timeout: Timeout): Future[Option[Router.PublicNode]] = {
-    (appKit.router ? Router.GetNode(nodeId)).mapTo[Router.GetNodeResponse].map {
+    (appKit.router ? Router.GetNode(ActorRef.noSender, nodeId)).mapTo[Router.GetNodeResponse].map {
       case n: PublicNode => Some(n)
       case _: UnknownNode => None
     }
