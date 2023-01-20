@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrat
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll
-import fr.acinq.eclair.io.{Peer, PeerConnection}
+import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.WeightRatios
@@ -208,10 +208,13 @@ object TestConstants {
         relayPolicy = RelayAll,
         timeout = 1 minute
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      channelOpenerWhitelist = Set.empty,
+      maxPendingChannelsPerPeer = 99,
+      maxTotalPendingChannelsPrivateNodes = 99
     )
 
-    def channelParams: LocalParams = Peer.makeChannelParams(
+    def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
       None,
@@ -357,10 +360,13 @@ object TestConstants {
         relayPolicy = RelayAll,
         timeout = 1 minute
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      channelOpenerWhitelist = Set.empty,
+      maxPendingChannelsPerPeer = 99,
+      maxTotalPendingChannelsPrivateNodes = 99
     )
 
-    def channelParams: LocalParams = Peer.makeChannelParams(
+    def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
       None,

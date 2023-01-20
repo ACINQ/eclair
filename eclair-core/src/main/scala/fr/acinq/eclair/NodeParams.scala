@@ -84,7 +84,10 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogThreshold: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration]) {
+                      purgeInvoicesInterval: Option[FiniteDuration],
+                      channelOpenerWhitelist: Set[PublicKey],
+                      maxPendingChannelsPerPeer: Int,
+                      maxTotalPendingChannelsPrivateNodes: Int) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -445,6 +448,10 @@ object NodeParams extends Logging {
     val asyncPaymentHoldTimeoutBlocks = config.getInt("relay.async-payments.hold-timeout-blocks")
     require(asyncPaymentHoldTimeoutBlocks >= (asyncPaymentCancelSafetyBeforeTimeoutBlocks + expiryDelta).toInt, "relay.async-payments.hold-timeout-blocks must not be less than relay.async-payments.cancel-safety-before-timeout-blocks + channel.expiry-delta-blocks; otherwise it will have no effect")
 
+    val channelOpenerWhitelist: Set[PublicKey] = config.getStringList("channel-opener-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+    val maxPendingChannelsPerPeer = config.getInt("max-pending-channels-per-peer")
+    val maxTotalPendingChannelsPrivateNodes = config.getInt("max-total-pending-channels-private-nodes")
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -559,7 +566,10 @@ object NodeParams extends Logging {
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval
+      purgeInvoicesInterval = purgeInvoicesInterval,
+      channelOpenerWhitelist = channelOpenerWhitelist,
+      maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
+      maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes
     )
   }
 }

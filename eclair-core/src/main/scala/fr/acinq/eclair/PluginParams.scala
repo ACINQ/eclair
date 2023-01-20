@@ -19,11 +19,10 @@ package fr.acinq.eclair
 import akka.actor.typed.ActorRef
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
-import fr.acinq.eclair.channel.{LocalParams, Origin}
+import fr.acinq.eclair.channel.Origin
+import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelNonInitiator}
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
 import fr.acinq.eclair.wire.protocol.{Error, OpenChannel, OpenDualFundedChannel}
-
-import scala.concurrent.duration.FiniteDuration
 
 /** Custom plugin parameters. */
 trait PluginParams {
@@ -61,18 +60,19 @@ trait CustomCommitmentsPlugin extends PluginParams {
 }
 
 // @formatter:off
-case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], open: Either[OpenChannel, OpenDualFundedChannel], temporaryChannelId: ByteVector32, localParams: LocalParams) {
-  val remoteFundingAmount: Satoshi = open match {
+trait InterceptOpenChannelCommand
+case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], openChannelNonInitiator: OpenChannelNonInitiator, temporaryChannelId: ByteVector32, defaultParams: DefaultParams) extends InterceptOpenChannelCommand {
+  val remoteFundingAmount: Satoshi = openChannelNonInitiator.open match {
     case Left(open: OpenChannel) => open.fundingSatoshis
     case Right(open: OpenDualFundedChannel) => open.fundingAmount
   }
 }
 
 sealed trait InterceptOpenChannelResponse
-case class AcceptOpenChannel(temporaryChannelId: ByteVector32, localParams: LocalParams) extends InterceptOpenChannelResponse
+case class AcceptOpenChannel(temporaryChannelId: ByteVector32, defaultParams: DefaultParams) extends InterceptOpenChannelResponse
 case class RejectOpenChannel(temporaryChannelId: ByteVector32, error: Error) extends InterceptOpenChannelResponse
 // @formatter:on
 
 trait InterceptOpenChannelPlugin extends PluginParams {
-  def openChannelInterceptor: ActorRef[InterceptOpenChannelReceived]
+  def openChannelInterceptor: ActorRef[InterceptOpenChannelCommand]
 }

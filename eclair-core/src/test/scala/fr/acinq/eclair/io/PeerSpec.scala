@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
-import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Status}
+import akka.actor.{Actor, ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Props, Status}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong, Script}
@@ -52,7 +52,7 @@ class PeerSpec extends FixtureSpec {
 
   override implicit val patienceConfig: PatienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
 
-  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, system: ActorSystem, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe) {
+  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, system: ActorSystem, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe, mockLimiter: ActorRef) {
     implicit val implicitSystem: ActorSystem = system
 
     def cleanup(): Unit = TestKit.shutdownActorSystem(system)
@@ -91,9 +91,16 @@ class PeerSpec extends FixtureSpec {
       }
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref))
+    object FakeLimiter extends Actor {
+      def receive: Receive = {
+        case msg: PendingChannelsRateLimiter.AddOrRejectChannel => msg.replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
+      }
+    }
+    val fakeLimiter = system.actorOf(Props(FakeLimiter)).ref
 
-    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard)
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, fakeLimiter))
+
+    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, fakeLimiter)
   }
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
@@ -596,7 +603,7 @@ class PeerSpec extends FixtureSpec {
         channel.ref
       }
     }
-    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref))
+    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref, mockLimiter.toTyped))
     connect(remoteNodeId, peer, peerConnection, switchboard)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, Some(100 msat), None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
