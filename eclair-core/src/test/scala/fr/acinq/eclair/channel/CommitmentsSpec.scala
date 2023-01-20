@@ -18,16 +18,16 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.LocalFundingStatus.UnknownFundingTx
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.LocalFundingStatus.UnknownFundingTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.LocalChannelKeyManager
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc, UpdateFailHtlc}
-import fr.acinq.eclair._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -71,8 +71,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
     val maxDustExposure = 500000 sat
 
-    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
+    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
 
     assert(ac0.availableBalanceForSend > p) // alice can afford the payment
     assert(ac0.availableBalanceForSend == a)
@@ -156,8 +156,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
     val maxDustExposure = 500000 sat
 
-    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
+    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
 
     assert(ac0.availableBalanceForSend > p) // alice can afford the payment
     assert(ac0.availableBalanceForSend == a)
@@ -243,8 +243,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
     val maxDustExposure = 500000 sat
 
-    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
+    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
 
     assert(ac0.availableBalanceForSend > (p1 + p2)) // alice can afford the payments
     assert(bc0.availableBalanceForSend > p3) // bob can afford the payment
@@ -383,7 +383,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   // See https://github.com/lightningnetwork/lightning-rfc/issues/728
   test("funder keeps additional reserve to avoid channel being stuck") { f =>
     val isInitiator = true
-    val c = CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isInitiator)
+    val c = MetaCommitments(CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isInitiator))
     val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
     val Right((c1, _)) = c.sendAdd(cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
     assert(c1.availableBalanceForSend == 0.msat)
@@ -398,7 +398,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("can send availableForSend") { f =>
     for (isInitiator <- Seq(true, false)) {
-      val c = CommitmentsSpec.makeCommitments(702000000 msat, 52000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
+      val c = MetaCommitments(CommitmentsSpec.makeCommitments(702000000 msat, 52000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator))
       val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
       val result = c.sendAdd(cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
       assert(result.isRight, result)
@@ -425,7 +425,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
         toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
         toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
-      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
+      var c = MetaCommitments(CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator))
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
