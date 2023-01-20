@@ -480,7 +480,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           case RbfStatus.RbfAborted =>
             log.info("rejecting rbf attempt: our previous tx_abort was not acked")
             stay() sending Warning(d.channelId, InvalidRbfTxAbortNotAcked(d.channelId).getMessage)
-          case _ =>
+          case _: RbfStatus.RbfRequested | _: RbfStatus.RbfInProgress =>
             log.info("rejecting rbf attempt: the current rbf attempt must be completed or aborted first")
             stay() sending Warning(d.channelId, InvalidRbfAlreadyInProgress(d.channelId).getMessage)
         }
