@@ -464,7 +464,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.main.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
-        case Left(waitForRevocation) =>
+        case Left(_) =>
           log.debug("already in the process of signing, will sign again as soon as possible")
           stay()
       }
@@ -588,7 +588,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
                 (localShutdown, localShutdown :: Nil)
             }
             // are there pending signed changes on either side? we need to have received their last revocation!
-            if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
+            if (d.metaCommitments.hasNoPendingHtlcsOrFeeUpdate) {
               // there are no pending signed changes, let's go directly to NEGOTIATING
               if (d.commitments.localParams.isInitiator) {
                 // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
@@ -823,7 +823,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.main.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
-        case Left(waitForRevocation) =>
+        case Left(_) =>
           log.debug("already in the process of signing, will sign again as soon as possible")
           stay()
       }
@@ -834,7 +834,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           // we always reply with a revocation
           log.debug("received a new sig:\n{}", metaCommitments1.main.specs2String)
           context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments1.main))
-          if (metaCommitments1.main.hasNoPendingHtlcsOrFeeUpdate) {
+          if (metaCommitments1.hasNoPendingHtlcsOrFeeUpdate) {
             if (d.commitments.localParams.isInitiator) {
               // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
               val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, metaCommitments1.main, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, closingFeerates)
@@ -873,7 +873,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               log.debug("forwarding {} to relayer", result)
               relayer ! result
           }
-          if (metaCommitments1.main.hasNoPendingHtlcsOrFeeUpdate) {
+          if (metaCommitments1.hasNoPendingHtlcsOrFeeUpdate) {
             log.debug("switching to NEGOTIATING spec:\n{}", metaCommitments1.main.specs2String)
             if (d.commitments.localParams.isInitiator) {
               // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
@@ -1745,7 +1745,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     val shouldUpdateFee = commitments.localParams.isInitiator && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
     val shouldClose = !commitments.localParams.isInitiator &&
       nodeParams.onChainFeeConf.feerateToleranceFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelType, networkFeeratePerKw, currentFeeratePerKw) &&
-      commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
+      d.metaCommitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldUpdateFee) {
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
       stay()
@@ -1771,7 +1771,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     // if the network fees are too high we risk to not be able to confirm our current commitment
     val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
       nodeParams.onChainFeeConf.feerateToleranceFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelType, networkFeeratePerKw, currentFeeratePerKw) &&
-      commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
+      d.metaCommitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldClose) {
       if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
         log.warning(s"closing OFFLINE channel due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
@@ -1895,8 +1895,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         // note: this can only happen if state is NORMAL or SHUTDOWN
         // -> in NEGOTIATING there are no more htlcs
         // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
-        val timedOutOutgoing = commitments.timedOutOutgoingHtlcs(c.blockHeight)
-        val almostTimedOutIncoming = commitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.channelConf.fulfillSafetyBeforeTimeout)
+        val timedOutOutgoing = d.metaCommitments.timedOutOutgoingHtlcs(c.blockHeight)
+        val almostTimedOutIncoming = d.metaCommitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.channelConf.fulfillSafetyBeforeTimeout)
         if (timedOutOutgoing.nonEmpty) {
           // Downstream timed out.
           handleLocalError(HtlcsTimedoutDownstream(d.channelId, timedOutOutgoing), d, Some(c))

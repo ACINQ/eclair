@@ -86,81 +86,6 @@ case class Commitments(channelId: ByteVector32,
 
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
 
-  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
-
-  def hasNoPendingHtlcsOrFeeUpdate: Boolean =
-    remoteNextCommitInfo.isRight &&
-      localCommit.spec.htlcs.isEmpty &&
-      remoteCommit.spec.htlcs.isEmpty &&
-      (localChanges.signed ++ localChanges.acked ++ remoteChanges.signed ++ remoteChanges.acked).collectFirst { case _: UpdateFee => true }.isEmpty
-
-  def hasPendingOrProposedHtlcs: Boolean = !hasNoPendingHtlcs ||
-    localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
-    remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
-
-  def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = {
-    def expired(add: UpdateAddHtlc): Boolean = currentHeight >= add.cltvExpiry.blockHeight
-
-    localCommit.spec.htlcs.collect(outgoing).filter(expired) ++
-      remoteCommit.spec.htlcs.collect(incoming).filter(expired) ++
-      remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(expired).toSet)
-  }
-
-  /**
-   * Return the outgoing HTLC with the given id if it is:
-   *  - signed by us in their commitment transaction (remote)
-   *  - signed by them in our commitment transaction (local)
-   *
-   * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
-   */
-  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
-    remoteSigned <- localCommit.spec.findOutgoingHtlcById(htlcId)
-  } yield {
-    require(localSigned.add == remoteSigned.add)
-    localSigned.add
-  }
-
-  /**
-   * Return the incoming HTLC with the given id if it is:
-   *  - signed by us in their commitment transaction (remote)
-   *  - signed by them in our commitment transaction (local)
-   *
-   * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
-   */
-  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
-    remoteSigned <- localCommit.spec.findIncomingHtlcById(htlcId)
-  } yield {
-    require(localSigned.add == remoteSigned.add)
-    localSigned.add
-  }
-
-  /**
-   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the preimage for those HTLCs,
-   * we need to get a remote signed updated commitment that removes those HTLCs.
-   * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
-   * and our HTLC success in case of a force-close.
-   */
-  def almostTimedOutIncomingHtlcs(currentHeight: BlockHeight, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
-    def nearlyExpired(add: UpdateAddHtlc): Boolean = currentHeight >= (add.cltvExpiry - fulfillSafety).blockHeight
-
-    localCommit.spec.htlcs.collect(incoming).filter(nearlyExpired)
-  }
-
-  /**
-   * Return a fully signed commit tx, that can be published as-is.
-   */
-  def fullySignedLocalCommitTx(keyManager: ChannelKeyManager): CommitTx = {
-    val unsignedCommitTx = localCommit.commitTxAndRemoteSig.commitTx
-    val localSig = keyManager.sign(unsignedCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
-    val remoteSig = localCommit.commitTxAndRemoteSig.remoteSig
-    val commitTx = Transactions.addSigs(unsignedCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, localSig, remoteSig)
-    // We verify the remote signature when receiving their commit_sig, so this check should always pass.
-    require(Transactions.checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
-    commitTx
-  }
-
   /**
    * Add a change to our proposed change list.
    *
@@ -444,7 +369,7 @@ case class Commitments(channelId: ByteVector32,
       Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw.toLong)
       val localFeeratePerKw = feeConf.getCommitmentFeerate(remoteNodeId, channelType, capacity, None)
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
-      if (feeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(channelType, localFeeratePerKw, fee.feeratePerKw) && hasPendingOrProposedHtlcs) {
+      if (feeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(channelType, localFeeratePerKw, fee.feeratePerKw) && commitment.hasPendingOrProposedHtlcs(common)) {
         Left(FeerateTooDifferent(channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
       } else {
         // NB: we check that the initiator can afford this new fee even if spec allows to do it at next signature
@@ -724,6 +649,12 @@ case class Commitments(channelId: ByteVector32,
   def availableBalanceForSend: MilliSatoshi = commitment.availableBalanceForSend(params, common)
 
   def availableBalanceForReceive: MilliSatoshi = commitment.availableBalanceForReceive(params, common)
+
+  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitment.getOutgoingHtlcCrossSigned(htlcId)
+
+  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitment.getIncomingHtlcCrossSigned(htlcId)
+
+  def fullySignedLocalCommitTx(keyManager: ChannelKeyManager): CommitTx = commitment.fullySignedLocalCommitTx(params, keyManager)
 
 }
 

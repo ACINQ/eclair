@@ -10,10 +10,10 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo}
-import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
+import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Transactions}
 import fr.acinq.eclair.wire.protocol.CommitSigTlv.{AlternativeCommitSig, AlternativeCommitSigsTlv}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, MilliSatoshiLong}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong}
 import scodec.bits.ByteVector
 
 /** Static parameters shared by all commitments. */
@@ -211,6 +211,82 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
       }
     }
   }
+
+  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
+
+  def hasNoPendingHtlcsOrFeeUpdate(common: Common): Boolean =
+    nextRemoteCommit_opt.isEmpty &&
+      localCommit.spec.htlcs.isEmpty &&
+      remoteCommit.spec.htlcs.isEmpty &&
+      (common.localChanges.signed ++ common.localChanges.acked ++ common.remoteChanges.signed ++ common.remoteChanges.acked).collectFirst { case _: UpdateFee => true }.isEmpty
+
+  def hasPendingOrProposedHtlcs(common: Common): Boolean = !hasNoPendingHtlcs ||
+    common.localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
+    common.remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
+
+  def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = {
+    def expired(add: UpdateAddHtlc): Boolean = currentHeight >= add.cltvExpiry.blockHeight
+
+    localCommit.spec.htlcs.collect(DirectedHtlc.outgoing).filter(expired) ++
+      remoteCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(expired) ++
+      nextRemoteCommit_opt.toSeq.flatMap(_.spec.htlcs.collect(DirectedHtlc.incoming).filter(expired).toSet)
+  }
+
+  /**
+   * Return the outgoing HTLC with the given id if it is:
+   *  - signed by us in their commitment transaction (remote)
+   *  - signed by them in our commitment transaction (local)
+   *
+   * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
+   */
+  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
+    localSigned <- nextRemoteCommit_opt.getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
+    remoteSigned <- localCommit.spec.findOutgoingHtlcById(htlcId)
+  } yield {
+    require(localSigned.add == remoteSigned.add)
+    localSigned.add
+  }
+
+  /**
+   * Return the incoming HTLC with the given id if it is:
+   *  - signed by us in their commitment transaction (remote)
+   *  - signed by them in our commitment transaction (local)
+   *
+   * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
+   */
+  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
+    localSigned <- nextRemoteCommit_opt.getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
+    remoteSigned <- localCommit.spec.findIncomingHtlcById(htlcId)
+  } yield {
+    require(localSigned.add == remoteSigned.add)
+    localSigned.add
+  }
+
+  /**
+   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the preimage for those HTLCs,
+   * we need to get a remote signed updated commitment that removes those HTLCs.
+   * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
+   * and our HTLC success in case of a force-close.
+   */
+  def almostTimedOutIncomingHtlcs(currentHeight: BlockHeight, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
+    def nearlyExpired(add: UpdateAddHtlc): Boolean = currentHeight >= (add.cltvExpiry - fulfillSafety).blockHeight
+
+    localCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(nearlyExpired)
+  }
+
+  /**
+   * Return a fully signed commit tx, that can be published as-is.
+   */
+  def fullySignedLocalCommitTx(params: Params, keyManager: ChannelKeyManager): Transactions.CommitTx = {
+    val unsignedCommitTx = localCommit.commitTxAndRemoteSig.commitTx
+    val localSig = keyManager.sign(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath), Transactions.TxOwner.Local, params.commitmentFormat)
+    val remoteSig = localCommit.commitTxAndRemoteSig.remoteSig
+    val commitTx = Transactions.addSigs(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey, params.remoteParams.fundingPubKey, localSig, remoteSig)
+    // We verify the remote signature when receiving their commit_sig, so this check should always pass.
+    require(Transactions.checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
+    commitTx
+  }
+
 }
 
 /**
@@ -231,6 +307,20 @@ case class MetaCommitments(params: Params,
 
   lazy val availableBalanceForSend: MilliSatoshi = commitments.map(_.availableBalanceForSend(params, common)).min
   lazy val availableBalanceForReceive: MilliSatoshi = commitments.map(_.availableBalanceForReceive(params, common)).min
+
+  def hasNoPendingHtlcs: Boolean = commitments.head.hasNoPendingHtlcs
+
+  def hasNoPendingHtlcsOrFeeUpdate: Boolean = commitments.head.hasNoPendingHtlcsOrFeeUpdate(common)
+
+  def hasPendingOrProposedHtlcs: Boolean = commitments.head.hasPendingOrProposedHtlcs(common)
+
+  def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = commitments.head.timedOutOutgoingHtlcs(currentHeight)
+
+  def almostTimedOutIncomingHtlcs(currentHeight: BlockHeight, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = commitments.head.almostTimedOutIncomingHtlcs(currentHeight, fulfillSafety)
+
+  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitments.head.getOutgoingHtlcCrossSigned(htlcId)
+
+  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitments.head.getIncomingHtlcCrossSigned(htlcId)
 
   private def sequence[T](collection: List[Either[ChannelException, T]]): Either[ChannelException, List[T]] =
     collection.foldRight[Either[ChannelException, List[T]]](Right(Nil)) {
