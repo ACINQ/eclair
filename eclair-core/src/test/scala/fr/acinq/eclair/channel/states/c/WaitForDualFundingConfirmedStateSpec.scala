@@ -349,7 +349,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.forward(alice, bobInput.copy(previousTxOutput = 42))
     alice2bob.expectMsgType[TxAbort]
     alice2bob.forward(bob)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfStatus == RbfStatus.RbfAborted)
+    awaitAssert(assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfStatus == RbfStatus.RbfAborted))
     bob2alice.expectMsgType[TxAbort] // bob acks alice's tx_abort
     bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
