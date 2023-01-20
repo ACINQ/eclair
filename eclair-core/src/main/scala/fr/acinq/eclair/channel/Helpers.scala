@@ -430,7 +430,7 @@ object Helpers {
                                   toLocal: MilliSatoshi, toRemote: MilliSatoshi,
                                   commitTxFeerate: FeeratePerKw,
                                   fundingTxHash: ByteVector32, fundingTxOutputIndex: Int,
-                                  remoteFirstPerCommitmentPoint: PublicKey,
+                                  remotePerCommitmentPoint: PublicKey,
                                   commitmentIndex: Long): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
       import params._
       val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
@@ -455,7 +455,7 @@ object Helpers {
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitmentIndex)
       val (localCommitTx, _) = Commitments.makeLocalTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
+      val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec)
 
       Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }

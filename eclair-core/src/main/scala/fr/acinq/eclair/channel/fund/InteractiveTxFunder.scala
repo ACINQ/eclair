@@ -53,12 +53,12 @@ object InteractiveTxFunder {
   case object FundingFailed extends Response
   // @formatter:on
 
-  def apply(remoteNodeId: PublicKey, fundingParams: InteractiveTxParams, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
+  def apply(remoteNodeId: PublicKey, fundingParams: InteractiveTxParams, purpose: InteractiveTxBuilder.Purpose, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
         Behaviors.receiveMessagePartial {
           case FundTransaction(replyTo, previousTransactions) =>
-            val actor = new InteractiveTxFunder(replyTo, fundingParams, previousTransactions, wallet, context)
+            val actor = new InteractiveTxFunder(replyTo, fundingParams, purpose, previousTransactions, wallet, context)
             actor.start()
         }
       }
@@ -82,6 +82,7 @@ object InteractiveTxFunder {
 
 private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response],
                                   fundingParams: InteractiveTxParams,
+                                  purpose: InteractiveTxBuilder.Purpose,
                                   previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction],
                                   wallet: OnChainChannelFunder,
                                   context: ActorContext[InteractiveTxFunder.Command])(implicit ec: ExecutionContext) {
