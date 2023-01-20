@@ -523,7 +523,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(r: RevocationTimeout, d: DATA_NORMAL) => handleRevocationTimeout(r, d)
 
     case Event(c: CMD_CLOSE, d: DATA_NORMAL) =>
-      d.commitments.getLocalShutdownScript(c.scriptPubKey) match {
+      d.metaCommitments.params.getLocalShutdownScript(c.scriptPubKey) match {
         case Left(e) => handleCommandError(e, c)
         case Right(localShutdownScript) =>
           if (d.localShutdown.isDefined) {
@@ -540,7 +540,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       }
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey, _), d: DATA_NORMAL) =>
-      d.commitments.getRemoteShutdownScript(remoteScriptPubKey) match {
+      d.metaCommitments.params.getRemoteShutdownScript(remoteScriptPubKey) match {
         case Left(e) =>
           log.warning(s"they sent an invalid closing script: ${e.getMessage}")
           context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))

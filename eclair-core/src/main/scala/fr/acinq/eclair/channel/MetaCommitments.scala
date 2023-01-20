@@ -4,14 +4,15 @@ import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
-import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.Commitments.{PostRevocationAction, msg2String}
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol.CommitSigTlv.{AlternativeCommitSig, AlternativeCommitSigsTlv}
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{BlockHeight, Features}
 import scodec.bits.ByteVector
 
 /** Static parameters shared by all commitments. */
@@ -20,6 +21,11 @@ case class Params(channelId: ByteVector32,
                   channelFeatures: ChannelFeatures,
                   localParams: LocalParams, remoteParams: RemoteParams,
                   channelFlags: ChannelFlags) {
+
+  require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
+  require(channelFeatures.hasFeature(Features.DualFunding) == localParams.requestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
+  require(channelFeatures.hasFeature(Features.DualFunding) == remoteParams.requestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
+
   /**
    * We update local/global features at reconnection
    */
@@ -27,6 +33,40 @@ case class Params(channelId: ByteVector32,
     localParams = localParams.copy(initFeatures = localInit.features),
     remoteParams = remoteParams.copy(initFeatures = remoteInit.features)
   )
+
+  /**
+   * @param scriptPubKey optional local script pubkey provided in CMD_CLOSE
+   * @return the actual local shutdown script that we should use
+   */
+  def getLocalShutdownScript(scriptPubKey: Option[ByteVector]): Either[ChannelException, ByteVector] = {
+    // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
+    val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
+    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), scriptPubKey) match {
+      case (true, Some(script)) if script != localParams.defaultFinalScriptPubKey => Left(InvalidFinalScript(channelId))
+      case (false, Some(script)) if !Closing.MutualClose.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (false, Some(script)) => Right(script)
+      case _ => Right(localParams.defaultFinalScriptPubKey)
+    }
+  }
+
+  /**
+   * @param remoteScriptPubKey remote script included in a Shutdown message
+   * @return the actual remote script that we should use
+   */
+  def getRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
+    // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
+    val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
+    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), remoteParams.shutdownScript) match {
+      case (false, _) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (false, _) => Right(remoteScriptPubKey)
+      case (true, None) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) =>
+        // this is a special case: they set option_upfront_shutdown_script but did not provide a script in their open/accept message
+        Left(InvalidFinalScript(channelId))
+      case (true, None) => Right(remoteScriptPubKey)
+      case (true, Some(script)) if script != remoteScriptPubKey => Left(InvalidFinalScript(channelId))
+      case (true, Some(script)) => Right(script)
+    }
+  }
 }
 
 case class WaitForRev(sent: CommitSig, sentAfterLocalCommitIndex: Long)

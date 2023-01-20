@@ -19,10 +19,8 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, Script}
-import fr.acinq.eclair.Features.DualFunding
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
-import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -32,7 +30,6 @@ import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import scodec.bits.ByteVector
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -87,47 +84,7 @@ case class Commitments(channelId: ByteVector32,
 
   import Commitments._
 
-  require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
-  require(channelFeatures.hasFeature(DualFunding) == localParams.requestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
-  require(channelFeatures.hasFeature(DualFunding) == remoteParams.requestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
-
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
-
-  /**
-   *
-   * @param scriptPubKey optional local script pubkey provided in CMD_CLOSE
-   * @return the actual local shutdown script that we should use
-   */
-  def getLocalShutdownScript(scriptPubKey: Option[ByteVector]): Either[ChannelException, ByteVector] = {
-    // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
-    val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
-    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), scriptPubKey) match {
-      case (true, Some(script)) if script != localParams.defaultFinalScriptPubKey => Left(InvalidFinalScript(channelId))
-      case (false, Some(script)) if !Closing.MutualClose.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
-      case (false, Some(script)) => Right(script)
-      case _ => Right(localParams.defaultFinalScriptPubKey)
-    }
-  }
-
-  /**
-   *
-   * @param remoteScriptPubKey remote script included in a Shutdown message
-   * @return the actual remote script that we should use
-   */
-  def getRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
-    // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
-    val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
-    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), remoteParams.shutdownScript) match {
-      case (false, _) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => Left(InvalidFinalScript(channelId))
-      case (false, _) => Right(remoteScriptPubKey)
-      case (true, None) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) =>
-        // this is a special case: they set option_upfront_shutdown_script but did not provide a script in their open/accept message
-        Left(InvalidFinalScript(channelId))
-      case (true, None) => Right(remoteScriptPubKey)
-      case (true, Some(script)) if script != remoteScriptPubKey => Left(InvalidFinalScript(channelId))
-      case (true, Some(script)) => Right(script)
-    }
-  }
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
