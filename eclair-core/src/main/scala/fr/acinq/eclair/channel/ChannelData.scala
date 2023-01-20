@@ -435,6 +435,7 @@ object RbfStatus {
   case object NoRbf extends RbfStatus
   case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE) extends RbfStatus
   case class RbfInProgress(rbf: typed.ActorRef[InteractiveTxBuilder.Command]) extends RbfStatus
+  case object RbfAborted extends RbfStatus
 }
 
 sealed trait ChannelData extends PossiblyHarmful {

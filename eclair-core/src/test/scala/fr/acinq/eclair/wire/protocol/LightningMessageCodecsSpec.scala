@@ -266,14 +266,14 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode open_channel (dual funding)") {
-    val defaultOpen = OpenDualFundedChannel(ByteVector32.Zeroes, ByteVector32.One, FeeratePerKw(5000 sat), FeeratePerKw(4000 sat), 250_000 sat, 500 sat, UInt64(50_000), 15 msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), ChannelFlags(true))
-    val defaultEncoded = hex"0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 01"
+    val defaultOpen = OpenDualFundedChannel(ByteVector32.Zeroes, ByteVector32.One, FeeratePerKw(5000 sat), FeeratePerKw(4000 sat), 250_000 sat, 500 sat, UInt64(50_000), 15 msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), publicKey(7), ChannelFlags(true))
+    val defaultEncoded = hex"0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f 01"
     val testCases = Seq(
       defaultOpen -> defaultEncoded,
       defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))) -> (defaultEncoded ++ hex"0103401000"),
       defaultOpen.copy(tlvStream = TlvStream(UpfrontShutdownScriptTlv(hex"00143adb2d0445c4d491cc7568b10323bd6615a91283"), ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))) -> (defaultEncoded ++ hex"001600143adb2d0445c4d491cc7568b10323bd6615a91283 0103401000"),
       defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), PushAmountTlv(1105 msat))) -> (defaultEncoded ++ hex"0103401000 fe47000007020451"),
-      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"0103401000 fe4000000100")
+      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"0103401000 0200")
     )
     testCases.foreach { case (open, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
@@ -284,8 +284,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("decode open_channel with unknown channel flags (dual funding)") {
-    val defaultOpen = OpenDualFundedChannel(ByteVector32.Zeroes, ByteVector32.One, FeeratePerKw(5000 sat), FeeratePerKw(4000 sat), 250_000 sat, 500 sat, UInt64(50_000), 15 msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), ChannelFlags(true))
-    val defaultEncodedWithoutFlags = hex"0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a"
+    val defaultOpen = OpenDualFundedChannel(ByteVector32.Zeroes, ByteVector32.One, FeeratePerKw(5000 sat), FeeratePerKw(4000 sat), 250_000 sat, 500 sat, UInt64(50_000), 15 msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), publicKey(7), ChannelFlags(true))
+    val defaultEncodedWithoutFlags = hex"0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f"
     val testCases = Seq(
       defaultEncodedWithoutFlags ++ hex"00" -> ChannelFlags(false),
       defaultEncodedWithoutFlags ++ hex"a2" -> ChannelFlags(false),
@@ -324,13 +324,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode accept_channel (dual funding)") {
-    val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000 sat, 473 sat, UInt64(100_000_000), 1 msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6))
-    val defaultEncoded = hex"0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a"
+    val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 50_000 sat, 473 sat, UInt64(100_000_000), 1 msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), point(7))
+    val defaultEncoded = hex"0041 0100000000000000000000000000000000000000000000000000000000000000 000000000000c350 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f"
     val testCases = Seq(
       defaultAccept -> defaultEncoded,
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()))) -> (defaultEncoded ++ hex"01021000"),
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), PushAmountTlv(1729 msat))) -> (defaultEncoded ++ hex"0103401000 fe470000070206c1"),
-      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 fe4000000100")
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 0200")
     )
     testCases.foreach { case (accept, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value

@@ -71,11 +71,13 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
                            localParamsA: LocalParams,
                            remoteParamsA: RemoteParams,
                            firstPerCommitmentPointA: PublicKey,
+                           secondPerCommitmentPointA: PublicKey,
                            fundingParamsB: InteractiveTxParams,
                            nodeParamsB: NodeParams,
                            localParamsB: LocalParams,
                            remoteParamsB: RemoteParams,
                            firstPerCommitmentPointB: PublicKey,
+                           secondPerCommitmentPointB: PublicKey,
                            channelFeatures: ChannelFeatures) {
     val channelId = fundingParamsA.channelId
 
@@ -84,7 +86,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       nodeParamsA, fundingParams,
       0 msat, 0 msat,
       Params(fundingParams.channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public),
-      commitFeerate, firstPerCommitmentPointB,
+      commitFeerate, firstPerCommitmentPointB, secondPerCommitmentPointB,
       wallet))
 
     def spawnTxBuilderBob(fundingParams: InteractiveTxParams, commitFeerate: FeeratePerKw, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
@@ -92,7 +94,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       nodeParamsB, fundingParams,
       0 msat, 0 msat,
       Params(fundingParams.channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public),
-      commitFeerate, firstPerCommitmentPointA,
+      commitFeerate, firstPerCommitmentPointA, secondPerCommitmentPointA,
       wallet))
   }
 
@@ -118,13 +120,15 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
 
     val firstPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.keyPath(localParamsA, ChannelConfig.standard), 0)
+    val secondPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.keyPath(localParamsA, ChannelConfig.standard), 1)
     val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(localParamsB, ChannelConfig.standard), 0)
+    val secondPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(localParamsB, ChannelConfig.standard), 1)
 
     val channelId = randomBytes32()
     val fundingScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(remoteParamsA.fundingPubKey, remoteParamsB.fundingPubKey)))
     val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, fundingScript, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
     val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, fundingScript, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
-    ChannelParams(fundingParamsA, nodeParamsA, localParamsA, remoteParamsA, firstPerCommitmentPointA, fundingParamsB, nodeParamsB, localParamsB, remoteParamsB, firstPerCommitmentPointB, channelFeatures)
+    ChannelParams(fundingParamsA, nodeParamsA, localParamsA, remoteParamsA, firstPerCommitmentPointA, secondPerCommitmentPointA, fundingParamsB, nodeParamsB, localParamsB, remoteParamsB, firstPerCommitmentPointB, secondPerCommitmentPointB, channelFeatures)
   }
 
   case class Fixture(alice: ActorRef[InteractiveTxBuilder.Command],

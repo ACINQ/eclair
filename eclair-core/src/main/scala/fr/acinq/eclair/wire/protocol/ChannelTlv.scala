@@ -88,7 +88,7 @@ object OpenDualFundedChannelTlv {
   val openTlvCodec: Codec[TlvStream[OpenDualFundedChannelTlv]] = tlvStream(discriminated[OpenDualFundedChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
-    .typecase(UInt64(0x40000001), requireConfirmedInputsCodec)
+    .typecase(UInt64(2), requireConfirmedInputsCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )
 
@@ -101,7 +101,7 @@ object AcceptDualFundedChannelTlv {
   val acceptTlvCodec: Codec[TlvStream[AcceptDualFundedChannelTlv]] = tlvStream(discriminated[AcceptDualFundedChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
-    .typecase(UInt64(0x40000001), requireConfirmedInputsCodec)
+    .typecase(UInt64(2), requireConfirmedInputsCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )
 
@@ -125,7 +125,7 @@ object ChannelReadyTlv {
 
   case class ShortChannelIdTlv(alias: Alias) extends ChannelReadyTlv
 
-  val channelAliasTlvCodec: Codec[ShortChannelIdTlv] = tlvField("alias" | alias)
+  private val channelAliasTlvCodec: Codec[ShortChannelIdTlv] = tlvField("alias" | alias)
 
   val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint)
     .typecase(UInt64(1), channelAliasTlvCodec)

@@ -22,10 +22,10 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, SingleKeyOnChainWallet}
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ProcessCurrentBlockHeight
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
@@ -349,7 +349,9 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.forward(alice, bobInput.copy(previousTxOutput = 42))
     alice2bob.expectMsgType[TxAbort]
     alice2bob.forward(bob)
-    bob2alice.expectNoMessage(100 millis)
+    awaitAssert(assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfStatus == RbfStatus.RbfAborted))
+    bob2alice.expectMsgType[TxAbort] // bob acks alice's tx_abort
+    bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
 
     // Alice and Bob clear RBF data from their state.
