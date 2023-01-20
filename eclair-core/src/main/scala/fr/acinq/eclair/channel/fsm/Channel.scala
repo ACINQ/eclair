@@ -473,7 +473,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       d.metaCommitments.receiveCommit(commit, keyManager) match {
         case Right((metaCommitments1, revocation)) =>
           log.debug("received a new sig, spec:\n{}", metaCommitments1.main.specs2String)
-          if (metaCommitments1.main.localHasChanges) {
+          if (metaCommitments1.common.localHasChanges) {
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN()
           }
@@ -505,10 +505,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               log.debug("forwarding {} to relayer", result)
               relayer ! result
           }
-          if (metaCommitments1.main.localHasChanges) {
+          if (metaCommitments1.common.localHasChanges) {
             self ! CMD_SIGN()
           }
-          if (d.remoteShutdown.isDefined && !metaCommitments1.main.localHasUnsignedOutgoingHtlcs) {
+          if (d.remoteShutdown.isDefined && !metaCommitments1.common.localHasUnsignedOutgoingHtlcs) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
             val localShutdown = Shutdown(d.channelId, metaCommitments1.main.localParams.defaultFinalScriptPubKey)
             // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
@@ -528,10 +528,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case Right(localShutdownScript) =>
           if (d.localShutdown.isDefined) {
             handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
-          } else if (d.commitments.localHasUnsignedOutgoingHtlcs) {
+          } else if (d.metaCommitments.common.localHasUnsignedOutgoingHtlcs) {
             // NB: simplistic behavior, we could also sign-then-close
             handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
-          } else if (d.commitments.localHasUnsignedOutgoingUpdateFee) {
+          } else if (d.metaCommitments.common.localHasUnsignedOutgoingUpdateFee) {
             handleCommandError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), c)
           } else {
             val shutdown = Shutdown(d.channelId, localShutdownScript)
@@ -560,11 +560,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           //      we did not send a shutdown message
           //        there are pending signed changes  => go to SHUTDOWN
           //        there are no htlcs                => go to NEGOTIATING
-          if (d.commitments.remoteHasUnsignedOutgoingHtlcs) {
+          if (d.metaCommitments.common.remoteHasUnsignedOutgoingHtlcs) {
             handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d, Some(remoteShutdown))
-          } else if (d.commitments.remoteHasUnsignedOutgoingUpdateFee) {
+          } else if (d.metaCommitments.common.remoteHasUnsignedOutgoingUpdateFee) {
             handleLocalError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), d, Some(remoteShutdown))
-          } else if (d.commitments.localHasUnsignedOutgoingHtlcs) { // do we have unsigned outgoing htlcs?
+          } else if (d.metaCommitments.common.localHasUnsignedOutgoingHtlcs) { // do we have unsigned outgoing htlcs?
             require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
             // are we in the middle of a signature?
             d.commitments.remoteNextCommitInfo match {

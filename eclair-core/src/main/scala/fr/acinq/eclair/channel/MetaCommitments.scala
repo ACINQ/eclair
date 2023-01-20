@@ -12,7 +12,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, TransactionWithInputInfo}
-import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Transactions}
+import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol.CommitSigTlv.{AlternativeCommitSig, AlternativeCommitSigsTlv}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong}
@@ -623,9 +623,88 @@ case class MetaCommitments(params: Params,
   }
 
   def receiveRevocation(revocation: RevokeAndAck, maxDustExposure: Satoshi): Either[ChannelException, (MetaCommitments, Seq[PostRevocationAction])] = {
-    sequence(all.map(c => c.receiveRevocation(revocation, maxDustExposure)))
-      .map { res: List[(Commitments, Seq[PostRevocationAction])] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
-      .map { case (common, commitments, actions) => (this.copy(common = common, commitments = commitments), actions) }
+    // we receive a revocation because we just sent them a sig for their next commit tx
+    common.remoteNextCommitInfo match {
+      case Left(_) if revocation.perCommitmentSecret.publicKey != commitments.head.remoteCommit.remotePerCommitmentPoint =>
+        Left(InvalidRevocation(channelId))
+      case Left(_) =>
+        // NB: we are supposed to keep nextRemoteCommit_opt consistent with remoteNextCommitInfo: this should exist.
+        val theirFirstNextCommitSpec = commitments.head.nextRemoteCommit_opt.get.spec
+        // Since htlcs are shared across all commitments, we generate the actions only once based on the first commitment.
+        val receivedHtlcs = common.remoteChanges.signed.collect {
+          // we forward adds downstream only when they have been committed by both sides
+          // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
+          case add: UpdateAddHtlc => add
+        }
+        val failedHtlcs = common.remoteChanges.signed.collect {
+          // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
+          case fail: UpdateFailHtlc =>
+            val origin = common.originChannels(fail.id)
+            val add = commitments.head.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
+            RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFail(fail))
+          // same as above
+          case fail: UpdateFailMalformedHtlc =>
+            val origin = common.originChannels(fail.id)
+            val add = commitments.head.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
+            RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFailMalformed(fail))
+        }
+        val (acceptedHtlcs, rejectedHtlcs) = {
+          // the received htlcs have already been added to commitments (they've been signed by our peer), and may already
+          // overflow our dust exposure (we cannot prevent them from adding htlcs): we artificially remove them before
+          // deciding which we'll keep and relay and which we'll fail without relaying.
+          val localSpecWithoutNewHtlcs = commitments.head.localCommit.spec.copy(htlcs = commitments.head.localCommit.spec.htlcs.filter {
+            case IncomingHtlc(add) if receivedHtlcs.contains(add) => false
+            case _ => true
+          })
+          val remoteSpecWithoutNewHtlcs = theirFirstNextCommitSpec.copy(htlcs = theirFirstNextCommitSpec.htlcs.filter {
+            case OutgoingHtlc(add) if receivedHtlcs.contains(add) => false
+            case _ => true
+          })
+          val localReduced = DustExposure.reduceForDustExposure(localSpecWithoutNewHtlcs, common.localChanges.all, common.remoteChanges.acked)
+          val localCommitDustExposure = DustExposure.computeExposure(localReduced, params.localParams.dustLimit, params.commitmentFormat)
+          val remoteReduced = DustExposure.reduceForDustExposure(remoteSpecWithoutNewHtlcs, common.remoteChanges.acked, common.localChanges.all)
+          val remoteCommitDustExposure = DustExposure.computeExposure(remoteReduced, params.remoteParams.dustLimit, params.commitmentFormat)
+          // we sort incoming htlcs by decreasing amount: we want to prioritize higher amounts.
+          val sortedReceivedHtlcs = receivedHtlcs.sortBy(_.amountMsat).reverse
+          DustExposure.filterBeforeForward(
+            maxDustExposure,
+            localReduced,
+            params.localParams.dustLimit,
+            localCommitDustExposure,
+            remoteReduced,
+            params.remoteParams.dustLimit,
+            remoteCommitDustExposure,
+            sortedReceivedHtlcs,
+            params.commitmentFormat)
+        }
+        val actions = acceptedHtlcs.map(add => PostRevocationAction.RelayHtlc(add)) ++
+          rejectedHtlcs.map(add => PostRevocationAction.RejectHtlc(add)) ++
+          failedHtlcs.map(res => PostRevocationAction.RelayFailure(res))
+        // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
+        // they have been removed from both local and remote commitment
+        // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
+        val completedOutgoingHtlcs = commitments.head.remoteCommit.spec.htlcs.collect(DirectedHtlc.incoming).map(_.id) -- theirFirstNextCommitSpec.htlcs.collect(DirectedHtlc.incoming).map(_.id)
+        // we remove the newly completed htlcs from the origin map
+        val originChannels1 = common.originChannels -- completedOutgoingHtlcs
+        val commitments1 = commitments.map(c => c.copy(
+          remoteCommit = c.nextRemoteCommit_opt.get,
+          nextRemoteCommit_opt = None,
+        ))
+        val metaCommitments1 = copy(
+          common = common.copy(
+            localChanges = common.localChanges.copy(signed = Nil, acked = common.localChanges.acked ++ common.localChanges.signed),
+            remoteChanges = common.remoteChanges.copy(signed = Nil),
+            remoteCommitIndex = common.remoteCommitIndex + 1,
+            remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
+            remotePerCommitmentSecrets = common.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - common.remoteCommitIndex),
+            originChannels = originChannels1
+          ),
+          commitments = commitments1,
+        )
+        Right(metaCommitments1, actions)
+      case Right(_) =>
+        Left(UnexpectedRevocation(channelId))
+    }
   }
 
   def discardUnsignedUpdates()(implicit log: LoggingAdapter): MetaCommitments = {
