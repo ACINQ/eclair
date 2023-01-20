@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.AskPattern.Askable
-import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicSchedulerOps}
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -225,7 +225,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   } yield peerinfos
 
   override def node(nodeId: PublicKey)(implicit timeout: Timeout): Future[Option[Router.PublicNode]] = {
-    (appKit.router ? Router.GetNode(ActorRef.noSender, nodeId)).mapTo[Router.GetNodeResponse].map {
+    appKit.router.toTyped.ask(ref => Router.GetNode(ref, nodeId))(timeout, appKit.system.scheduler.toTyped).mapTo[Router.GetNodeResponse].map {
       case n: PublicNode => Some(n)
       case _: UnknownNode => None
     }

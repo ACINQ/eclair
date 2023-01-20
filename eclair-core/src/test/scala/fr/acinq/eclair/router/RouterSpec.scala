@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.router
 
-import akka.actor.{ActorRef, Status}
+import akka.actor.Status
 import akka.actor.Status.Failure
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
@@ -311,15 +312,9 @@ class RouterSpec extends BaseRouterSpec {
 
     val probe = TestProbe()
     val unknownNodeId = randomKey().publicKey
-    probe.send(router, GetNode(ActorRef.noSender, unknownNodeId))
+    router ! GetNode(probe.ref.toTyped, unknownNodeId)
     probe.expectMsg(UnknownNode(unknownNodeId))
-    probe.send(router, GetNode(ActorRef.noSender, b))
-    probe.expectMsg(PublicNode(node_b, 2, publicChannelCapacity * 2))
-
-    // test with explicit replyTo
-    router ! GetNode(probe.ref, unknownNodeId)
-    probe.expectMsg(UnknownNode(unknownNodeId))
-    router ! GetNode(probe.ref, b)
+    router ! GetNode(probe.ref.toTyped, b)
     probe.expectMsg(PublicNode(node_b, 2, publicChannelCapacity * 2))
   }
 

@@ -201,8 +201,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       sender() ! d.excludedChannels
       stay()
 
-    case Event(GetNode(r, nodeId), d) =>
-      val replyTo = if (r == ActorRef.noSender) sender() else r
+    case Event(GetNode(replyTo, nodeId), d) =>
       d.nodes.get(nodeId) match {
         case Some(announcement) =>
           // This only provides a lower bound on the number of channels this peer has: disabled channels will be filtered out.
@@ -671,7 +670,7 @@ object Router {
   case object GetChannelsMap
   case object GetChannelUpdates
 
-  case class GetNode(replyTo: ActorRef, nodeId: PublicKey)
+  case class GetNode(replyTo: typed.ActorRef[GetNodeResponse], nodeId: PublicKey)
   sealed trait GetNodeResponse
   case class PublicNode(announcement: NodeAnnouncement, activeChannels: Int, totalCapacity: Satoshi) extends GetNodeResponse
   case class UnknownNode(nodeId: PublicKey) extends GetNodeResponse
