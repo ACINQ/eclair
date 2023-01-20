@@ -25,7 +25,6 @@ import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
-import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -96,61 +95,6 @@ case class Commitments(channelId: ByteVector32,
 
   private def addRemoteProposal(proposal: UpdateMessage): Commitments =
     copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed :+ proposal))
-
-  def receiveAdd(add: UpdateAddHtlc, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {
-    if (add.id != remoteNextHtlcId) {
-      return Left(UnexpectedHtlcId(channelId, expected = remoteNextHtlcId, actual = add.id))
-    }
-
-    // we used to not enforce a strictly positive minimum, hence the max(1 msat)
-    val htlcMinimum = localParams.htlcMinimum.max(1 msat)
-    if (add.amountMsat < htlcMinimum) {
-      return Left(HtlcValueTooSmall(channelId, minimum = htlcMinimum, actual = add.amountMsat))
-    }
-
-    // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
-    // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
-    // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeeratePerKw = feeConf.getCommitmentFeerate(remoteNodeId, channelType, capacity, None)
-    val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
-    remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(channelType, localFeeratePerKw, feerate)) match {
-      case Some(feerate) => return Left(FeerateTooDifferent(channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
-      case None =>
-    }
-
-    // let's compute the current commitment *as seen by us* including this change
-    val commitments1 = addRemoteProposal(add).copy(remoteNextHtlcId = remoteNextHtlcId + 1)
-    val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
-    val incomingHtlcs = reduced.htlcs.collect(incoming)
-
-    // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
-    val fees = commitTxTotalCost(commitments1.remoteParams.dustLimit, reduced, commitmentFormat)
-    // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
-    // We could enforce it once we're confident a large portion of the network implements it.
-    val missingForSender = reduced.toRemote - commitments1.remoteChannelReserve - (if (commitments1.localParams.isInitiator) 0.sat else fees)
-    val missingForReceiver = reduced.toLocal - commitments1.localChannelReserve - (if (commitments1.localParams.isInitiator) fees else 0.sat)
-    if (missingForSender < 0.sat) {
-      return Left(InsufficientFunds(channelId, amount = add.amountMsat, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteChannelReserve, fees = if (commitments1.localParams.isInitiator) 0.sat else fees))
-    } else if (missingForReceiver < 0.sat) {
-      if (localParams.isInitiator) {
-        return Left(CannotAffordFees(channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.localChannelReserve, fees = fees))
-      } else {
-        // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
-      }
-    }
-
-    // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
-    val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
-    if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      return Left(HtlcValueTooHighInFlight(channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
-    }
-
-    if (incomingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {
-      return Left(TooManyAcceptedHtlcs(channelId, maximum = commitments1.localParams.maxAcceptedHtlcs))
-    }
-
-    Right(commitments1)
-  }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): Either[ChannelException, (Commitments, UpdateFulfillHtlc)] =
     getIncomingHtlcCrossSigned(cmd.id) match {

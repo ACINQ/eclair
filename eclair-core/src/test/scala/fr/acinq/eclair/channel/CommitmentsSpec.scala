@@ -407,8 +407,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("can receive availableForReceive") { f =>
     for (isInitiator <- Seq(true, false)) {
-      val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
-      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
+      val c = MetaCommitments(CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator))
+      val add = UpdateAddHtlc(randomBytes32(), c.common.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
       c.receiveAdd(add, feeConfNoMismatch)
     }
   }
@@ -455,18 +455,18 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
         toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
         toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
-      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
+      var c = MetaCommitments(CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator))
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
-        val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
+        val add = UpdateAddHtlc(randomBytes32(), c.common.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
         c.receiveAdd(add, feeConfNoMismatch) match {
           case Right(cc) => c = cc
           case Left(e) => ignore(s"$t -> could not setup initial htlcs: $e")
         }
       }
       if (c.availableBalanceForReceive > 0.msat) {
-        val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
+        val add = UpdateAddHtlc(randomBytes32(), c.common.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
         c.receiveAdd(add, feeConfNoMismatch) match {
           case Right(_) => ()
           case Left(e) => fail(s"$t -> $e")

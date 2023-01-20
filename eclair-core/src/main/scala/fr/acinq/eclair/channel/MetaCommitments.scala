@@ -440,9 +440,61 @@ case class MetaCommitments(params: Params,
   }
 
   def receiveAdd(add: UpdateAddHtlc, feeConf: OnChainFeeConf): Either[ChannelException, MetaCommitments] = {
-    sequence(all.map(_.receiveAdd(add, feeConf)))
-      .map { res: List[Commitments] => (res.head.common, res.map(_.commitment)) }
-      .map { case (common, commitments) => this.copy(common = common, commitments = commitments) }
+    if (add.id != common.remoteNextHtlcId) {
+      return Left(UnexpectedHtlcId(channelId, expected = common.remoteNextHtlcId, actual = add.id))
+    }
+
+    // we used to not enforce a strictly positive minimum, hence the max(1 msat)
+    val htlcMinimum = params.localParams.htlcMinimum.max(1 msat)
+    if (add.amountMsat < htlcMinimum) {
+      return Left(HtlcValueTooSmall(channelId, minimum = htlcMinimum, actual = add.amountMsat))
+    }
+
+    val common1 = common.addRemoteProposal(add).copy(remoteNextHtlcId = common.remoteNextHtlcId + 1)
+
+    // let's compute the current commitment *as seen by us* including this change
+    commitments.foreach(commitment => {
+      // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
+      // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
+      // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
+      val localFeeratePerKw = feeConf.getCommitmentFeerate(remoteNodeId, params.channelType, commitment.capacity, None)
+      val remoteFeeratePerKw = commitment.localCommit.spec.commitTxFeerate +: common1.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
+      remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
+        case Some(feerate) => return Left(FeerateTooDifferent(channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
+        case None =>
+      }
+
+      val reduced = CommitmentSpec.reduce(commitment.localCommit.spec, common1.localChanges.acked, common1.remoteChanges.proposed)
+      val incomingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
+
+      // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
+      val fees = Transactions.commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
+      // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
+      // We could enforce it once we're confident a large portion of the network implements it.
+      val missingForSender = reduced.toRemote - commitment.remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
+      val missingForReceiver = reduced.toLocal - commitment.localChannelReserve(params) - (if (params.localParams.isInitiator) fees else 0.sat)
+      if (missingForSender < 0.sat) {
+        return Left(InsufficientFunds(channelId, amount = add.amountMsat, missing = -missingForSender.truncateToSatoshi, reserve = commitment.remoteChannelReserve(params), fees = if (params.localParams.isInitiator) 0.sat else fees))
+      } else if (missingForReceiver < 0.sat) {
+        if (params.localParams.isInitiator) {
+          return Left(CannotAffordFees(channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = commitment.localChannelReserve(params), fees = fees))
+        } else {
+          // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+        }
+      }
+
+      // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
+      val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
+      if (params.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
+        return Left(HtlcValueTooHighInFlight(channelId, maximum = params.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+      }
+
+      if (incomingHtlcs.size > params.localParams.maxAcceptedHtlcs) {
+        return Left(TooManyAcceptedHtlcs(channelId, maximum = params.localParams.maxAcceptedHtlcs))
+      }
+    })
+
+    Right(copy(common = common1))
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): Either[ChannelException, (MetaCommitments, UpdateFulfillHtlc)] = {
