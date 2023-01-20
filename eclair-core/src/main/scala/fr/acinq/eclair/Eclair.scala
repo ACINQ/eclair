@@ -17,8 +17,9 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorRef
+import akka.actor.typed.Scheduler
 import akka.actor.typed.scaladsl.AskPattern.Askable
-import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicSchedulerOps}
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -169,6 +170,7 @@ trait Eclair {
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   implicit val ec: ExecutionContext = appKit.system.dispatcher
+  implicit val scheduler: Scheduler = appKit.system.scheduler.toTyped
 
   // We constrain external identifiers. This allows uuid, long and pubkey to be used.
   private val externalIdMaxLength = 66
@@ -225,7 +227,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   } yield peerinfos
 
   override def node(nodeId: PublicKey)(implicit timeout: Timeout): Future[Option[Router.PublicNode]] = {
-    (appKit.router ? Router.GetNode(nodeId)).mapTo[Router.GetNodeResponse].map {
+    appKit.router.toTyped.ask(ref => Router.GetNode(ref, nodeId)).map {
       case n: PublicNode => Some(n)
       case _: UnknownNode => None
     }
@@ -516,8 +518,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance] = {
     for {
-      ChannelsListener.GetChannelsResponse(channels) <- appKit.channelsListener.ask(ref => ChannelsListener.GetChannels(ref))(timeout, appKit.system.scheduler.toTyped)
-      globalBalance_try <- appKit.balanceActor.ask(res => BalanceActor.GetGlobalBalance(res, channels))(timeout, appKit.system.scheduler.toTyped)
+      ChannelsListener.GetChannelsResponse(channels) <- appKit.channelsListener.ask(ref => ChannelsListener.GetChannels(ref))
+      globalBalance_try <- appKit.balanceActor.ask(res => BalanceActor.GetGlobalBalance(res, channels))
       globalBalance <- Promise[GlobalBalance]().complete(globalBalance_try).future
     } yield globalBalance
   }
@@ -568,7 +570,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           case Left(key) => OnionMessages.Recipient(key, None)
           case Right(route) => OnionMessages.BlindedPath(route)
         }
-        appKit.postman.ask(ref => Postman.SendMessage(intermediateNodes, destination, replyPath, userTlvs, ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
+        appKit.postman.ask(ref => Postman.SendMessage(intermediateNodes, destination, replyPath, userTlvs, ref, appKit.nodeParams.onionMessageConfig.timeout)).mapTo[Postman.OnionMessageResponse].map {
           case Postman.Response(payload) =>
             val encodedReplyPath = payload.replyPath_opt.map(route => blindedRouteCodec.encode(route).require.bytes.toHex)
             SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath_opt, payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))

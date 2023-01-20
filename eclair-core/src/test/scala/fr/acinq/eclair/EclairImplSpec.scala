@@ -158,14 +158,16 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val ann = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "ACINQ", Nil)
     val remoteNode = Router.PublicNode(ann, 7, 561_000 sat)
     eclair.node(ann.nodeId).pipeTo(sender.ref)
-    assert(router.expectMsgType[Router.GetNode].nodeId == ann.nodeId)
-    router.reply(remoteNode)
+    val msg1 = router.expectMsgType[Router.GetNode]
+    assert(msg1.nodeId == ann.nodeId)
+    msg1.replyTo ! remoteNode
     sender.expectMsg(Some(remoteNode))
 
     val unknownNode = Router.UnknownNode(randomKey().publicKey)
     eclair.node(unknownNode.nodeId).pipeTo(sender.ref)
-    assert(router.expectMsgType[Router.GetNode].nodeId == unknownNode.nodeId)
-    router.reply(unknownNode)
+    val msg2 = router.expectMsgType[Router.GetNode]
+    assert(msg2.nodeId == unknownNode.nodeId)
+    msg2.replyTo ! unknownNode
     sender.expectMsg(None)
   }
 

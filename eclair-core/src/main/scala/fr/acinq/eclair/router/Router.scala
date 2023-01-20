@@ -201,15 +201,15 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       sender() ! d.excludedChannels
       stay()
 
-    case Event(GetNode(nodeId), d) =>
+    case Event(GetNode(replyTo, nodeId), d) =>
       d.nodes.get(nodeId) match {
         case Some(announcement) =>
           // This only provides a lower bound on the number of channels this peer has: disabled channels will be filtered out.
           val activeChannels = d.graphWithBalances.graph.getIncomingEdgesOf(nodeId)
           val totalCapacity = activeChannels.map(_.capacity).sum
-          sender() ! PublicNode(announcement, activeChannels.size, totalCapacity)
+          replyTo ! PublicNode(announcement, activeChannels.size, totalCapacity)
         case None =>
-          sender() ! UnknownNode(nodeId)
+          replyTo ! UnknownNode(nodeId)
       }
       stay()
 
@@ -670,7 +670,7 @@ object Router {
   case object GetChannelsMap
   case object GetChannelUpdates
 
-  case class GetNode(nodeId: PublicKey)
+  case class GetNode(replyTo: typed.ActorRef[GetNodeResponse], nodeId: PublicKey)
   sealed trait GetNodeResponse
   case class PublicNode(announcement: NodeAnnouncement, activeChannels: Int, totalCapacity: Satoshi) extends GetNodeResponse
   case class UnknownNode(nodeId: PublicKey) extends GetNodeResponse
