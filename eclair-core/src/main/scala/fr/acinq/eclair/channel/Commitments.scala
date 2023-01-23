@@ -96,20 +96,6 @@ case class Commitments(channelId: ByteVector32,
   private def addRemoteProposal(proposal: UpdateMessage): Commitments =
     copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed :+ proposal))
 
-  def sendFulfill(cmd: CMD_FULFILL_HTLC): Either[ChannelException, (Commitments, UpdateFulfillHtlc)] =
-    getIncomingHtlcCrossSigned(cmd.id) match {
-      case Some(htlc) if alreadyProposed(localChanges.proposed, htlc.id) =>
-        // we have already sent a fail/fulfill for this htlc
-        Left(UnknownHtlcId(channelId, cmd.id))
-      case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
-        val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.r)
-        val commitments1 = addLocalProposal(fulfill)
-        payment.Monitoring.Metrics.recordIncomingPaymentDistribution(remoteParams.nodeId, htlc.amountMsat)
-        Right((commitments1, fulfill))
-      case Some(_) => Left(InvalidHtlcPreimage(channelId, cmd.id))
-      case None => Left(UnknownHtlcId(channelId, cmd.id))
-    }
-
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => originChannels.get(fulfill.id) match {

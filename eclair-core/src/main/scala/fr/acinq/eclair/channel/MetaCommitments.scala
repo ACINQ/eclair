@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.Commitments.{PostRevocationAction, msg2String}
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -15,7 +15,7 @@ import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, T
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol.CommitSigTlv.{AlternativeCommitSig, AlternativeCommitSigsTlv}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, payment}
 import scodec.bits.ByteVector
 
 /** Static parameters shared by all commitments. */
@@ -497,11 +497,19 @@ case class MetaCommitments(params: Params,
     Right(copy(common = common1))
   }
 
-  def sendFulfill(cmd: CMD_FULFILL_HTLC): Either[ChannelException, (MetaCommitments, UpdateFulfillHtlc)] = {
-    sequence(all.map(_.sendFulfill(cmd)))
-      .map { res: List[(Commitments, UpdateFulfillHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2) }
-      .map { case (common, commitments, fulfill) => (this.copy(common = common, commitments = commitments), fulfill) }
-  }
+  def sendFulfill(cmd: CMD_FULFILL_HTLC): Either[ChannelException, (MetaCommitments, UpdateFulfillHtlc)] =
+    getIncomingHtlcCrossSigned(cmd.id) match {
+      case Some(htlc) if Commitments.alreadyProposed(common.localChanges.proposed, htlc.id) =>
+        // we have already sent a fail/fulfill for this htlc
+        Left(UnknownHtlcId(channelId, cmd.id))
+      case Some(htlc) if htlc.paymentHash == Crypto.sha256(cmd.r) =>
+        val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.r)
+        val common1 = common.addLocalProposal(fulfill)
+        payment.Monitoring.Metrics.recordIncomingPaymentDistribution(params.remoteNodeId, htlc.amountMsat)
+        Right((copy(common = common1), fulfill))
+      case Some(_) => Left(InvalidHtlcPreimage(channelId, cmd.id))
+      case None => Left(UnknownHtlcId(channelId, cmd.id))
+    }
 
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] = {
     sequence(all.map(_.receiveFulfill(fulfill)))
