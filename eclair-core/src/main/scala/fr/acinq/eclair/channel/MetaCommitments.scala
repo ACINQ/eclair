@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
@@ -80,6 +80,7 @@ case class Params(channelId: ByteVector32,
       case (true, Some(script)) => Right(script)
     }
   }
+
 }
 
 case class WaitForRev(sent: CommitSig, sentAfterLocalCommitIndex: Long)
@@ -963,6 +964,13 @@ case class MetaCommitments(params: Params,
 
   def discardUnsignedUpdates()(implicit log: LoggingAdapter): MetaCommitments = {
     this.copy(common = common.discardUnsignedUpdates())
+  }
+
+  def validateSeed(keyManager: ChannelKeyManager): Boolean = {
+    val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey
+    val remoteFundingKey = params.remoteParams.fundingPubKey
+    val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
+    commitments.forall(_.commitInput.redeemScript == fundingScript)
   }
 
 }

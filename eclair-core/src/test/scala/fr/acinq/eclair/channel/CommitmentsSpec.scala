@@ -476,7 +476,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("check if channel seed has been modified") { f =>
-    val commitments = f.alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val commitments = f.alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
     assert(commitments.validateSeed(TestConstants.Alice.channelKeyManager))
     assert(!commitments.validateSeed(new LocalChannelKeyManager(ByteVector32.fromValidHex("42" * 32), Block.RegtestGenesisBlock.hash)))
   }

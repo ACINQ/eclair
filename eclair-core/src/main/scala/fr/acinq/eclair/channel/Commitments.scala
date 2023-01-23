@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Script}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -78,32 +78,6 @@ case class Commitments(channelId: ByteVector32,
 
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
 
-  def specs2String: String = {
-    s"""specs:
-       |localcommit:
-       |  toLocal: ${localCommit.spec.toLocal}
-       |  toRemote: ${localCommit.spec.toRemote}
-       |  htlcs:
-       |${localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
-       |remotecommit:
-       |  toLocal: ${remoteCommit.spec.toLocal}
-       |  toRemote: ${remoteCommit.spec.toRemote}
-       |  htlcs:
-       |${remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
-       |next remotecommit:
-       |  toLocal: ${remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toLocal).getOrElse("N/A")}
-       |  toRemote: ${remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toRemote).getOrElse("N/A")}
-       |  htlcs:
-       |${remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
-  }
-
-  def validateSeed(keyManager: ChannelKeyManager): Boolean = {
-    val localFundingKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-    val remoteFundingKey = remoteParams.fundingPubKey
-    val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
-    commitInput.redeemScript == fundingScript
-  }
-
   def params: Params = Params(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
 
   def common: Common = Common(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId, localCommit.index, remoteCommit.index, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
@@ -141,6 +115,25 @@ case class Commitments(channelId: ByteVector32,
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitment.getIncomingHtlcCrossSigned(htlcId)
 
   def fullySignedLocalCommitTx(keyManager: ChannelKeyManager): CommitTx = commitment.fullySignedLocalCommitTx(params, keyManager)
+
+  def specs2String: String = {
+    s"""specs:
+       |localcommit:
+       |  toLocal: ${localCommit.spec.toLocal}
+       |  toRemote: ${localCommit.spec.toRemote}
+       |  htlcs:
+       |${localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
+       |remotecommit:
+       |  toLocal: ${remoteCommit.spec.toLocal}
+       |  toRemote: ${remoteCommit.spec.toRemote}
+       |  htlcs:
+       |${remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
+       |next remotecommit:
+       |  toLocal: ${remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toLocal).getOrElse("N/A")}
+       |  toRemote: ${remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toRemote).getOrElse("N/A")}
+       |  htlcs:
+       |${remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
+  }
 
 }
 
