@@ -21,7 +21,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, SignedSharedTransaction, toOutPoint}
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, toOutPoint}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.{TxAddInput, TxAddOutput}
 import fr.acinq.eclair.{Logs, UInt64}
@@ -42,7 +42,7 @@ object InteractiveTxFunder {
 
   // @formatter:off
   sealed trait Command
-  case class FundTransaction(replyTo: ActorRef[Response], previousTransactions: Seq[SignedSharedTransaction]) extends Command
+  case class FundTransaction(replyTo: ActorRef[Response]) extends Command
   private case class FundTransactionResult(tx: Transaction) extends Command
   private case class InputDetails(usableInputs: Seq[TxAddInput], unusableInputs: Set[UnusableInput]) extends Command
   private case class WalletFailure(t: Throwable) extends Command
@@ -53,12 +53,12 @@ object InteractiveTxFunder {
   case object FundingFailed extends Response
   // @formatter:on
 
-  def apply(remoteNodeId: PublicKey, fundingParams: InteractiveTxParams, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
+  def apply(remoteNodeId: PublicKey, fundingParams: InteractiveTxParams, purpose: InteractiveTxBuilder.Purpose, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
         Behaviors.receiveMessagePartial {
-          case FundTransaction(replyTo, previousTransactions) =>
-            val actor = new InteractiveTxFunder(replyTo, fundingParams, previousTransactions, wallet, context)
+          case FundTransaction(replyTo) =>
+            val actor = new InteractiveTxFunder(replyTo, fundingParams, purpose, wallet, context)
             actor.start()
         }
       }
@@ -82,13 +82,17 @@ object InteractiveTxFunder {
 
 private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response],
                                   fundingParams: InteractiveTxParams,
-                                  previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction],
+                                  purpose: InteractiveTxBuilder.Purpose,
                                   wallet: OnChainChannelFunder,
                                   context: ActorContext[InteractiveTxFunder.Command])(implicit ec: ExecutionContext) {
 
   import InteractiveTxFunder._
 
   private val log = context.log
+  private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
+    case rbf: InteractiveTxBuilder.FundingTxRbf => rbf.previousTransactions
+    case _ => Nil
+  }
 
   def start(): Behavior[Command] = {
     val toFund = if (fundingParams.isInitiator) {
