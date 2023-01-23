@@ -167,22 +167,6 @@ object Commitments {
     remotePerCommitmentSecrets = common.remotePerCommitmentSecrets
   )
 
-  def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
-    case u: UpdateFulfillHtlc => id == u.id
-    case u: UpdateFailHtlc => id == u.id
-    case u: UpdateFailMalformedHtlc => id == u.id
-    case _ => false
-  }
-
-  // @formatter:off
-  sealed trait PostRevocationAction
-  object PostRevocationAction {
-    case class RelayHtlc(incomingHtlc: UpdateAddHtlc) extends PostRevocationAction
-    case class RejectHtlc(incomingHtlc: UpdateAddHtlc) extends PostRevocationAction
-    case class RelayFailure(result: RES_ADD_SETTLED[Origin, HtlcResult]) extends PostRevocationAction
-  }
-  // @formatter:on
-
   def makeLocalTxs(keyManager: ChannelKeyManager,
                    channelConfig: ChannelConfig,
                    channelFeatures: ChannelFeatures,
@@ -235,18 +219,6 @@ object Commitments {
     val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isInitiator, outputs)
     val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
     (commitTx, htlcTxs)
-  }
-
-  def msg2String(msg: LightningMessage): String = msg match {
-    case u: UpdateAddHtlc => s"add-${u.id}"
-    case u: UpdateFulfillHtlc => s"ful-${u.id}"
-    case u: UpdateFailHtlc => s"fail-${u.id}"
-    case _: UpdateFee => s"fee"
-    case _: CommitSig => s"sig"
-    case _: RevokeAndAck => s"rev"
-    case _: Error => s"err"
-    case _: ChannelReady => s"channel_ready"
-    case _ => "???"
   }
 
 }

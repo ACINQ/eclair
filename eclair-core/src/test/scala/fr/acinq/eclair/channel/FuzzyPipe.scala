@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.eclair.Features
-import fr.acinq.eclair.channel.Commitments.msg2String
+import fr.acinq.eclair.channel.Common.msg2String
 import fr.acinq.eclair.wire.protocol.{Init, LightningMessage}
 
 import scala.concurrent.duration._

@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.Commitments.PostRevocationAction
+import fr.acinq.eclair.channel.MetaCommitments.PostRevocationAction
 import fr.acinq.eclair.channel.Helpers.Syncing.SyncResult
 import fr.acinq.eclair.channel.Helpers.{Closing, Syncing, getRelayFees, scidForChannelUpdate}
 import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage

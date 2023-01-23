@@ -5,7 +5,6 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
-import fr.acinq.eclair.channel.Commitments.{PostRevocationAction, msg2String}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.channel.fsm.Channel
@@ -92,6 +91,9 @@ case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
                   originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                   remoteNextCommitInfo: Either[WaitForRev, PublicKey], // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit_opt
                   remotePerCommitmentSecrets: ShaChain) {
+
+  import Common._
+
   val nextRemoteCommitIndex = remoteCommitIndex + 1
 
   val localHasChanges: Boolean = remoteChanges.acked.nonEmpty || localChanges.proposed.nonEmpty
@@ -119,6 +121,27 @@ case class Common(localChanges: LocalChanges, remoteChanges: RemoteChanges,
     log.debug(s"localNextHtlcId=$localNextHtlcId->${common1.localNextHtlcId}")
     log.debug(s"remoteNextHtlcId=$remoteNextHtlcId->${common1.remoteNextHtlcId}")
     common1
+  }
+}
+
+object Common {
+  def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
+    case u: UpdateFulfillHtlc => id == u.id
+    case u: UpdateFailHtlc => id == u.id
+    case u: UpdateFailMalformedHtlc => id == u.id
+    case _ => false
+  }
+
+  def msg2String(msg: LightningMessage): String = msg match {
+    case u: UpdateAddHtlc => s"add-${u.id}"
+    case u: UpdateFulfillHtlc => s"ful-${u.id}"
+    case u: UpdateFailHtlc => s"fail-${u.id}"
+    case _: UpdateFee => s"fee"
+    case _: CommitSig => s"sig"
+    case _: RevokeAndAck => s"rev"
+    case _: Error => s"err"
+    case _: ChannelReady => s"channel_ready"
+    case _ => "???"
   }
 }
 
@@ -311,6 +334,9 @@ case class MetaCommitments(params: Params,
                            common: Common,
                            commitments: List[Commitment],
                            remoteChannelData_opt: Option[ByteVector] = None) {
+
+  import MetaCommitments._
+
   require(commitments.nonEmpty, "there must be at least one commitments")
 
   val channelId: ByteVector32 = params.channelId
@@ -500,7 +526,7 @@ case class MetaCommitments(params: Params,
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): Either[ChannelException, (MetaCommitments, UpdateFulfillHtlc)] =
     getIncomingHtlcCrossSigned(cmd.id) match {
-      case Some(htlc) if Commitments.alreadyProposed(common.localChanges.proposed, htlc.id) =>
+      case Some(htlc) if Common.alreadyProposed(common.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         Left(UnknownHtlcId(channelId, cmd.id))
       case Some(htlc) if htlc.paymentHash == Crypto.sha256(cmd.r) =>
@@ -527,7 +553,7 @@ case class MetaCommitments(params: Params,
 
   def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either[ChannelException, (MetaCommitments, HtlcFailureMessage)] =
     getIncomingHtlcCrossSigned(cmd.id) match {
-      case Some(htlc) if Commitments.alreadyProposed(common.localChanges.proposed, htlc.id) =>
+      case Some(htlc) if Common.alreadyProposed(common.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         Left(UnknownHtlcId(channelId, cmd.id))
       case Some(htlc) =>
@@ -542,7 +568,7 @@ case class MetaCommitments(params: Params,
       Left(InvalidFailureCode(channelId))
     } else {
       getIncomingHtlcCrossSigned(cmd.id) match {
-        case Some(htlc) if Commitments.alreadyProposed(common.localChanges.proposed, htlc.id) =>
+        case Some(htlc) if Common.alreadyProposed(common.localChanges.proposed, htlc.id) =>
           // we have already sent a fail/fulfill for this htlc
           Left(UnknownHtlcId(channelId, cmd.id))
         case Some(_) =>
@@ -892,4 +918,13 @@ object MetaCommitments {
     common = commitments.common,
     commitments = commitments.commitment +: Nil
   )
+
+  // @formatter:off
+  sealed trait PostRevocationAction
+  object PostRevocationAction {
+    case class RelayHtlc(incomingHtlc: UpdateAddHtlc) extends PostRevocationAction
+    case class RejectHtlc(incomingHtlc: UpdateAddHtlc) extends PostRevocationAction
+    case class RelayFailure(result: RES_ADD_SETTLED[Origin, HtlcResult]) extends PostRevocationAction
+  }
+  // @formatter:on
 }
