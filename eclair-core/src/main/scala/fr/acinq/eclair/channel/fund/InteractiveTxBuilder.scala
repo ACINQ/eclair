@@ -117,25 +117,28 @@ object InteractiveTxBuilder {
 
   // @formatter:off
   sealed trait Purpose {
-    def previousLocalBalance: MilliSatoshi = 0.msat
-    def previousRemoteBalance: MilliSatoshi = 0.msat
-    def commitmentIndex: Long = 0
-    def perCommitmentPoint: PublicKey
+    def previousLocalBalance: MilliSatoshi
+    def previousRemoteBalance: MilliSatoshi
+    def remotePerCommitmentPoint: PublicKey
     def commitTxFeerate: FeeratePerKw
     def common: Common
   }
-  case class InitialCommitment(commitTxFeerate: FeeratePerKw, perCommitmentPoint: PublicKey, nextPerCommitmentPoint: PublicKey) extends Purpose {
+  case class FundingTx(commitTxFeerate: FeeratePerKw, remotePerCommitmentPoint: PublicKey, nextRemotePerCommitmentPoint: PublicKey) extends Purpose {
+    override val previousLocalBalance: MilliSatoshi = 0.msat
+    override val previousRemoteBalance: MilliSatoshi = 0.msat
     override val common: Common = Common(
       localChanges = LocalChanges(Nil, Nil, Nil), remoteChanges = RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 0L, remoteNextHtlcId = 0L,
       localCommitIndex = 0L, remoteCommitIndex = 0L,
       originChannels = Map.empty,
-      remoteNextCommitInfo = Right(nextPerCommitmentPoint),
+      remoteNextCommitInfo = Right(nextRemotePerCommitmentPoint),
       remotePerCommitmentSecrets = ShaChain.init
     )
   }
-  case class RbfInitialCommitment(common: Common, commitment: Commitment) extends Purpose {
-    override val perCommitmentPoint: PublicKey = commitment.remoteCommit.remotePerCommitmentPoint
+  case class FundingTxRbf(common: Common, commitment: Commitment) extends Purpose {
+    override val previousLocalBalance: MilliSatoshi = 0.msat
+    override val previousRemoteBalance: MilliSatoshi = 0.msat
+    override val remotePerCommitmentPoint: PublicKey = commitment.remoteCommit.remotePerCommitmentPoint
     override val commitTxFeerate: FeeratePerKw = commitment.localCommit.spec.commitTxFeerate
   }
   // @formatter:on
@@ -588,7 +591,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       fundingAmount = fundingParams.fundingAmount,
       toLocal = fundingParams.localAmount - localPushAmount + remotePushAmount + purpose.previousLocalBalance,
       toRemote = fundingParams.remoteAmount - remotePushAmount + localPushAmount + purpose.previousRemoteBalance,
-      purpose.commitTxFeerate, fundingTx.hash, fundingOutputIndex, purpose.perCommitmentPoint, commitmentIndex = purpose.commitmentIndex) match {
+      purpose.commitTxFeerate, fundingTx.hash, fundingOutputIndex, purpose.remotePerCommitmentPoint, commitmentIndex = purpose.common.localCommitIndex) match {
       case Left(cause) =>
         replyTo ! RemoteFailure(cause)
         unlockAndStop(completeTx)
@@ -612,7 +615,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                   localFundingStatus = LocalFundingStatus.UnknownFundingTx, // hacky, but we don't have the signed funding tx yet, we'll learn it at the next step
                   remoteFundingStatus = RemoteFundingStatus.NotLocked,
                   localCommit = LocalCommit(common.localCommitIndex, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteCommitSig.signature), htlcTxsAndRemoteSigs = Nil),
-                  remoteCommit = RemoteCommit(common.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.perCommitmentPoint),
+                  remoteCommit = RemoteCommit(common.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint),
                   nextRemoteCommit_opt = None
                 )
                 val commitments = Commitments(commitmentParams, common, commitment)

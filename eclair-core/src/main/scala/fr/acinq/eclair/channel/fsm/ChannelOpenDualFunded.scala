@@ -219,7 +219,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
             commitmentParams = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags),
-            purpose = InteractiveTxBuilder.InitialCommitment(
+            purpose = InteractiveTxBuilder.FundingTx(
               open.commitmentFeerate,
               open.firstPerCommitmentPoint,
               open.secondPerCommitmentPoint),
@@ -282,7 +282,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
             commitmentParams = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, d.lastSent.channelFlags),
-            purpose = InteractiveTxBuilder.InitialCommitment(
+            purpose = InteractiveTxBuilder.FundingTx(
               d.lastSent.commitmentFeerate,
               accept.firstPerCommitmentPoint,
               accept.secondPerCommitmentPoint),
@@ -464,7 +464,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                 nodeParams, fundingParams,
                 commitmentParams = d.metaCommitments.params,
-                purpose = InteractiveTxBuilder.RbfInitialCommitment(d.commitments.common, d.commitments.commitment),
+                purpose = InteractiveTxBuilder.FundingTxRbf(d.metaCommitments.common, d.metaCommitments.commitments.head),
                 localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
                 wallet))
               txBuilder ! InteractiveTxBuilder.Start(self, d.allFundingTxs)
@@ -498,7 +498,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
             commitmentParams = d.metaCommitments.params,
-            purpose = InteractiveTxBuilder.RbfInitialCommitment(d.commitments.common, d.commitments.commitment),
+            purpose = InteractiveTxBuilder.FundingTxRbf(d.metaCommitments.common, d.metaCommitments.commitments.head),
             localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self, d.allFundingTxs)
