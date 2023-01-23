@@ -4,7 +4,7 @@ import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong}
-import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Commitments.{PostRevocationAction, msg2String}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
@@ -617,9 +617,52 @@ case class MetaCommitments(params: Params,
   }
 
   def receiveFee(fee: UpdateFee, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, MetaCommitments] = {
-    sequence(all.map(_.receiveFee(fee, feeConf)))
-      .map { res: List[Commitments] => (res.head.common, res.map(_.commitment)) }
-      .map { case (common, commitments) => this.copy(common = common, commitments = commitments) }
+    if (params.localParams.isInitiator) {
+      Left(NonInitiatorCannotSendUpdateFee(channelId))
+    } else if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) {
+      Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
+    } else {
+      Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw.toLong)
+      // let's compute the current commitment *as seen by us* including this change
+      // update_fee replace each other, so we can remove previous ones
+      val common1 = common.copy(remoteChanges = common.remoteChanges.copy(proposed = common.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+      commitments.foreach(commitment => {
+        val localFeeratePerKw = feeConf.getCommitmentFeerate(remoteNodeId, params.channelType, commitment.capacity, None)
+        log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
+        if (feeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, fee.feeratePerKw) && commitment.hasPendingOrProposedHtlcs(common)) {
+          return Left(FeerateTooDifferent(channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
+        } else {
+          // NB: we check that the initiator can afford this new fee even if spec allows to do it at next signature
+          // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
+          // and it would be tricky to check if the conditions are met at signing
+          // (it also means that we need to check the fee of the initial commitment tx somewhere)
+          val reduced = CommitmentSpec.reduce(commitment.localCommit.spec, common1.localChanges.acked, common1.remoteChanges.proposed)
+          // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+          val fees = Transactions.commitTxTotalCost(params.localParams.dustLimit, reduced, params.commitmentFormat)
+          val missing = reduced.toRemote.truncateToSatoshi - commitment.remoteChannelReserve(params) - fees
+          if (missing < 0.sat) {
+            return Left(CannotAffordFees(channelId, missing = -missing, reserve = commitment.remoteChannelReserve(params), fees = fees))
+          }
+          // if we would overflow our dust exposure with the new feerate, we reject this fee update
+          if (feeConf.feerateToleranceFor(remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
+            val maxDustExposure = feeConf.feerateToleranceFor(remoteNodeId).dustTolerance.maxExposure
+            val localReduced = DustExposure.reduceForDustExposure(commitment.localCommit.spec, common1.localChanges.all, common1.remoteChanges.all)
+            val localDustExposureAfterFeeUpdate = DustExposure.computeExposure(localReduced, fee.feeratePerKw, params.localParams.dustLimit, params.commitmentFormat)
+            if (localDustExposureAfterFeeUpdate > maxDustExposure) {
+              return Left(LocalDustHtlcExposureTooHigh(channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
+            }
+            // this is the commitment as it would be if their update_fee was immediately signed by both parties (it is only an
+            // estimate because there can be concurrent updates)
+            val remoteReduced = DustExposure.reduceForDustExposure(commitment.remoteCommit.spec, common1.remoteChanges.all, common1.localChanges.all)
+            val remoteDustExposureAfterFeeUpdate = DustExposure.computeExposure(remoteReduced, fee.feeratePerKw, params.remoteParams.dustLimit, params.commitmentFormat)
+            if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
+              return Left(RemoteDustHtlcExposureTooHigh(channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
+            }
+          }
+        }
+      })
+      Right(copy(common = common1))
+    }
   }
 
   def sendCommit(keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, CommitSig)] = {
