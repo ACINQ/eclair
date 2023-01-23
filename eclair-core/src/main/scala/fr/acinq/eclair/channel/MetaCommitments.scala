@@ -511,11 +511,18 @@ case class MetaCommitments(params: Params,
       case None => Left(UnknownHtlcId(channelId, cmd.id))
     }
 
-  def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] = {
-    sequence(all.map(_.receiveFulfill(fulfill)))
-      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2, res.head._3) }
-      .map { case (common, commitments, origin, add) => (this.copy(common = common, commitments = commitments), origin, add) }
-  }
+  def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] =
+    getOutgoingHtlcCrossSigned(fulfill.id) match {
+      case Some(htlc) if htlc.paymentHash == Crypto.sha256(fulfill.paymentPreimage) => common.originChannels.get(fulfill.id) match {
+        case Some(origin) =>
+          payment.Monitoring.Metrics.recordOutgoingPaymentDistribution(params.remoteNodeId, htlc.amountMsat)
+          val common1 = common.addRemoteProposal(fulfill)
+          Right(copy(common = common1), origin, htlc)
+        case None => Left(UnknownHtlcId(channelId, fulfill.id))
+      }
+      case Some(_) => Left(InvalidHtlcPreimage(channelId, fulfill.id))
+      case None => Left(UnknownHtlcId(channelId, fulfill.id))
+    }
 
   def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either[ChannelException, (MetaCommitments, HtlcFailureMessage)] = {
     sequence(all.map(_.sendFail(cmd, nodeSecret)))

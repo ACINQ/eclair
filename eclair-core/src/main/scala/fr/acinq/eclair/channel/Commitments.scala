@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
@@ -95,18 +95,6 @@ case class Commitments(channelId: ByteVector32,
 
   private def addRemoteProposal(proposal: UpdateMessage): Commitments =
     copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed :+ proposal))
-
-  def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
-    getOutgoingHtlcCrossSigned(fulfill.id) match {
-      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => originChannels.get(fulfill.id) match {
-        case Some(origin) =>
-          payment.Monitoring.Metrics.recordOutgoingPaymentDistribution(remoteParams.nodeId, htlc.amountMsat)
-          Right(addRemoteProposal(fulfill), origin, htlc)
-        case None => Left(UnknownHtlcId(channelId, fulfill.id))
-      }
-      case Some(_) => Left(InvalidHtlcPreimage(channelId, fulfill.id))
-      case None => Left(UnknownHtlcId(channelId, fulfill.id))
-    }
 
   def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either[ChannelException, (Commitments, HtlcFailureMessage)] =
     getIncomingHtlcCrossSigned(cmd.id) match {
