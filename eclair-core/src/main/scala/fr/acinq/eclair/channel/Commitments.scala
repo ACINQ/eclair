@@ -81,42 +81,6 @@ case class Commitments(channelId: ByteVector32,
 
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
 
-  /**
-   * Add a change to our proposed change list.
-   *
-   * @param proposal proposed change to add.
-   * @return an updated commitment instance.
-   */
-  private def addLocalProposal(proposal: UpdateMessage): Commitments =
-    copy(localChanges = localChanges.copy(proposed = localChanges.proposed :+ proposal))
-
-  private def addRemoteProposal(proposal: UpdateMessage): Commitments =
-    copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed :+ proposal))
-
-  def receiveFail(fail: UpdateFailHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
-    getOutgoingHtlcCrossSigned(fail.id) match {
-      case Some(htlc) => originChannels.get(fail.id) match {
-        case Some(origin) => Right(addRemoteProposal(fail), origin, htlc)
-        case None => Left(UnknownHtlcId(channelId, fail.id))
-      }
-      case None => Left(UnknownHtlcId(channelId, fail.id))
-    }
-
-  def receiveFailMalformed(fail: UpdateFailMalformedHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] = {
-    // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
-    if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
-      Left(InvalidFailureCode(channelId))
-    } else {
-      getOutgoingHtlcCrossSigned(fail.id) match {
-        case Some(htlc) => originChannels.get(fail.id) match {
-          case Some(origin) => Right(addRemoteProposal(fail), origin, htlc)
-          case None => Left(UnknownHtlcId(channelId, fail.id))
-        }
-        case None => Left(UnknownHtlcId(channelId, fail.id))
-      }
-    }
-  }
-
   def sendFee(cmd: CMD_UPDATE_FEE, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateFee)] = {
     if (!localParams.isInitiator) {
       Left(NonInitiatorCannotSendUpdateFee(channelId))

@@ -554,16 +554,28 @@ case class MetaCommitments(params: Params,
     }
   }
 
-  def receiveFail(fail: UpdateFailHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] = {
-    sequence(all.map(_.receiveFail(fail)))
-      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2, res.head._3) }
-      .map { case (common, commitments, origin, fail) => (this.copy(common = common, commitments = commitments), origin, fail) }
-  }
+  def receiveFail(fail: UpdateFailHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] =
+    getOutgoingHtlcCrossSigned(fail.id) match {
+      case Some(htlc) => common.originChannels.get(fail.id) match {
+        case Some(origin) => Right(copy(common = common.addRemoteProposal(fail)), origin, htlc)
+        case None => Left(UnknownHtlcId(channelId, fail.id))
+      }
+      case None => Left(UnknownHtlcId(channelId, fail.id))
+    }
 
   def receiveFailMalformed(fail: UpdateFailMalformedHtlc): Either[ChannelException, (MetaCommitments, Origin, UpdateAddHtlc)] = {
-    sequence(all.map(_.receiveFailMalformed(fail)))
-      .map { res: List[(Commitments, Origin, UpdateAddHtlc)] => (res.head._1.common, res.map(_._1.commitment), res.head._2, res.head._3) }
-      .map { case (common, commitments, origin, fail) => (this.copy(common = common, commitments = commitments), origin, fail) }
+    // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
+    if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
+      Left(InvalidFailureCode(channelId))
+    } else {
+      getOutgoingHtlcCrossSigned(fail.id) match {
+        case Some(htlc) => common.originChannels.get(fail.id) match {
+          case Some(origin) => Right(copy(common = common.addRemoteProposal(fail)), origin, htlc)
+          case None => Left(UnknownHtlcId(channelId, fail.id))
+        }
+        case None => Left(UnknownHtlcId(channelId, fail.id))
+      }
+    }
   }
 
   def sendFee(cmd: CMD_UPDATE_FEE, feeConf: OnChainFeeConf): Either[ChannelException, (MetaCommitments, UpdateFee)] = {
