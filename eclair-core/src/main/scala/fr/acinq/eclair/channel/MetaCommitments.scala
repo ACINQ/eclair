@@ -326,6 +326,62 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
 
 }
 
+object Commitment {
+  def makeLocalTxs(keyManager: ChannelKeyManager,
+                   channelConfig: ChannelConfig,
+                   channelFeatures: ChannelFeatures,
+                   commitTxNumber: Long,
+                   localParams: LocalParams,
+                   remoteParams: RemoteParams,
+                   commitmentInput: InputInfo,
+                   localPerCommitmentPoint: PublicKey,
+                   spec: CommitmentSpec): (Transactions.CommitTx, Seq[Transactions.HtlcTx]) = {
+    val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
+    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
+    val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
+    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
+    val remotePaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
+      remoteParams.paymentBasepoint
+    } else {
+      Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
+    }
+    val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
+    val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
+    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+    val outputs = Transactions.makeCommitTxOutputs(localParams.isInitiator, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, localFundingPubkey, remoteParams.fundingPubKey, spec, channelFeatures.commitmentFormat)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isInitiator, outputs)
+    val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
+    (commitTx, htlcTxs)
+  }
+
+  def makeRemoteTxs(keyManager: ChannelKeyManager,
+                    channelConfig: ChannelConfig,
+                    channelFeatures: ChannelFeatures,
+                    commitTxNumber: Long,
+                    localParams: LocalParams,
+                    remoteParams: RemoteParams,
+                    commitmentInput: InputInfo,
+                    remotePerCommitmentPoint: PublicKey,
+                    spec: CommitmentSpec): (Transactions.CommitTx, Seq[Transactions.HtlcTx]) = {
+    val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
+    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
+    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+    val localPaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
+      localPaymentBasepoint
+    } else {
+      Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
+    }
+    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+    val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+    val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
+    val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+    val outputs = Transactions.makeCommitTxOutputs(!localParams.isInitiator, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteParams.fundingPubKey, localFundingPubkey, spec, channelFeatures.commitmentFormat)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isInitiator, outputs)
+    val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
+    (commitTx, htlcTxs)
+  }
+}
+
 /**
  * @param commitments           all potentially valid commitments
  * @param remoteChannelData_opt peer backup
@@ -699,7 +755,7 @@ case class MetaCommitments(params: Params,
         val (commitments1, commitSigs) = commitments.map(c => {
           // remote commitment will includes all local changes + remote acked changes
           val spec = CommitmentSpec.reduce(c.remoteCommit.spec, common.remoteChanges.acked, common.localChanges.proposed)
-          val (remoteCommitTx, htlcTxs) = Commitments.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, c.remoteCommit.index + 1, params.localParams, params.remoteParams, c.commitInput, remoteNextPerCommitmentPoint, spec)
+          val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, c.remoteCommit.index + 1, params.localParams, params.remoteParams, c.commitInput, remoteNextPerCommitmentPoint, spec)
           val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath), Transactions.TxOwner.Remote, params.commitmentFormat)
 
           val sortedHtlcTxs: Seq[TransactionWithInputInfo] = htlcTxs.sortBy(_.input.outPoint.index)
@@ -765,7 +821,7 @@ case class MetaCommitments(params: Params,
     val commitments1 = commitments.map(c => {
       val spec = CommitmentSpec.reduce(c.localCommit.spec, common.localChanges.acked, common.remoteChanges.proposed)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, c.localCommit.index + 1)
-      val (localCommitTx, htlcTxs) = Commitments.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, c.localCommit.index + 1, params.localParams, params.remoteParams, c.commitInput, localPerCommitmentPoint, spec)
+      val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, c.localCommit.index + 1, params.localParams, params.remoteParams, c.commitInput, localPerCommitmentPoint, spec)
       sigs.get(c.fundingTxId) match {
         case Some(sig) =>
           log.info(s"built local commit number=${c.localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), localCommitTx.tx)

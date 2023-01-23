@@ -19,8 +19,8 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Script}
 import fr.acinq.eclair._
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
-import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -166,59 +166,5 @@ object Commitments {
     remoteFundingStatus = commitment.remoteFundingStatus,
     remotePerCommitmentSecrets = common.remotePerCommitmentSecrets
   )
-
-  def makeLocalTxs(keyManager: ChannelKeyManager,
-                   channelConfig: ChannelConfig,
-                   channelFeatures: ChannelFeatures,
-                   commitTxNumber: Long,
-                   localParams: LocalParams,
-                   remoteParams: RemoteParams,
-                   commitmentInput: InputInfo,
-                   localPerCommitmentPoint: PublicKey,
-                   spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
-    val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-    val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val remotePaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
-      remoteParams.paymentBasepoint
-    } else {
-      Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
-    }
-    val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
-    val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
-    val outputs = makeCommitTxOutputs(localParams.isInitiator, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, localFundingPubkey, remoteParams.fundingPubKey, spec, channelFeatures.commitmentFormat)
-    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isInitiator, outputs)
-    val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
-    (commitTx, htlcTxs)
-  }
-
-  def makeRemoteTxs(keyManager: ChannelKeyManager,
-                    channelConfig: ChannelConfig,
-                    channelFeatures: ChannelFeatures,
-                    commitTxNumber: Long,
-                    localParams: LocalParams,
-                    remoteParams: RemoteParams,
-                    commitmentInput: InputInfo,
-                    remotePerCommitmentPoint: PublicKey,
-                    spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
-    val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
-    val localPaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
-      localPaymentBasepoint
-    } else {
-      Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
-    }
-    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-    val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-    val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-    val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-    val outputs = makeCommitTxOutputs(!localParams.isInitiator, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteParams.fundingPubKey, localFundingPubkey, spec, channelFeatures.commitmentFormat)
-    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isInitiator, outputs)
-    val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
-    (commitTx, htlcTxs)
-  }
 
 }
