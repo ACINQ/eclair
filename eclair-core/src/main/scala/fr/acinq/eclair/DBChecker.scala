@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.eclair.channel.PersistentChannelData
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -29,10 +30,11 @@ object DBChecker extends Logging {
    *
    * @param nodeParams node parameters
    */
-  def checkChannelsDB(nodeParams: NodeParams): Unit = {
+  def checkChannelsDB(nodeParams: NodeParams): Seq[PersistentChannelData] = {
     Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(channels) =>
-        channels.foreach(data => if (!data.metaCommitments.main.validateSeed(nodeParams.channelKeyManager)) throw InvalidChannelSeedException(data.channelId))
+        channels.foreach(data => if (!data.commitments.validateSeed(nodeParams.channelKeyManager)) throw InvalidChannelSeedException(data.channelId))
+        channels
       case Failure(_) => throw IncompatibleDBException
     }
   }
