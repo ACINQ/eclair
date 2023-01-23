@@ -225,7 +225,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               open.secondPerCommitmentPoint),
             localPushAmount = accept.pushAmount, remotePushAmount = open.pushAmount,
             wallet))
-          txBuilder ! InteractiveTxBuilder.Start(self, Nil)
+          txBuilder ! InteractiveTxBuilder.Start(self)
           goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, accept.pushAmount, open.pushAmount, txBuilder, None) sending accept
       }
 
@@ -288,7 +288,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               accept.secondPerCommitmentPoint),
             localPushAmount = d.lastSent.pushAmount, remotePushAmount = accept.pushAmount,
             wallet))
-          txBuilder ! InteractiveTxBuilder.Start(self, Nil)
+          txBuilder ! InteractiveTxBuilder.Start(self)
           goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, d.lastSent.pushAmount, accept.pushAmount, txBuilder, None)
       }
 
@@ -464,10 +464,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                 nodeParams, fundingParams,
                 commitmentParams = d.metaCommitments.params,
-                purpose = InteractiveTxBuilder.FundingTxRbf(d.metaCommitments.common, d.metaCommitments.commitments.head),
+                purpose = InteractiveTxBuilder.FundingTxRbf(d.metaCommitments.common, d.metaCommitments.commitments.head, previousTransactions = d.allFundingTxs),
                 localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
                 wallet))
-              txBuilder ! InteractiveTxBuilder.Start(self, d.allFundingTxs)
+              txBuilder ! InteractiveTxBuilder.Start(self)
               stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder)) sending TxAckRbf(d.channelId, fundingParams.localAmount)
             }
           case RbfStatus.RbfAborted =>
@@ -498,10 +498,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
             commitmentParams = d.metaCommitments.params,
-            purpose = InteractiveTxBuilder.FundingTxRbf(d.metaCommitments.common, d.metaCommitments.commitments.head),
+            purpose = InteractiveTxBuilder.FundingTxRbf(d.metaCommitments.common, d.metaCommitments.commitments.head, previousTransactions = d.allFundingTxs),
             localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
             wallet))
-          txBuilder ! InteractiveTxBuilder.Start(self, d.allFundingTxs)
+          txBuilder ! InteractiveTxBuilder.Start(self)
           stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder))
         case _ =>
           log.info("ignoring unexpected tx_ack_rbf")

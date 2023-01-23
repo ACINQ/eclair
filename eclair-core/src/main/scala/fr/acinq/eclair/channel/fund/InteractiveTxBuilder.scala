@@ -79,7 +79,7 @@ object InteractiveTxBuilder {
 
   // @formatter:off
   sealed trait Command
-  case class Start(replyTo: ActorRef[Response], previousTransactions: Seq[SignedSharedTransaction]) extends Command
+  case class Start(replyTo: ActorRef[Response]) extends Command
   sealed trait ReceiveMessage extends Command
   case class ReceiveTxMessage(msg: InteractiveTxConstructionMessage) extends ReceiveMessage
   case class ReceiveCommitSig(msg: CommitSig) extends ReceiveMessage
@@ -135,7 +135,12 @@ object InteractiveTxBuilder {
       remotePerCommitmentSecrets = ShaChain.init
     )
   }
-  case class FundingTxRbf(common: Common, commitment: Commitment) extends Purpose {
+  /**
+   * @param previousTransactions interactive transactions are replaceable and can be RBF-ed, but we need to make sure that
+   *                             only one of them ends up confirming. We guarantee this by having the latest transaction
+   *                             always double-spend all its predecessors.
+   */
+  case class FundingTxRbf(common: Common, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction]) extends Purpose {
     override val previousLocalBalance: MilliSatoshi = 0.msat
     override val previousRemoteBalance: MilliSatoshi = 0.msat
     override val remotePerCommitmentPoint: PublicKey = commitment.remoteCommit.remotePerCommitmentPoint
@@ -236,8 +241,8 @@ object InteractiveTxBuilder {
       Behaviors.withStash(10) { stash =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(commitmentParams.remoteParams.nodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
-            case Start(replyTo, previousTransactions) =>
-              val actor = new InteractiveTxBuilder(replyTo, nodeParams, fundingParams, commitmentParams, purpose, localPushAmount, remotePushAmount, wallet, previousTransactions, stash, context)
+            case Start(replyTo) =>
+              val actor = new InteractiveTxBuilder(replyTo, nodeParams, fundingParams, commitmentParams, purpose, localPushAmount, remotePushAmount, wallet, stash, context)
               actor.start()
             case Abort => Behaviors.stopped
           }
@@ -279,11 +284,6 @@ object InteractiveTxBuilder {
 
 }
 
-/**
- * @param previousTransactions interactive transactions are replaceable and can be RBF-ed, but we need to make sure that
- *                             only one of them ends up confirming. We guarantee this by having the latest transaction
- *                             always double-spend all its predecessors.
- */
 private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Response],
                                    nodeParams: NodeParams,
                                    fundingParams: InteractiveTxBuilder.InteractiveTxParams,
@@ -292,7 +292,6 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                                    localPushAmount: MilliSatoshi,
                                    remotePushAmount: MilliSatoshi,
                                    wallet: OnChainChannelFunder,
-                                   previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction],
                                    stash: StashBuffer[InteractiveTxBuilder.Command],
                                    context: ActorContext[InteractiveTxBuilder.Command])(implicit ec: ExecutionContext) {
 
@@ -301,13 +300,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private val log = context.log
   private val keyManager = nodeParams.channelKeyManager
   private val remoteNodeId = commitmentParams.remoteParams.nodeId
+  private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
+    case rbf: FundingTxRbf => rbf.previousTransactions
+    case _ => Nil
+  }
 
   def start(): Behavior[Command] = {
     if (!fundingParams.isInitiator && fundingParams.localAmount == 0.sat) {
       buildTx(InteractiveTxFunder.FundingContributions(Nil, Nil))
     } else {
       val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, purpose, wallet))
-      txFunder ! InteractiveTxFunder.FundTransaction(context.messageAdapter[InteractiveTxFunder.Response](r => FundTransactionResult(r)), previousTransactions)
+      txFunder ! InteractiveTxFunder.FundTransaction(context.messageAdapter[InteractiveTxFunder.Response](r => FundTransactionResult(r)))
       Behaviors.receiveMessagePartial {
         case FundTransactionResult(result) => result match {
           case InteractiveTxFunder.FundingFailed =>
