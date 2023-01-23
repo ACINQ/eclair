@@ -17,14 +17,13 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
-import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -80,8 +79,6 @@ case class Commitments(channelId: ByteVector32,
                        remoteFundingStatus: RemoteFundingStatus,
                        remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
 
-  import Commitments._
-
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
 
   /**
@@ -95,35 +92,6 @@ case class Commitments(channelId: ByteVector32,
 
   private def addRemoteProposal(proposal: UpdateMessage): Commitments =
     copy(remoteChanges = remoteChanges.copy(proposed = remoteChanges.proposed :+ proposal))
-
-  def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either[ChannelException, (Commitments, HtlcFailureMessage)] =
-    getIncomingHtlcCrossSigned(cmd.id) match {
-      case Some(htlc) if alreadyProposed(localChanges.proposed, htlc.id) =>
-        // we have already sent a fail/fulfill for this htlc
-        Left(UnknownHtlcId(channelId, cmd.id))
-      case Some(htlc) =>
-        // we need the shared secret to build the error packet
-        OutgoingPaymentPacket.buildHtlcFailure(nodeSecret, cmd, htlc).map(fail => (addLocalProposal(fail), fail))
-      case None => Left(UnknownHtlcId(channelId, cmd.id))
-    }
-
-  def sendFailMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): Either[ChannelException, (Commitments, UpdateFailMalformedHtlc)] = {
-    // BADONION bit must be set in failure_code
-    if ((cmd.failureCode & FailureMessageCodecs.BADONION) == 0) {
-      Left(InvalidFailureCode(channelId))
-    } else {
-      getIncomingHtlcCrossSigned(cmd.id) match {
-        case Some(htlc) if alreadyProposed(localChanges.proposed, htlc.id) =>
-          // we have already sent a fail/fulfill for this htlc
-          Left(UnknownHtlcId(channelId, cmd.id))
-        case Some(_) =>
-          val fail = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-          val commitments1 = addLocalProposal(fail)
-          Right((commitments1, fail))
-        case None => Left(UnknownHtlcId(channelId, cmd.id))
-      }
-    }
-  }
 
   def receiveFail(fail: UpdateFailHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(fail.id) match {
