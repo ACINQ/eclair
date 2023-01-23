@@ -104,7 +104,6 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         channelType: SupportedChannelType,
                                         channelOrigin: ChannelOrigin = ChannelOrigin.Default) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
-  require(localParams.upfrontShutdownScript_opt.isDefined == Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript), "upfront_shutdownscript is not consistent with local parameters")
 }
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
                                             fundingContribution_opt: Option[Satoshi],
@@ -114,9 +113,7 @@ case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
                                             remote: ActorRef,
                                             remoteInit: Init,
                                             channelConfig: ChannelConfig,
-                                            channelType: SupportedChannelType) {
-  require(localParams.upfrontShutdownScript_opt.isDefined == Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript), "upfront_shutdownscript is not consistent with local parameters")
-}
+                                            channelType: SupportedChannelType)
 
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
@@ -538,7 +535,7 @@ final case class DATA_NEGOTIATING(metaCommitments: MetaCommitments,
 }
 final case class DATA_CLOSING(metaCommitments: MetaCommitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing
-                              finalScriptPubKey: ByteVector, // where to send all on-chain funds                              mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
+                              finalScriptPubKey: ByteVector, // where to send all on-chain funds
                               mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[ClosingTx] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
@@ -569,6 +566,7 @@ case class LocalParams(nodeId: PublicKey,
                        upfrontShutdownScript_opt: Option[ByteVector],
                        walletStaticPaymentBasepoint: Option[PublicKey],
                        initFeatures: Features[InitFeature])
+
 /**
  * @param initFeatures see [[LocalParams.initFeatures]]
  */

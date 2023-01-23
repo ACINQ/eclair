@@ -57,7 +57,7 @@ private[channel] object ChannelCodecs4 {
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
         ("isInitiator" | bool8) ::
-        ("defaultFinalScriptPubKey" | optional(bool8, lengthDelimited(bytes))) ::
+        ("upfrontShutdownScript_opt" | optional(bool8, lengthDelimited(bytes))) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelFeatures.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams]
 
@@ -389,7 +389,7 @@ private[channel] object ChannelCodecs4 {
     val DATA_CLOSING_07_Codec: Codec[DATA_CLOSING] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
         ("waitingSince" | blockHeight) ::
-        ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
+        ("finalScriptPubKey" | lengthDelimited(bytes)) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
         ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::

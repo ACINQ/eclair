@@ -75,7 +75,7 @@ private[channel] object ChannelCodecs0 {
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
         ("isInitiator" | bool) ::
-        ("upfrontShutdownScript_opt" | varsizebinarydata.map[Option[ByteVector]](b => Some(b)).decodeOnly) ::
+        ("upfrontShutdownScript_opt" | varsizebinarydata.map(Option(_)).decodeOnly) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams].decodeOnly
 

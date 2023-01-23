@@ -124,11 +124,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.length == 1)
     assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length == 1)
     assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.isEmpty)
-    if (alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.isDefined) {
+    if (alice.stateData.asInstanceOf[DATA_NEGOTIATING].metaCommitments.params.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
       // check that the closing tx uses Alice and Bob's default closing scripts
       val closingTx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.head.unsignedTx.tx
-      val expectedLocalScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].localShutdown.scriptPubKey
-      val expectedRemoteScript = bob.stateData.asInstanceOf[DATA_NEGOTIATING].localShutdown.scriptPubKey
+      val expectedLocalScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].metaCommitments.params.localParams.upfrontShutdownScript_opt.get
+      val expectedRemoteScript = bob.stateData.asInstanceOf[DATA_NEGOTIATING].metaCommitments.params.localParams.upfrontShutdownScript_opt.get
       assert(closingTx.txOut.map(_.publicKeyScript).toSet == Set(expectedLocalScript, expectedRemoteScript))
     }
     alice2bob.forward(bob)

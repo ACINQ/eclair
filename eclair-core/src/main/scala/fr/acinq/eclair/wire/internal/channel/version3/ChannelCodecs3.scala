@@ -73,7 +73,7 @@ private[channel] object ChannelCodecs3 {
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
         ("isInitiator" | bool8) ::
-        ("defaultFinalScriptPubKey" | optional(provide(true), lengthDelimited(bytes))) ::
+        ("upfrontShutdownScript_opt" | lengthDelimited(bytes).map(Option(_)).decodeOnly) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelFeatures.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams]
 
@@ -483,8 +483,6 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x01, txCodec.map(tx => SingleFundedUnconfirmedFundingTx(Some(tx))).decodeOnly)
       .typecase(0x02, (signedSharedTransactionCodec :: provide(BlockHeight(0))).as[DualFundedUnconfirmedFundingTx])
 
-    // codec used before localParams.upfrontShutdownScript was made optional
-    // commitments.localParams.upfrontShutdownScript_opt is always present for data serialized with this codec, and was used as the final script pubkey to send onchain funds to
     val DATA_CLOSING_0d_Codec: Codec[DATA_CLOSING] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
         ("fundingTx_opt" | optional(bool8, unconfirmedFundingTxCodec)) ::
@@ -504,18 +502,6 @@ private[channel] object ChannelCodecs3 {
         DATA_CLOSING(metaCommitments1, waitingSince, metaCommitments.params.localParams.upfrontShutdownScript_opt.get, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
-    val DATA_CLOSING_0e_Codec: Codec[DATA_CLOSING] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
-        ("waitingSince" | blockHeight) ::
-        ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
-        ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
-        ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
-        ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::
-        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
-
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_06_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
         ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
@@ -523,7 +509,6 @@ private[channel] object ChannelCodecs3 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
-    .typecase(0x0e, Codecs.DATA_CLOSING_0e_Codec)
     .typecase(0x0d, Codecs.DATA_CLOSING_0d_Codec)
     .typecase(0x0c, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_READY_0c_Codec)
     .typecase(0x0b, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0b_Codec)

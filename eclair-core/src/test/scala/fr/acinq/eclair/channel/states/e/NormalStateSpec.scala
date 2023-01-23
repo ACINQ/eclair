@@ -18,13 +18,12 @@ package fr.acinq.eclair.channel.states.e
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw}
@@ -2498,8 +2497,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   def testShutdown(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
     import f._
-    val bobParams = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams
-    alice ! Shutdown(ByteVector32.Zeroes, script_opt.getOrElse(bobParams.upfrontShutdownScript_opt.getOrElse(Script.write(Script.pay2wpkh(randomKey().publicKey)))))
+    val bobData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    alice ! Shutdown(ByteVector32.Zeroes, script_opt.getOrElse(bob.underlyingActor.getOrGenerateFinalScriptPubKey(bobData)))
     alice2bob.expectMsgType[Shutdown]
     alice2bob.expectMsgType[ClosingSigned]
     awaitCond(alice.stateName == NEGOTIATING)
@@ -2544,8 +2543,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     // actual test begins
-    val aliceParams = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams
-    bob ! Shutdown(ByteVector32.Zeroes, Script.write(Script.pay2wpkh(randomKey().publicKey)))
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    bob ! Shutdown(ByteVector32.Zeroes, alice.underlyingActor.getOrGenerateFinalScriptPubKey(aliceData))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishTx]
     bob2blockchain.expectMsgType[PublishTx]
@@ -2640,8 +2639,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
-    val bobParams = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams
-    bob ! Shutdown(ByteVector32.Zeroes, bobParams.upfrontShutdownScript_opt.getOrElse(Script.write(Script.pay2wpkh(randomKey().publicKey))))
+    val bobData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    bob ! Shutdown(ByteVector32.Zeroes, bob.underlyingActor.getOrGenerateFinalScriptPubKey(bobData))
     bob2alice.expectMsgType[Shutdown]
     awaitCond(bob.stateName == SHUTDOWN)
   }

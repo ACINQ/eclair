@@ -148,7 +148,8 @@ object CheckBalance {
     val toLocal = if (c.channelFeatures.paysDirectlyToWallet) {
       // If static remote key is enabled, the commit tx directly pays to our wallet
       // We use the pubkeyscript to retrieve our output
-      Transactions.findPubKeyScriptIndex(remoteCommitPublished.commitTx, Script.write(Script.pay2wpkh(c.localParams.walletStaticPaymentBasepoint.get))) match {
+      val finalScriptPubKey = Script.write(Script.pay2wpkh(c.localParams.walletStaticPaymentBasepoint.get))
+      Transactions.findPubKeyScriptIndex(remoteCommitPublished.commitTx, finalScriptPubKey) match {
         case Right(outputIndex) => Map(remoteCommitPublished.commitTx.txid -> remoteCommitPublished.commitTx.txOut(outputIndex).amount.toBtc)
         case _ => Map.empty[ByteVector32, Btc] // either we don't have an output (below dust), or we have used a non-default pubkey script
       }

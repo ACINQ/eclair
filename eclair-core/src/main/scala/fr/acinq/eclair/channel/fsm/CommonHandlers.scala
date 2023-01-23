@@ -124,7 +124,7 @@ trait CommonHandlers {
   private def generateFinalScriptPubKey(): ByteVector = {
     val finalPubKey = wallet.getP2wpkhPubkey()
     val finalScriptPubKey = Script.write(Script.pay2wpkh(finalPubKey))
-    log.info(s"requested finalScriptPubkey=$finalScriptPubKey")
+    log.info(s"using finalScriptPubkey=$finalScriptPubKey")
     finalScriptPubKey
   }
 

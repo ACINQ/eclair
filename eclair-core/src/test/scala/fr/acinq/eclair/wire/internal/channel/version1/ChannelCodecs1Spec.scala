@@ -2,19 +2,18 @@ package fr.acinq.eclair.wire.internal.channel.version1
 
 import akka.actor.ActorSystem
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{LocalParams, Origin, RemoteParams}
+import fr.acinq.eclair.channel.{Origin, RemoteParams}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.ChannelVersion
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1.Codecs._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, TestConstants, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
-import scodec.{Attempt, Codec, DecodeResult}
+import scodec.{Attempt, DecodeResult}
 
 import java.util.UUID
 import scala.util.Random
@@ -51,31 +50,14 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     assert(channelVersionCodec.encode(ChannelVersion.ANCHOR_OUTPUTS) == Attempt.successful(hex"00000007".bits))
   }
 
-  test("encode/decode local params") {
-    def roundtrip(localParams: LocalParams, codec: Codec[LocalParams]) = {
-      val encoded = codec.encode(localParams).require
-      val decoded = codec.decode(encoded).require
-      assert(localParams == decoded.value)
-    }
+  test("decode local params") {
+    // we use data encoded with v1 codecs (before upfrontShutdownScript_opt was made optional) and check it can still be decoded and that upfrontShutdownScript_opt is always defined
+    val std = hex"0312f3b6afc20f21b77d8404dc9a4159d60b181b44354945b654a08f86868434bf00010000002a000000004916f98200000000795517c4000000001df2678e0000000052ccc3c658d63bd20016001498a16518484aa1f90e924b6d2443393f477bad9000000100e99636b8c1b912ea3ead7d98c8329a7bfa5fd1d39f8c49ae5899fcce188b94f1a51284e1cec6c359e81ba93a368764af5c1633e959a77bec2549669c6a9140b3bd1948d0ff13d297199f6d72a9972476cf92686f1fb2e24e49f9716a5f07dcf698c36824f8b01ba5bc62e9651ff836b742e4582ad44d129baafc3d9db053e202d40828be32a59f177da042e9e6a9b23aa737df386c6028b5aeb41444a1fe719e6f2e71eedac180fb3fdcadc28834f286adba403baa3e9c241acd2451cf82d84bd3c0da8a178de9150b6d94eae100e949d2e83de961841b453838ecd1f7e69382779be1c0369c0cbbe34a73190903bc2e2fb1d6fbc144e6b299109a8e26481896"
+    val staticRemoteKey = hex"0312f3b6afc20f21b77d8404dc9a4159d60b181b44354945b654a08f86868434bf00010000002a000000004916f98200000000795517c4000000001df2678e0000000052ccc3c658d63bd20016001498a16518484aa1f90e924b6d2443393f477bad90021b8b033c7bbb4473ca4e5554fa3c549f258061eb5d0612a2c9cfbc253b11a98c00000100e99636b8c1b912ea3ead7d98c8329a7bfa5fd1d39f8c49ae5899fcce188b94f1a51284e1cec6c359e81ba93a368764af5c1633e959a77bec2549669c6a9140b3bd1948d0ff13d297199f6d72a9972476cf92686f1fb2e24e49f9716a5f07dcf698c36824f8b01ba5bc62e9651ff836b742e4582ad44d129baafc3d9db053e202d40828be32a59f177da042e9e6a9b23aa737df386c6028b5aeb41444a1fe719e6f2e71eedac180fb3fdcadc28834f286adba403baa3e9c241acd2451cf82d84bd3c0da8a178de9150b6d94eae100e949d2e83de961841b453838ecd1f7e69382779be1c0369c0cbbe34a73190903bc2e2fb1d6fbc144e6b299109a8e26481896"
 
-    val o = LocalParams(
-      nodeId = randomKey().publicKey,
-      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-      maxHtlcValueInFlightMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      requestedChannelReserve_opt = Some(Satoshi(Random.nextInt(Int.MaxValue))),
-      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
-      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      upfrontShutdownScript_opt = Some(Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))),
-      walletStaticPaymentBasepoint = None,
-      isInitiator = Random.nextBoolean(),
-      initFeatures = Features(randomBytes(256)).initFeatures())
-    val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32()).publicKey))
-
-    roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
-    roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
-    roundtrip(o, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
+    require(localParamsCodec(ChannelVersion.ZEROES).decode(std.toBitVector).require.value.upfrontShutdownScript_opt.isDefined)
+    require(localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS).decode(std.toBitVector).require.value.upfrontShutdownScript_opt.isDefined)
+    require(localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(staticRemoteKey.toBitVector).require.value.upfrontShutdownScript_opt.isDefined)
   }
 
   test("encode/decode remote params") {

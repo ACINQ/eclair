@@ -25,7 +25,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.bitcoind.OnchainPubkeyRefresher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnchainPubkeyCache, SingleKeyOnChainWallet}
@@ -499,8 +498,6 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     // check that we store the local txs without sigs
     localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
     localCommit.htlcTxsAndRemoteSigs.foreach(_.htlcTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull)))
-    val probe = TestProbe()
-    systemA.eventStream.subscribe(probe.ref, classOf[OnchainPubkeyRefresher.Command])
 
     val commitTx = localCommit.commitTxAndRemoteSig.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
