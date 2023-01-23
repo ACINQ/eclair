@@ -81,45 +81,6 @@ case class Commitments(channelId: ByteVector32,
 
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
 
-  def sendFee(cmd: CMD_UPDATE_FEE, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateFee)] = {
-    if (!localParams.isInitiator) {
-      Left(NonInitiatorCannotSendUpdateFee(channelId))
-    } else {
-      // let's compute the current commitment *as seen by them* with this change taken into account
-      val fee = UpdateFee(channelId, cmd.feeratePerKw)
-      // update_fee replace each other, so we can remove previous ones
-      val commitments1 = copy(localChanges = localChanges.copy(proposed = localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
-
-      // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-      // we look from remote's point of view, so if local is initiator remote doesn't pay the fees
-      val fees = commitTxTotalCost(commitments1.remoteParams.dustLimit, reduced, commitmentFormat)
-      val missing = reduced.toRemote.truncateToSatoshi - commitments1.localChannelReserve - fees
-      if (missing < 0.sat) {
-        return Left(CannotAffordFees(channelId, missing = -missing, reserve = commitments1.localChannelReserve, fees = fees))
-      }
-
-      // if we would overflow our dust exposure with the new feerate, we avoid sending this fee update
-      if (feeConf.feerateToleranceFor(remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
-        val maxDustExposure = feeConf.feerateToleranceFor(remoteNodeId).dustTolerance.maxExposure
-        // this is the commitment as it would be if our update_fee was immediately signed by both parties (it is only an
-        // estimate because there can be concurrent updates)
-        val localReduced = DustExposure.reduceForDustExposure(localCommit.spec, commitments1.localChanges.all, remoteChanges.all)
-        val localDustExposureAfterFeeUpdate = DustExposure.computeExposure(localReduced, cmd.feeratePerKw, localParams.dustLimit, commitmentFormat)
-        if (localDustExposureAfterFeeUpdate > maxDustExposure) {
-          return Left(LocalDustHtlcExposureTooHigh(channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
-        }
-        val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit.spec, remoteChanges.all, commitments1.localChanges.all)
-        val remoteDustExposureAfterFeeUpdate = DustExposure.computeExposure(remoteReduced, cmd.feeratePerKw, remoteParams.dustLimit, commitmentFormat)
-        if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
-          return Left(RemoteDustHtlcExposureTooHigh(channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
-        }
-      }
-
-      Right(commitments1, fee)
-    }
-  }
-
   def receiveFee(fee: UpdateFee, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, Commitments] = {
     if (localParams.isInitiator) {
       Left(NonInitiatorCannotSendUpdateFee(channelId))
