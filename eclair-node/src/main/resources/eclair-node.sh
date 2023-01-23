@@ -282,7 +282,7 @@ java_version_check() {
   if [[ "$java_version" == "" ]]; then
     echo
     echo No java installations was detected.
-    echo Please go to https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot and download
+    echo Please go to 'https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot' and download
     echo
     exit 1
   else
