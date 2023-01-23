@@ -158,14 +158,14 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
   def localChannelReserve(params: Params): Satoshi = if (params.channelFeatures.hasFeature(Features.DualFunding)) {
     (capacity / 100).max(params.remoteParams.dustLimit)
   } else {
-    params.remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Commitments
+    params.remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
   }
 
   /** Channel reserve that applies to our peer's funds. */
   def remoteChannelReserve(params: Params): Satoshi = if (params.channelFeatures.hasFeature(Features.DualFunding)) {
     (capacity / 100).max(params.localParams.dustLimit)
   } else {
-    params.localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Commitments
+    params.localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
   }
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the initiator keeps an extra buffer on
@@ -421,15 +421,6 @@ case class MetaCommitments(params: Params,
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitments.head.getOutgoingHtlcCrossSigned(htlcId)
 
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitments.head.getIncomingHtlcCrossSigned(htlcId)
-
-  private def sequence[T](collection: List[Either[ChannelException, T]]): Either[ChannelException, List[T]] =
-    collection.foldRight[Either[ChannelException, List[T]]](Right(Nil)) {
-      case (Right(success), Right(res)) => Right(success +: res)
-      case (Right(_), Left(res)) => Left(res)
-      case (Left(failure), _) => Left(failure)
-    }
-
-  // NB: in the below, some common values are duplicated among all commitments, we only keep the first occurrence
 
   /**
    * @param cmd add HTLC command

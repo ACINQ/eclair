@@ -23,7 +23,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, ClearTrampolineRecipient}
@@ -700,12 +700,15 @@ object PaymentPacketSpec {
 
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat, channelFeatures: ChannelFeatures = ChannelFeatures()): Commitments = {
     val channelReserve = testCapacity * 0.01
-    val params = LocalParams(null, null, null, Long.MaxValue.msat, Some(channelReserve), null, null, 0, isInitiator = true, null, None, null)
+    val localParams = LocalParams(null, null, null, Long.MaxValue.msat, Some(channelReserve), null, null, 0, isInitiator = true, null, None, null)
     val remoteParams = RemoteParams(randomKey().publicKey, null, UInt64.MaxValue, Some(channelReserve), null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null, None)
     val commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(testCapacity, Nil), Nil)
-    val localCommit = LocalCommit(0, null, CommitTxAndRemoteSig(Transactions.CommitTx(commitInput, null), null), null)
+    val localCommit = LocalCommit(0, null, CommitTxAndRemoteSig(Transactions.CommitTx(commitInput, null), null), Nil)
+    val remoteCommit = RemoteCommit(0, null, null, randomKey().publicKey)
+    val localChanges = LocalChanges(Nil, Nil, Nil)
+    val remoteChanges = RemoteChanges(Nil, Nil, Nil)
     val channelFlags = ChannelFlags.Private
-    new Commitments(channelId, ChannelConfig.standard, channelFeatures, params, remoteParams, channelFlags, localCommit, null, null, null, 0, 0, Map.empty, null, null, null, null) {
+    new Commitments(channelId, ChannelConfig.standard, channelFeatures, localParams, remoteParams, channelFlags, localCommit, remoteCommit, localChanges, remoteChanges, 0, 0, Map.empty, Right(randomKey().publicKey), LocalFundingStatus.UnknownFundingTx, RemoteFundingStatus.Locked, ShaChain.init) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }
