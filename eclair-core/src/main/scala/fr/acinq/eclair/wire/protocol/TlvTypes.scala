@@ -44,7 +44,7 @@ case class GenericTlv(tag: UInt64, value: ByteVector) extends Tlv
  * @param unknown unknown tlv records.
  * @tparam T the stream namespace is a trait extending the top-level tlv trait.
  */
-case class TlvStream[T <: Tlv](records: Iterable[T], unknown: Iterable[GenericTlv] = Nil) {
+case class TlvStream[T <: Tlv](records: Set[T], unknown: Set[GenericTlv] = Set.empty) {
   /**
    *
    * @tparam R input type parameter, must be a subtype of the main TLV type
@@ -55,7 +55,7 @@ case class TlvStream[T <: Tlv](records: Iterable[T], unknown: Iterable[GenericTl
 }
 
 object TlvStream {
-  def empty[T <: Tlv]: TlvStream[T] = TlvStream[T](Nil, Nil)
+  def empty[T <: Tlv]: TlvStream[T] = TlvStream[T](Set.empty[T], Set.empty[GenericTlv])
 
-  def apply[T <: Tlv](records: T*): TlvStream[T] = TlvStream(records, Nil)
+  def apply[T <: Tlv](records: T*): TlvStream[T] = TlvStream[T](records.toSet, Set.empty[GenericTlv])
 }

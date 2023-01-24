@@ -40,7 +40,7 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("minimal offer") {
-    val tlvs = Seq(
+    val tlvs = Set[OfferTlv](
       OfferDescription("basic offer"),
       OfferNodeId(nodeId))
     val offer = Offer(TlvStream(tlvs))
@@ -118,16 +118,16 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("check that invoice request matches offer (chain compatibility)") {
     {
-      val offer = Offer(TlvStream(Seq(OfferAmount(100 msat), OfferDescription("offer without chains"), OfferNodeId(randomKey().publicKey))))
+      val offer = Offer(TlvStream(OfferAmount(100 msat), OfferDescription("offer without chains"), OfferNodeId(randomKey().publicKey)))
       val payerKey = randomKey()
       val request = {
-        val tlvs: Seq[InvoiceRequestTlv] = (offer.records.records ++ Seq(
+        val tlvs: Set[InvoiceRequestTlv] = offer.records.records ++ Set(
           InvoiceRequestMetadata(hex"012345"),
           InvoiceRequestAmount(100 msat),
           InvoiceRequestPayerId(payerKey.publicKey),
-        )).toSeq
+        )
         val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
-        InvoiceRequest(TlvStream(tlvs :+ Signature(signature)))
+        InvoiceRequest(TlvStream(tlvs + Signature(signature)))
       }
       assert(request.isValidFor(offer))
       val withDefaultChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestChain(Block.LivenetGenesisBlock.hash)))), payerKey)
@@ -137,7 +137,7 @@ class OfferTypesSpec extends AnyFunSuite {
     }
     {
       val (chain1, chain2) = (randomBytes32(), randomBytes32())
-      val offer = Offer(TlvStream(Seq(OfferChains(Seq(chain1, chain2)), OfferAmount(100 msat), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey))))
+      val offer = Offer(TlvStream(OfferChains(Seq(chain1, chain2)), OfferAmount(100 msat), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey)))
       val payerKey = randomKey()
       val request1 = InvoiceRequest(offer, 100 msat, 1, Features.empty, payerKey, chain1)
       assert(request1.isValidFor(offer))
@@ -169,14 +169,14 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("minimal invoice request") {
     val payerKey = PrivateKey(hex"527d410ec920b626ece685e8af9abc976a48dbf2fe698c1b35d90a1c5fa2fbca")
-    val tlvsWithoutSignature = Seq(
+    val tlvsWithoutSignature = Set[InvoiceRequestTlv](
       InvoiceRequestMetadata(hex"abcdef"),
       OfferDescription("basic offer"),
       OfferNodeId(nodeId),
       InvoiceRequestPayerId(payerKey.publicKey),
     )
     val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream[InvoiceRequestTlv](tlvsWithoutSignature), OfferCodecs.invoiceRequestTlvCodec), payerKey)
-    val tlvs = tlvsWithoutSignature :+ Signature(signature)
+    val tlvs = tlvsWithoutSignature + Signature(signature)
     val invoiceRequest = InvoiceRequest(TlvStream(tlvs))
     val encoded = "lnr1qqp6hn00pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrjkppqfxajawru7sa7rt300hfzs2lyk2jrxduxrkx9lmzy6lxcvfhk0j7ruzqc4mtjj5fwukrqp7faqrxn664nmwykad76pu997terewcklsx47apag59wf8exly4tky7y63prr7450n28stqssmzuf48w7e6rjad2eq"
     assert(InvoiceRequest.decode(encoded).get == invoiceRequest)
@@ -242,7 +242,7 @@ class OfferTypesSpec extends AnyFunSuite {
     )
     testCases.foreach {
       case TestCase(tlvStream, tlvCount, expectedRoot) =>
-        val genericTlvStream: Codec[TlvStream[GenericTlv]] = list(TlvCodecs.genericTlv).xmap(tlvs => TlvStream(tlvs), tlvs => tlvs.records.toList)
+        val genericTlvStream: Codec[TlvStream[GenericTlv]] = list(TlvCodecs.genericTlv).xmap(tlvs => TlvStream(tlvs.toSet), tlvs => tlvs.records.toList.sortBy(_.tag))
         val tlvs = genericTlvStream.decode(tlvStream.bits).require.value
         assert(tlvs.records.size == tlvCount)
         val root = OfferTypes.rootHash(tlvs, genericTlvStream)

@@ -294,8 +294,8 @@ object UpdateAddHtlc {
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
             blinding_opt: Option[PublicKey]): UpdateAddHtlc = {
-    val tlvs = Seq(blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint)).flatten
-    UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream[UpdateAddHtlcTlv](tlvs))
+    val tlvs = blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint).toSet[UpdateAddHtlcTlv]
+    UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
   }
 }
 
@@ -497,7 +497,7 @@ object ReplyChannelRange {
             checksums: Option[ReplyChannelRangeTlv.EncodedChecksums]): ReplyChannelRange = {
     timestamps.foreach(ts => require(ts.timestamps.length == shortChannelIds.array.length))
     checksums.foreach(cs => require(cs.checksums.length == shortChannelIds.array.length))
-    new ReplyChannelRange(chainHash, firstBlock, numberOfBlocks, syncComplete, shortChannelIds, TlvStream(timestamps.toList ::: checksums.toList))
+    new ReplyChannelRange(chainHash, firstBlock, numberOfBlocks, syncComplete, shortChannelIds, TlvStream(Set(timestamps, checksums).flatten: Set[fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv]))
   }
 }
 

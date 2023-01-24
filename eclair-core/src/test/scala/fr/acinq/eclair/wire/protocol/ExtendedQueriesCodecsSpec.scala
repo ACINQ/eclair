@@ -90,8 +90,8 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       Block.RegtestGenesisBlock.blockId,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
       TlvStream(
-        QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte)) :: Nil,
-        GenericTlv(UInt64(43), ByteVector.fromValidHex("deadbeef")) :: Nil
+        Set[QueryShortChannelIdsTlv](QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte))),
+        Set(GenericTlv(UInt64(43), ByteVector.fromValidHex("deadbeef")))
       )
     )
 
@@ -134,11 +134,11 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
       TlvStream(
-        List(
+        Set[ReplyChannelRangeTlv](
           EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))),
           EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3)))
         ),
-        GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef")) :: Nil
+        Set(GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef")))
       )
     )
 

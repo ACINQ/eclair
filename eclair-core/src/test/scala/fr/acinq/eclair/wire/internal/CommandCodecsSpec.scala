@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.internal
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.protocol.{FailureMessageCodecs, GenericTlv, TemporaryNodeFailure, TlvStream}
+import fr.acinq.eclair.wire.protocol.{FailureMessageCodecs, FailureMessageTlv, GenericTlv, TemporaryNodeFailure, TlvStream}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -34,7 +34,7 @@ class CommandCodecsSpec extends AnyFunSuite {
       CMD_FULFILL_HTLC(1573, ByteVector32(hex"e64e7c07667366e517886af99a25a5dd547014c95ba392ea4623fbf47fe00927")) -> hex"0000 0000000000000625 e64e7c07667366e517886af99a25a5dd547014c95ba392ea4623fbf47fe00927",
       CMD_FAIL_HTLC(42456, Left(hex"d21a88a158067efecbee41da24e1d7407747f135e585e7417843729d3bff5c160817d14ce569761d93749a23d227edc0ade99c1a8d59541e45e1f623af2602d568a9a3c3bca71f1b4860ae0b599ba016c58224eab7721ed930eb2bdfd83ff940cc9e8106b0bd6b2027821f8d102b8c680664d90ce9e69d8bb96453a7b495710b83c13e4b3085bb0156b7091ed927305c44")) -> hex"0003 000000000000a5d8 00 0091 d21a88a158067efecbee41da24e1d7407747f135e585e7417843729d3bff5c160817d14ce569761d93749a23d227edc0ade99c1a8d59541e45e1f623af2602d568a9a3c3bca71f1b4860ae0b599ba016c58224eab7721ed930eb2bdfd83ff940cc9e8106b0bd6b2027821f8d102b8c680664d90ce9e69d8bb96453a7b495710b83c13e4b3085bb0156b7091ed927305c44",
       CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure())) -> hex"0003 00000000000000fd ff 0002 2002",
-      CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure(TlvStream(Nil, Seq(GenericTlv(UInt64(17), hex"deadbeef")))))) -> hex"0003 00000000000000fd ff 0008 2002 1104deadbeef",
+      CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure(TlvStream(Set.empty[FailureMessageTlv], Set(GenericTlv(UInt64(17), hex"deadbeef")))))) -> hex"0003 00000000000000fd ff 0008 2002 1104deadbeef",
       CMD_FAIL_MALFORMED_HTLC(7984, ByteVector32(hex"17cc093e177c7a7fcaa9e96ab407146c8886546a5690f945c98ac20c4ab3b4f3"), FailureMessageCodecs.BADONION) -> hex"0002 0000000000001f30 17cc093e177c7a7fcaa9e96ab407146c8886546a5690f945c98ac20c4ab3b4f38000",
     )
 

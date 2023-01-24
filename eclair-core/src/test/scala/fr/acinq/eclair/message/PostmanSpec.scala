@@ -54,16 +54,16 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val ourKey = randomKey()
     val recipientKey = randomKey()
 
-    postman ! SendMessage(Nil, Recipient(recipientKey.publicKey, None), Some(Seq(ourKey.publicKey)), TlvStream(Nil, Seq(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
+    postman ! SendMessage(Nil, Recipient(recipientKey.publicKey, None), Some(Seq(ourKey.publicKey)), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)
     postman ! SendingStatus(Sent(messageId))
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
-    assert(finalPayload.records.unknown == Seq(GenericTlv(UInt64(33), hex"abcd")))
+    assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
 
     val replyPath = finalPayload.replyPath_opt.get
-    val Success((_, reply)) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Nil, Seq(GenericTlv(UInt64(55), hex"1234"))))
+    val Success((_, reply)) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val ReceiveMessage(replyPayload) = OnionMessages.process(ourKey, reply)
 
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
@@ -79,7 +79,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val ourKey = randomKey()
     val recipientKey = randomKey()
 
-    postman ! SendMessage(Nil, Recipient(recipientKey.publicKey, None), Some(Seq(ourKey.publicKey)), TlvStream(Nil, Seq(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
+    postman ! SendMessage(Nil, Recipient(recipientKey.publicKey, None), Some(Seq(ourKey.publicKey)), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, _, _, _) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)
@@ -95,18 +95,18 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val ourKey = randomKey()
     val recipientKey = randomKey()
 
-    postman ! SendMessage(Nil, Recipient(recipientKey.publicKey, None), Some(Seq(ourKey.publicKey)), TlvStream(Nil, Seq(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 1 millis)
+    postman ! SendMessage(Nil, Recipient(recipientKey.publicKey, None), Some(Seq(ourKey.publicKey)), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 1 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)
     postman ! SendingStatus(Sent(messageId))
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
-    assert(finalPayload.records.unknown == Seq(GenericTlv(UInt64(33), hex"abcd")))
+    assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
 
     messageRecipient.expectMessage(NoReply)
 
     val replyPath = finalPayload.replyPath_opt.get
-    val Success((_, reply)) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Nil, Seq(GenericTlv(UInt64(55), hex"1234"))))
+    val Success((_, reply)) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val ReceiveMessage(replyPayload) = OnionMessages.process(ourKey, reply)
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
 
@@ -118,13 +118,13 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val recipientKey = randomKey()
 
-    postman ! SendMessage(Nil, Recipient(recipientKey.publicKey, None), None, TlvStream(Nil, Seq(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
+    postman ! SendMessage(Nil, Recipient(recipientKey.publicKey, None), None, TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)
     postman ! SendingStatus(Sent(messageId))
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
-    assert(finalPayload.records.unknown == Seq(GenericTlv(UInt64(33), hex"abcd")))
+    assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
     assert(finalPayload.replyPath_opt.isEmpty)
 
     messageRecipient.expectMessage(MessageSent)

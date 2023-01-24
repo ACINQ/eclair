@@ -122,8 +122,8 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false)
           val finalExpiry = r.finalExpiry(nodeParams)
           val recipient = r.invoice match {
-            case invoice: Bolt11Invoice => ClearRecipient(invoice, r.recipientAmount, finalExpiry, Nil)
-            case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.recipientAmount, finalExpiry, Nil)
+            case invoice: Bolt11Invoice => ClearRecipient(invoice, r.recipientAmount, finalExpiry, Set.empty)
+            case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.recipientAmount, finalExpiry, Set.empty)
           }
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
           payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), recipient)
@@ -305,7 +305,7 @@ object PaymentInitiator {
                                maxAttempts: Int,
                                externalId: Option[String] = None,
                                routeParams: RouteParams,
-                               userCustomTlvs: Seq[GenericTlv] = Nil,
+                               userCustomTlvs: Set[GenericTlv] = Set.empty,
                                blockUntilComplete: Boolean = false) extends SendRequestedPayment
 
   /**
@@ -324,7 +324,7 @@ object PaymentInitiator {
                                     maxAttempts: Int,
                                     externalId: Option[String] = None,
                                     routeParams: RouteParams,
-                                    userCustomTlvs: Seq[GenericTlv] = Nil,
+                                    userCustomTlvs: Set[GenericTlv] = Set.empty,
                                     recordPathFindingMetrics: Boolean = false) {
     val paymentHash = Crypto.sha256(paymentPreimage)
   }

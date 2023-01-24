@@ -655,10 +655,10 @@ object ChannelRelayerSpec {
   )
 
   def createBlindedPayload(update: ChannelUpdate, isIntroduction: Boolean): ChannelRelay.Blinded = {
-    val tlvs = TlvStream[OnionPaymentPayloadTlv](Seq(
+    val tlvs = TlvStream[OnionPaymentPayloadTlv](Set(
       Some(OnionPaymentPayloadTlv.EncryptedRecipientData(hex"2a")),
       if (isIntroduction) Some(OnionPaymentPayloadTlv.BlindingPoint(randomKey().publicKey)) else None,
-    ).flatten)
+    ).flatten: Set[OnionPaymentPayloadTlv])
     val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
       RouteBlindingEncryptedDataTlv.OutgoingChannelId(update.shortChannelId),
       RouteBlindingEncryptedDataTlv.PaymentRelay(update.cltvExpiryDelta, update.feeProportionalMillionths, update.feeBaseMsat),

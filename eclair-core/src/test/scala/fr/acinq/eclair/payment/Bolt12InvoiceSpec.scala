@@ -50,7 +50,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   }
 
   def createPaymentBlindedRoute(nodeId: PublicKey, sessionKey: PrivateKey = randomKey(), pathId: ByteVector = randomBytes32()): PaymentBlindedRoute = {
-    val selfPayload = blindedRouteDataCodec.encode(TlvStream(Seq(PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty)))).require.bytes
+    val selfPayload = blindedRouteDataCodec.encode(TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty))).require.bytes
     PaymentBlindedRoute(Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route, PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
   }
 
@@ -65,7 +65,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val withInvalidSignature = Bolt12Invoice(TlvStream(invoice.records.records.map { case Signature(_) => Signature(randomBytes64()) case x => x }, invoice.records.unknown))
     assert(!withInvalidSignature.checkSignature())
     // changing fields makes the signature invalid
-    val withModifiedUnknownTlv = Bolt12Invoice(invoice.records.copy(unknown = Seq(GenericTlv(UInt64(7), hex"ade4"))))
+    val withModifiedUnknownTlv = Bolt12Invoice(invoice.records.copy(unknown = Set(GenericTlv(UInt64(7), hex"ade4"))))
     assert(!withModifiedUnknownTlv.checkSignature())
     val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(amount) => OfferAmount(amount + 100.msat) case x => x }, invoice.records.unknown))
     assert(!withModifiedAmount.checkSignature())
@@ -75,9 +75,9 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
     val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val basicRequest = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
-    val requestWithUnknownTlv = basicRequest.copy(records = TlvStream(basicRequest.records.records, Seq(GenericTlv(UInt64(87), hex"0404"))))
+    val requestWithUnknownTlv = basicRequest.copy(records = TlvStream(basicRequest.records.records, Set(GenericTlv(UInt64(87), hex"0404"))))
     val invoice = Bolt12Invoice(requestWithUnknownTlv, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
-    assert(invoice.records.unknown == Seq(GenericTlv(UInt64(87), hex"0404")))
+    assert(invoice.records.unknown == Set(GenericTlv(UInt64(87), hex"0404")))
     assert(invoice.isValidFor(requestWithUnknownTlv))
     assert(Bolt12Invoice.fromString(invoice.toString).get.toString == invoice.toString)
   }
@@ -89,14 +89,14 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.isValidFor(request))
     // amount must match the request
-    val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(_) => OfferAmount(9000 msat) case x => x }.toSeq)), nodeKey)
+    val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(_) => OfferAmount(9000 msat) case x => x })), nodeKey)
     assert(!withOtherAmount.isValidFor(request))
     // description must match the offer
-    val withOtherDescription = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferDescription(_) => OfferDescription("other description") case x => x }.toSeq)), nodeKey)
+    val withOtherDescription = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferDescription(_) => OfferDescription("other description") case x => x })), nodeKey)
     assert(!withOtherDescription.isValidFor(request))
     // nodeId must match the offer
     val otherNodeKey = randomKey()
-    val withOtherNodeId = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferNodeId(_) => OfferNodeId(otherNodeKey.publicKey) case x => x }.toSeq)), nodeKey)
+    val withOtherNodeId = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferNodeId(_) => OfferNodeId(otherNodeKey.publicKey) case x => x })), nodeKey)
     assert(!withOtherNodeId.isValidFor(request))
     // issuer must match the offer
     val withOtherIssuer = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records ++ Seq(OfferIssuer("spongebob")))), nodeKey)
@@ -110,21 +110,21 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(request.quantity_opt.isEmpty) // when paying for a single item, the quantity field must not be present
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features(BasicMultiPartPayment -> Optional), Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.isValidFor(request))
-    val withInvalidFeatures = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceFeatures(_) => InvoiceFeatures(Features(BasicMultiPartPayment -> Mandatory)) case x => x }.toSeq)), nodeKey)
+    val withInvalidFeatures = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceFeatures(_) => InvoiceFeatures(Features(BasicMultiPartPayment -> Mandatory)) case x => x })), nodeKey)
     assert(!withInvalidFeatures.isValidFor(request))
-    val withAmountTooBig = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceRequestAmount(_) => InvoiceRequestAmount(20000 msat) case x => x }.toSeq)), nodeKey)
+    val withAmountTooBig = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceRequestAmount(_) => InvoiceRequestAmount(20000 msat) case x => x })), nodeKey)
     assert(!withAmountTooBig.isValidFor(request))
-    val withQuantity = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.toSeq :+ InvoiceRequestQuantity(2))), nodeKey)
+    val withQuantity = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records + InvoiceRequestQuantity(2))), nodeKey)
     assert(!withQuantity.isValidFor(request))
-    val withOtherPayerKey = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceRequestPayerId(_) => InvoiceRequestPayerId(randomKey().publicKey) case x => x }.toSeq)), nodeKey)
+    val withOtherPayerKey = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceRequestPayerId(_) => InvoiceRequestPayerId(randomKey().publicKey) case x => x })), nodeKey)
     assert(!withOtherPayerKey.isValidFor(request))
-    val withPayerNote = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.toSeq :+ InvoiceRequestPayerNote("I am Batman"))), nodeKey)
+    val withPayerNote = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records + InvoiceRequestPayerNote("I am Batman"))), nodeKey)
     assert(!withPayerNote.isValidFor(request))
-    val withOtherMetadata = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceRequestMetadata(_) => InvoiceRequestMetadata(hex"ae46c46b86") case x => x }.toSeq)), nodeKey)
+    val withOtherMetadata = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceRequestMetadata(_) => InvoiceRequestMetadata(hex"ae46c46b86") case x => x })), nodeKey)
     assert(!withOtherMetadata.isValidFor(request))
     // Invoice request with more details about the payer.
     val requestWithPayerDetails = {
-      val tlvs: Seq[InvoiceRequestTlv] = Seq(
+      val tlvs: Set[InvoiceRequestTlv] = Set(
         InvoiceRequestMetadata(hex"010203040506"),
         OfferDescription("offer description"),
         OfferNodeId(nodeKey.publicKey),
@@ -134,12 +134,12 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         OfferFeatures(Features(VariableLengthOnion -> Mandatory))
       )
       val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
-      InvoiceRequest(TlvStream(tlvs :+ Signature(signature)))
+      InvoiceRequest(TlvStream(tlvs + Signature(signature)))
     }
     val withPayerDetails = Bolt12Invoice(requestWithPayerDetails, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(withPayerDetails.isValidFor(requestWithPayerDetails))
     assert(!withPayerDetails.isValidFor(request))
-    val withOtherPayerNote = signInvoice(Bolt12Invoice(TlvStream(withPayerDetails.records.records.map { case InvoiceRequestPayerNote(_) => InvoiceRequestPayerNote("Or am I Bruce Wayne?") case x => x }.toSeq)), nodeKey)
+    val withOtherPayerNote = signInvoice(Bolt12Invoice(TlvStream(withPayerDetails.records.records.map { case InvoiceRequestPayerNote(_) => InvoiceRequestPayerNote("Or am I Bruce Wayne?") case x => x })), nodeKey)
     assert(!withOtherPayerNote.isValidFor(requestWithPayerDetails))
     assert(!withOtherPayerNote.isValidFor(request))
   }
@@ -165,7 +165,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
 
   test("decode invalid invoice") {
     val nodeKey = randomKey()
-    val tlvs = Seq[InvoiceTlv](
+    val tlvs = Set[InvoiceTlv](
       InvoiceRequestMetadata(hex"012345"),
       OfferDescription("minimal invoice"),
       OfferNodeId(nodeKey.publicKey),
@@ -209,7 +209,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val paymentHash = ByteVector32.fromValidHex("51951d4c53c904035f0b293dc9df1c0e7967213430ae07a5f3e134cd33325341")
     val relativeExpiry = 3600
     val fallbacks = Seq(FallbackAddress(4, hex"123d56f8"), FallbackAddress(6, hex"eb3adc68945ef601"))
-    val tlvs = TlvStream[InvoiceTlv](Seq(
+    val tlvs = TlvStream[InvoiceTlv](Set[InvoiceTlv](
       InvoiceRequestMetadata(payerInfo),
       OfferChains(Seq(chain)),
       OfferAmount(amount),
@@ -231,9 +231,9 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
       InvoiceFallbacks(fallbacks),
       InvoiceFeatures(Features.empty),
       InvoiceNodeId(nodeKey.publicKey),
-    ), Seq(GenericTlv(UInt64(121), hex"010203"), GenericTlv(UInt64(313), hex"baba")))
+    ), Set(GenericTlv(UInt64(121), hex"010203"), GenericTlv(UInt64(313), hex"baba")))
     val signature = signSchnorr(Bolt12Invoice.signatureTag, rootHash(tlvs, invoiceTlvCodec), nodeKey)
-    val invoice = Bolt12Invoice(tlvs.copy(records = tlvs.records ++ Seq(Signature(signature))))
+    val invoice = Bolt12Invoice(tlvs.copy(records = tlvs.records + Signature(signature)))
     assert(invoice.toString == "lni1qqx2n6mw2fh2ckwdnwylkgqzypp5jl7hlqnf2ugg7j3slkwwcwht57vhyzzwjr4dq84rxzgqqqqqqzqrq83yqzscd9h8vmmfvdjjqamfw35zqmtpdeujqenfv4kxgucvqqfq2ctvd93k293pq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmc5pqgdyhl4lcy62hzz855v8annkr46a8n9eqsn5satgpagesjqqqqqq9yqcpufq9vqfetqssyj5djm6dz0zzr8eprw9gu762k75f3lgm96gzwn994peh48k6xalctyr5jfmdyppx7cneqvqsyqaq5qpugee7xc8qa0pf3jxe9k0976dvzuqu8eaedk0pcpg2dr5qx3gh00qzn8pc426xsh6l6ekdhr2hdpge0euhhp9frv6w04zjcqhhf6ru2wrqzqnjsxh8zmlm0gkeuq8qyxcy28uzhzljqkq22epc4mmdrx6vtm0eyyqr4agrvpkfuutftvf7f6paqewk3ysql3h8ukfz3phgmap5we4wsq3c97205a96r6f3hsd705jl29xt8yj3cu8vpm6z8lztjw3pcqqqpy5sqqqzl5q5gqqqqqqqqqqraqqqqqqqqqq7ysqqqzjqgc4qq6l2vqswzz5zq5v4r4x98jgyqd0sk2fae803crnevusngv9wq7jl8cf5e5eny56p4gpsrcjq4sfqgqqyzg74d7qxqqywkwkudz29aasp4cqtqggrc3nnudswp67znrydjtv7ta56c9cpc0nmjmv7rszs568gqdz3w770qsx3axhvq3e7npme2pwslgxa8kfcnqjqyeztg5r5wgzjpufjswx4crvd6kzlqjzukq5e707kp9ez98mj0zkckeggkm8cp6g6vgzh3j2q0lgp8ypt4ws")
     val Success(codedDecoded) = Bolt12Invoice.fromString(invoice.toString)
     assert(codedDecoded.invoiceRequest.chain == chain)

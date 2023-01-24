@@ -255,7 +255,7 @@ object OfferTypes {
      * @param chain       chain on which the offer is valid.
      */
     def apply(amount_opt: Option[MilliSatoshi], description: String, nodeId: PublicKey, features: Features[Bolt12Feature], chain: ByteVector32): Offer = {
-      val tlvs: Seq[OfferTlv] = Seq(
+      val tlvs: Set[OfferTlv] = Set(
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
         amount_opt.map(OfferAmount),
         Some(OfferDescription(description)),
@@ -347,15 +347,16 @@ object OfferTypes {
     def apply(offer: Offer, amount: MilliSatoshi, quantity: Long, features: Features[Bolt12Feature], payerKey: PrivateKey, chain: ByteVector32): InvoiceRequest = {
       require(offer.chains.contains(chain))
       require(quantity == 1 || offer.quantityMax.nonEmpty)
-      val tlvs: Seq[InvoiceRequestTlv] = InvoiceRequestMetadata(randomBytes32()) +: (offer.records.records.toSeq ++ Seq(
+      val tlvs: Set[InvoiceRequestTlv] = offer.records.records ++ Set(
+        Some(InvoiceRequestMetadata(randomBytes32())),
         Some(InvoiceRequestChain(chain)),
         Some(InvoiceRequestAmount(amount)),
         if (offer.quantityMax.nonEmpty) Some(InvoiceRequestQuantity(quantity)) else None,
         if (!features.isEmpty) Some(InvoiceRequestFeatures(features.unscoped())) else None,
         Some(InvoiceRequestPayerId(payerKey.publicKey)),
-      ).flatten)
+      ).flatten
       val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, offer.records.unknown), OfferCodecs.invoiceRequestTlvCodec), payerKey)
-      InvoiceRequest(TlvStream(tlvs :+ Signature(signature), offer.records.unknown))
+      InvoiceRequest(TlvStream(tlvs + Signature(signature), offer.records.unknown))
     }
 
     def validate(records: TlvStream[InvoiceRequestTlv]): Either[InvalidTlvPayload, InvoiceRequest] = {

@@ -325,7 +325,7 @@ object PaymentOnion {
         /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
         // TODO: Allow sending blinded routes to trampoline nodes instead of routing hints to support BOLT12Invoice
         def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): Standard = {
-          val tlvs = Seq(
+          val tlvs: Set[OnionPaymentPayloadTlv] = Set(
             Some(AmountToForward(amount)),
             Some(OutgoingCltv(expiry)),
             Some(PaymentData(invoice.paymentSecret, totalAmount)),
@@ -376,8 +376,8 @@ object PaymentOnion {
         Right(Standard(records))
       }
 
-      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, customTlvs: Seq[GenericTlv] = Nil): Standard = {
-        val tlvs = Seq(
+      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty): Standard = {
+        val tlvs: Set[OnionPaymentPayloadTlv] = Set(
           Some(AmountToForward(amount)),
           Some(OutgoingCltv(expiry)),
           Some(PaymentData(paymentSecret, totalAmount)),
@@ -386,8 +386,8 @@ object PaymentOnion {
         Standard(TlvStream(tlvs, customTlvs))
       }
 
-      def createKeySendPayload(amount: MilliSatoshi, expiry: CltvExpiry, preimage: ByteVector32, customTlvs: Seq[GenericTlv] = Nil): Standard = {
-        val tlvs = Seq(
+      def createKeySendPayload(amount: MilliSatoshi, expiry: CltvExpiry, preimage: ByteVector32, customTlvs: Set[GenericTlv] = Set.empty): Standard = {
+        val tlvs: Set[OnionPaymentPayloadTlv] = Set(
           AmountToForward(amount),
           OutgoingCltv(expiry),
           KeySend(preimage)
@@ -449,19 +449,19 @@ object PaymentOnion {
 
   object OutgoingBlindedPerHopPayload {
     def createIntroductionPayload(encryptedRecipientData: ByteVector, blinding: PublicKey): OutgoingBlindedPerHopPayload = {
-      OutgoingBlindedPerHopPayload(TlvStream(Seq(EncryptedRecipientData(encryptedRecipientData), BlindingPoint(blinding))))
+      OutgoingBlindedPerHopPayload(TlvStream(EncryptedRecipientData(encryptedRecipientData), BlindingPoint(blinding)))
     }
 
     def createIntermediatePayload(encryptedRecipientData: ByteVector): OutgoingBlindedPerHopPayload = {
-      OutgoingBlindedPerHopPayload(TlvStream(Seq(EncryptedRecipientData(encryptedRecipientData))))
+      OutgoingBlindedPerHopPayload(TlvStream(EncryptedRecipientData(encryptedRecipientData)))
     }
 
-    def createFinalPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, encryptedRecipientData: ByteVector, customTlvs: Seq[GenericTlv] = Nil): OutgoingBlindedPerHopPayload = {
-      OutgoingBlindedPerHopPayload(TlvStream(Seq(AmountToForward(amount), TotalAmount(totalAmount), OutgoingCltv(expiry), EncryptedRecipientData(encryptedRecipientData)), customTlvs))
+    def createFinalPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, encryptedRecipientData: ByteVector, customTlvs: Set[GenericTlv] = Set.empty): OutgoingBlindedPerHopPayload = {
+      OutgoingBlindedPerHopPayload(TlvStream(Set[OnionPaymentPayloadTlv](AmountToForward(amount), TotalAmount(totalAmount), OutgoingCltv(expiry), EncryptedRecipientData(encryptedRecipientData)), customTlvs))
     }
 
-    def createFinalIntroductionPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, blinding: PublicKey, encryptedRecipientData: ByteVector, customTlvs: Seq[GenericTlv] = Nil): OutgoingBlindedPerHopPayload = {
-      OutgoingBlindedPerHopPayload(TlvStream(Seq(AmountToForward(amount), TotalAmount(totalAmount), OutgoingCltv(expiry), EncryptedRecipientData(encryptedRecipientData), BlindingPoint(blinding)), customTlvs))
+    def createFinalIntroductionPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, blinding: PublicKey, encryptedRecipientData: ByteVector, customTlvs: Set[GenericTlv] = Set.empty): OutgoingBlindedPerHopPayload = {
+      OutgoingBlindedPerHopPayload(TlvStream(Set[OnionPaymentPayloadTlv](AmountToForward(amount), TotalAmount(totalAmount), OutgoingCltv(expiry), EncryptedRecipientData(encryptedRecipientData), BlindingPoint(blinding)), customTlvs))
     }
   }
 

@@ -131,7 +131,7 @@ object TlvCodecs {
     } else if (tags != tags.sorted) {
       Attempt.Failure(Err("tlv records must be ordered by monotonically-increasing types"))
     } else {
-      Attempt.Successful(TlvStream(records.collect { case Right(tlv) => tlv }, records.collect { case Left(generic) => generic }))
+      Attempt.Successful(TlvStream(records.collect { case Right(tlv) => tlv }.toSet, records.collect { case Left(generic) => generic }.toSet))
     }
   }
 
