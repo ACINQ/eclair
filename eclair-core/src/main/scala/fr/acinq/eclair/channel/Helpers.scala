@@ -666,9 +666,7 @@ object Helpers {
       def firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
         import commitments._
         // this is just to estimate the weight, it depends on size of the pubkey scripts
-        val actualLocalScript = localParams.upfrontShutdownScript_opt.getOrElse(localScriptPubkey)
-        val actualRemoteScript = if (channelFeatures.hasFeature(Features.UpfrontShutdownScript)) remoteParams.upfrontShutdownScript_opt.getOrElse(remoteScriptPubkey) else remoteScriptPubkey
-        val dummyClosingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isInitiator, Satoshi(0), Satoshi(0), localCommit.spec)
+        val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isInitiator, Satoshi(0), Satoshi(0), localCommit.spec)
         val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
         log.info(s"using feerates=$feerates for initial closing tx")
         feerates.computeFees(closingWeight)
@@ -700,14 +698,12 @@ object Helpers {
 
       def makeClosingTx(keyManager: ChannelKeyManager, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingFees: ClosingFees)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
         import commitments._
-        val actualLocalScript = localParams.upfrontShutdownScript_opt.getOrElse(localScriptPubkey)
-        val actualRemoteScript = if (channelFeatures.hasFeature(Features.UpfrontShutdownScript)) remoteParams.upfrontShutdownScript_opt.getOrElse(remoteScriptPubkey) else remoteScriptPubkey
         val allowAnySegwit = Features.canUseFeature(commitments.localParams.initFeatures, commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
-        require(isValidFinalScriptPubkey(actualLocalScript, allowAnySegwit), "invalid localScriptPubkey")
-        require(isValidFinalScriptPubkey(actualRemoteScript, allowAnySegwit), "invalid remoteScriptPubkey")
+        require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit), "invalid localScriptPubkey")
+        require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit), "invalid remoteScriptPubkey")
         log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, commitments.specs2String)
         val dustLimit = localParams.dustLimit.max(remoteParams.dustLimit)
-        val closingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isInitiator, dustLimit, closingFees.preferred, localCommit.spec)
+        val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isInitiator, dustLimit, closingFees.preferred, localCommit.spec)
         val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
         val closingSigned = ClosingSigned(channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
         log.debug(s"signed closing txid=${closingTx.tx.txid} with closing fee=${closingSigned.feeSatoshis}")

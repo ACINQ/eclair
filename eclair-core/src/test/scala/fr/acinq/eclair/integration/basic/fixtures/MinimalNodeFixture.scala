@@ -7,7 +7,7 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
@@ -71,7 +71,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       database = TestDatabases.inMemoryDb(),
       blockHeight = new AtomicLong(400_000),
       feeEstimator = new TestFeeEstimator(FeeratePerKw(253 sat)),
-      finalScriptPubKey = new AtomicReference[ByteVector](Script.write(Script.pay2wpkh(PrivateKey(seed).publicKey)))
+      finalPubkey = new AtomicReference[PublicKey](PrivateKey(seed).publicKey)
     ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)

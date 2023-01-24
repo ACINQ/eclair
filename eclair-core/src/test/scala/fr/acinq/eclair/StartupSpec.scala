@@ -37,12 +37,12 @@ class StartupSpec extends AnyFunSuite {
 
   def makeNodeParamsWithDefaults(conf: Config): NodeParams = {
     val blockCount = new AtomicLong(0)
-    val finalScriptPubKey = new AtomicReference[ByteVector](Script.write(Script.pay2wpkh(PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey)))
+    val finalPubkey = new AtomicReference[PublicKey](PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey)
     val nodeKeyManager = new LocalNodeKeyManager(randomBytes32(), chainHash = Block.TestnetGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(randomBytes32(), chainHash = Block.TestnetGenesisBlock.hash)
     val feeEstimator = new TestFeeEstimator()
     val db = TestDatabases.inMemoryDb()
-    NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), nodeKeyManager, channelKeyManager, None, db, blockCount, feeEstimator, finalScriptPubKey)
+    NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), nodeKeyManager, channelKeyManager, None, db, blockCount, feeEstimator, finalPubkey)
   }
 
   test("check configuration") {

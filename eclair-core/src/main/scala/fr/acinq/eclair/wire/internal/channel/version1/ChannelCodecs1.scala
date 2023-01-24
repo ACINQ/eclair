@@ -189,7 +189,7 @@ private[channel] object ChannelCodecs1 {
 
     val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = mapCodec(outPointCodec, bytes32)
 
-    val commitments0Codec: Codec[ChannelTypes0.Commitments] = (
+    val commitmentsCodec: Codec[Commitments] = (
       ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
         ("localParams" | localParamsCodec(channelVersion)) ::
           ("remoteParams" | remoteParamsCodec) ::
@@ -205,9 +205,7 @@ private[channel] object ChannelCodecs1 {
           ("commitInput" | inputInfoCodec) ::
           ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
           ("channelId" | bytes32)
-      }).as[ChannelTypes0.Commitments].decodeOnly
-
-    val commitmentsCodec: Codec[Commitments] = commitments0Codec.map[Commitments](_.migrate()).decodeOnly
+      }).as[ChannelTypes0.Commitments].decodeOnly.map[Commitments](_.migrate()).decodeOnly
 
     val metaCommitmentsCodec: Codec[MetaCommitments] = commitmentsCodec
       .map(commitments => MetaCommitments(commitments))

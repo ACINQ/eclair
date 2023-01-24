@@ -25,9 +25,10 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.bitcoind.{OnchainAddressManager, OnchainAddressManagerSpec}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainAddressGenerator, OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -498,10 +499,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     // check that we store the local txs without sigs
     localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
     localCommit.htlcTxsAndRemoteSigs.foreach(_.htlcTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull)))
+    val probe = TestProbe()
+    systemA.eventStream.subscribe(probe.ref, classOf[OnchainAddressManager.Command])
 
     val commitTx = localCommit.commitTxAndRemoteSig.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
     eventually(assert(s.stateName == CLOSING))
+    probe.expectMsg(OnchainAddressManager.Renew)
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get

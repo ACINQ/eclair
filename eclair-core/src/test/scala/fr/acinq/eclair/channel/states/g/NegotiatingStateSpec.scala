@@ -62,13 +62,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val bobShutdown = bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice, bobShutdown)
     awaitCond(alice.stateName == NEGOTIATING)
-    if (alice.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.contains(aliceShutdown.scriptPubKey))
-    }
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.forall(_ == aliceShutdown.scriptPubKey))
+
     awaitCond(bob.stateName == NEGOTIATING)
-    if (bob.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.contains(bobShutdown.scriptPubKey))
-    }
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.forall(_ == bobShutdown.scriptPubKey))
   }
 
   def bobClose(f: FixtureParam, feerates: Option[ClosingFeerates] = None): Unit = {
@@ -81,13 +78,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val aliceShutdown = alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob, aliceShutdown)
     awaitCond(alice.stateName == NEGOTIATING)
-    if (alice.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.contains(aliceShutdown.scriptPubKey))
-    }
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.forall(_ == aliceShutdown.scriptPubKey))
+
     awaitCond(bob.stateName == NEGOTIATING)
-    if (bob.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.contains(bobShutdown.scriptPubKey))
-    }
+    assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.forall(_ == bobShutdown.scriptPubKey))
   }
 
   def setFeerate(feeEstimator: TestFeeEstimator, feerate: FeeratePerKw, minFeerate: FeeratePerKw = FeeratePerKw(250 sat)): Unit = {
@@ -130,7 +124,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.length == 1)
     assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.length == 1)
     assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.isEmpty)
-    if (alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+    if (alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.isDefined) {
       // check that the closing tx uses Alice and Bob's default closing scripts
       val closingTx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.head.unsignedTx.tx
       val expectedLocalScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].localShutdown.scriptPubKey

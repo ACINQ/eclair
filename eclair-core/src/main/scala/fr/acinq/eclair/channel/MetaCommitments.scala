@@ -48,38 +48,31 @@ case class Params(channelId: ByteVector32,
   )
 
   /**
-   * @param scriptPubKey optional local script pubkey provided in CMD_CLOSE
-   * @return the actual local shutdown script that we should use
+   *
+   * @param localScriptPubKey local script pubkey (provided in CMD_CLOSE, as an upfront shutdown script, or set to the current final onchain script)
+   * @return an exception if the provided script is not valid
    */
-  def getLocalShutdownScript(scriptPubKey: Option[ByteVector], defaultScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
+  def validateLocalShutdownScript(localScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
+    // README: if we set our bitcoin node to generate taproot addresses and our peer does not support option_shutdown_anysegwit, we will not be able to mutual-close
+    // channels as the isValidFinalScriptPubkey() check would fail.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
-    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), scriptPubKey) match {
-      case (true, Some(script)) if script != localParams.upfrontShutdownScript_opt.get => Left(InvalidFinalScript(channelId))
-      case (true, _) => Right(localParams.upfrontShutdownScript_opt.get)
-      case (false, Some(script)) if !Closing.MutualClose.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
-      case (false, Some(script)) => Right(script)
-      case (false, None) => Right(defaultScriptPubKey)
-    }
+    if (!localParams.upfrontShutdownScript_opt.forall(_ == localScriptPubKey)) Left(InvalidFinalScript(channelId))
+    else if (!Closing.MutualClose.isValidFinalScriptPubkey(localScriptPubKey, allowAnySegwit)) Left(InvalidFinalScript(channelId))
+    else Right(localScriptPubKey)
   }
 
   /**
+   *
    * @param remoteScriptPubKey remote script included in a Shutdown message
-   * @return the actual remote script that we should use
+   * @return an exception if the provided script is not valid
    */
-  def getRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
+  def validateRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
-    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), remoteParams.upfrontShutdownScript_opt) match {
-      case (false, _) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => Left(InvalidFinalScript(channelId))
-      case (false, _) => Right(remoteScriptPubKey)
-      case (true, None) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) =>
-        // this is a special case: they set option_upfront_shutdown_script but did not provide a script in their open/accept message
-        Left(InvalidFinalScript(channelId))
-      case (true, None) => Right(remoteScriptPubKey)
-      case (true, Some(script)) if script != remoteScriptPubKey => Left(InvalidFinalScript(channelId))
-      case (true, Some(script)) => Right(script)
-    }
+    if (localParams.upfrontShutdownScript_opt.isDefined && !remoteParams.upfrontShutdownScript_opt.forall(_ == remoteScriptPubKey)) Left(InvalidFinalScript(channelId))
+    else if (!Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit)) Left(InvalidFinalScript(channelId))
+    else Right(remoteScriptPubKey)
   }
 
 }

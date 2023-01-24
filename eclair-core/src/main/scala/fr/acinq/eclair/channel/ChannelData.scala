@@ -104,6 +104,7 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         channelType: SupportedChannelType,
                                         channelOrigin: ChannelOrigin = ChannelOrigin.Default) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
+  require(localParams.upfrontShutdownScript_opt.isDefined == Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript), "upfront_shutdownscript is not consistent with local parameters")
 }
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
                                             fundingContribution_opt: Option[Satoshi],
@@ -113,7 +114,9 @@ case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
                                             remote: ActorRef,
                                             remoteInit: Init,
                                             channelConfig: ChannelConfig,
-                                            channelType: SupportedChannelType)
+                                            channelType: SupportedChannelType) {
+  require(localParams.upfrontShutdownScript_opt.isDefined == Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript), "upfront_shutdownscript is not consistent with local parameters")
+}
 
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
@@ -77,6 +77,7 @@ object TestConstants {
     val seed: ByteVector32 = ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3") // 02aaaa...
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val finalPubkey = new AtomicReference[PublicKey](PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey)
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams: NodeParams = NodeParams(
@@ -210,7 +211,7 @@ object TestConstants {
         timeout = 1 minute
       ),
       purgeInvoicesInterval = None,
-      finalScriptPubKey = new AtomicReference[ByteVector](Script.write(Script.pay2wpkh(PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey)))
+      finalPubkey = finalPubkey
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -231,6 +232,7 @@ object TestConstants {
     val seed: ByteVector32 = ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492") // 02bbbb...
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val finalPubkey = new AtomicReference[PublicKey](PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey)
 
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
@@ -360,7 +362,7 @@ object TestConstants {
         timeout = 1 minute
       ),
       purgeInvoicesInterval = None,
-      finalScriptPubKey = new AtomicReference[ByteVector](Script.write(Script.pay2wpkh(PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey)))
+      finalPubkey = finalPubkey
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(

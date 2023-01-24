@@ -22,11 +22,12 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystem
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Script}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Satoshi, Script}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
+import fr.acinq.eclair.blockchain.bitcoind.{OnchainAddressManager, ZmqWatcher}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee._
@@ -45,6 +46,7 @@ import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.protocol.NodeAddress
+import fr.acinq.secp256k1.Secp256k1
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
@@ -118,8 +120,6 @@ class Setup(val datadir: File,
    */
   val blockHeight = new AtomicLong(0)
 
-  val finalScriptPubKey = new AtomicReference[ByteVector](ByteVector.empty)
-
   /**
    * This holds the current feerates, in satoshi-per-kilobytes.
    * The value is read by all actors, hence it needs to be thread-safe.
@@ -140,7 +140,8 @@ class Setup(val datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, finalScriptPubKey, pluginParams)
+  val finalPubkey = new AtomicReference[PublicKey](PublicKey(ByteVector.fromValidHex("0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8")))
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, finalPubkey, pluginParams)
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
@@ -194,10 +195,10 @@ class Setup(val datadir: File,
         case "signet" => bitcoinClient.invoke("getrawtransaction", "ff1027486b628b2d160859205a3401fb2ee379b43527153b0b50a92c17ee7955") // coinbase of #5000
         case "regtest" => Future.successful(())
       }
-      finalAddress <- bitcoinClient.invoke("getnewaddress").map(_.extract[String])
-    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, finalAddress)
+      finalPubkey <- bitcoinClient.invoke("getnewaddress").map(_.extract[String])
+    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
     // blocking sanity checks
-    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, finalAddress) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
     assert(bitcoinVersion >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
     assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
     assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
@@ -208,8 +209,6 @@ class Setup(val datadir: File,
     }
     logger.info(s"current blockchain height=$blocks")
     blockHeight.set(blocks)
-    logger.info(s"initial final onchain address = $finalAddress")
-    finalScriptPubKey.set(Script.write(addressToPublicKeyScript(finalAddress, chainHash)))
     bitcoinClient
   }
 
@@ -364,6 +363,9 @@ class Setup(val datadir: File,
       balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
       postman = system.spawn(Behaviors.supervise(Postman(switchboard.toTyped)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+      pubkey <- bitcoinClient.getP2wpkhPubkey()
+      _ = finalPubkey.set(pubkey)
+      _ = system.spawn(Behaviors.supervise(OnchainAddressManager(bitcoinClient, finalPubkey, 15 seconds)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
       kit = Kit(
         nodeParams = nodeParams,
