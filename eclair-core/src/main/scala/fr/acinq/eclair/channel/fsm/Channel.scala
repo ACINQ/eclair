@@ -510,7 +510,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
           if (d.remoteShutdown.isDefined && !metaCommitments1.common.localHasUnsignedOutgoingHtlcs) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
-            val finalScriptPubKey = if (metaCommitments1.params.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) metaCommitments1.params.localParams.defaultFinalScriptPubKey else nodeParams.currentFinalScriptPubKey
+            val finalScriptPubKey = if (metaCommitments1.params.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) metaCommitments1.params.localParams.upfrontShutdownScript_opt.get else nodeParams.currentFinalScriptPubKey
             val localShutdown = Shutdown(d.channelId, finalScriptPubKey)
             // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
             require(metaCommitments1.main.remoteCommit.spec.htlcs.nonEmpty, "we must have just signed new htlcs, otherwise we would have sent our Shutdown earlier")
@@ -584,7 +584,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               case Some(localShutdown) =>
                 (localShutdown, Nil)
               case None =>
-                val localShutdown = Shutdown(d.channelId, d.commitments.localParams.defaultFinalScriptPubKey)
+                val localShutdown = Shutdown(d.channelId, if (d.commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) d.commitments.localParams.upfrontShutdownScript_opt.get else nodeParams.currentFinalScriptPubKey)
                 // we need to send our shutdown if we didn't previously
                 (localShutdown, localShutdown :: Nil)
             }

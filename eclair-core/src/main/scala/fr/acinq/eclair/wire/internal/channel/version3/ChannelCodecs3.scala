@@ -73,7 +73,7 @@ private[channel] object ChannelCodecs3 {
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
         ("isInitiator" | bool8) ::
-        ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
+        ("defaultFinalScriptPubKey" | optional(provide(true), lengthDelimited(bytes))) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelFeatures.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams]
 
@@ -476,7 +476,7 @@ private[channel] object ChannelCodecs3 {
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case metaCommitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
         val metaCommitments1 = metaCommitments.modify(_.commitments.at(0).localFundingStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx_opt))
-        DATA_CLOSING(metaCommitments1, waitingSince, metaCommitments1.params.localParams.defaultFinalScriptPubKey, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+        DATA_CLOSING(metaCommitments1, waitingSince, metaCommitments1.params.localParams.upfrontShutdownScript_opt.get, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
     val unconfirmedFundingTxCodec: Codec[UnconfirmedFundingTx] = discriminated[UnconfirmedFundingTx].by(uint8)
@@ -499,7 +499,7 @@ private[channel] object ChannelCodecs3 {
         val metaCommitments1 = metaCommitments
           .modify(_.commitments.at(0).localFundingStatus).setTo(fundingTx_opt.getOrElse(UnknownFundingTx))
           .modify(_.commitments).using(_ ++ alternativeCommitments.map { case DualFundingTx(f, c) => c.commitment.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(f, BlockHeight(0))) })
-        DATA_CLOSING(metaCommitments1, waitingSince, metaCommitments1.params.localParams.defaultFinalScriptPubKey, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+        DATA_CLOSING(metaCommitments1, waitingSince, metaCommitments1.params.localParams.upfrontShutdownScript_opt.get, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
     val DATA_CLOSING_0e_Codec: Codec[DATA_CLOSING] = (

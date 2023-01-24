@@ -16,7 +16,7 @@
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 100,
         "isInitiator" : true,
-        "defaultFinalScriptPubKey" : "0014fe2baa428e1f6b4b4134d444b3de42a86cffbabc",
+        "upfrontShutdownScript_opt" : "0014fe2baa428e1f6b4b4134d444b3de42a86cffbabc",
         "initFeatures" : {
           "activated" : {
             "option_anchors_zero_fee_htlc_tx" : "optional",

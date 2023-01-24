@@ -15,18 +15,14 @@
  */
 package fr.acinq.eclair.wire.internal.channel.version3
 
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, Satoshi}
-import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.channelDataCodec
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.HexStringSyntax
 
 import scala.util.Random
 
@@ -69,7 +65,7 @@ class ChannelCodecs3Spec extends AnyFunSuite {
       CltvExpiryDelta(36),
       50,
       Random.nextBoolean(),
-      hex"deadbeef",
+      Some(hex"deadbeef"),
       None,
       Features().initFeatures())
     val remoteParams = RemoteParams(

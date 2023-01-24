@@ -63,11 +63,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2alice.forward(alice, bobShutdown)
     awaitCond(alice.stateName == NEGOTIATING)
     if (alice.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
+      assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.contains(aliceShutdown.scriptPubKey))
     }
     awaitCond(bob.stateName == NEGOTIATING)
     if (bob.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
+      assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.contains(bobShutdown.scriptPubKey))
     }
   }
 
@@ -82,11 +82,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice2bob.forward(bob, aliceShutdown)
     awaitCond(alice.stateName == NEGOTIATING)
     if (alice.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
+      assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.contains(aliceShutdown.scriptPubKey))
     }
     awaitCond(bob.stateName == NEGOTIATING)
     if (bob.stateData.asInstanceOf[PersistentChannelData].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
-      assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
+      assert(bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.upfrontShutdownScript_opt.contains(bobShutdown.scriptPubKey))
     }
   }
 
@@ -133,8 +133,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     if (alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
       // check that the closing tx uses Alice and Bob's default closing scripts
       val closingTx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.head.unsignedTx.tx
-      val expectedLocalScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey
-      val expectedRemoteScript = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey
+      val expectedLocalScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].localShutdown.scriptPubKey
+      val expectedRemoteScript = bob.stateData.asInstanceOf[DATA_NEGOTIATING].localShutdown.scriptPubKey
       assert(closingTx.txOut.map(_.publicKeyScript).toSet == Set(expectedLocalScript, expectedRemoteScript))
     }
     alice2bob.forward(bob)

@@ -63,7 +63,7 @@ class ChannelCodecs2Spec extends AnyFunSuite {
 
   test("ensure remote shutdown script is not set") {
     val commitments = channelDataCodec.decode(dataNormal.bits).require.value.commitments
-    assert(commitments.remoteParams.shutdownScript.isEmpty)
+    assert(commitments.remoteParams.upfrontShutdownScript_opt.isEmpty)
   }
 
 }

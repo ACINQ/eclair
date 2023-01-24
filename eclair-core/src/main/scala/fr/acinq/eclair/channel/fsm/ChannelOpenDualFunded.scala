@@ -109,7 +109,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
       val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
       val upfrontShutdownScript_opt = if (Features.canUseFeature(input.localParams.initFeatures, input.remoteInit.features, Features.UpfrontShutdownScript)) {
-        Some(ChannelTlv.UpfrontShutdownScriptTlv(input.localParams.defaultFinalScriptPubKey))
+        Some(ChannelTlv.UpfrontShutdownScriptTlv(input.localParams.upfrontShutdownScript_opt.get))
       } else {
         None
       }
@@ -155,7 +155,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val totalFundingAmount = open.fundingAmount + d.init.fundingContribution_opt.getOrElse(0 sat)
           val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, d.init.localParams.initFeatures, totalFundingAmount)
           val upfrontShutdownScript_opt = if (Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.UpfrontShutdownScript)) {
-            Some(ChannelTlv.UpfrontShutdownScriptTlv(localParams.defaultFinalScriptPubKey))
+            Some(ChannelTlv.UpfrontShutdownScriptTlv(localParams.upfrontShutdownScript_opt.get))
           } else {
             None
           }
@@ -196,7 +196,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             delayedPaymentBasepoint = open.delayedPaymentBasepoint,
             htlcBasepoint = open.htlcBasepoint,
             initFeatures = remoteInit.features,
-            shutdownScript = remoteShutdownScript)
+            upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           // We've exchanged open_channel2 and accept_channel2, we now know the final channelId.
           val channelId = Helpers.computeChannelId(open, accept)
@@ -263,7 +263,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
             htlcBasepoint = accept.htlcBasepoint,
             initFeatures = remoteInit.features,
-            shutdownScript = remoteShutdownScript)
+            upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           // We start the interactive-tx funding protocol.
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)

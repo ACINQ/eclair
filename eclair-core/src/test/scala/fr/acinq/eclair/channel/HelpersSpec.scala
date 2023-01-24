@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong}
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -257,7 +257,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
         mutualClosePublished = tx2 :: tx3 :: Nil,
         localCommitPublished = None,
@@ -272,7 +272,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -294,7 +294,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -316,7 +316,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -344,7 +344,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -372,7 +372,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments.copy(remoteNextCommitInfo = Left(WaitingForRevocation(commitments.remoteCommit, null, 7L)))),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -406,7 +406,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -427,7 +427,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -448,7 +448,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -495,7 +495,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = MetaCommitments(commitments),
         waitingSince = BlockHeight(0),
-        finalScriptPubKey = commitments.localParams.defaultFinalScriptPubKey,
+        finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(

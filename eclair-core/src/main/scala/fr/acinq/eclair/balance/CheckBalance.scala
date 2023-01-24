@@ -1,7 +1,7 @@
 package fr.acinq.eclair.balance
 
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose, NextRemoteClose, RemoteClose}
@@ -148,7 +148,7 @@ object CheckBalance {
     val toLocal = if (c.channelFeatures.paysDirectlyToWallet) {
       // If static remote key is enabled, the commit tx directly pays to our wallet
       // We use the pubkeyscript to retrieve our output
-      Transactions.findPubKeyScriptIndex(remoteCommitPublished.commitTx, c.localParams.defaultFinalScriptPubKey) match {
+      Transactions.findPubKeyScriptIndex(remoteCommitPublished.commitTx, Script.write(Script.pay2wpkh(c.localParams.walletStaticPaymentBasepoint.get))) match {
         case Right(outputIndex) => Map(remoteCommitPublished.commitTx.txid -> remoteCommitPublished.commitTx.txOut(outputIndex).amount.toBtc)
         case _ => Map.empty[ByteVector32, Btc] // either we don't have an output (below dust), or we have used a non-default pubkey script
       }

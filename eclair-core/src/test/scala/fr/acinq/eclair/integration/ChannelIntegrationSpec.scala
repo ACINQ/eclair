@@ -574,10 +574,10 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     // close that wumbo channel
     sender.send(funder.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val commitmentsC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments
-    val finalPubKeyScriptC = commitmentsC.localParams.defaultFinalScriptPubKey
+    val finalPubKeyScriptC = commitmentsC.localParams.upfrontShutdownScript_opt.getOrElse(nodes("C").nodeParams.currentFinalScriptPubKey)
     val fundingOutpoint = commitmentsC.commitInput.outPoint
     sender.send(fundee.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
-    val finalPubKeyScriptF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey
+    val finalPubKeyScriptF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.upfrontShutdownScript_opt.getOrElse(nodes("F").nodeParams.currentFinalScriptPubKey)
 
     fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, Some(finalPubKeyScriptF), None))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
@@ -632,7 +632,6 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     // at this point C should have 6 recv transactions: its previous main output, F's main output and all htlc outputs (taken as punishment)
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
-      println((receivedByC diff previouslyReceivedByC).size)
       (receivedByC diff previouslyReceivedByC).size == 6
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm

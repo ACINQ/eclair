@@ -67,7 +67,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey)),
+      upfrontShutdownScript_opt = Some(Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))),
       walletStaticPaymentBasepoint = None,
       isInitiator = Random.nextBoolean(),
       initFeatures = Features(randomBytes(256)).initFeatures())
@@ -93,7 +93,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       delayedPaymentBasepoint = randomKey().publicKey,
       htlcBasepoint = randomKey().publicKey,
       initFeatures = TestConstants.Alice.nodeParams.features.initFeatures(),
-      shutdownScript = None)
+      upfrontShutdownScript_opt = None)
     val encoded = remoteParamsCodec.encode(o).require
     val decoded = remoteParamsCodec.decodeValue(encoded).require
     assert(o == decoded)

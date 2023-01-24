@@ -55,8 +55,8 @@ case class Params(channelId: ByteVector32,
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
     (channelFeatures.hasFeature(Features.UpfrontShutdownScript), scriptPubKey) match {
-      case (true, Some(script)) if script != localParams.defaultFinalScriptPubKey => Left(InvalidFinalScript(channelId))
-      case (true, _) => Right(localParams.defaultFinalScriptPubKey)
+      case (true, Some(script)) if script != localParams.upfrontShutdownScript_opt.get => Left(InvalidFinalScript(channelId))
+      case (true, _) => Right(localParams.upfrontShutdownScript_opt.get)
       case (false, Some(script)) if !Closing.MutualClose.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
       case (false, Some(script)) => Right(script)
       case (false, None) => Right(defaultScriptPubKey)
@@ -70,7 +70,7 @@ case class Params(channelId: ByteVector32,
   def getRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
-    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), remoteParams.shutdownScript) match {
+    (channelFeatures.hasFeature(Features.UpfrontShutdownScript), remoteParams.upfrontShutdownScript_opt) match {
       case (false, _) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => Left(InvalidFinalScript(channelId))
       case (false, _) => Right(remoteScriptPubKey)
       case (true, None) if !Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) =>

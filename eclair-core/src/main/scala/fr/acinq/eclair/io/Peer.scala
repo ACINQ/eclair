@@ -159,7 +159,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           val origin = sender()
           implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
           val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
-          createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = true, dualFunded = dualFunded, c.fundingAmount, c.disableMaxHtlcValueInFlight).andThen {
+          val upfrontShutdownScript = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.UpfrontShutdownScript)
+          createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = true, dualFunded = dualFunded, c.fundingAmount, c.disableMaxHtlcValueInFlight).andThen {
             case Success(localParams) => selfRef ! SpawnChannelInitiator(c, ChannelConfig.standard, channelType, localParams, origin)
             case Failure(t) => origin.tell(Status.Failure(new RuntimeException("channel creation failed", t)), selfRef)
           }
@@ -386,11 +387,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       s(e)
   }
 
-  def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], channelType: SupportedChannelType, isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean)(implicit ec: ExecutionContext): Future[LocalParams] = {
+  def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean)(implicit ec: ExecutionContext): Future[LocalParams] = {
     if (channelType.paysDirectlyToWallet) {
-      wallet.getP2wpkhPubkey().map(walletKey => makeChannelParams(nodeParams, initFeatures, Script.write(Script.pay2wpkh(walletKey)), Some(walletKey), isInitiator = isInitiator, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight))
+      wallet.getP2wpkhPubkey().map(walletKey => makeChannelParams(nodeParams, initFeatures, None, Some(walletKey), isInitiator = isInitiator, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight))
+    } else if (upfrontShutdownScript) {
+      wallet.getReceiveAddress().map(address => makeChannelParams(nodeParams, initFeatures, Some(Script.write(addressToPublicKeyScript(address, nodeParams.chainHash))), None, isInitiator = isInitiator, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight))
     } else {
-      wallet.getReceiveAddress().map(address => makeChannelParams(nodeParams, initFeatures, Script.write(addressToPublicKeyScript(address, nodeParams.chainHash)), None, isInitiator = isInitiator, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight))
+      Future.successful(makeChannelParams(nodeParams, initFeatures, None, None, isInitiator = isInitiator, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight))
     }
   }
 
@@ -412,7 +415,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         val selfRef = self
         implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
-        createLocalParams(nodeParams, d.localFeatures, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight = false).andThen {
+        val upfrontShutdownScript = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.UpfrontShutdownScript)
+        createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight = false).andThen {
           case Success(localParams) => selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
           case Failure(_) => selfRef ! Peer.OutgoingMessage(Error(temporaryChannelId, "channel creation failed"), d.peerConnection)
         }
@@ -574,7 +578,7 @@ object Peer {
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], defaultFinalScriptPubkey: Option[ByteVector], walletStaticPaymentBasepoint: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
     val maxHtlcValueInFlightMsat = if (unlimitedMaxHtlcValueInFlight) {
       // We don't want to impose limits on the amount in flight, typically to allow fully emptying the channel.
       21e6.btc.toMilliSatoshi
@@ -594,7 +598,7 @@ object Peer {
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
       isInitiator = isInitiator,
-      defaultFinalScriptPubKey = defaultFinalScriptPubkey,
+      upfrontShutdownScript_opt = defaultFinalScriptPubkey,
       walletStaticPaymentBasepoint = walletStaticPaymentBasepoint,
       initFeatures = initFeatures)
   }
