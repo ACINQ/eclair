@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.Commitments.PostRevocationAction
+import fr.acinq.eclair.channel.MetaCommitments.PostRevocationAction
 import fr.acinq.eclair.channel.Helpers.Syncing.SyncResult
 import fr.acinq.eclair.channel.Helpers.{Closing, Syncing, getRelayFees, scidForChannelUpdate}
 import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
@@ -436,7 +436,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CMD_SIGN, d: DATA_NORMAL) =>
       d.commitments.remoteNextCommitInfo match {
-        case _ if !d.metaCommitments.localHasChanges =>
+        case _ if !d.metaCommitments.common.localHasChanges =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
         case Right(_) =>
@@ -464,7 +464,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.main.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
-        case Left(waitForRevocation) =>
+        case Left(_) =>
           log.debug("already in the process of signing, will sign again as soon as possible")
           stay()
       }
@@ -473,7 +473,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       d.metaCommitments.receiveCommit(commit, keyManager) match {
         case Right((metaCommitments1, revocation)) =>
           log.debug("received a new sig, spec:\n{}", metaCommitments1.main.specs2String)
-          if (metaCommitments1.main.localHasChanges) {
+          if (metaCommitments1.common.localHasChanges) {
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN()
           }
@@ -505,10 +505,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               log.debug("forwarding {} to relayer", result)
               relayer ! result
           }
-          if (metaCommitments1.main.localHasChanges) {
+          if (metaCommitments1.common.localHasChanges) {
             self ! CMD_SIGN()
           }
-          if (d.remoteShutdown.isDefined && !metaCommitments1.main.localHasUnsignedOutgoingHtlcs) {
+          if (d.remoteShutdown.isDefined && !metaCommitments1.common.localHasUnsignedOutgoingHtlcs) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
             val localShutdown = Shutdown(d.channelId, metaCommitments1.main.localParams.defaultFinalScriptPubKey)
             // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
@@ -523,15 +523,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     case Event(r: RevocationTimeout, d: DATA_NORMAL) => handleRevocationTimeout(r, d)
 
     case Event(c: CMD_CLOSE, d: DATA_NORMAL) =>
-      d.commitments.getLocalShutdownScript(c.scriptPubKey) match {
+      d.metaCommitments.params.getLocalShutdownScript(c.scriptPubKey) match {
         case Left(e) => handleCommandError(e, c)
         case Right(localShutdownScript) =>
           if (d.localShutdown.isDefined) {
             handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
-          } else if (d.commitments.localHasUnsignedOutgoingHtlcs) {
+          } else if (d.metaCommitments.common.localHasUnsignedOutgoingHtlcs) {
             // NB: simplistic behavior, we could also sign-then-close
             handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
-          } else if (d.commitments.localHasUnsignedOutgoingUpdateFee) {
+          } else if (d.metaCommitments.common.localHasUnsignedOutgoingUpdateFee) {
             handleCommandError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), c)
           } else {
             val shutdown = Shutdown(d.channelId, localShutdownScript)
@@ -540,7 +540,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       }
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey, _), d: DATA_NORMAL) =>
-      d.commitments.getRemoteShutdownScript(remoteScriptPubKey) match {
+      d.metaCommitments.params.getRemoteShutdownScript(remoteScriptPubKey) match {
         case Left(e) =>
           log.warning(s"they sent an invalid closing script: ${e.getMessage}")
           context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
@@ -560,11 +560,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           //      we did not send a shutdown message
           //        there are pending signed changes  => go to SHUTDOWN
           //        there are no htlcs                => go to NEGOTIATING
-          if (d.commitments.remoteHasUnsignedOutgoingHtlcs) {
+          if (d.metaCommitments.common.remoteHasUnsignedOutgoingHtlcs) {
             handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d, Some(remoteShutdown))
-          } else if (d.commitments.remoteHasUnsignedOutgoingUpdateFee) {
+          } else if (d.metaCommitments.common.remoteHasUnsignedOutgoingUpdateFee) {
             handleLocalError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), d, Some(remoteShutdown))
-          } else if (d.commitments.localHasUnsignedOutgoingHtlcs) { // do we have unsigned outgoing htlcs?
+          } else if (d.metaCommitments.common.localHasUnsignedOutgoingHtlcs) { // do we have unsigned outgoing htlcs?
             require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
             // are we in the middle of a signature?
             d.commitments.remoteNextCommitInfo match {
@@ -588,7 +588,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
                 (localShutdown, localShutdown :: Nil)
             }
             // are there pending signed changes on either side? we need to have received their last revocation!
-            if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
+            if (d.metaCommitments.hasNoPendingHtlcsOrFeeUpdate) {
               // there are no pending signed changes, let's go directly to NEGOTIATING
               if (d.commitments.localParams.isInitiator) {
                 // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
@@ -800,7 +800,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
     case Event(c: CMD_SIGN, d: DATA_SHUTDOWN) =>
       d.commitments.remoteNextCommitInfo match {
-        case _ if !d.metaCommitments.localHasChanges =>
+        case _ if !d.metaCommitments.common.localHasChanges =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
         case Right(_) =>
@@ -823,7 +823,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.main.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
-        case Left(waitForRevocation) =>
+        case Left(_) =>
           log.debug("already in the process of signing, will sign again as soon as possible")
           stay()
       }
@@ -834,7 +834,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           // we always reply with a revocation
           log.debug("received a new sig:\n{}", metaCommitments1.main.specs2String)
           context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments1.main))
-          if (metaCommitments1.main.hasNoPendingHtlcsOrFeeUpdate) {
+          if (metaCommitments1.hasNoPendingHtlcsOrFeeUpdate) {
             if (d.commitments.localParams.isInitiator) {
               // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
               val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, metaCommitments1.main, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, closingFeerates)
@@ -844,7 +844,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               goto(NEGOTIATING) using DATA_NEGOTIATING(metaCommitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending revocation
             }
           } else {
-            if (metaCommitments1.localHasChanges) {
+            if (metaCommitments1.common.localHasChanges) {
               // if we have newly acknowledged changes let's sign them
               self ! CMD_SIGN()
             }
@@ -873,7 +873,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               log.debug("forwarding {} to relayer", result)
               relayer ! result
           }
-          if (metaCommitments1.main.hasNoPendingHtlcsOrFeeUpdate) {
+          if (metaCommitments1.hasNoPendingHtlcsOrFeeUpdate) {
             log.debug("switching to NEGOTIATING spec:\n{}", metaCommitments1.main.specs2String)
             if (d.commitments.localParams.isInitiator) {
               // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
@@ -884,7 +884,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
               goto(NEGOTIATING) using DATA_NEGOTIATING(metaCommitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing()
             }
           } else {
-            if (metaCommitments1.localHasChanges) {
+            if (metaCommitments1.common.localHasChanges) {
               self ! CMD_SIGN()
             }
             stay() using d.copy(metaCommitments = metaCommitments1) storing()
@@ -1374,7 +1374,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           sendQueue = sendQueue ++ syncSuccess.retransmit
 
           // then we clean up unsigned updates
-          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates
+          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
 
           metaCommitments1.main.remoteNextCommitInfo match {
             case Left(_) =>
@@ -1384,7 +1384,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
 
           // do I have something to sign?
-          if (metaCommitments1.localHasChanges) {
+          if (metaCommitments1.common.localHasChanges) {
             self ! CMD_SIGN()
           }
 
@@ -1443,7 +1443,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case syncFailure: SyncResult.Failure =>
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
-          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates
+          val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
           val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ d.localShutdown
           // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
           goto(SHUTDOWN) using d.copy(metaCommitments = metaCommitments1) sending sendQueue
@@ -1745,7 +1745,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     val shouldUpdateFee = commitments.localParams.isInitiator && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
     val shouldClose = !commitments.localParams.isInitiator &&
       nodeParams.onChainFeeConf.feerateToleranceFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelType, networkFeeratePerKw, currentFeeratePerKw) &&
-      commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
+      d.metaCommitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldUpdateFee) {
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
       stay()
@@ -1771,7 +1771,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
     // if the network fees are too high we risk to not be able to confirm our current commitment
     val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
       nodeParams.onChainFeeConf.feerateToleranceFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelType, networkFeeratePerKw, currentFeeratePerKw) &&
-      commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
+      d.metaCommitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldClose) {
       if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
         log.warning(s"closing OFFLINE channel due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
@@ -1895,8 +1895,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         // note: this can only happen if state is NORMAL or SHUTDOWN
         // -> in NEGOTIATING there are no more htlcs
         // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
-        val timedOutOutgoing = commitments.timedOutOutgoingHtlcs(c.blockHeight)
-        val almostTimedOutIncoming = commitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.channelConf.fulfillSafetyBeforeTimeout)
+        val timedOutOutgoing = d.metaCommitments.timedOutOutgoingHtlcs(c.blockHeight)
+        val almostTimedOutIncoming = d.metaCommitments.almostTimedOutIncomingHtlcs(c.blockHeight, nodeParams.channelConf.fulfillSafetyBeforeTimeout)
         if (timedOutOutgoing.nonEmpty) {
           // Downstream timed out.
           handleLocalError(HtlcsTimedoutDownstream(d.channelId, timedOutOutgoing), d, Some(c))

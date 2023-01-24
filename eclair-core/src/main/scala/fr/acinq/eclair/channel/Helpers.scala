@@ -454,8 +454,8 @@ object Helpers {
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitmentIndex)
-      val (localCommitTx, _) = Commitments.makeLocalTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec)
+      val (localCommitTx, _) = Commitment.makeLocalTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
+      val (remoteCommitTx, _) = Commitment.makeRemoteTxs(keyManager, channelConfig, channelFeatures, commitmentIndex, localParams, remoteParams, commitmentInput, remotePerCommitmentPoint, remoteSpec)
 
       Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
@@ -502,13 +502,13 @@ object Helpers {
               case Some(revocation) =>
                 SyncResult.Success(retransmit = revocation +: signedUpdates :+ commitSig)
             }
-          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == (common.nextRemoteCommitIndex + 1) =>
+          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (common.nextRemoteCommitIndex + 1) =>
             // we just sent a new commit_sig, they have received it but we haven't received their revocation
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
-          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber < common.nextRemoteCommitIndex =>
+          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber < common.nextRemoteCommitIndex =>
             // they are behind
             SyncResult.RemoteLate
-          case Left(waitingForRevocation) =>
+          case Left(_) =>
             // we are behind
             SyncResult.LocalLateUnproven(
               ourRemoteCommitmentNumber = common.nextRemoteCommitIndex,
@@ -982,7 +982,7 @@ object Helpers {
        * Claim our htlc outputs only
        */
       def claimHtlcOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, feeEstimator: FeeEstimator)(implicit log: LoggingAdapter): Map[OutPoint, Option[ClaimHtlcTx]] = {
-        val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, commitments.channelConfig, commitments.channelFeatures, remoteCommit.index, commitments.localParams, commitments.remoteParams, commitments.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+        val (remoteCommitTx, _) = Commitment.makeRemoteTxs(keyManager, commitments.channelConfig, commitments.channelFeatures, remoteCommit.index, commitments.localParams, commitments.remoteParams, commitments.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
         require(remoteCommitTx.tx.txid == remoteCommit.txid, "txid mismatch, cannot recompute the current remote commit tx")
         val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
         val localFundingPubkey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey

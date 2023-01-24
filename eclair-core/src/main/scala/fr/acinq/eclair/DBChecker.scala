@@ -27,13 +27,11 @@ object DBChecker extends Logging {
    * Tests if the channels data in the DB is valid (and throws an exception if not):
    * - it is compatible with the current version of eclair
    * - channel keys can be re-generated from the channel seed
-   *
-   * @param nodeParams node parameters
    */
   def checkChannelsDB(nodeParams: NodeParams): Seq[PersistentChannelData] = {
     Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(channels) =>
-        channels.foreach(data => if (!data.commitments.validateSeed(nodeParams.channelKeyManager)) throw InvalidChannelSeedException(data.channelId))
+        channels.foreach(data => if (!data.metaCommitments.validateSeed(nodeParams.channelKeyManager)) throw InvalidChannelSeedException(data.channelId))
         channels
       case Failure(_) => throw IncompatibleDBException
     }
@@ -41,8 +39,6 @@ object DBChecker extends Logging {
 
   /**
    * Tests if the network database is readable.
-   *
-   * @param nodeParams
    */
   def checkNetworkDB(nodeParams: NodeParams): Unit =
     Try(nodeParams.db.network.listChannels(), nodeParams.db.network.listNodes()) match {
