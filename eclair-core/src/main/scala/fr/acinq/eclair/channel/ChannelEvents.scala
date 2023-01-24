@@ -76,9 +76,9 @@ case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, shortIds
 
 case class ChannelStateChanged(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, previousState: ChannelState, currentState: ChannelState, commitments_opt: Option[AbstractCommitments]) extends ChannelEvent
 
-case class ChannelSignatureSent(channel: ActorRef, commitments: Commitments) extends ChannelEvent
+case class ChannelSignatureSent(channel: ActorRef, commitments: MetaCommitments) extends ChannelEvent
 
-case class ChannelSignatureReceived(channel: ActorRef, commitments: Commitments) extends ChannelEvent
+case class ChannelSignatureReceived(channel: ActorRef, commitments: MetaCommitments) extends ChannelEvent
 
 case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, error: ChannelOpenError, isFatal: Boolean) extends ChannelEvent
 
@@ -94,4 +94,4 @@ case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelI
 
 case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, refundAtBlock: BlockHeight) extends ChannelEvent
 
-case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: Commitments)
+case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: MetaCommitments)

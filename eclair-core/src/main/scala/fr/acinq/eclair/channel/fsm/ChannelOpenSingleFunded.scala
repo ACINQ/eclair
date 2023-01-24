@@ -295,7 +295,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
               txPublisher ! SetChannelId(remoteNodeId, channelId)
               context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
-              context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments.main))
+              context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments))
               // NB: we don't send a ChannelSignatureSent for the first commit
               log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitment.fundingTxId}")
               watchFundingTx(commitment)
@@ -346,7 +346,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           )
           val metaCommitments = MetaCommitments(params, common, List(commitment))
           val blockHeight = nodeParams.currentBlockHeight
-          context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments.main))
+          context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments))
           log.info(s"publishing funding tx fundingTxid=${commitment.fundingTxId}")
           watchFundingTx(commitment)
           Funding.minDepthFunder(params.localParams.initFeatures) match {

@@ -458,7 +458,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 log.debug("updating channel_update aboveReserve={}", Helpers.aboveReserve(metaCommitments1.main))
                 self ! BroadcastChannelUpdate(AboveReserve)
               }
-              context.system.eventStream.publish(ChannelSignatureSent(self, metaCommitments1.main))
+              context.system.eventStream.publish(ChannelSignatureSent(self, metaCommitments1))
               // we expect a quick response from our peer
               startSingleTimer(RevocationTimeout.toString, RevocationTimeout(metaCommitments1.main.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
               handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.main.localChanges.signed)
@@ -481,7 +481,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // we send this event only when our balance changes
             context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1.main))
           }
-          context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments1.main))
+          context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments1))
           stay() using d.copy(metaCommitments = metaCommitments1) storing() sending revocation
         case Left(cause) => handleLocalError(cause, d, Some(commit))
       }
@@ -819,7 +819,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 log.debug(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
               }
-              context.system.eventStream.publish(ChannelSignatureSent(self, metaCommitments1.main))
+              context.system.eventStream.publish(ChannelSignatureSent(self, metaCommitments1))
               // we expect a quick response from our peer
               startSingleTimer(RevocationTimeout.toString, RevocationTimeout(metaCommitments1.main.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
               handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.main.localChanges.signed)
@@ -835,7 +835,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Right((metaCommitments1, revocation)) =>
           // we always reply with a revocation
           log.debug("received a new sig:\n{}", metaCommitments1.main.specs2String)
-          context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments1.main))
+          context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments1))
           if (metaCommitments1.hasNoPendingHtlcsOrFeeUpdate) {
             if (d.commitments.localParams.isInitiator) {
               // we are the channel initiator, need to initiate the negotiation by sending the first closing_signed
@@ -1216,7 +1216,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       closingType_opt match {
         case Some(closingType) =>
           log.info(s"channel closed (type=${closingType_opt.map(c => EventType.Closed(c).label).getOrElse("UnknownYet")})")
-          context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
+          context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.metaCommitments))
           goto(CLOSED) using d1 storing()
         case None =>
           stay() using d1 storing()

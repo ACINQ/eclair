@@ -392,9 +392,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMessage(1 second)
-    assert(commitmentsF.commitmentFormat == commitmentFormat)
+    assert(commitmentsF.params.commitmentFormat == commitmentFormat)
     // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
-    val localCommitF = commitmentsF.localCommit
+    val localCommitF = commitmentsF.commitments.last.localCommit
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 6)
       case _: Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 8)
@@ -429,21 +429,21 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val finalAddressC = computeBIP84Address(nodes("C").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
-    val channelKeyPathF = keyManagerF.keyPath(commitmentsF.localParams, commitmentsF.channelConfig)
-    val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.localCommit.index.toInt)
+    val channelKeyPathF = keyManagerF.keyPath(commitmentsF.params.localParams, commitmentsF.params.channelConfig)
+    val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.commitments.last.localCommit.index.toInt)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
-      val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
-      Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.localParams.fundingKeyPath).publicKey, commitmentsF.remoteParams.fundingPubKey, localSig, localCommitF.commitTxAndRemoteSig.remoteSig).tx
+      val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
+      Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath).publicKey, commitmentsF.params.remoteParams.fundingPubKey, localSig, localCommitF.commitTxAndRemoteSig.remoteSig).tx
     }
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
       case (htlcTxAndSigs, preimage) =>
         val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat)
-        Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcSuccessTx], localSig, htlcTxAndSigs.remoteSig, preimage, commitmentsF.commitmentFormat).tx
+        Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcSuccessTx], localSig, htlcTxAndSigs.remoteSig, preimage, commitmentsF.params.commitmentFormat).tx
     }
     val htlcTimeout = htlcTimeoutTxs.map { htlcTxAndSigs =>
       val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat)
-      Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcTimeoutTx], localSig, htlcTxAndSigs.remoteSig, commitmentsF.commitmentFormat).tx
+      Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcTimeoutTx], localSig, htlcTxAndSigs.remoteSig, commitmentsF.params.commitmentFormat).tx
     }
     htlcSuccess.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     htlcTimeout.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))

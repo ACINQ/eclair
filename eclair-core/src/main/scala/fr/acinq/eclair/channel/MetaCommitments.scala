@@ -393,6 +393,7 @@ case class MetaCommitments(params: Params,
   val channelId: ByteVector32 = params.channelId
   val localNodeId: PublicKey = params.localNodeId
   val remoteNodeId: PublicKey = params.remoteNodeId
+  val announceChannel: Boolean = params.announceChannel
 
   val all: List[Commitments] = commitments.map(Commitments(params, common, _))
 
