@@ -22,10 +22,10 @@ import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.io.MessageRelay.{Disconnected, Sent}
 import fr.acinq.eclair.io.Switchboard.RelayMessage
-import fr.acinq.eclair.message.OnionMessages.{BlindedPath, ReceiveMessage, Recipient, buildMessage}
+import fr.acinq.eclair.message.OnionMessages.{BlindedPath, IntermediateNode, ReceiveMessage, Recipient, buildMessage, buildRoute}
 import fr.acinq.eclair.message.Postman._
-import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{UInt64, randomKey}
+import fr.acinq.eclair.wire.protocol.{GenericTlv, TlvStream}
+import fr.acinq.eclair.{NodeParams, TestConstants, UInt64, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -35,14 +35,15 @@ import scala.util.Success
 
 class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(postman: ActorRef[Command], messageRecipient: TestProbe[OnionMessageResponse], switchboard: TestProbe[RelayMessage])
+  case class FixtureParam(postman: ActorRef[Command], nodeParams: NodeParams, messageRecipient: TestProbe[OnionMessageResponse], switchboard: TestProbe[RelayMessage])
 
   override def withFixture(test: OneArgTest): Outcome = {
+    val nodeParams = TestConstants.Alice.nodeParams
     val messageRecipient = TestProbe[OnionMessageResponse]("messageRecipient")
     val switchboard = TestProbe[RelayMessage]("switchboard")
-    val postman = testKit.spawn(Postman(switchboard.ref))
+    val postman = testKit.spawn(Postman(nodeParams, switchboard.ref))
     try {
-      withFixture(test.toNoArgTest(FixtureParam(postman, messageRecipient, switchboard)))
+      withFixture(test.toNoArgTest(FixtureParam(postman, nodeParams, messageRecipient, switchboard)))
     } finally {
       testKit.stop(postman)
     }
@@ -125,6 +126,25 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendingStatus(Sent(messageId))
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
+    assert(finalPayload.replyPath_opt.isEmpty)
+
+    messageRecipient.expectMessage(MessageSent)
+    messageRecipient.expectNoMessage()
+  }
+
+  test("send to route that starts at ourselves") {f =>
+    import f._
+
+    val recipientKey = randomKey()
+
+    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None))
+    postman ! SendMessage(Nil, BlindedPath(blindedRoute), None, TlvStream(Nil, Seq(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
+
+    val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
+    assert(nextNodeId == recipientKey.publicKey)
+    postman ! SendingStatus(Sent(messageId))
+    val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
+    assert(finalPayload.records.unknown == Seq(GenericTlv(UInt64(33), hex"abcd")))
     assert(finalPayload.replyPath_opt.isEmpty)
 
     messageRecipient.expectMessage(MessageSent)

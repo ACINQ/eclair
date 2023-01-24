@@ -22,10 +22,10 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.{MessageRelay, Switchboard}
-import fr.acinq.eclair.message.OnionMessages.{Destination, ReceiveMessage}
+import fr.acinq.eclair.message.OnionMessages.Destination
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{randomBytes32, randomKey}
+import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
@@ -62,9 +62,9 @@ object Postman {
   case class MessageFailed(reason: String) extends MessageStatus
   // @formatter:on
 
-  def apply(switchboard: ActorRef[Switchboard.RelayMessage]): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, switchboard: ActorRef[Switchboard.RelayMessage]): Behavior[Command] = {
     Behaviors.setup(context => {
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ReceiveMessage](r => WrappedMessage(r.finalPayload)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[OnionMessages.ReceiveMessage](r => WrappedMessage(r.finalPayload)))
 
       val relayMessageStatusAdapter = context.messageAdapter[MessageRelay.Status](SendingStatus)
 
@@ -102,13 +102,40 @@ object Postman {
             case Failure(f) =>
               replyTo ! MessageFailed(f.getMessage)
             case Success((nextNodeId, message)) =>
-              if (replyPath.isEmpty) { // not expecting reply
-                sendStatusTo += (messageId -> replyTo)
-              } else { // expecting reply
-                subscribed += (messageId -> replyTo)
-                context.scheduleOnce(timeout, context.self, Unsubscribe(messageId))
+              if (nextNodeId == nodeParams.nodeId) {
+                OnionMessages.process(nodeParams.privateKey, message) match {
+                  case OnionMessages.DropMessage(reason) =>
+                    if (replyPath.isEmpty) {
+                      replyTo ! MessageFailed(reason.toString)
+                    } else {
+                      replyTo ! NoReply
+                    }
+                  case OnionMessages.SendMessage(nextNextNodeId, nextMessage) =>
+                    if (replyPath.isEmpty) {
+                      sendStatusTo += (messageId -> replyTo)
+                    } else {
+                      subscribed += (messageId -> replyTo)
+                      context.scheduleOnce(timeout, context.self, Unsubscribe(messageId))
+                    }
+                    switchboard ! Switchboard.RelayMessage(messageId, None, nextNextNodeId, nextMessage, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
+                  case received: OnionMessages.ReceiveMessage =>
+                    if (replyPath.isEmpty) {
+                      replyTo ! MessageSent
+                    } else {
+                      subscribed += (messageId -> replyTo)
+                      context.scheduleOnce(timeout, context.self, Unsubscribe(messageId))
+                    }
+                    context.system.eventStream ! EventStream.Publish(received)
+                }
+              } else {
+                if (replyPath.isEmpty) {
+                  sendStatusTo += (messageId -> replyTo)
+                } else {
+                  subscribed += (messageId -> replyTo)
+                  context.scheduleOnce(timeout, context.self, Unsubscribe(messageId))
+                }
+                switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
               }
-              switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
           }
           Behaviors.same
         case Unsubscribe(pathId) =>

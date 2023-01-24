@@ -31,10 +31,11 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.{CMD_CLOSE, RES_SUCCESS}
 import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.message.OnionMessages
+import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
 import fr.acinq.eclair.wire.protocol.{GenericTlv, NodeAnnouncement}
-import fr.acinq.eclair.{EclairImpl, Features, MilliSatoshi, SendOnionMessageResponse, UInt64, randomBytes}
+import fr.acinq.eclair.{EclairImpl, Features, MilliSatoshi, SendOnionMessageResponse, UInt64, randomBytes, randomKey}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -69,6 +70,19 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     alice.sendOnionMessage(Nil, Left(nodes("B").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
+    assert(probe.expectMsgType[SendOnionMessageResponse].sent)
+    eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
+  }
+
+  test("send to route that starts at ourselves") {
+    val alice = new EclairImpl(nodes("A"))
+
+    val probe = TestProbe()
+    val eventListener = TestProbe()
+    nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
+
+    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodes("A").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId)), Recipient(nodes("B").nodeParams.nodeId, None))
+    alice.sendOnionMessage(Nil, Right(blindedRoute), None, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
