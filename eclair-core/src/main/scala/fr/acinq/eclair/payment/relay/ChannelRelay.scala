@@ -240,7 +240,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         val relayResult = relayOrFail(Some(channel))
         context.log.debug(s"candidate channel: channelId=${channel.channelId} availableForSend={} capacity={} channelUpdate={} result={}",
           channel.commitments.availableBalanceForSend,
-          channel.commitments.capacity,
+          channel.commitments.main.capacity,
           channel.channelUpdate,
           relayResult match {
             case _: RelaySuccess => "success"
@@ -257,7 +257,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       // we want to use the channel with:
       //  - the lowest available capacity to ensure we keep high-capacity channels for big payments
       //  - the lowest available balance to increase our incoming liquidity
-      .sortBy { channel => (channel.commitments.capacity, channel.commitments.availableBalanceForSend) }
+      .sortBy { channel => (channel.commitments.main.capacity, channel.commitments.availableBalanceForSend) }
       .headOption match {
       case Some(channel) =>
         if (requestedChannelId_opt.contains(channel.channelId)) {

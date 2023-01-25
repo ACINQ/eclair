@@ -516,11 +516,9 @@ object Validation {
             // channel is graduating from private to public
             // since this is a local channel, we can trust the announcement, no need to go through the full
             // verification process and make calls to bitcoin core
-            val fundingTxId = lcu.commitments match {
-              case commitments: Commitments => commitments.fundingTxId
-              case _ => ByteVector32.Zeroes
-            }
-            val d1 = addPublicChannel(d, nodeParams, watcher, ann, fundingTxId, lcu.commitments.capacity, Some(privateChannel))
+            // TODO: not sure we'll always want to use the main commitment?
+            val fundingTxId = lcu.commitments.main.fundingTxId
+            val d1 = addPublicChannel(d, nodeParams, watcher, ann, fundingTxId, lcu.commitments.main.capacity, Some(privateChannel))
             log.debug("processing channel_update")
             handleChannelUpdate(d1, db, nodeParams.currentBlockHeight, Left(lcu))
           case None =>

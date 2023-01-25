@@ -348,7 +348,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.metaCommitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
         case Right((metaCommitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1.main))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1))
           handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }
@@ -363,7 +363,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.metaCommitments.sendFulfill(c) match {
         case Right((metaCommitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1.main))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1))
           handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)) sending fulfill
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -388,7 +388,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case None => d.metaCommitments.sendFail(c, nodeParams.privateKey) match {
           case Right((metaCommitments1, fail)) =>
             if (c.commit) self ! CMD_SIGN()
-            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1.main))
+            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1))
             handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)) sending fail
           case Left(cause) =>
             // we acknowledge the command right away in case of failure
@@ -400,7 +400,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.metaCommitments.sendFailMalformed(c) match {
         case Right((metaCommitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1.main))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1))
           handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -423,7 +423,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.metaCommitments.sendFee(c, nodeParams.onChainFeeConf) match {
         case Right((metaCommitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1.main))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1))
           handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)) sending fee
         case Left(cause) => handleCommandError(cause, c)
       }
@@ -477,9 +477,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN()
           }
-          if (d.commitments.availableBalanceForSend != metaCommitments1.main.availableBalanceForSend) { // TODO: define availableBalanceFor* in MetaCommitments
+          if (d.metaCommitments.availableBalanceForSend != metaCommitments1.availableBalanceForSend) {
             // we send this event only when our balance changes
-            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1.main))
+            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, metaCommitments1))
           }
           context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments1))
           stay() using d.copy(metaCommitments = metaCommitments1) storing() sending revocation
@@ -1620,7 +1620,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case state -> nextState =>
       if (state != nextState) {
         val commitments_opt = nextStateData match {
-          case d: PersistentChannelData => Some(d.metaCommitments.main)
+          case d: PersistentChannelData => Some(d.metaCommitments)
           case _: TransientChannelData => None
         }
         context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
@@ -1665,7 +1665,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       emitEvent_opt.foreach {
         case EmitLocalChannelUpdate(reason, d, sendToPeer) =>
           log.debug(s"emitting channel update event: reason=$reason enabled=${d.channelUpdate.channelFlags.isEnabled} sendToPeer=$sendToPeer realScid=${d.shortIds.real} channel_update={} channel_announcement={}", d.channelUpdate, d.channelAnnouncement.map(_ => "yes").getOrElse("no"))
-          val lcu = LocalChannelUpdate(self, d.channelId, d.shortIds, d.commitments.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.commitments)
+          val lcu = LocalChannelUpdate(self, d.channelId, d.shortIds, d.commitments.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.metaCommitments)
           context.system.eventStream.publish(lcu)
           if (sendToPeer) {
             send(Helpers.channelUpdateForDirectPeer(nodeParams, d.channelUpdate, d.shortIds))

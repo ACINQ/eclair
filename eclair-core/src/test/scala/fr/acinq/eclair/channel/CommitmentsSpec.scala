@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Determin
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.channel.LocalFundingStatus.UnknownFundingTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.LocalChannelKeyManager
@@ -383,7 +382,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   // See https://github.com/lightningnetwork/lightning-rfc/issues/728
   test("funder keeps additional reserve to avoid channel being stuck") { f =>
     val isInitiator = true
-    val c = MetaCommitments(CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isInitiator))
+    val c = CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isInitiator)
     val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
     val Right((c1, _)) = c.sendAdd(cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
     assert(c1.availableBalanceForSend == 0.msat)
@@ -398,7 +397,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("can send availableForSend") { f =>
     for (isInitiator <- Seq(true, false)) {
-      val c = MetaCommitments(CommitmentsSpec.makeCommitments(702000000 msat, 52000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator))
+      val c = CommitmentsSpec.makeCommitments(702000000 msat, 52000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
       val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
       val result = c.sendAdd(cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
       assert(result.isRight, result)
@@ -407,7 +406,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("can receive availableForReceive") { f =>
     for (isInitiator <- Seq(true, false)) {
-      val c = MetaCommitments(CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator))
+      val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
       val add = UpdateAddHtlc(randomBytes32(), c.common.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
       c.receiveAdd(add, feeConfNoMismatch)
     }
@@ -425,7 +424,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
         toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
         toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
-      var c = MetaCommitments(CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator))
+      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
@@ -455,7 +454,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
         toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
         toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
-      var c = MetaCommitments(CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator))
+      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
@@ -484,54 +483,32 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
 object CommitmentsSpec {
 
-  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isInitiator: Boolean = true, announceChannel: Boolean = true): Commitments = {
+  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isInitiator: Boolean = true, announceChannel: Boolean = true): MetaCommitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
     val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, Long.MaxValue.msat, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isInitiator, None, None, Features.empty)
     val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
-    Commitments(
-      channelId = randomBytes32(),
-      ChannelConfig.standard,
-      ChannelFeatures(),
-      localParams,
-      remoteParams,
-      channelFlags = ChannelFlags(announceChannel = announceChannel),
-      LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil),
-      RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey),
-      LocalChanges(Nil, Nil, Nil),
-      RemoteChanges(Nil, Nil, Nil),
-      localNextHtlcId = 1,
-      remoteNextHtlcId = 1,
-      originChannels = Map.empty,
-      remoteNextCommitInfo = Right(randomKey().publicKey),
-      localFundingStatus = UnknownFundingTx,
-      remoteFundingStatus = RemoteFundingStatus.Locked,
-      remotePerCommitmentSecrets = ShaChain.init)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey)
+    MetaCommitments(
+      Params(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announceChannel)),
+      Common(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1, localCommitIndex = 0, remoteCommitIndex = 0, Map.empty, Right(randomKey().publicKey), ShaChain.init),
+      List(Commitment(LocalFundingStatus.UnknownFundingTx, RemoteFundingStatus.Locked, localCommit, remoteCommit, None))
+    )
   }
 
-  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments = {
+  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): MetaCommitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
     val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, Long.MaxValue.msat, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isInitiator = true, None, None, Features.empty)
     val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
-    Commitments(
-      channelId = randomBytes32(),
-      ChannelConfig.standard,
-      ChannelFeatures(),
-      localParams,
-      remoteParams,
-      channelFlags = ChannelFlags(announceChannel = announceChannel),
-      LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil),
-      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey),
-      LocalChanges(Nil, Nil, Nil),
-      RemoteChanges(Nil, Nil, Nil),
-      localNextHtlcId = 1,
-      remoteNextHtlcId = 1,
-      originChannels = Map.empty,
-      remoteNextCommitInfo = Right(randomKey().publicKey),
-      localFundingStatus = UnknownFundingTx,
-      remoteFundingStatus = RemoteFundingStatus.Locked,
-      remotePerCommitmentSecrets = ShaChain.init)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey)
+    MetaCommitments(
+      Params(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announceChannel)),
+      Common(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1, localCommitIndex = 0, remoteCommitIndex = 0, Map.empty, Right(randomKey().publicKey), ShaChain.init),
+      List(Commitment(LocalFundingStatus.UnknownFundingTx, RemoteFundingStatus.Locked, localCommit, remoteCommit, None))
+    )
   }
 
 }

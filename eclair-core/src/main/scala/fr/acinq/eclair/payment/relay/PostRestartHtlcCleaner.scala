@@ -104,7 +104,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
-    case e@ChannelStateChanged(channel, channelId, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, Some(commitments: AbstractCommitments)) =>
+    case e@ChannelStateChanged(channel, channelId, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, Some(commitments)) =>
       log.debug("channel {}: {} -> {}", channelId, e.previousState, e.currentState)
       val acked = brokenHtlcs.notRelayed
         .filter(_.add.channelId == channelId) // only consider htlcs coming from this channel
@@ -344,7 +344,7 @@ object PostRestartHtlcCleaner {
   }
 
   /** @return incoming HTLCs that have been *cross-signed* (that potentially have been relayed). */
-  private def getIncomingHtlcs(channels: Seq[PersistentChannelData], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, features: Features[Feature])(implicit log: LoggingAdapter): Seq[IncomingHtlc] = {
+  private def getIncomingHtlcs(channels: Seq[PersistentChannelData], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, features: Features[Feature]): Seq[IncomingHtlc] = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
