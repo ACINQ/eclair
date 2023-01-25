@@ -151,11 +151,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(dataC.commitments.commitmentFormat == commitmentFormat)
+    assert(dataC.metaCommitments.params.commitmentFormat == commitmentFormat)
     val finalAddressC = computeBIP84Address(nodes("C").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(dataF.commitments.commitmentFormat == commitmentFormat)
+    assert(dataF.metaCommitments.params.commitmentFormat == commitmentFormat)
     val finalAddressF = computeBIP84Address(nodes("F").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     ForceCloseFixture(sender, paymentSender, stateListenerC, stateListenerF, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
@@ -559,8 +559,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     // close that wumbo channel
     sender.send(funder.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
-    val commitmentsC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments
-    val fundingOutpoint = commitmentsC.commitInput.outPoint
+    val commitmentsC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.metaCommitments
+    val fundingOutpoint = commitmentsC.latest.commitInput.outPoint
     val finalPubKeyScriptC = Script.write(Script.pay2wpkh(nodes("C").wallet.getP2wpkhPubkey(false)))
     val finalPubKeyScriptF = Script.write(Script.pay2wpkh(nodes("F").wallet.getP2wpkhPubkey(false)))
 
@@ -647,7 +647,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
         val stateEvent = eventListener.expectMsgType[ChannelStateChanged](max = 60 seconds)
         if (stateEvent.currentState == NORMAL) {
           assert(stateEvent.commitments_opt.nonEmpty)
-          assert(stateEvent.commitments_opt.get.asInstanceOf[Commitments].channelType == expectedChannelType)
+          assert(stateEvent.commitments_opt.get.params.channelType == expectedChannelType)
           count = count + 1
         }
       }
@@ -671,14 +671,14 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val initialStateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(initialStateDataF.commitments.channelType == expectedChannelType)
-    val initialCommitmentIndex = initialStateDataF.commitments.localCommit.index
+    assert(initialStateDataF.metaCommitments.params.channelType == expectedChannelType)
+    val initialCommitmentIndex = initialStateDataF.metaCommitments.common.localCommitIndex
 
     // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
-    val toRemoteAddress = Script.pay2wsh(Scripts.toRemoteDelayed(initialStateDataF.commitments.remoteParams.paymentBasepoint))
+    val toRemoteAddress = Script.pay2wsh(Scripts.toRemoteDelayed(initialStateDataF.metaCommitments.params.remoteParams.paymentBasepoint))
 
     // toRemote output of C as seen by F
-    val Some(toRemoteOutC) = initialStateDataF.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+    val Some(toRemoteOutC) = initialStateDataF.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
 
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
@@ -696,13 +696,13 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     awaitCond({
       sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
       val stateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-      stateDataF.commitments.localCommit.spec.htlcs.isEmpty
+      stateDataF.metaCommitments.latest.localCommit.spec.htlcs.isEmpty
     }, max = 20 seconds, interval = 1 second)
 
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val stateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    val commitmentIndex = stateDataF.commitments.localCommit.index
-    val commitTx = stateDataF.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitmentIndex = stateDataF.metaCommitments.common.localCommitIndex
+    val commitTx = stateDataF.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
 
     // there is a new commitment index in the channel state

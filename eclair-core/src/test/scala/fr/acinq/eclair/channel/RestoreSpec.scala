@@ -87,7 +87,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     awaitCond(newAlice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
     // bob is nice and publishes its commitment
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager).tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager).tx
 
     // actual tests starts here: let's see what we can do with Bob's commit tx
     sender.send(newAlice, WatchFundingSpentTriggered(bobCommitTx))
@@ -133,12 +133,13 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
   def aliceChannelUpdateListener(channelUpdateListener: TestProbe): TestProbe = {
     val aliceListener = TestProbe()
     channelUpdateListener.setAutoPilot {
-      (sender: ActorRef, msg: Any) => msg match {
-        case u: ChannelUpdateParametersChanged if u.channelUpdate.channelFlags.isNode1 == Announcements.isNode1(Alice.nodeParams.nodeId, Bob.nodeParams.nodeId) =>
-          aliceListener.ref.tell(msg, sender)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
-      }
+      (sender: ActorRef, msg: Any) =>
+        msg match {
+          case u: ChannelUpdateParametersChanged if u.channelUpdate.channelFlags.isNode1 == Announcements.isNode1(Alice.nodeParams.nodeId, Bob.nodeParams.nodeId) =>
+            aliceListener.ref.tell(msg, sender)
+            TestActor.KeepRunning
+          case _ => TestActor.KeepRunning
+        }
     }
     aliceListener
   }

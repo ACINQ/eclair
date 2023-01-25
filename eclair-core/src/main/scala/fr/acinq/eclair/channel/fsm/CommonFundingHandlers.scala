@@ -58,17 +58,17 @@ trait CommonFundingHandlers extends CommonHandlers {
   }
 
   def receiveChannelReady(shortIds: ShortIds, channelReady: ChannelReady, metaCommitments: MetaCommitments): DATA_NORMAL = {
-    val commitments = metaCommitments.main
+    val commitments = metaCommitments.latest
     val shortIds1 = shortIds.copy(remoteAlias_opt = channelReady.alias_opt)
-    shortIds1.remoteAlias_opt.foreach(_ => context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds = shortIds1, remoteNodeId = remoteNodeId)))
+    shortIds1.remoteAlias_opt.foreach(_ => context.system.eventStream.publish(ShortChannelIdAssigned(self, metaCommitments.channelId, shortIds = shortIds1, remoteNodeId = remoteNodeId)))
     log.info("shortIds: real={} localAlias={} remoteAlias={}", shortIds1.real.toOption.getOrElse("none"), shortIds1.localAlias, shortIds1.remoteAlias_opt.getOrElse("none"))
     // we notify that the channel is now ready to route payments
-    context.system.eventStream.publish(ChannelOpened(self, remoteNodeId, commitments.channelId))
+    context.system.eventStream.publish(ChannelOpened(self, remoteNodeId, metaCommitments.channelId))
     // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
     val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, shortIds1.localAlias)
     log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
     val relayFees = getRelayFees(nodeParams, remoteNodeId, metaCommitments.announceChannel)
-    val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, nodeParams.channelConf.expiryDelta, commitments.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, commitments.maxHtlcAmount, isPrivate = !commitments.announceChannel, enable = Helpers.aboveReserve(metaCommitments))
+    val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, nodeParams.channelConf.expiryDelta, metaCommitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, metaCommitments.params.maxHtlcAmount, isPrivate = !metaCommitments.announceChannel, enable = Helpers.aboveReserve(metaCommitments))
     // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)

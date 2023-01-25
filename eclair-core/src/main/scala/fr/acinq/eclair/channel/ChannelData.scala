@@ -449,8 +449,7 @@ case object Nothing extends TransientChannelData {
 }
 
 sealed trait PersistentChannelData extends ChannelData {
-  val channelId: ByteVector32 = commitments.channelId
-  def commitments: Commitments = metaCommitments.main
+  val channelId: ByteVector32 = metaCommitments.channelId
   def metaCommitments: MetaCommitments
 }
 
@@ -487,7 +486,7 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments: MetaCommitment
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData {
-  def fundingTx_opt: Option[Transaction] = commitments.localFundingStatus.signedTx_opt
+  def fundingTx_opt: Option[Transaction] = metaCommitments.latest.localFundingStatus.signedTx_opt
 }
 final case class DATA_WAIT_FOR_CHANNEL_READY(metaCommitments: MetaCommitments,
                                              shortIds: ShortIds) extends PersistentChannelData
@@ -511,9 +510,9 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments: MetaCommi
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfStatus: RbfStatus,
                                                       deferred: Option[ChannelReady]) extends PersistentChannelData {
-  def mainFundingTx: SignedSharedTransaction = metaCommitments.main.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx
-  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.all.drop(1).map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx, _) => sharedTx }
-  def allFundingTxs: Seq[SignedSharedTransaction] = mainFundingTx +: previousFundingTxs
+  def latestFundingTx: SignedSharedTransaction = metaCommitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx
+  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.commitments.map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx, _) if sharedTx.txId != latestFundingTx.txId => sharedTx }
+  def allFundingTxs: Seq[SignedSharedTransaction] = latestFundingTx +: previousFundingTxs
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments: MetaCommitments,
                                                   shortIds: ShortIds) extends PersistentChannelData
@@ -531,7 +530,7 @@ final case class DATA_NEGOTIATING(metaCommitments: MetaCommitments,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends PersistentChannelData {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
-  require(!commitments.localParams.isInitiator || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
+  require(!metaCommitments.params.localParams.isInitiator || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(metaCommitments: MetaCommitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing

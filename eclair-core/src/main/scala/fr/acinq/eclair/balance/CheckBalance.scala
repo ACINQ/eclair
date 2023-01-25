@@ -205,13 +205,13 @@ object CheckBalance {
   def computeOffChainBalance(channels: Iterable[PersistentChannelData], knownPreimages: Set[(ByteVector32, Long)]): OffChainBalance = {
     channels
       .foldLeft(OffChainBalance()) {
-        case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
-        case (r, d: DATA_WAIT_FOR_CHANNEL_READY) => r.modify(_.waitForChannelReady).using(updateMainBalance(d.commitments.localCommit))
-        case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
-        case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) => r.modify(_.waitForChannelReady).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.metaCommitments.latest.localCommit))
+        case (r, d: DATA_WAIT_FOR_CHANNEL_READY) => r.modify(_.waitForChannelReady).using(updateMainBalance(d.metaCommitments.latest.localCommit))
+        case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.metaCommitments.latest.localCommit))
+        case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) => r.modify(_.waitForChannelReady).using(updateMainBalance(d.metaCommitments.latest.localCommit))
         case (r, d: DATA_NORMAL) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.metaCommitments, knownPreimages))
         case (r, d: DATA_SHUTDOWN) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.metaCommitments, knownPreimages))
-        case (r, d: DATA_NEGOTIATING) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: DATA_NEGOTIATING) => r.modify(_.negotiating).using(updateMainBalance(d.metaCommitments.latest.localCommit))
         case (r, d: DATA_CLOSING) =>
           Closing.isClosingTypeAlreadyKnown(d) match {
             case None if d.mutualClosePublished.nonEmpty && d.localCommitPublished.isEmpty && d.remoteCommitPublished.isEmpty && d.nextRemoteCommitPublished.isEmpty && d.revokedCommitPublished.isEmpty =>
@@ -241,15 +241,15 @@ object CheckBalance {
               // our bitcoin core has already seen it (since it's the one who told us about it) and we make
               // the assumption that the remote commit won't be replaced by our local commit.
               val remoteClose = if (d.remoteCommitPublished.isDefined) {
-                CurrentRemoteClose(d.commitments.remoteCommit, d.remoteCommitPublished.get)
+                CurrentRemoteClose(d.metaCommitments.latest.remoteCommit, d.remoteCommitPublished.get)
               } else {
-                val Left(waitingForRevocation) = d.commitments.remoteNextCommitInfo
+                val Left(waitingForRevocation) = d.metaCommitments.latest.remoteNextCommitInfo
                 NextRemoteClose(waitingForRevocation.nextRemoteCommit, d.nextRemoteCommitPublished.get)
               }
               r.modify(_.closing.remoteCloseBalance).using(updatePossiblyPublishedBalance(computeRemoteCloseBalance(d.metaCommitments, remoteClose, knownPreimages)))
             case _ => r.modify(_.closing.unknownCloseBalance).using(updateMainAndHtlcBalance(d.metaCommitments, knownPreimages))
           }
-        case (r, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => r.modify(_.waitForPublishFutureCommitment).using(updateMainBalance(d.commitments.localCommit))
+        case (r, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => r.modify(_.waitForPublishFutureCommitment).using(updateMainBalance(d.metaCommitments.latest.localCommit))
       }
   }
 

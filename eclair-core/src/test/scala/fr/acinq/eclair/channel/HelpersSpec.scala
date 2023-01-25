@@ -160,9 +160,9 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     import f._
 
     val dustLimit = alice.underlyingActor.nodeParams.channelConf.dustLimit
-    val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat
-    val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.localCommit
-    val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.remoteCommit
+    val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.params.commitmentFormat
+    val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.latest.localCommit
+    val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.latest.remoteCommit
 
     val htlcTimeoutTxs = getHtlcTimeoutTxs(aliceCommitPublished)
     val htlcSuccessTxs = getHtlcSuccessTxs(aliceCommitPublished)

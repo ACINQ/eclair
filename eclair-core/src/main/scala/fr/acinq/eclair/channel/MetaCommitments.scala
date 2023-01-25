@@ -395,13 +395,11 @@ case class MetaCommitments(params: Params,
   val remoteNodeId: PublicKey = params.remoteNodeId
   val announceChannel: Boolean = params.announceChannel
 
-  val all: List[Commitments] = commitments.map(Commitments(params, common, _))
-
-  /** current valid commitments, according to our view of the blockchain */
-  val main: Commitments = all.head
-
   lazy val availableBalanceForSend: MilliSatoshi = commitments.map(_.availableBalanceForSend(params, common)).min
   lazy val availableBalanceForReceive: MilliSatoshi = commitments.map(_.availableBalanceForReceive(params, common)).min
+
+  // We always use the last commitment that was created, to make sure we never go back in time.
+  val latest = Commitments(params, common, commitments.head)
 
   def hasNoPendingHtlcs: Boolean = commitments.head.hasNoPendingHtlcs
 

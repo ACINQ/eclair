@@ -607,11 +607,11 @@ object Helpers {
     def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = {
       closing match {
         case _ if closing.localCommitPublished.exists(_.isConfirmed) =>
-          Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
+          Some(LocalClose(closing.metaCommitments.latest.localCommit, closing.localCommitPublished.get))
         case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
-          Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
+          Some(CurrentRemoteClose(closing.metaCommitments.latest.remoteCommit, closing.remoteCommitPublished.get))
         case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
-          val Left(waitingForRevocation) = closing.commitments.remoteNextCommitInfo
+          val Left(waitingForRevocation) = closing.metaCommitments.latest.remoteNextCommitInfo
           Some(NextRemoteClose(waitingForRevocation.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
         case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
@@ -634,11 +634,11 @@ object Helpers {
         val closingTx = closing.mutualClosePublished.find(_.tx.txid == additionalConfirmedTx_opt.get.txid).get
         Some(MutualClose(closingTx))
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(_.isDone) =>
-        Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
+        Some(LocalClose(closing.metaCommitments.latest.localCommit, closing.localCommitPublished.get))
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
-        Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
+        Some(CurrentRemoteClose(closing.metaCommitments.latest.remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
-        val Left(waitingForRevocation) = closing.commitments.remoteNextCommitInfo
+        val Left(waitingForRevocation) = closing.metaCommitments.latest.remoteNextCommitInfo
         Some(NextRemoteClose(waitingForRevocation.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
@@ -1331,9 +1331,9 @@ object Helpers {
      * It could be because only us had signed them, or because a revoked commitment got confirmed.
      */
     def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction): Set[UpdateAddHtlc] = {
-      val localCommit = d.commitments.localCommit
-      val remoteCommit = d.commitments.remoteCommit
-      val nextRemoteCommit_opt = d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
+      val localCommit = d.metaCommitments.latest.localCommit
+      val remoteCommit = d.metaCommitments.latest.remoteCommit
+      val nextRemoteCommit_opt = d.metaCommitments.latest.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
       if (localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that is in their commitment but not in ours will never reach the chain
         val htlcsInRemoteCommit = remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)

@@ -387,10 +387,10 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      if (remoteChannelReady.alias_opt.isDefined && d.commitments.localParams.isInitiator) {
+      if (remoteChannelReady.alias_opt.isDefined && d.metaCommitments.params.localParams.isInitiator) {
         log.info("this channel isn't zero-conf, but we are funder and they sent an early channel_ready with an alias: no need to wait for confirmations")
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored
-        blockchain ! WatchPublished(self, d.commitments.fundingTxId)
+        blockchain ! WatchPublished(self, d.metaCommitments.latest.fundingTxId)
       }
       log.debug("received their channel_ready, deferring message")
       stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
@@ -401,14 +401,14 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       log.info(s"channelId=${d.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
-      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt))
+      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
       acceptSingleFundingTx(d, fundingTx, realScidStatus)
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.metaCommitments.announceChannel =>
       delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 
-    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx_opt)
+    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.metaCommitments.latest.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx_opt)
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
 
@@ -431,7 +431,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val d1 = receiveChannelReady(d.shortIds, channelReady, d.metaCommitments)
       goto(NORMAL) using d1 storing()
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_CHANNEL_READY) if d.commitments.announceChannel =>
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_CHANNEL_READY) if d.metaCommitments.announceChannel =>
       delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 

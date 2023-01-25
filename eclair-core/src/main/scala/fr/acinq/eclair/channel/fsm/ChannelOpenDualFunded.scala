@@ -375,7 +375,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {
     case Event(txSigs: TxSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      d.mainFundingTx match {
+      d.latestFundingTx match {
         case fundingTx: PartiallySignedSharedTransaction => InteractiveTxBuilder.addRemoteSigs(d.fundingParams, fundingTx, txSigs) match {
           case Left(cause) =>
             val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
@@ -402,7 +402,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       val replyTo = if (cmd.replyTo == ActorRef.noSender) sender() else cmd.replyTo
-      val zeroConf = Funding.minDepthDualFunding(nodeParams.channelConf, d.commitments.localParams.initFeatures, d.fundingParams).isEmpty
+      val zeroConf = Funding.minDepthDualFunding(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, d.fundingParams).isEmpty
       if (!d.fundingParams.isInitiator) {
         replyTo ! Status.Failure(InvalidRbfNonInitiator(d.channelId))
         stay()
@@ -427,7 +427,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(msg: TxInitRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      val zeroConf = Funding.minDepthDualFunding(nodeParams.channelConf, d.commitments.localParams.initFeatures, d.fundingParams).isEmpty
+      val zeroConf = Funding.minDepthDualFunding(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, d.fundingParams).isEmpty
       if (d.fundingParams.isInitiator) {
         // Only the initiator is allowed to initiate RBF.
         log.info("rejecting tx_init_rbf, we're the initiator, not them!")
@@ -566,7 +566,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.blockHeight, w.txIndex, w.tx.txid)
-      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.commitInput.outPoint.index.toInt))
+      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
       acceptDualFundingTx(d, w.tx, realScidStatus) match {
         case Some((d1, channelReady)) =>
           val toSend = d.rbfStatus match {
@@ -593,17 +593,17 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       //  - there is a single version of the funding tx (otherwise we don't know which one to use)
       //  - they didn't contribute to the funding output or we trust them to not double-spend
       val canUseZeroConf = remoteChannelReady.alias_opt.isDefined &&
-        d.metaCommitments.all.size == 1 &&
-        (d.fundingParams.remoteAmount == 0.sat || d.commitments.localParams.initFeatures.hasFeature(Features.ZeroConf))
+        d.metaCommitments.commitments.size == 1 &&
+        (d.fundingParams.remoteAmount == 0.sat || d.metaCommitments.params.localParams.initFeatures.hasFeature(Features.ZeroConf))
       if (canUseZeroConf) {
         log.info("this channel isn't zero-conf, but they sent an early channel_ready with an alias: no need to wait for confirmations")
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored.
-        blockchain ! WatchPublished(self, d.commitments.fundingTxId)
+        blockchain ! WatchPublished(self, d.metaCommitments.latest.fundingTxId)
       }
       log.debug("received their channel_ready, deferring message")
       stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if d.metaCommitments.announceChannel =>
       delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 
@@ -628,7 +628,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       // Our peer may not have received the funding transaction confirmation.
       stay() sending TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage)
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) if d.commitments.announceChannel =>
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) if d.metaCommitments.announceChannel =>
       delayEarlyAnnouncementSigs(remoteAnnSigs)
       stay()
 
