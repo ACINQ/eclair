@@ -1148,7 +1148,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         }
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
-        val (rev1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(keyManager, d.commitments, rev, tx, nodeParams.onChainFeeConf.feeEstimator, d.finalScriptPubKey)
+        val (rev1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(keyManager, d.metaCommitments.params, d.metaCommitments.common.remotePerCommitmentSecrets, rev, tx, nodeParams.onChainFeeConf.feeEstimator, d.finalScriptPubKey)
         penaltyTxs.foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
         penaltyTxs.foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, hints = Set(claimTx.tx.txid)))
         rev1

@@ -240,7 +240,7 @@ trait ErrorHandlers extends CommonHandlers {
     val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
     val remoteCommitPublished = RemoteCommitPublished(
       commitTx = commitTx,
-      claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey),
+      claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, d.metaCommitments.params, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey),
       claimHtlcTxs = Map.empty,
       claimAnchorTxs = List.empty,
       irrevocablySpent = Map.empty)
@@ -290,10 +290,10 @@ trait ErrorHandlers extends CommonHandlers {
     val commitments = d.metaCommitments.main
     log.warning(s"funding tx spent in txid=${tx.txid}")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-    Closing.RevokedClose.claimCommitTxOutputs(keyManager, commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey) match {
+    Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.metaCommitments.params, d.metaCommitments.common.remotePerCommitmentSecrets, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
-        context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitments.commitInput, tx, commitments.localParams.isInitiator), "revoked-commit"))
+        context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitments.commitInput, tx, d.metaCommitments.params.localParams.isInitiator), "revoked-commit"))
         val exc = FundingTxSpent(d.channelId, tx.txid)
         val error = Error(d.channelId, exc.getMessage)
         val nextData = d match {
