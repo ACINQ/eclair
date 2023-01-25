@@ -95,7 +95,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
           case _ => () // zero-conf channel
         }
         val shortIds = createShortIds(d.channelId, realScidStatus)
-        val channelReady = createChannelReady(shortIds, commitments)
+        val channelReady = createChannelReady(shortIds, metaCommitments.params)
         d.deferred.foreach(self ! _)
         (DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments, shortIds), channelReady)
     }
