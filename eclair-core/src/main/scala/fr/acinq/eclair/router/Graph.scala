@@ -305,7 +305,7 @@ object Graph {
     val totalFees = prev.fees + fee
     val cltv = if (edge.desc.a == sender && !includeLocalChannelCost) CltvExpiryDelta(0) else edge.params.cltvExpiryDelta
     val totalCltv = prev.cltv + cltv
-    weightRatios match {
+    val richWeight = weightRatios match {
       case Left(weightRatios) =>
         val hopCost = if (edge.desc.a == sender) 0 msat else nodeFee(weightRatios.hopCost, prev.amount)
         import RoutingHeuristics._
@@ -351,6 +351,12 @@ object Graph {
           val weight = totalFees.toLong + totalHopsCost.toLong + totalRiskCost + failureCost.toLong / totalSuccessProbability
           RichWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
         }
+    }
+    if (edge.desc.a == sender) {
+      // If this is a local channel it shouldn't add any weight. We always prefer local channels.
+      richWeight.copy(weight = prev.weight)
+    } else {
+      richWeight
     }
   }
 
