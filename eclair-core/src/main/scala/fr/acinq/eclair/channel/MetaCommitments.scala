@@ -401,6 +401,8 @@ case class MetaCommitments(params: Params,
   // We always use the last commitment that was created, to make sure we never go back in time.
   val latest = Commitments(params, common, commitments.head)
 
+  def add(commitment: Commitment): MetaCommitments = copy(commitments = commitment +: commitments)
+
   def hasNoPendingHtlcs: Boolean = commitments.head.hasNoPendingHtlcs
 
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = commitments.head.hasNoPendingHtlcsOrFeeUpdate(common)

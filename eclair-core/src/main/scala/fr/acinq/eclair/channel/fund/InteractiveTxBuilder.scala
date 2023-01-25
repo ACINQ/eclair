@@ -93,7 +93,7 @@ object InteractiveTxBuilder {
 
   sealed trait Response
   case class SendMessage(msg: LightningMessage) extends Response
-  case class Succeeded(fundingParams: InteractiveTxParams, sharedTx: SignedSharedTransaction, commitments: Commitments) extends Response
+  case class Succeeded(fundingParams: InteractiveTxParams, sharedTx: SignedSharedTransaction, commitment: Commitment) extends Response
   sealed trait Failed extends Response { def cause: ChannelException }
   case class LocalFailure(cause: ChannelException) extends Failed
   case class RemoteFailure(cause: ChannelException) extends Failed
@@ -621,8 +621,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                   remoteCommit = RemoteCommit(common.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint),
                   nextRemoteCommit_opt = None
                 )
-                val commitments = Commitments(commitmentParams, common, commitment)
-                signFundingTx(completeTx, commitments)
+                signFundingTx(completeTx, commitment)
             }
           case ReceiveTxSigs(_) =>
             replyTo ! RemoteFailure(UnexpectedFundingSignatures(fundingParams.channelId))
@@ -636,10 +635,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  private def signFundingTx(completeTx: SharedTransaction, commitments: Commitments): Behavior[Command] = {
+  private def signFundingTx(completeTx: SharedTransaction, commitment: Commitment): Behavior[Command] = {
     val shouldSignFirst = if (completeTx.localAmountIn == completeTx.remoteAmountIn) {
       // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
-      LexicographicalOrdering.isLessThan(commitments.localParams.nodeId.value, commitments.remoteNodeId.value)
+      LexicographicalOrdering.isLessThan(commitmentParams.localNodeId.value, commitmentParams.remoteNodeId.value)
     } else if (completeTx.remoteAmountIn == 0.sat) {
       // If our peer didn't contribute to the transaction, we don't need to wait for their `tx_signatures`, they will be
       // empty anyway.
@@ -659,7 +658,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             unlockAndStop(completeTx)
           case Right(fullySignedTx) =>
             log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
-            replyTo ! Succeeded(fundingParams, fullySignedTx, commitments.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(fullySignedTx, nodeParams.currentBlockHeight)))
+            replyTo ! Succeeded(fundingParams, fullySignedTx, commitment.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(fullySignedTx, nodeParams.currentBlockHeight)))
             Behaviors.stopped
         }
       case SignTransactionResult(signedTx, None) =>
@@ -669,11 +668,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
           val remoteSigs = TxSignatures(signedTx.localSigs.channelId, signedTx.localSigs.txHash, Nil)
           val signedTx1 = FullySignedSharedTransaction(signedTx.tx, signedTx.localSigs, remoteSigs)
-          val commitments1 = commitments.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(signedTx1, nodeParams.currentBlockHeight))
+          val commitments1 = commitment.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(signedTx1, nodeParams.currentBlockHeight))
           replyTo ! Succeeded(fundingParams, signedTx1, commitments1)
         } else {
           log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
-          val commitments1 = commitments.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(signedTx, nodeParams.currentBlockHeight))
+          val commitments1 = commitment.copy(localFundingStatus = DualFundedUnconfirmedFundingTx(signedTx, nodeParams.currentBlockHeight))
           replyTo ! Succeeded(fundingParams, signedTx, commitments1)
         }
         Behaviors.stopped

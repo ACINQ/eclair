@@ -81,10 +81,12 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     private val secondPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.keyPath(commitmentParamsA.localParams, ChannelConfig.standard), 1)
     private val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(commitmentParamsB.localParams, ChannelConfig.standard), 0)
     private val secondPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(commitmentParamsB.localParams, ChannelConfig.standard), 1)
+    val fundingPurposeA = FundingTx(commitFeerate, firstPerCommitmentPointB, secondPerCommitmentPointB)
+    val fundingPurposeB = FundingTx(commitFeerate, firstPerCommitmentPointA, secondPerCommitmentPointA)
 
     def spawnTxBuilderAlice(wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       nodeParamsA, fundingParamsA, commitmentParamsA,
-      FundingTx(commitFeerate, firstPerCommitmentPointB, secondPerCommitmentPointB),
+      fundingPurposeA,
       0 msat, 0 msat,
       wallet))
 
@@ -96,7 +98,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
     def spawnTxBuilderBob(wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       nodeParamsB, fundingParamsB, commitmentParamsB,
-      FundingTx(commitFeerate, firstPerCommitmentPointA, secondPerCommitmentPointA),
+      fundingPurposeB,
       0 msat, 0 msat,
       wallet))
 
@@ -708,8 +710,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
       probe.expectMsg(txA1.signedTx.txid)
 
-      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(successA1.commitments.common, successA1.commitments.commitment, Seq(txA1), walletA)
-      val bobRbf = fixtureParams.spawnTxBuilderRbfBob(successB1.commitments.common, successB1.commitments.commitment, Nil, walletB)
+      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(fixtureParams.fundingPurposeA.common, successA1.commitment, Seq(txA1), walletA)
+      val bobRbf = fixtureParams.spawnTxBuilderRbfBob(fixtureParams.fundingPurposeB.common, successB1.commitment, Nil, walletB)
       val fwdRbf = TypeCheckedForwarder(aliceRbf, bobRbf, alice2bob, bob2alice)
 
       aliceRbf ! Start(alice2bob.ref)
@@ -791,8 +793,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
       probe.expectMsg(txA1.signedTx.txid)
 
-      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(successA1.commitments.common, successA1.commitments.commitment, Seq(txA1), walletA)
-      val bobRbf = fixtureParams.spawnTxBuilderRbfBob(successB1.commitments.common, successB1.commitments.commitment, Nil, walletB)
+      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(fixtureParams.fundingPurposeA.common, successA1.commitment, Seq(txA1), walletA)
+      val bobRbf = fixtureParams.spawnTxBuilderRbfBob(fixtureParams.fundingPurposeB.common, successB1.commitment, Nil, walletB)
       val fwdRbf = TypeCheckedForwarder(aliceRbf, bobRbf, alice2bob, bob2alice)
 
       aliceRbf ! Start(alice2bob.ref)
@@ -890,8 +892,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // If we want to increase the feerate, Bob cannot contribute more than what he has already contributed.
       // However, it still makes sense for Bob to contribute whatever he's able to, the final feerate will simply be
       // slightly less than what Alice intended, but it's better than being stuck with a low feerate.
-      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(successA1.commitments.common, successA1.commitments.commitment, Seq(txA1), walletA)
-      val bobRbf = fixtureParams.spawnTxBuilderRbfBob(successB1.commitments.common, successB1.commitments.commitment, Seq(txB1), walletB)
+      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(fixtureParams.fundingPurposeA.common, successA1.commitment, Seq(txA1), walletA)
+      val bobRbf = fixtureParams.spawnTxBuilderRbfBob(fixtureParams.fundingPurposeB.common, successB1.commitment, Seq(txB1), walletB)
       val fwdRbf = TypeCheckedForwarder(aliceRbf, bobRbf, alice2bob, bob2alice)
 
       aliceRbf ! Start(alice2bob.ref)
@@ -966,7 +968,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val txA = successA.sharedTx.asInstanceOf[FullySignedSharedTransaction]
       assert(targetFeerate * 0.9 <= txA.feerate && txA.feerate <= targetFeerate * 1.25)
 
-      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(successA.commitments.common, successA.commitments.commitment, Seq(txA), walletA)
+      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(fixtureParams.fundingPurposeA.common, successA.commitment, Seq(txA), walletA)
       aliceRbf ! Start(alice2bob.ref)
       assert(alice2bob.expectMsgType[LocalFailure].cause == ChannelFundingError(aliceParams.channelId))
     }
@@ -1321,7 +1323,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       bob ! Start(bob2alice.ref)
 
       // Alice --- tx_add_input --> Bob
-      val inputA1 = fwd.forwardAlice2Bob[TxAddInput]
+      fwd.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
       fwd.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_output --> Bob
@@ -1352,8 +1354,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // we modify remote's input in previous txs, it won't be double spent
       val fakeTxB2 = txB1.modify(_.tx.remoteInputs.at(0).outPoint.hash).setTo(randomBytes32())
 
-      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(successA1.commitments.common, successA1.commitments.commitment, Seq(txA1), walletA)
-      val bobRbf = fixtureParams.spawnTxBuilderRbfBob(successB1.commitments.common, successB1.commitments.commitment, Seq(txB1, fakeTxB2), walletB)
+      val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(fixtureParams.fundingPurposeA.common, successA1.commitment, Seq(txA1), walletA)
+      val bobRbf = fixtureParams.spawnTxBuilderRbfBob(fixtureParams.fundingPurposeB.common, successB1.commitment, Seq(txB1, fakeTxB2), walletB)
       val fwdRbf = TypeCheckedForwarder(aliceRbf, bobRbf, alice2bob, bob2alice)
 
       aliceRbf ! Start(alice2bob.ref)
