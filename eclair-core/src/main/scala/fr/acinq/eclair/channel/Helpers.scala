@@ -27,8 +27,8 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, O
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
-import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
+import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
@@ -307,41 +307,41 @@ object Helpers {
     remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
   }
 
-  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
+  def makeAnnouncementSignatures(nodeParams: NodeParams, channelParams: Params, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
     val features = Features.empty[Feature] // empty features for now
-    val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
+    val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath)
     val witness = Announcements.generateChannelAnnouncementWitness(
       nodeParams.chainHash,
       shortChannelId,
       nodeParams.nodeKeyManager.nodeId,
-      commitments.remoteParams.nodeId,
+      channelParams.remoteParams.nodeId,
       fundingPubKey.publicKey,
-      commitments.remoteParams.fundingPubKey,
+      channelParams.remoteParams.fundingPubKey,
       features
     )
     val localBitcoinSig = nodeParams.channelKeyManager.signChannelAnnouncement(witness, fundingPubKey.path)
     val localNodeSig = nodeParams.nodeKeyManager.signChannelAnnouncement(witness)
-    AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
+    AnnouncementSignatures(channelParams.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
   /**
    * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,
    * this tells if we can use the channel to make a payment.
    */
-  def aboveReserve(commitments: Commitments)(implicit log: LoggingAdapter): Boolean = {
-    val remoteCommit = commitments.remoteNextCommitInfo match {
-      case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit
-      case _ => commitments.remoteCommit
-    }
+  def aboveReserve(commitments: MetaCommitments)(implicit log: LoggingAdapter): Boolean = {
+    commitments.commitments.forall(commitment => {
+      val remoteCommit = commitment.nextRemoteCommit_opt.getOrElse(commitment.remoteCommit)
     val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi
     // NB: this is an approximation (we don't take network fees into account)
-    val result = toRemoteSatoshis > commitments.localChannelReserve
-    log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.localChannelReserve} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
+      val localReserve = commitment.localChannelReserve(commitments.params)
+      val result = toRemoteSatoshis > localReserve
+      log.debug("toRemoteSatoshis={} reserve={} aboveReserve={} for remoteCommitNumber={}", toRemoteSatoshis, localReserve, result, remoteCommit.index)
     result
+    })
   }
 
-  def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, commitments: Commitments): RelayFees = {
-    val defaultFees = nodeParams.relayParams.defaultFees(commitments.announceChannel)
+  def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {
+    val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)
     nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
   }
 
