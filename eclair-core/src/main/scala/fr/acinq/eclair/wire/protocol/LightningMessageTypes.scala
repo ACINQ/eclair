@@ -497,7 +497,7 @@ object ReplyChannelRange {
             checksums: Option[ReplyChannelRangeTlv.EncodedChecksums]): ReplyChannelRange = {
     timestamps.foreach(ts => require(ts.timestamps.length == shortChannelIds.array.length))
     checksums.foreach(cs => require(cs.checksums.length == shortChannelIds.array.length))
-    new ReplyChannelRange(chainHash, firstBlock, numberOfBlocks, syncComplete, shortChannelIds, TlvStream(Set(timestamps, checksums).flatten: Set[fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv]))
+    new ReplyChannelRange(chainHash, firstBlock, numberOfBlocks, syncComplete, shortChannelIds, TlvStream(Set(timestamps, checksums).flatten[ReplyChannelRangeTlv]))
   }
 }
 
