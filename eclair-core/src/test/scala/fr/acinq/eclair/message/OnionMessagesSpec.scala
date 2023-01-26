@@ -39,10 +39,11 @@ import scala.util.Success
 class OnionMessagesSpec extends AnyFunSuite {
 
   test("single-hop onion message without path_id") {
+    val nodeKey = randomKey()
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     val destination = randomKey()
-    val Success((nextNodeId, message)) = buildMessage(sessionKey, blindingSecret, Nil, Recipient(destination.publicKey, None), TlvStream.empty)
+    val Success((nextNodeId, message)) = buildMessage(nodeKey, sessionKey, blindingSecret, Nil, Recipient(destination.publicKey, None), TlvStream.empty)
     assert(nextNodeId == destination.publicKey)
 
     process(destination, message) match {
@@ -106,9 +107,9 @@ class OnionMessagesSpec extends AnyFunSuite {
     val onionForAlice = OnionMessage(blindingSecret.publicKey, packet)
 
     // Building the onion with functions from `OnionMessages`
-    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Recipient(dave.publicKey, pathId = Some(hex"01234567")))
+    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Recipient(dave.publicKey, pathId = Some(hex"01234567"))).get
     assert(replyPath == routeFromCarol)
-    val Success((_, message)) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, BlindedPath(replyPath), TlvStream.empty)
+    val Success((_, message)) = buildMessage(randomKey(), sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, BlindedPath(replyPath), TlvStream.empty)
     assert(message == onionForAlice)
 
     // Checking that the onion is relayed properly
@@ -202,14 +203,15 @@ class OnionMessagesSpec extends AnyFunSuite {
   }
 
   test("build message with existing route") {
+    val nodeKey = randomKey()
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     val blindingOverride = randomKey()
     val destination = randomKey()
-    val replyPath = buildRoute(blindingOverride, IntermediateNode(destination.publicKey) :: Nil, Recipient(destination.publicKey, pathId = Some(hex"01234567")))
+    val replyPath = buildRoute(blindingOverride, IntermediateNode(destination.publicKey) :: Nil, Recipient(destination.publicKey, pathId = Some(hex"01234567"))).get
     assert(replyPath.blindingKey == blindingOverride.publicKey)
     assert(replyPath.introductionNodeId == destination.publicKey)
-    val Success((nextNodeId, message)) = buildMessage(sessionKey, blindingSecret, Nil, BlindedPath(replyPath), TlvStream.empty)
+    val Success((nextNodeId, message)) = buildMessage(nodeKey, sessionKey, blindingSecret, Nil, BlindedPath(replyPath), TlvStream.empty)
     assert(nextNodeId == destination.publicKey)
     assert(message.blindingKey == blindingOverride.publicKey) // blindingSecret was not used as the replyPath was used as is
 
@@ -220,13 +222,14 @@ class OnionMessagesSpec extends AnyFunSuite {
   }
 
   test("very large multi-hop onion message") {
+    val nodeKey = randomKey()
     val alice = randomKey()
     val bob = randomKey()
     val carol = randomKey()
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     val pathId = randomBytes(65201)
-    val Success((_, messageForAlice)) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty)
+    val Success((_, messageForAlice)) = buildMessage(nodeKey, sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty)
 
     // Checking that the onion is relayed properly
     process(alice, messageForAlice) match {
@@ -246,6 +249,7 @@ class OnionMessagesSpec extends AnyFunSuite {
   }
 
   test("too large multi-hop onion message") {
+    val nodeKey = randomKey()
     val alice = randomKey()
     val bob = randomKey()
     val carol = randomKey()
@@ -254,6 +258,6 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     val pathId = randomBytes(65202)
 
-    assert(buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty).isFailure)
+    assert(buildMessage(nodeKey, sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty).isFailure)
   }
 }

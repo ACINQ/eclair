@@ -91,9 +91,10 @@ object Postman {
           val replyRoute = replyPath.map(replyHops => {
             val intermediateHops = replyHops.dropRight(1).map(OnionMessages.IntermediateNode(_))
             val lastHop = OnionMessages.Recipient(replyHops.last, Some(messageId))
-            OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop)
+            OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop).get
           })
           OnionMessages.buildMessage(
+            nodeParams.privateKey,
             randomKey(),
             randomKey(),
             intermediateNodes.map(OnionMessages.IntermediateNode(_)),
@@ -102,40 +103,13 @@ object Postman {
             case Failure(f) =>
               replyTo ! MessageFailed(f.getMessage)
             case Success((nextNodeId, message)) =>
-              if (nextNodeId == nodeParams.nodeId) {
-                OnionMessages.process(nodeParams.privateKey, message) match {
-                  case OnionMessages.DropMessage(reason) =>
-                    if (replyPath.isEmpty) {
-                      replyTo ! MessageFailed(reason.toString)
-                    } else {
-                      replyTo ! NoReply
-                    }
-                  case OnionMessages.SendMessage(nextNextNodeId, nextMessage) =>
-                    if (replyPath.isEmpty) {
-                      sendStatusTo += (messageId -> replyTo)
-                    } else {
-                      subscribed += (messageId -> replyTo)
-                      context.scheduleOnce(timeout, context.self, Unsubscribe(messageId))
-                    }
-                    switchboard ! Switchboard.RelayMessage(messageId, None, nextNextNodeId, nextMessage, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
-                  case received: OnionMessages.ReceiveMessage =>
-                    if (replyPath.isEmpty) {
-                      replyTo ! MessageSent
-                    } else {
-                      subscribed += (messageId -> replyTo)
-                      context.scheduleOnce(timeout, context.self, Unsubscribe(messageId))
-                    }
-                    context.system.eventStream ! EventStream.Publish(received)
-                }
-              } else {
-                if (replyPath.isEmpty) {
-                  sendStatusTo += (messageId -> replyTo)
-                } else {
-                  subscribed += (messageId -> replyTo)
-                  context.scheduleOnce(timeout, context.self, Unsubscribe(messageId))
-                }
-                switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
+              if (replyPath.isEmpty) { // not expecting reply
+                sendStatusTo += (messageId -> replyTo)
+              } else { // expecting reply
+                subscribed += (messageId -> replyTo)
+                context.scheduleOnce(timeout, context.self, Unsubscribe(messageId))
               }
+              switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
           }
           Behaviors.same
         case Unsubscribe(pathId) =>
