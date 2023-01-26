@@ -104,7 +104,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
-    case e@ChannelStateChanged(channel, channelId, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, Some(commitments: AbstractCommitments)) =>
+    case e@ChannelStateChanged(channel, channelId, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, Some(commitments)) =>
       log.debug("channel {}: {} -> {}", channelId, e.previousState, e.currentState)
       val acked = brokenHtlcs.notRelayed
         .filter(_.add.channelId == channelId) // only consider htlcs coming from this channel
@@ -344,12 +344,12 @@ object PostRestartHtlcCleaner {
   }
 
   /** @return incoming HTLCs that have been *cross-signed* (that potentially have been relayed). */
-  private def getIncomingHtlcs(channels: Seq[PersistentChannelData], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, features: Features[Feature])(implicit log: LoggingAdapter): Seq[IncomingHtlc] = {
+  private def getIncomingHtlcs(channels: Seq[PersistentChannelData], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, features: Features[Feature]): Seq[IncomingHtlc] = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     channels
-      .flatMap(_.metaCommitments.main.remoteCommit.spec.htlcs)
+      .flatMap(_.metaCommitments.latest.remoteCommit.spec.htlcs)
       .collect(outgoing)
       .map(IncomingPaymentPacket.decrypt(_, privateKey, features))
       .collect(decryptedIncomingHtlcs(paymentsDb))
@@ -398,16 +398,16 @@ object PostRestartHtlcCleaner {
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) =>
                 val confirmedTxs = c.localCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isHtlcTimeout(tx, c.localCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
+                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.metaCommitments.params.commitmentFormat, c.localCommit, c.localCommitPublished, d.metaCommitments.params.localParams.dustLimit, tx))
               case Some(c: Closing.RemoteClose) =>
                 val confirmedTxs = c.remoteCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isClaimHtlcTimeout(tx, c.remoteCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
+                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.metaCommitments.params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.metaCommitments.params.remoteParams.dustLimit, tx))
               case _ => Seq.empty[UpdateAddHtlc]
             }).map(_.id).toSet
             overriddenHtlcs ++ timedOutHtlcs
           case _ => Set.empty
         }
-        c.metaCommitments.main.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
+        c.metaCommitments.common.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
       }
     groupByOrigin(htlcsOut, htlcsIn)
   }

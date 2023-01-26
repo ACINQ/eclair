@@ -60,7 +60,7 @@ object WeakEntropyPool {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelPaymentRelayed](e => WrappedPaymentRelayed(e.paymentHash, e.timestamp)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => WrappedPeerConnected(e.nodeId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NodeUpdated](e => WrappedNodeUpdated(e.ann.signature)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelSignatureReceived](e => WrappedChannelSignature(e.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.wtxid)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelSignatureReceived](e => WrappedChannelSignature(e.commitments.commitments.last.localCommit.commitTxAndRemoteSig.commitTx.tx.wtxid)))
       Behaviors.withTimers { timers =>
         timers.startTimerWithFixedDelay(FlushEntropy, 30 seconds)
         collecting(collector, None)

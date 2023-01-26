@@ -20,7 +20,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val data = normal
     val bin = channelDataCodec.encode(data).require
     val check = channelDataCodec.decodeValue(bin).require
-    assert(data.commitments.localCommit.spec == check.commitments.localCommit.spec)
+    assert(data.metaCommitments.latest.localCommit.spec == check.metaCommitments.latest.localCommit.spec)
     assert(data == check)
   }
 

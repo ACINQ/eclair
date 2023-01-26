@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
+import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
@@ -118,17 +119,16 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
   def acceptSingleFundingTx(d: DATA_WAIT_FOR_FUNDING_CONFIRMED, fundingTx: Transaction, realScidStatus: RealScidStatus) = {
     // As fundee, it is the first time we see the full funding tx, we must verify that it is valid (it pays the correct amount to the correct script)
     // We also check as funder even if it's not really useful
-    Try(Transaction.correctlySpends(d.commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+    Try(Transaction.correctlySpends(d.metaCommitments.latest.fullySignedLocalCommitTx(keyManager).tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
       case Success(_) =>
         // we consider the funding tx as confirmed (even in the zero-conf case)
-        val commitments1 = d.commitments.copy(localFundingStatus = ConfirmedFundingTx(fundingTx))
-        val metaCommitments1 = d.metaCommitments.copy(commitments = commitments1.commitment :: Nil)
+        val metaCommitments1 = d.metaCommitments.modify(_.commitments.at(0).localFundingStatus).setTo(ConfirmedFundingTx(fundingTx))
         realScidStatus match {
           case _: RealScidStatus.Temporary => context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, fundingTx))
           case _ => () // zero-conf channel
         }
         val shortIds = createShortIds(d.channelId, realScidStatus)
-        val channelReady = createChannelReady(shortIds, commitments1)
+        val channelReady = createChannelReady(shortIds, metaCommitments1.params)
         d.deferred.foreach(self ! _)
         goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds) storing() sending channelReady
       case Failure(t) =>

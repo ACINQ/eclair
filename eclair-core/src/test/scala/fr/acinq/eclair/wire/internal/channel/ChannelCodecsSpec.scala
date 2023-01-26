@@ -68,7 +68,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       hex"304502210093fd7dfa3ef6cdf5b94cfadf83022be98062d53cd7097a73947453b210a481eb0220622e63a21b787ea7bb55f01ab6fe503fcb8ef4cb65adce7a264ae014403646fe01"
     )
 
-    val sigs = c.commitments
+    val sigs = c.metaCommitments.latest
       .localCommit
       .htlcTxsAndRemoteSigs
       .map(data => Scripts.der(data.remoteSig))
@@ -191,8 +191,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
     negotiating.closingTxProposed.flatten.foreach(tx => assert(tx.unsignedTx.toLocalOutput.isEmpty))
 
     val normal = channelDataCodec.decode(dataNormal.bits).require.value.asInstanceOf[DATA_NORMAL]
-    assert(normal.commitments.localCommit.htlcTxsAndRemoteSigs.nonEmpty)
-    normal.commitments.localCommit.htlcTxsAndRemoteSigs.foreach(tx => assert(tx.htlcTx.htlcId == 0))
+    assert(normal.metaCommitments.latest.localCommit.htlcTxsAndRemoteSigs.nonEmpty)
+    normal.metaCommitments.latest.localCommit.htlcTxsAndRemoteSigs.foreach(tx => assert(tx.htlcTx.htlcId == 0))
 
     val closingLocal = channelDataCodec.decode(dataClosingLocal.bits).require.value.asInstanceOf[DATA_CLOSING]
     assert(closingLocal.localCommitPublished.nonEmpty)
@@ -240,10 +240,10 @@ class ChannelCodecsSpec extends AnyFunSuite {
       val newnormal = channelDataCodec.decode(newbin.bits).require.value
       assert(newnormal == oldnormal)
       // make sure that we have stripped sigs from the transactions
-      assert(newnormal.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
-      assert(newnormal.commitments.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))
+      assert(newnormal.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
+      assert(newnormal.metaCommitments.latest.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))
       // make sure that we have extracted the remote sig of the local tx
-      Transactions.checkSig(newnormal.commitments.localCommit.commitTxAndRemoteSig.commitTx, newnormal.commitments.localCommit.commitTxAndRemoteSig.remoteSig, newnormal.commitments.remoteNodeId, TxOwner.Remote, newnormal.commitments.commitmentFormat)
+      Transactions.checkSig(newnormal.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx, newnormal.metaCommitments.latest.localCommit.commitTxAndRemoteSig.remoteSig, newnormal.metaCommitments.remoteNodeId, TxOwner.Remote, newnormal.metaCommitments.params.commitmentFormat)
     }
   }
 

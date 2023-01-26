@@ -197,10 +197,10 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     // we have a real scid at this stage, because this isn't a zero-conf channel
     val aliceIds = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds
     assert(aliceIds.real.isInstanceOf[RealScidStatus.Temporary])
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.channelFlags.announceChannel)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.params.channelFlags.announceChannel)
     val bobIds = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortIds
     assert(bobIds.real.isInstanceOf[RealScidStatus.Temporary])
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.channelFlags.announceChannel)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.params.channelFlags.announceChannel)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
     bob2alice.forward(alice)
@@ -245,7 +245,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("recv WatchFundingSpentTriggered (remote commit)") { f =>
     import f._
     // bob publishes his commitment tx
-    val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(tx)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
@@ -260,7 +260,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
 
   test("recv Error") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
@@ -270,7 +270,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
 
   test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! Error(ByteVector32.Zeroes, "funding double-spent")
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
@@ -288,7 +288,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("recv CMD_FORCECLOSE") { f =>
     import f._
     val sender = TestProbe()
-    val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)

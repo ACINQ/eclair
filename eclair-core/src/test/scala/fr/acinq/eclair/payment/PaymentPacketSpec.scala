@@ -698,7 +698,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
 object PaymentPacketSpec {
 
-  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat, channelFeatures: ChannelFeatures = ChannelFeatures()): Commitments = {
+  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat, channelFeatures: ChannelFeatures = ChannelFeatures()): MetaCommitments = {
     val channelReserve = testCapacity * 0.01
     val localParams = LocalParams(null, null, null, Long.MaxValue.msat, Some(channelReserve), null, null, 0, isInitiator = true, None, None, null)
     val remoteParams = RemoteParams(randomKey().publicKey, null, UInt64.MaxValue, Some(channelReserve), null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null, None)
@@ -708,7 +708,11 @@ object PaymentPacketSpec {
     val localChanges = LocalChanges(Nil, Nil, Nil)
     val remoteChanges = RemoteChanges(Nil, Nil, Nil)
     val channelFlags = ChannelFlags.Private
-    new Commitments(channelId, ChannelConfig.standard, channelFeatures, localParams, remoteParams, channelFlags, localCommit, remoteCommit, localChanges, remoteChanges, 0, 0, Map.empty, Right(randomKey().publicKey), LocalFundingStatus.UnknownFundingTx, RemoteFundingStatus.Locked, ShaChain.init) {
+    new MetaCommitments(
+      Params(channelId, ChannelConfig.standard, channelFeatures, localParams, remoteParams, channelFlags),
+      Common(localChanges, remoteChanges, 0, 0, 0, 0, Map.empty, Right(randomKey().publicKey), ShaChain.init),
+      List(Commitment(LocalFundingStatus.UnknownFundingTx, RemoteFundingStatus.Locked, localCommit, remoteCommit, None))
+    ) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }

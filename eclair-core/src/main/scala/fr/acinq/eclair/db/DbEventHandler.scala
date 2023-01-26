@@ -108,10 +108,10 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
     case e: ChannelStateChanged =>
       // NB: order matters!
       e match {
-        case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, Some(commitments: Commitments)) =>
+        case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, Some(commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
           val event = ChannelEvent.EventType.Created
-          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isInitiator, !commitments.announceChannel, event))
+          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.latest.capacity, commitments.params.localParams.isInitiator, !commitments.announceChannel, event))
           channelsDb.updateChannelMeta(channelId, event)
         case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
         case ChannelStateChanged(_, channelId, _, _, OFFLINE, SYNCING, _) =>
@@ -124,7 +124,9 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
     case e: ChannelClosed =>
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
       val event = ChannelEvent.EventType.Closed(e.closingType)
-      auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isInitiator, !e.commitments.announceChannel, event))
+      // We use the first known capacity: other commitments are most likely unconfirmed.
+      val capacity = e.commitments.commitments.head.capacity
+      auditDb.add(ChannelEvent(e.channelId, e.commitments.params.remoteParams.nodeId, capacity, e.commitments.params.localParams.isInitiator, !e.commitments.announceChannel, event))
       channelsDb.updateChannelMeta(e.channelId, event)
 
     case u: ChannelUpdateParametersChanged =>

@@ -39,21 +39,6 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, r
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 // @formatter:on
 
-// @formatter:off
-trait AbstractCommitments {
-  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
-  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
-  def localNodeId: PublicKey
-  def remoteNodeId: PublicKey
-  def capacity: Satoshi
-  def availableBalanceForReceive: MilliSatoshi
-  def availableBalanceForSend: MilliSatoshi
-  def originChannels: Map[Long, Origin]
-  def channelId: ByteVector32
-  def announceChannel: Boolean
-}
-// @formatter:on
-
 /**
  * about remoteNextCommitInfo:
  * we either:
@@ -74,7 +59,7 @@ case class Commitments(channelId: ByteVector32,
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        localFundingStatus: LocalFundingStatus,
                        remoteFundingStatus: RemoteFundingStatus,
-                       remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
+                       remotePerCommitmentSecrets: ShaChain) {
 
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
 

@@ -21,7 +21,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("on initialization create peers") {
     val nodeParams = Alice.nodeParams
     val (probe, peer) = (TestProbe(), TestProbe())
-    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
+    val remoteNodeId = ChannelCodecsSpec.normal.metaCommitments.remoteNodeId
     // If we have a channel with that remote peer, we will automatically reconnect.
 
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
@@ -78,14 +78,14 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("sync if no whitelist is defined and peer has channels") {
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
-    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
+    val remoteNodeId = ChannelCodecsSpec.normal.metaCommitments.remoteNodeId
     sendFeatures(nodeParams, List(ChannelCodecsSpec.normal), remoteNodeId, nodeParams.features.initFeatures(), expectedSync = true)
   }
 
   test("sync if no whitelist is defined and peer creates a channel") {
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
     val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
-    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
+    val remoteNodeId = ChannelCodecsSpec.normal.metaCommitments.remoteNodeId
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
     switchboard ! Switchboard.Init(Nil)
 
@@ -119,7 +119,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("don't sync if whitelist doesn't contain peer") {
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))
-    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
+    val remoteNodeId = ChannelCodecsSpec.normal.metaCommitments.remoteNodeId
     sendFeatures(nodeParams, List(ChannelCodecsSpec.normal), remoteNodeId, nodeParams.features.initFeatures(), expectedSync = false)
   }
 

@@ -121,9 +121,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     val (_, channelId_bc) = createChannels(f)(deepConfirm = deepConfirm)
 
     eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias) == bcScidAlias)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFlags.announceChannel == bcPublic)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].metaCommitments.params.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].metaCommitments.params.channelFeatures.features.contains(ScidAlias) == bcScidAlias)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].metaCommitments.params.channelFlags.announceChannel == bcPublic)
       if (deepConfirm) {
         assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
       } else if (bcZeroConf) {
@@ -262,8 +262,8 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     val (_, channelId_bc) = createChannels(f)(deepConfirm = false)
 
     eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ZeroConf))
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelFeatures.features.contains(ScidAlias))
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].metaCommitments.params.channelFeatures.features.contains(ZeroConf))
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].metaCommitments.params.channelFeatures.features.contains(ScidAlias))
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)
       assert(getRouterData(bob).privateChannels.values.exists(_.nodeId2 == carol.nodeParams.nodeId))
     }

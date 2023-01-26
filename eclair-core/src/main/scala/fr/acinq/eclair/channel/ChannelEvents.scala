@@ -52,16 +52,13 @@ case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, sh
 /** This event will be sent once a channel has been successfully opened and is ready to process payments. */
 case class ChannelOpened(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
 
-case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends ChannelEvent {
+case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: MetaCommitments) extends ChannelEvent {
   /**
    * We always include the local alias because we must always be able to route based on it.
    * However we only include the real scid if option_scid_alias is disabled, because we otherwise want to hide it.
    */
   def scidsForRouting: Seq[ShortChannelId] = {
-    val canUseRealScid = commitments match {
-      case c: Commitments => !c.channelFeatures.hasFeature(Features.ScidAlias)
-      case _ => false
-    }
+    val canUseRealScid = !commitments.params.channelFeatures.hasFeature(Features.ScidAlias)
     if (canUseRealScid) {
       shortIds.real.toOption.toSeq :+ shortIds.localAlias
     } else {
@@ -74,11 +71,11 @@ case class ChannelUpdateParametersChanged(channel: ActorRef, channelId: ByteVect
 
 case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey) extends ChannelEvent
 
-case class ChannelStateChanged(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, previousState: ChannelState, currentState: ChannelState, commitments_opt: Option[AbstractCommitments]) extends ChannelEvent
+case class ChannelStateChanged(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, previousState: ChannelState, currentState: ChannelState, commitments_opt: Option[MetaCommitments]) extends ChannelEvent
 
-case class ChannelSignatureSent(channel: ActorRef, commitments: Commitments) extends ChannelEvent
+case class ChannelSignatureSent(channel: ActorRef, commitments: MetaCommitments) extends ChannelEvent
 
-case class ChannelSignatureReceived(channel: ActorRef, commitments: Commitments) extends ChannelEvent
+case class ChannelSignatureReceived(channel: ActorRef, commitments: MetaCommitments) extends ChannelEvent
 
 case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, error: ChannelOpenError, isFatal: Boolean) extends ChannelEvent
 
@@ -88,10 +85,10 @@ case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey
 case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction) extends ChannelEvent
 
 // NB: this event is only sent when the channel is available.
-case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, commitments: AbstractCommitments) extends ChannelEvent
+case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, commitments: MetaCommitments) extends ChannelEvent
 
 case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: PersistentChannelData) extends ChannelEvent
 
 case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, refundAtBlock: BlockHeight) extends ChannelEvent
 
-case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: Commitments)
+case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: MetaCommitments)
