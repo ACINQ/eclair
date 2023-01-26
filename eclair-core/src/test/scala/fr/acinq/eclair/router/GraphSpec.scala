@@ -372,4 +372,19 @@ class GraphSpec extends AnyFunSuite {
         Graph.RoutingHeuristics.normalize(value = 9, min = 10, max = 1)
       )
   }
+
+  test("local channel is preferred") {
+    // Direct edge
+    val edgeAB = makeEdge(1L, a, b, 100 msat, 1000, capacity = 100000 sat, minHtlc = 1000 msat)
+    // Cheaper path
+    val edgeAC = makeEdge(2L, a, c, 1 msat, 3, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeCB = makeEdge(3L, c, b, 2 msat, 4, capacity = 100000 sat, minHtlc = 1000 msat)
+    val graph = DirectedGraph(Seq(edgeAB, edgeAC, edgeCB))
+
+    val paths = yenKshortestPaths(graph, a, b, 10000000 msat,
+      Set.empty, Set.empty, Set.empty, 1,
+      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      BlockHeight(714930), _ => true, includeLocalChannelCost = true)
+    assert(paths.head.path == Seq(edgeAB))
+  }
 }
