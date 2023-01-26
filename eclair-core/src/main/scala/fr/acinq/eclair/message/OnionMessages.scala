@@ -52,13 +52,13 @@ object OnionMessages {
     val intermediatePayloads = if (intermediateNodes.isEmpty) {
       Nil
     } else {
-      (intermediateNodes.tail.map(node => OutgoingNodeId(node.nodeId) :: Nil) :+ last)
-        .zip(intermediateNodes).map { case (tlvs, hop) => hop.padding.map(Padding).toList ++ tlvs }
+      (intermediateNodes.tail.map(node => Set(OutgoingNodeId(node.nodeId))) :+ last)
+        .zip(intermediateNodes).map { case (tlvs, hop) => hop.padding.map(Padding).toSet[RouteBlindingEncryptedDataTlv] ++ tlvs }
         .map(tlvs => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs)).require.bytes)
     }
     destination match {
       case Recipient(nodeId, pathId, padding) =>
-        val tlvs = padding.map(Padding).toList ++ pathId.map(PathId).toList
+        val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(padding.map(Padding), pathId.map(PathId)).flatten
         val lastPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs)).require.bytes
         Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload).route
       case BlindedPath(route) =>
@@ -87,7 +87,7 @@ object OnionMessages {
                    destination: Destination,
                    content: TlvStream[OnionMessagePayloadTlv]): Try[(PublicKey, OnionMessage)] = Try{
     val route = buildRoute(blindingSecret, intermediateNodes, destination)
-    val lastPayload = MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(EncryptedData(route.encryptedPayloads.last) +: content.records.toSeq, content.unknown)).require.bytes
+    val lastPayload = MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(content.records + EncryptedData(route.encryptedPayloads.last), content.unknown)).require.bytes
     val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(EncryptedData(encTlv))).require.bytes) :+ lastPayload
     val payloadSize = payloads.map(_.length + Sphinx.MacLength).sum
     val packetSize = if (payloadSize <= 1300) {

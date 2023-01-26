@@ -117,28 +117,28 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     val refs = Map(
       (hex"0023" ++ channelId ++ signature, hex"") -> FundingSigned(channelId, signature),
-      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 00", hex"") -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
-      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"") -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 00", hex"") -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Set.empty[FundingSignedTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
+      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"") -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Set.empty[FundingSignedTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
       (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value, hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
-      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 00", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
-      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 07 bbbbbbbbbbbbbb", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Nil, GenericTlv(tlvTag, hex"bbbbbbbbbbbbbb") :: Nil)),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 00", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Set.empty[ChannelReestablishTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 07 bbbbbbbbbbbbbb", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Set.empty[ChannelReestablishTlv], Set(GenericTlv(tlvTag, hex"bbbbbbbbbbbbbb")))),
 
       (hex"0084" ++ channelId ++ signature ++ hex"0000", hex"") -> CommitSig(channelId, signature, Nil),
-      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 00", hex"") -> CommitSig(channelId, signature, Nil, TlvStream[CommitSigTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
-      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 07 cccccccccccccc", hex"") -> CommitSig(channelId, signature, Nil, TlvStream[CommitSigTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 00", hex"") -> CommitSig(channelId, signature, Nil, TlvStream[CommitSigTlv](Set.empty[CommitSigTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 07 cccccccccccccc", hex"") -> CommitSig(channelId, signature, Nil, TlvStream[CommitSigTlv](Set.empty[CommitSigTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
       (hex"0085" ++ channelId ++ key.value ++ point.value, hex"") -> RevokeAndAck(channelId, key, point),
-      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 00", hex"") -> RevokeAndAck(channelId, key, point, TlvStream[RevokeAndAckTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
-      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 07 cccccccccccccc", hex"") -> RevokeAndAck(channelId, key, point, TlvStream[RevokeAndAckTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 00", hex"") -> RevokeAndAck(channelId, key, point, TlvStream[RevokeAndAckTlv](Set.empty[RevokeAndAckTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 07 cccccccccccccc", hex"") -> RevokeAndAck(channelId, key, point, TlvStream[RevokeAndAckTlv](Set.empty[RevokeAndAckTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
       (hex"0026" ++ channelId ++ hex"002a" ++ randomData, hex"") -> Shutdown(channelId, randomData),
-      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 00", hex"") -> Shutdown(channelId, randomData, TlvStream[ShutdownTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
-      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 07 cccccccccccccc", hex"") -> Shutdown(channelId, randomData, TlvStream[ShutdownTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 00", hex"") -> Shutdown(channelId, randomData, TlvStream[ShutdownTlv](Set.empty[ShutdownTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 07 cccccccccccccc", hex"") -> Shutdown(channelId, randomData, TlvStream[ShutdownTlv](Set.empty[ShutdownTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
       (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature, hex"") -> ClosingSigned(channelId, 123456789.sat, signature),
-      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 00", hex"") -> ClosingSigned(channelId, 123456789.sat, signature, TlvStream[ClosingSignedTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
-      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"") -> ClosingSigned(channelId, 123456789.sat, signature, TlvStream[ClosingSignedTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 00", hex"") -> ClosingSigned(channelId, 123456789.sat, signature, TlvStream[ClosingSignedTlv](Set.empty[ClosingSignedTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"") -> ClosingSigned(channelId, 123456789.sat, signature, TlvStream[ClosingSignedTlv](Set.empty[ClosingSignedTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
     )
 
     refs.foreach { case ((bin, remainder), msg) =>
@@ -170,11 +170,11 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       TxAddInput(channelId2, UInt64(0), tx2, 2, 0) -> hex"0042 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0000000000000000 0100 0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000 00000002 00000000",
       TxAddInput(channelId1, UInt64(561), tx1, 0, 0) -> hex"0042 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000231 00f7 020000000001014ade359c5deb7c1cde2e94f401854658f97d7fa31c17ce9a831db253120a0a410100000017160014eb9a5bd79194a23d19d6ec473c768fb74f9ed32cffffffff021ca408000000000017a914946118f24bb7b37d5e9e39579e4a411e70f5b6a08763e703000000000017a9143638b2602d11f934c04abc6adb1494f69d1f14af8702473044022059ddd943b399211e4266a349f26b3289979e29f9b067792c6cfa8cc5ae25f44602204d627a5a5b603d0562e7969011fb3d64908af90a3ec7c876eaa9baf61e1958af012102f5188df1da92ed818581c29778047800ed6635788aa09d9469f7d17628f7323300000000 00000000 00000000",
       TxAddOutput(channelId1, UInt64(1105), 2047 sat, hex"00149357014afd0ccd265658c9ae81efa995e771f472") -> hex"0043 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000451 00000000000007ff 0016 00149357014afd0ccd265658c9ae81efa995e771f472",
-      TxAddOutput(channelId1, UInt64(1105), 2047 sat, hex"00149357014afd0ccd265658c9ae81efa995e771f472", TlvStream(Nil, Seq(GenericTlv(UInt64(301), hex"2a")))) -> hex"0043 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000451 00000000000007ff 0016 00149357014afd0ccd265658c9ae81efa995e771f472 fd012d012a",
+      TxAddOutput(channelId1, UInt64(1105), 2047 sat, hex"00149357014afd0ccd265658c9ae81efa995e771f472", TlvStream(Set.empty[TxAddOutputTlv], Set(GenericTlv(UInt64(301), hex"2a")))) -> hex"0043 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000451 00000000000007ff 0016 00149357014afd0ccd265658c9ae81efa995e771f472 fd012d012a",
       TxRemoveInput(channelId2, UInt64(561)) -> hex"0044 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0000000000000231",
       TxRemoveOutput(channelId1, UInt64(1)) -> hex"0045 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000001",
       TxComplete(channelId1) -> hex"0046 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      TxComplete(channelId1, TlvStream(Nil, Seq(GenericTlv(UInt64(231), hex"deadbeef"), GenericTlv(UInt64(507), hex"")))) -> hex"0046 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa e704deadbeef fd01fb00",
+      TxComplete(channelId1, TlvStream(Set.empty[TxCompleteTlv], Set(GenericTlv(UInt64(231), hex"deadbeef"), GenericTlv(UInt64(507), hex"")))) -> hex"0046 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa e704deadbeef fd01fb00",
       TxSignatures(channelId1, tx2, Seq(ScriptWitness(Seq(hex"dead", hex"beef")), ScriptWitness(Seq(hex"", hex"01010101", hex"", hex"02")))) -> hex"0047 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa fc7aa8845f192959202c1b7ff704e7cbddded463c05e844676a94ccb4bed69f1 0002 00020002dead0002beef 0004 00000004010101010000000102",
       TxSignatures(channelId2, tx1, Nil) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000",
       TxInitRbf(channelId1, 8388607, FeeratePerKw(4000 sat)) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 007fffff 00000fa0",
@@ -208,11 +208,11 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       // non-empty upfront_shutdown_script
       defaultEncoded ++ hex"0004 01abcdef" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"01abcdef"))),
       // missing upfront_shutdown_script + unknown odd tlv records
-      defaultEncoded ++ hex"0302002a 050102" -> defaultOpen.copy(tlvStream = TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02")))),
+      defaultEncoded ++ hex"0302002a 050102" -> defaultOpen.copy(tlvStream = TlvStream(Set.empty[OpenChannelTlv], Set(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02")))),
       // empty upfront_shutdown_script + unknown odd tlv records
-      defaultEncoded ++ hex"0000 0302002a 050102" -> defaultOpen.copy(tlvStream = TlvStream(Seq(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)), Seq(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02")))),
+      defaultEncoded ++ hex"0000 0302002a 050102" -> defaultOpen.copy(tlvStream = TlvStream(Set[OpenChannelTlv](ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)), Set(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02")))),
       // non-empty upfront_shutdown_script + unknown odd tlv records
-      defaultEncoded ++ hex"0002 1234 0303010203" -> defaultOpen.copy(tlvStream = TlvStream(Seq(ChannelTlv.UpfrontShutdownScriptTlv(hex"1234")), Seq(GenericTlv(UInt64(3), hex"010203")))),
+      defaultEncoded ++ hex"0002 1234 0303010203" -> defaultOpen.copy(tlvStream = TlvStream(Set[OpenChannelTlv](ChannelTlv.UpfrontShutdownScriptTlv(hex"1234")), Set(GenericTlv(UInt64(3), hex"010203")))),
       // empty upfront_shutdown_script + default channel type
       defaultEncoded ++ hex"0000" ++ hex"0100" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard()))),
       // empty upfront_shutdown_script + unsupported channel type
@@ -310,9 +310,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultEncoded ++ hex"0000" ++ hex"0100" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard()))), // empty upfront_shutdown_script with channel type
       defaultEncoded ++ hex"0004 01abcdef" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"01abcdef"))), // non-empty upfront_shutdown_script
       defaultEncoded ++ hex"0004 01abcdef" ++ hex"01021000" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"01abcdef"), ChannelTlv.ChannelTypeTlv(ChannelTypes.StaticRemoteKey()))), // non-empty upfront_shutdown_script with channel type
-      defaultEncoded ++ hex"0000 0302002a 050102" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty) :: Nil, GenericTlv(UInt64(3), hex"002a") :: GenericTlv(UInt64(5), hex"02") :: Nil)), // empty upfront_shutdown_script + unknown odd tlv records
-      defaultEncoded ++ hex"0002 1234 0303010203" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(hex"1234") :: Nil, GenericTlv(UInt64(3), hex"010203") :: Nil)), // non-empty upfront_shutdown_script + unknown odd tlv records
-      defaultEncoded ++ hex"0303010203 05020123" -> defaultAccept.copy(tlvStream = TlvStream(Nil, GenericTlv(UInt64(3), hex"010203") :: GenericTlv(UInt64(5), hex"0123") :: Nil)) // no upfront_shutdown_script + unknown odd tlv records
+      defaultEncoded ++ hex"0000 0302002a 050102" -> defaultAccept.copy(tlvStream = TlvStream(Set[AcceptChannelTlv](ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)), Set(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02")))), // empty upfront_shutdown_script + unknown odd tlv records
+      defaultEncoded ++ hex"0002 1234 0303010203" -> defaultAccept.copy(tlvStream = TlvStream(Set[AcceptChannelTlv](ChannelTlv.UpfrontShutdownScriptTlv(hex"1234")), Set(GenericTlv(UInt64(3), hex"010203")))), // non-empty upfront_shutdown_script + unknown odd tlv records
+      defaultEncoded ++ hex"0303010203 05020123" -> defaultAccept.copy(tlvStream = TlvStream(Set.empty[AcceptChannelTlv], Set(GenericTlv(UInt64(3), hex"010203"), GenericTlv(UInt64(5), hex"0123")))) // no upfront_shutdown_script + unknown odd tlv records
     )
 
     for ((encoded, expected) <- testCases) {
@@ -348,7 +348,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       hex"0100000000000000000000000000000000000000000000000000000000000000 00000000000005dc 01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101" -> ClosingSigned(ByteVector32.One, 1500 sat, defaultSig),
       hex"0100000000000000000000000000000000000000000000000000000000000000 00000000000005dc 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 0110000000000000006400000000000007d0" -> ClosingSigned(ByteVector32.One, 1500 sat, ByteVector64.Zeroes, TlvStream(ClosingSignedTlv.FeeRange(100 sat, 2000 sat))),
       hex"0100000000000000000000000000000000000000000000000000000000000000 00000000000003e8 01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 0110000000000000006400000000000007d0" -> ClosingSigned(ByteVector32.One, 1000 sat, defaultSig, TlvStream(ClosingSignedTlv.FeeRange(100 sat, 2000 sat))),
-      hex"0100000000000000000000000000000000000000000000000000000000000000 0000000000000064 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 0110000000000000006400000000000003e8 030401020304" -> ClosingSigned(ByteVector32.One, 100 sat, ByteVector64.Zeroes, TlvStream(Seq(ClosingSignedTlv.FeeRange(100 sat, 1000 sat)), Seq(GenericTlv(UInt64(3), hex"01020304")))),
+      hex"0100000000000000000000000000000000000000000000000000000000000000 0000000000000064 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 0110000000000000006400000000000003e8 030401020304" -> ClosingSigned(ByteVector32.One, 100 sat, ByteVector64.Zeroes, TlvStream(Set[ClosingSignedTlv](ClosingSignedTlv.FeeRange(100 sat, 1000 sat)), Set(GenericTlv(UInt64(3), hex"01020304")))),
     )
 
     for ((encoded, expected) <- testCases) {
@@ -386,13 +386,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       QueryChannelRange(Block.RegtestGenesisBlock.blockId,
         BlockHeight(100000),
         1500,
-        TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL) :: Nil, unknownTlv :: Nil)),
+        TlvStream(Set[QueryChannelRangeTlv](QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)), Set(unknownTlv))),
       ReplyChannelRange(Block.RegtestGenesisBlock.blockId,
         BlockHeight(100000), 1500, 1,
         EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
         TlvStream(
-          EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))) :: EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3))) :: Nil,
-          unknownTlv :: Nil)
+          Set[ReplyChannelRangeTlv](EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))), EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3)))),
+          Set(unknownTlv))
       ),
       Ping(100, bin(10, 1)),
       Pong(bin(10, 1)),

@@ -64,7 +64,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultOrigin = Origin.LocalCold(UUID.randomUUID())
   val defaultExternalId = UUID.randomUUID().toString
   val defaultInvoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
-  val defaultRecipient = ClearRecipient(defaultInvoice, defaultAmountMsat, defaultExpiry, Nil)
+  val defaultRecipient = ClearRecipient(defaultInvoice, defaultAmountMsat, defaultExpiry, Set.empty)
   val defaultRouteParams = TestConstants.Alice.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
 
   def defaultRouteRequest(source: PublicKey, cfg: SendPaymentConfig): RouteRequest = RouteRequest(source, defaultRecipient, defaultRouteParams, paymentContext = Some(cfg.paymentContext))

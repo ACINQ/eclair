@@ -153,12 +153,12 @@ class TlvCodecsSpec extends AnyFunSuite {
   test("encode/decode tlv stream") {
     val testCases = Seq(
       (hex"", TlvStream[TestTlv]()),
-      (hex"21 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(33, hex"")))),
-      (hex"fd0201 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(513, hex"")))),
-      (hex"fd00fd 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(253, hex"")))),
-      (hex"fd00ff 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(255, hex"")))),
-      (hex"fe02000001 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(33554433, hex"")))),
-      (hex"ff0200000000000001 00", TlvStream[TestTlv](Nil, Seq(GenericTlv(144115188075855873L, hex"")))),
+      (hex"21 00", TlvStream[TestTlv](Set.empty[TestTlv], Set(GenericTlv(33, hex"")))),
+      (hex"fd0201 00", TlvStream[TestTlv](Set.empty[TestTlv], Set(GenericTlv(513, hex"")))),
+      (hex"fd00fd 00", TlvStream[TestTlv](Set.empty[TestTlv], Set(GenericTlv(253, hex"")))),
+      (hex"fd00ff 00", TlvStream[TestTlv](Set.empty[TestTlv], Set(GenericTlv(255, hex"")))),
+      (hex"fe02000001 00", TlvStream[TestTlv](Set.empty[TestTlv], Set(GenericTlv(33554433, hex"")))),
+      (hex"ff0200000000000001 00", TlvStream[TestTlv](Set.empty[TestTlv], Set(GenericTlv(144115188075855873L, hex"")))),
       (hex"01 00", TlvStream[TestTlv](TestType1(0))),
       (hex"01 01 01", TlvStream[TestTlv](TestType1(1))),
       (hex"01 01 2a", TlvStream[TestTlv](TestType1(42))),
@@ -173,7 +173,7 @@ class TlvCodecsSpec extends AnyFunSuite {
       (hex"03 31 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb 0000000000000231 0000000000000451", TlvStream[TestTlv](TestType3(PublicKey(hex"023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb"), 561, 1105))),
       (hex"fd00fe 02 0226", TlvStream[TestTlv](TestType254(550))),
       (hex"01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451", TlvStream[TestTlv](TestType1(561), TestType2(ShortChannelId(1105)), TestType3(PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 561, 1105))),
-      (hex"01020231 0b020451 fd00fe02002a", TlvStream[TestTlv](Seq(TestType1(561), TestType254(42)), Seq(GenericTlv(11, hex"0451"))))
+      (hex"01020231 0b020451 fd00fe02002a", TlvStream[TestTlv](Set[TestTlv](TestType1(561), TestType254(42)), Set(GenericTlv(11, hex"0451"))))
     )
 
     for ((bin, expected) <- testCases) {
@@ -279,14 +279,14 @@ class TlvCodecsSpec extends AnyFunSuite {
   }
 
   test("encode unordered tlv stream (codec should sort appropriately)") {
-    val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
+    val stream = TlvStream[TestTlv](Set[TestTlv](TestType254(42), TestType1(42)), Set(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
     assert(testTlvStreamCodec.encode(stream).require.toByteVector == hex"01012a 0b012b 0d012a fd00fe02002a")
     assert(lengthPrefixedTestTlvStreamCodec.encode(stream).require.toByteVector == hex"0f 01012a 0b012b 0d012a fd00fe02002a")
   }
 
   test("encode/decode custom even tlv records") {
-    val lowRangeEven = TlvStream[TestTlv](records = Nil, unknown = Seq(GenericTlv(124, hex"2a")))
-    val highRangeEven = TlvStream[TestTlv](records = Nil, unknown = Seq(GenericTlv(67876545678L, hex"2b")))
+    val lowRangeEven = TlvStream[TestTlv](records = Set.empty[TestTlv], unknown = Set(GenericTlv(124, hex"2a")))
+    val highRangeEven = TlvStream[TestTlv](records = Set.empty[TestTlv], unknown = Set(GenericTlv(67876545678L, hex"2b")))
 
     assert(testTlvStreamCodec.encode(lowRangeEven).isFailure)
     assert(testTlvStreamCodec.encode(highRangeEven).isSuccessful)
@@ -297,11 +297,11 @@ class TlvCodecsSpec extends AnyFunSuite {
   test("encode invalid tlv stream") {
     val testCases = Seq(
       // Unknown even type.
-      TlvStream[TestTlv](Nil, Seq(GenericTlv(42, hex"2a"))),
-      TlvStream[TestTlv](Seq(TestType1(561), TestType2(ShortChannelId(1105))), Seq(GenericTlv(42, hex"2a"))),
+      TlvStream[TestTlv](Set.empty[TestTlv], Set(GenericTlv(42, hex"2a"))),
+      TlvStream[TestTlv](Set[TestTlv](TestType1(561), TestType2(ShortChannelId(1105))), Set(GenericTlv(42, hex"2a"))),
       // Duplicate type.
       TlvStream[TestTlv](TestType1(561), TestType1(1105)),
-      TlvStream[TestTlv](Seq(TestType1(561)), Seq(GenericTlv(1, hex"0451")))
+      TlvStream[TestTlv](Set[TestTlv](TestType1(561)), Set(GenericTlv(1, hex"0451")))
     )
 
     for (stream <- testCases) {
@@ -311,7 +311,7 @@ class TlvCodecsSpec extends AnyFunSuite {
   }
 
   test("get optional TLV field") {
-    val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
+    val stream = TlvStream[TestTlv](Set[TestTlv](TestType254(42), TestType1(42)), Set(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
     assert(stream.get[TestType254].contains(TestType254(42)))
     assert(stream.get[TestType1].contains(TestType1(42)))
     assert(stream.get[TestType2].isEmpty)

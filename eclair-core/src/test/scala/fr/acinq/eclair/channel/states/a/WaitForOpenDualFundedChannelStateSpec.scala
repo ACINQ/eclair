@@ -136,7 +136,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
   test("recv OpenDualFundedChannel (invalid push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.NoPushAmount), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
-    bob ! open.copy(fundingAmount = 50_000 sat, tlvStream = open.tlvStream.copy(records = open.tlvStream.records.toSeq :+ ChannelTlv.PushAmountTlv(50_000_001 msat)))
+    bob ! open.copy(fundingAmount = 50_000 sat, tlvStream = open.tlvStream.copy(records = open.tlvStream.records + ChannelTlv.PushAmountTlv(50_000_001 msat)))
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, 50_000_001 msat, 50_000_000 msat).getMessage))
     awaitCond(bob.stateName == CLOSED)

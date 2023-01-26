@@ -50,7 +50,7 @@ object Sync {
     // we must ensure we don't send a new query_channel_range while another query is still in progress
     if (s.replacePrevious || !d.sync.contains(s.remoteNodeId)) {
       // ask for everything
-      val query = QueryChannelRange(s.chainHash, firstBlock = BlockHeight(0), numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toList))
+      val query = QueryChannelRange(s.chainHash, firstBlock = BlockHeight(0), numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toSet))
       log.info("sending query_channel_range={}", query)
       s.to ! query
 

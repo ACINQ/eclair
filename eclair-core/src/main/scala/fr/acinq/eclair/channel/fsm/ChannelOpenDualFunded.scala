@@ -109,7 +109,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
       val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
       val upfrontShutdownScript_opt = input.localParams.upfrontShutdownScript_opt.map(scriptPubKey => ChannelTlv.UpfrontShutdownScriptTlv(scriptPubKey))
-      val tlvs: Seq[OpenDualFundedChannelTlv] = Seq(
+      val tlvs: Set[OpenDualFundedChannelTlv] = Set(
         upfrontShutdownScript_opt,
         Some(ChannelTlv.ChannelTypeTlv(input.channelType)),
         input.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
@@ -151,7 +151,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val totalFundingAmount = open.fundingAmount + d.init.fundingContribution_opt.getOrElse(0 sat)
           val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, d.init.localParams.initFeatures, totalFundingAmount)
           val upfrontShutdownScript_opt = localParams.upfrontShutdownScript_opt.map(scriptPubKey => ChannelTlv.UpfrontShutdownScriptTlv(scriptPubKey))
-          val tlvs: Seq[AcceptDualFundedChannelTlv] = Seq(
+          val tlvs: Set[AcceptDualFundedChannelTlv] = Set(
             upfrontShutdownScript_opt,
             Some(ChannelTlv.ChannelTypeTlv(d.init.channelType)),
             d.init.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),

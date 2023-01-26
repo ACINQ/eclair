@@ -785,7 +785,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val paymentPreimage = randomBytes32()
     val paymentHash = Crypto.sha256(paymentPreimage)
     val paymentSecret = randomBytes32()
-    val Right(payload) = FinalPayload.Standard.validate(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, 0 msat), OnionPaymentPayloadTlv.KeySend(paymentPreimage))))
+    val Right(payload) = FinalPayload.Standard.validate(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, 0 msat), OnionPaymentPayloadTlv.KeySend(paymentPreimage)))
 
     assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
 
@@ -828,7 +828,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val paymentPreimage = randomBytes32()
     val paymentHash = Crypto.sha256(paymentPreimage)
     val paymentSecret = randomBytes32()
-    val Right(payload) = FinalPayload.Standard.validate(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, 0 msat), OnionPaymentPayloadTlv.KeySend(paymentPreimage))))
+    val Right(payload) = FinalPayload.Standard.validate(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountMsat), OnionPaymentPayloadTlv.OutgoingCltv(defaultExpiry), OnionPaymentPayloadTlv.PaymentData(paymentSecret, 0 msat), OnionPaymentPayloadTlv.KeySend(paymentPreimage)))
 
     assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
 

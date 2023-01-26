@@ -98,7 +98,7 @@ object Postman {
             randomKey(),
             intermediateNodes.map(OnionMessages.IntermediateNode(_)),
             destination,
-            TlvStream(replyRoute.map(OnionMessagePayloadTlv.ReplyPath).toSeq ++ messageContent.records, messageContent.unknown)) match {
+            TlvStream(replyRoute.map(OnionMessagePayloadTlv.ReplyPath).toSet ++ messageContent.records, messageContent.unknown)) match {
             case Failure(f) =>
               replyTo ! MessageFailed(f.getMessage)
             case Success((nextNodeId, message)) =>

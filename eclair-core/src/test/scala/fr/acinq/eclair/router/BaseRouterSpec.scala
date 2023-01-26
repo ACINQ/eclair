@@ -275,7 +275,7 @@ object BaseRouterSpec {
       PaymentBlindedRoute(blindedRoute, paymentInfo)
     })
     val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, 300 seconds, features, blindedRoutes)
-    val recipient = BlindedRecipient(invoice, amount, expiry, Nil)
+    val recipient = BlindedRecipient(invoice, amount, expiry, Set.empty)
     (invoice, recipient)
   }
 

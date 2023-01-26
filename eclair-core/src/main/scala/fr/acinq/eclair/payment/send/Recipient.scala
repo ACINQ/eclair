@@ -73,7 +73,7 @@ case class ClearRecipient(nodeId: PublicKey,
                           extraEdges: Seq[ExtraEdge] = Nil,
                           paymentMetadata_opt: Option[ByteVector] = None,
                           nextTrampolineOnion_opt: Option[OnionRoutingPacket] = None,
-                          customTlvs: Seq[GenericTlv] = Nil) extends Recipient {
+                          customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     ClearRecipient.validateRoute(nodeId, route).map(_ => {
       val finalPayload = nextTrampolineOnion_opt match {
@@ -86,7 +86,7 @@ case class ClearRecipient(nodeId: PublicKey,
 }
 
 object ClearRecipient {
-  def apply(invoice: Bolt11Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Seq[GenericTlv]): ClearRecipient = {
+  def apply(invoice: Bolt11Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): ClearRecipient = {
     ClearRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, invoice.paymentSecret, invoice.extraEdges, invoice.paymentMetadata, None, customTlvs)
   }
 
@@ -104,7 +104,7 @@ case class SpontaneousRecipient(nodeId: PublicKey,
                                 totalAmount: MilliSatoshi,
                                 expiry: CltvExpiry,
                                 preimage: ByteVector32,
-                                customTlvs: Seq[GenericTlv] = Nil) extends Recipient {
+                                customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
   override val features = Features.empty
   override val extraEdges = Nil
 
@@ -122,7 +122,7 @@ case class BlindedRecipient(nodeId: PublicKey,
                             totalAmount: MilliSatoshi,
                             expiry: CltvExpiry,
                             blindedHops: Seq[BlindedHop],
-                            customTlvs: Seq[GenericTlv] = Nil) extends Recipient {
+                            customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
   require(blindedHops.nonEmpty, "blinded routes must be provided")
 
   override val extraEdges = blindedHops.map { h =>
@@ -166,7 +166,7 @@ case class BlindedRecipient(nodeId: PublicKey,
 }
 
 object BlindedRecipient {
-  def apply(invoice: Bolt12Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Seq[GenericTlv]): BlindedRecipient = {
+  def apply(invoice: Bolt12Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
     val blindedHops = invoice.blindedPaths.map(
       path => {
         // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a
@@ -191,7 +191,7 @@ case class ClearTrampolineRecipient(invoice: Bolt11Invoice,
                                     expiry: CltvExpiry,
                                     trampolineHop: NodeHop,
                                     trampolinePaymentSecret: ByteVector32,
-                                    customTlvs: Seq[GenericTlv] = Nil) extends Recipient {
+                                    customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
   require(trampolineHop.nextNodeId == invoice.nodeId, "trampoline hop must end at the recipient")
 
   val trampolineNodeId = trampolineHop.nodeId

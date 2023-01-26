@@ -101,7 +101,7 @@ object Bolt12Invoice {
             paths: Seq[PaymentBlindedRoute]): Bolt12Invoice = {
     require(request.amount.nonEmpty || request.offer.amount.nonEmpty)
     val amount = request.amount.orElse(request.offer.amount.map(_ * request.quantity)).get
-    val tlvs: Seq[InvoiceTlv] = removeSignature(request.records).records.toSeq ++ Seq(
+    val tlvs: Set[InvoiceTlv] = removeSignature(request.records).records ++ Set(
       Some(InvoicePaths(paths.map(_.route))),
       Some(InvoiceBlindedPay(paths.map(_.paymentInfo))),
       Some(InvoiceCreatedAt(TimestampSecond.now())),
@@ -112,7 +112,7 @@ object Bolt12Invoice {
       Some(InvoiceNodeId(nodeKey.publicKey)),
     ).flatten
     val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, request.records.unknown), OfferCodecs.invoiceTlvCodec), nodeKey)
-    Bolt12Invoice(TlvStream(tlvs :+ Signature(signature), request.records.unknown))
+    Bolt12Invoice(TlvStream(tlvs + Signature(signature), request.records.unknown))
   }
 
   def validate(records: TlvStream[InvoiceTlv]): Either[InvalidTlvPayload, Bolt12Invoice] = {
