@@ -214,7 +214,7 @@ object TestConstants {
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
-      Script.write(Script.pay2wpkh(randomKey().publicKey)),
+      None,
       None,
       isInitiator = true,
       dualFunded = false,
@@ -363,7 +363,7 @@ object TestConstants {
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
-      Script.write(Script.pay2wpkh(randomKey().publicKey)),
+      None,
       None,
       isInitiator = false,
       dualFunded = false,

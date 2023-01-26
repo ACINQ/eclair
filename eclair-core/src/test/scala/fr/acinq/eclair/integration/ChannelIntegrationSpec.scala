@@ -21,9 +21,9 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, SatoshiLong, Script, Transaction}
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, ScriptFlags}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, computeBIP84Address}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel._
@@ -39,7 +39,6 @@ import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
-import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -62,19 +61,6 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
       sender.send(nodes("A").router, Router.GetChannelUpdates)
       sender.expectMsgType[Iterable[ChannelUpdate]].size == 2 * channels
     }, max = 60 seconds, interval = 1 second)
-  }
-
-  /**
-   * We currently use p2pkh script Helpers.getFinalScriptPubKey
-   */
-  def scriptPubKeyToAddress(scriptPubKey: ByteVector): String = Script.parse(scriptPubKey) match {
-    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
-      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash.toArray)
-    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
-      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash.toArray)
-    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash.toArray)
-    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash.toArray)
-    case _ => ???
   }
 
   def listReceivedByAddress(address: String, sender: TestProbe = TestProbe()): Seq[ByteVector32] = {
@@ -166,11 +152,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataC.commitments.commitmentFormat == commitmentFormat)
-    val finalAddressC = scriptPubKeyToAddress(dataC.commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressC = computeBIP84Address(nodes("C").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataF.commitments.commitmentFormat == commitmentFormat)
-    val finalAddressF = scriptPubKeyToAddress(dataF.commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressF = computeBIP84Address(nodes("F").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     ForceCloseFixture(sender, paymentSender, stateListenerC, stateListenerF, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
 
@@ -180,6 +166,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    val previouslyReceivedByF = listReceivedByAddress(finalAddressF, sender)
     // we then kill the connection between C and F
     disconnectCF(htlc.channelId, sender)
     // we then have C unilaterally close the channel (which will make F redeem the htlc onchain)
@@ -201,7 +188,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF)
-      receivedByF.size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
+      (receivedByF diff previouslyReceivedByF).size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -217,6 +204,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    val previouslyReceivedByF = listReceivedByAddress(finalAddressF, sender)
     // we then kill the connection between C and F
     disconnectCF(htlc.channelId, sender)
     // then we have F unilaterally close the channel
@@ -238,7 +226,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      receivedByF.size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
+      (receivedByF diff previouslyReceivedByF).size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -254,6 +242,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    val previouslyReceivedByF = listReceivedByAddress(finalAddressF, sender)
     // we then kill the connection between C and F; otherwise F would send an error message to C when it detects the htlc
     // timeout. When that happens C would broadcast his commit tx, and if it gets to the mempool before F's commit tx we
     // won't be testing the right scenario.
@@ -287,7 +276,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      receivedByF.size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
+      (receivedByF diff previouslyReceivedByF).size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -303,6 +292,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    val previouslyReceivedByF = listReceivedByAddress(finalAddressF, sender)
     // we then kill the connection between C and F to ensure the close can only be detected on-chain
     disconnectCF(htlc.channelId, sender)
     // we ask F to unilaterally close the channel
@@ -339,7 +329,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      receivedByF.size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
+      (receivedByF diff previouslyReceivedByF).size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
     generateBlocks(2, Some(minerAddress))
@@ -435,7 +425,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(outgoingHtlcExpiry.toLong.toInt - getBlockHeight().toInt + 1)
     // we retrieve C's default final address
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], commitmentsF.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey)
+    sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
+    val finalAddressC = computeBIP84Address(nodes("C").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
     val channelKeyPathF = keyManagerF.keyPath(commitmentsF.localParams, commitmentsF.channelConfig)
@@ -569,12 +560,11 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     // close that wumbo channel
     sender.send(funder.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val commitmentsC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments
-    val finalPubKeyScriptC = commitmentsC.localParams.defaultFinalScriptPubKey
     val fundingOutpoint = commitmentsC.commitInput.outPoint
-    sender.send(fundee.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
-    val finalPubKeyScriptF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey
+    val finalPubKeyScriptC = Script.write(Script.pay2wpkh(nodes("C").wallet.getP2wpkhPubkey(false)))
+    val finalPubKeyScriptF = Script.write(Script.pay2wpkh(nodes("F").wallet.getP2wpkhPubkey(false)))
 
-    fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, Some(finalPubKeyScriptF), None))
+    fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, None, None))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // we then wait for C and F to negotiate the closing fee
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)

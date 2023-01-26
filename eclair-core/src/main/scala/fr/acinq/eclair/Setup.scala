@@ -22,13 +22,14 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystem
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
+import fr.acinq.eclair.blockchain.bitcoind.{OnchainPubkeyRefresher, ZmqWatcher}
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.channel.fsm.Channel
@@ -262,7 +263,19 @@ class Setup(val datadir: File,
       })
       _ <- feeratesRetrieved.future
 
-      bitcoinClient = new BitcoinCoreClient(bitcoin)
+      finalPubkey = new AtomicReference[PublicKey](null)
+      pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
+      bitcoinClient = new BitcoinCoreClient(bitcoin) with OnchainPubkeyCache {
+        val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
+
+        override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
+          val key = finalPubkey.get()
+          if (renew) refresher ! OnchainPubkeyRefresher.Renew
+          key
+        }
+      }
+      initialPubkey <- bitcoinClient.getP2wpkhPubkey()
+      _ = finalPubkey.set(initialPubkey)
 
       // If we started funding a transaction and restarted before signing it, we may have utxos that stay locked forever.
       // We want to do something about it: we can unlock them automatically, or let the node operator decide what to do.
@@ -442,7 +455,7 @@ case class Kit(nodeParams: NodeParams,
                channelsListener: typed.ActorRef[ChannelsListener.Command],
                balanceActor: typed.ActorRef[BalanceActor.Command],
                postman: typed.ActorRef[Postman.Command],
-               wallet: OnChainWallet)
+               wallet: OnChainWallet with OnchainPubkeyCache)
 
 object Kit {
 

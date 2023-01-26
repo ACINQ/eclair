@@ -1,16 +1,18 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.bitcoin.scalacompat.{DeterministicWallet, Satoshi}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
-import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.Codecs.{channelConfigCodec, remoteParamsCodec}
+import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.Codecs.{channelConfigCodec, localParamsCodec, remoteParamsCodec}
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.channelDataCodec
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
+
+import scala.util.Random
 
 class ChannelCodecs4Spec extends AnyFunSuite {
 
@@ -35,6 +37,54 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     assert(channelConfigCodec.decode(hex"020001".bits).require.value == ChannelConfig(ChannelConfig.FundingPubKeyBasedChannelKeyPath))
   }
 
+  test("encode/decode optional channel reserve") {
+    val localParams = LocalParams(
+      randomKey().publicKey,
+      DeterministicWallet.KeyPath(Seq(42L)),
+      Satoshi(660),
+      MilliSatoshi(500000),
+      Some(Satoshi(15000)),
+      MilliSatoshi(1000),
+      CltvExpiryDelta(36),
+      50,
+      Random.nextBoolean(),
+      Some(hex"deadbeef"),
+      None,
+      Features().initFeatures())
+    val remoteParams = RemoteParams(
+      randomKey().publicKey,
+      Satoshi(500),
+      UInt64(100000),
+      Some(Satoshi(30000)),
+      MilliSatoshi(1500),
+      CltvExpiryDelta(144),
+      10,
+      randomKey().publicKey,
+      randomKey().publicKey,
+      randomKey().publicKey,
+      randomKey().publicKey,
+      randomKey().publicKey,
+      Features(),
+      None)
+
+    {
+      val localCodec = localParamsCodec(ChannelFeatures())
+      val remoteCodec = remoteParamsCodec(ChannelFeatures())
+      val decodedLocalParams = localCodec.decode(localCodec.encode(localParams).require).require.value
+      val decodedRemoteParams = remoteCodec.decode(remoteCodec.encode(remoteParams).require).require.value
+      assert(decodedLocalParams == localParams)
+      assert(decodedRemoteParams == remoteParams)
+    }
+    {
+      val localCodec = localParamsCodec(ChannelFeatures(Features.DualFunding))
+      val remoteCodec = remoteParamsCodec(ChannelFeatures(Features.DualFunding))
+      val decodedLocalParams = localCodec.decode(localCodec.encode(localParams).require).require.value
+      val decodedRemoteParams = remoteCodec.decode(remoteCodec.encode(remoteParams).require).require.value
+      assert(decodedLocalParams == localParams.copy(requestedChannelReserve_opt = None))
+      assert(decodedRemoteParams == remoteParams.copy(requestedChannelReserve_opt = None))
+    }
+  }
+
   test("encode/decode optional shutdown script") {
     val codec = remoteParamsCodec(ChannelFeatures())
     val remoteParams = RemoteParams(
@@ -53,7 +103,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       Features(ChannelRangeQueries -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory),
       None)
     assert(codec.decodeValue(codec.encode(remoteParams).require).require == remoteParams)
-    val remoteParams1 = remoteParams.copy(shutdownScript = Some(ByteVector.fromValidHex("deadbeef")))
+    val remoteParams1 = remoteParams.copy(upfrontShutdownScript_opt = Some(ByteVector.fromValidHex("deadbeef")))
     assert(codec.decodeValue(codec.encode(remoteParams1).require).require == remoteParams1)
 
     val dataWithoutRemoteShutdownScript = normal.modify(_.metaCommitments.params.remoteParams).setTo(remoteParams)

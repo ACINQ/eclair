@@ -15,20 +15,14 @@
  */
 package fr.acinq.eclair.wire.internal.channel.version3
 
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, Satoshi}
-import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.channelDataCodec
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{BlockHeight, RealShortChannelId, ShortChannelId}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.{ByteVector, HexStringSyntax}
-
-import scala.util.Random
+import scodec.bits.HexStringSyntax
 
 class ChannelCodecs3Spec extends AnyFunSuite {
 
@@ -56,54 +50,6 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     val encoded = channelConfigCodec.encode(ChannelConfig(declaredOptions)).require
     val decoded = channelConfigCodec.decode(encoded).require.value
     assert(decoded.options == declaredOptions)
-  }
-
-  test("encode/decode optional channel reserve") {
-    val localParams = LocalParams(
-      randomKey().publicKey,
-      DeterministicWallet.KeyPath(Seq(42L)),
-      Satoshi(660),
-      MilliSatoshi(500000),
-      Some(Satoshi(15000)),
-      MilliSatoshi(1000),
-      CltvExpiryDelta(36),
-      50,
-      Random.nextBoolean(),
-      hex"deadbeef",
-      None,
-      Features().initFeatures())
-    val remoteParams = RemoteParams(
-      randomKey().publicKey,
-      Satoshi(500),
-      UInt64(100000),
-      Some(Satoshi(30000)),
-      MilliSatoshi(1500),
-      CltvExpiryDelta(144),
-      10,
-      randomKey().publicKey,
-      randomKey().publicKey,
-      randomKey().publicKey,
-      randomKey().publicKey,
-      randomKey().publicKey,
-      Features(),
-      None)
-
-    {
-      val localCodec = localParamsCodec(ChannelFeatures())
-      val remoteCodec = remoteParamsCodec(ChannelFeatures())
-      val decodedLocalParams = localCodec.decode(localCodec.encode(localParams).require).require.value
-      val decodedRemoteParams = remoteCodec.decode(remoteCodec.encode(remoteParams).require).require.value
-      assert(decodedLocalParams == localParams)
-      assert(decodedRemoteParams == remoteParams)
-    }
-    {
-      val localCodec = localParamsCodec(ChannelFeatures(Features.DualFunding))
-      val remoteCodec = remoteParamsCodec(ChannelFeatures(Features.DualFunding))
-      val decodedLocalParams = localCodec.decode(localCodec.encode(localParams).require).require.value
-      val decodedRemoteParams = remoteCodec.decode(remoteCodec.encode(remoteParams).require).require.value
-      assert(decodedLocalParams == localParams.copy(requestedChannelReserve_opt = None))
-      assert(decodedRemoteParams == remoteParams.copy(requestedChannelReserve_opt = None))
-    }
   }
 
   test("backward compatibility DATA_NORMAL_COMPAT_02_Codec") {

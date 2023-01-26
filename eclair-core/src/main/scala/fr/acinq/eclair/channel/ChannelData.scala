@@ -535,6 +535,7 @@ final case class DATA_NEGOTIATING(metaCommitments: MetaCommitments,
 }
 final case class DATA_CLOSING(metaCommitments: MetaCommitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing
+                              finalScriptPubKey: ByteVector, // where to send all on-chain funds
                               mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[ClosingTx] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
@@ -562,7 +563,7 @@ case class LocalParams(nodeId: PublicKey,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
                        isInitiator: Boolean,
-                       defaultFinalScriptPubKey: ByteVector,
+                       upfrontShutdownScript_opt: Option[ByteVector],
                        walletStaticPaymentBasepoint: Option[PublicKey],
                        initFeatures: Features[InitFeature])
 
@@ -582,7 +583,7 @@ case class RemoteParams(nodeId: PublicKey,
                         delayedPaymentBasepoint: PublicKey,
                         htlcBasepoint: PublicKey,
                         initFeatures: Features[InitFeature],
-                        shutdownScript: Option[ByteVector])
+                        upfrontShutdownScript_opt: Option[ByteVector])
 
 case class ChannelFlags(announceChannel: Boolean) {
   override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"

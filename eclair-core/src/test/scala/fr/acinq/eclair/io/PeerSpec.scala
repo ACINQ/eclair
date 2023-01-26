@@ -541,7 +541,7 @@ class PeerSpec extends FixtureSpec {
     assert(init.channelType == ChannelTypes.StaticRemoteKey())
     assert(!init.dualFunded)
     assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
-    assert(init.localParams.defaultFinalScriptPubKey == Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get)))
+    assert(init.localParams.upfrontShutdownScript_opt.isEmpty)
   }
 
   test("compute max-htlc-value-in-flight based on funding amount", Tag("max-htlc-value-in-flight-percent")) { f =>
