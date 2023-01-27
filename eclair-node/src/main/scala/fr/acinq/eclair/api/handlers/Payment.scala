@@ -99,14 +99,6 @@ trait Payment {
     }
   }
 
-  val payOfferStatus: Route = postRequest("payofferstatus") { implicit t =>
-    formFields("id".as[UUID]) { id =>
-      complete(eclairApi.payOfferStatus(Left(id)))
-    } ~ formFields(offerFormParam) { offer =>
-      complete(eclairApi.payOfferStatus(Right(offer)))
-    }
-  }
-
-  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ payOffer ~ payOfferStatus
+  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ payOffer
 
 }

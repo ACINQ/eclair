@@ -63,7 +63,6 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
     offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, 1, routeParams))
-    val Processing(uuid) = probe.expectMessageType[Processing]
     val Postman.SendMessage(_, Recipient(recipientId, _, _), _, message, replyTo, _) = postman.expectMessageType[Postman.SendMessage]
     assert(recipientId == merchantKey.publicKey)
     assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
@@ -78,15 +77,10 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val paymentId = UUID.randomUUID()
     send.replyTo ! paymentId
+    val Paying(uuid) = probe.expectMessageType[Paying]
+    assert(uuid == paymentId)
 
     probe.expectTerminated(offerPayment)
-
-    val attempts = nodeParams.db.offers.getAttemptsToPayOffer(offer)
-    assert(attempts.size == 1)
-    assert(attempts.head.attemptId == uuid)
-    assert(attempts.head.request == invoiceRequest)
-    assert(attempts.head.invoice.contains(invoice))
-    assert(attempts.head.paymentId_opt.contains(paymentId))
   }
 
   test("no reply to invoice request with retries") { f =>
@@ -97,25 +91,17 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
     offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, 1, routeParams))
-    val Processing(uuid) = probe.expectMessageType[Processing]
-    val Postman.SendMessage(_, Recipient(recipientId, _, _), _, message, replyTo, _) = postman.expectMessageType[Postman.SendMessage]
-    assert(recipientId == merchantKey.publicKey)
-    assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
-    val Right(invoiceRequest) = InvoiceRequest.validate(message.get[OnionMessagePayloadTlv.InvoiceRequest].get.tlvs)
-
-    replyTo ! Postman.NoReply
-    postman.expectMessageType[Postman.SendMessage]
-    replyTo ! Postman.NoReply
+    for (i <- 1 to nodeParams.onionMessageConfig.maxAttempts) {
+      val Postman.SendMessage(_, Recipient(recipientId, _, _), _, message, replyTo, _) = postman.expectMessageType[Postman.SendMessage]
+      assert(recipientId == merchantKey.publicKey)
+      assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
+      val Right(invoiceRequest) = InvoiceRequest.validate(message.get[OnionMessagePayloadTlv.InvoiceRequest].get.tlvs)
+      assert(invoiceRequest.isValidFor(offer))
+      replyTo ! Postman.NoReply
+    }
+    probe.expectMessage(NoInvoice)
     paymentInitiator.expectNoMessage()
-
     probe.expectTerminated(offerPayment)
-
-    val attempts = nodeParams.db.offers.getAttemptsToPayOffer(offer)
-    assert(attempts.size == 1)
-    assert(attempts.head.attemptId == uuid)
-    assert(attempts.head.request == invoiceRequest)
-    assert(attempts.head.invoice.isEmpty)
-    assert(attempts.head.paymentId_opt.isEmpty)
   }
 
   test("invalid invoice") { f =>
@@ -126,7 +112,6 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
     offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, 1, routeParams))
-    val Processing(uuid) = probe.expectMessageType[Processing]
     val Postman.SendMessage(_, Recipient(recipientId, _, _), _, message, replyTo, _) = postman.expectMessageType[Postman.SendMessage]
     assert(recipientId == merchantKey.publicKey)
     assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
@@ -136,15 +121,10 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val paymentRoute = PaymentBlindedRoute(RouteBlinding.create(randomKey(), Seq(merchantKey.publicKey), Seq(hex"7777")).route, PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty))
     val invoice = Bolt12Invoice(invoiceRequest, preimage, randomKey(), 1 minute, Features.empty, Seq(paymentRoute))
     replyTo ! Postman.Response(FinalPayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
+
+    probe.expectMessageType[InvalidInvoice]
     paymentInitiator.expectNoMessage()
 
     probe.expectTerminated(offerPayment)
-
-    val attempts = nodeParams.db.offers.getAttemptsToPayOffer(offer)
-    assert(attempts.size == 1)
-    assert(attempts.head.attemptId == uuid)
-    assert(attempts.head.request == invoiceRequest)
-    assert(attempts.head.invoice.contains(invoice))
-    assert(attempts.head.paymentId_opt.isEmpty)
   }
 }

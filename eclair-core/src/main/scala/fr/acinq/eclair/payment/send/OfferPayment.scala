@@ -29,7 +29,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
-import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol.{OfferTypes, OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, TimestampSecond, randomKey}
 
 import java.util.UUID
@@ -42,7 +42,7 @@ object OfferPayment {
 
   case class UnsupportedFeatures(features: Features[InvoiceFeature]) extends Exception(s"Unsupported features: $features") with Failure
 
-  case class UnsupportedChains(chains: Seq[ByteVector32]) extends Exception(s"Unsupported chainsf: ${chains.mkString(",")}") with Failure
+  case class UnsupportedChains(chains: Seq[ByteVector32]) extends Exception(s"Unsupported chains: ${chains.mkString(",")}") with Failure
 
   case class ExpiredOffer(expiryDate: TimestampSecond) extends Exception(s"expired since $expiryDate") with Failure
 
@@ -52,7 +52,11 @@ object OfferPayment {
 
   case class InvalidSignature(signature: ByteVector64) extends Exception(s"Invalid signature: ${signature.toHex}") with Failure
 
-  case class Processing(uuid: UUID) extends Result
+  case object NoInvoice extends Exception(s"Could not fetch invoice") with Failure
+
+  case class InvalidInvoice(tlvs: TlvStream[OfferTypes.InvoiceTlv]) extends Exception(s"Received invalid invoice: $tlvs") with Failure
+
+  case class Paying(uuid: UUID) extends Result
 
   sealed trait Command
 
@@ -107,12 +111,9 @@ object OfferPayment {
             replyTo ! AmountInsufficient(offer.amount.get * quantity)
             Behaviors.stopped
           } else {
-            val uuid = UUID.randomUUID()
             val payerKey = randomKey()
             val request = InvoiceRequest(offer, amount, quantity, nodeParams.features.bolt12Features(), payerKey, nodeParams.chainHash)
-            nodeParams.db.offers.addAttemptToPayOffer(offer, request, payerKey, uuid)
-            replyTo ! Processing(uuid)
-            sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, uuid, nodeParams.onionMessageConfig.maxAttempts, sendPaymentConfig)
+            sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, nodeParams.onionMessageConfig.maxAttempts, sendPaymentConfig)
           }
       })
   }
@@ -125,7 +126,7 @@ object OfferPayment {
                          context: ActorContext[Command],
                          request: InvoiceRequest,
                          payerKey: PrivateKey,
-                         uuid: UUID,
+                         replyTo: typed.ActorRef[Result],
                          remainingAttempts: Int,
                          sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
     val destination = request.offer.contactInfo match {
@@ -139,7 +140,7 @@ object OfferPayment {
     val intermediateNodes = Nil
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
     postman ! SendMessage(intermediateNodes, destination, Some((nodeParams.nodeId +: intermediateNodes).reverse), messageContent, context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
-    waitForInvoice(nodeParams, postman, paymentInitiator, request, payerKey, uuid, remainingAttempts - 1, sendPaymentConfig)
+    waitForInvoice(nodeParams, postman, paymentInitiator, request, payerKey, replyTo, remainingAttempts - 1, sendPaymentConfig)
   }
 
   def waitForInvoice(nodeParams: NodeParams,
@@ -147,39 +148,35 @@ object OfferPayment {
                      paymentInitiator: ActorRef,
                      request: InvoiceRequest,
                      payerKey: PrivateKey,
-                     uuid: UUID,
+                     replyTo: typed.ActorRef[Result],
                      remainingAttempts: Int,
                      sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
     Behaviors.setup(context =>
       Behaviors.receiveMessagePartial {
         case WrappedMessageResponse(Postman.Response(payload)) if payload.records.get[OnionMessagePayloadTlv.Invoice].nonEmpty =>
-          Bolt12Invoice.validate(payload.records.get[OnionMessagePayloadTlv.Invoice].get.tlvs) match {
+          val tlvs = payload.records.get[OnionMessagePayloadTlv.Invoice].get.tlvs
+          Bolt12Invoice.validate(tlvs) match {
             case Right(invoice) if invoice.isValidFor(request) =>
               val recipientAmount = invoice.amount
               paymentInitiator ! SendPaymentToNode(context.messageAdapter(paymentResultWrapper).toClassic, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams)
-              waitForPaymentId(nodeParams, uuid, invoice)
-            case Right(invoice) =>
-              nodeParams.db.offers.addOfferInvoice(uuid, Some(invoice), None)
-              Behaviors.stopped
-            case Left(_) =>
-              nodeParams.db.offers.addOfferInvoice(uuid, None, None)
+              waitForPaymentId(replyTo)
+            case _ =>
+              replyTo ! InvalidInvoice(tlvs)
               Behaviors.stopped
           }
-        case WrappedMessageResponse(x) if remainingAttempts > 0 =>
+        case WrappedMessageResponse(_) if remainingAttempts > 0 =>
           // We didn't get an invoice, let's retry.
-          sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, uuid, remainingAttempts, sendPaymentConfig)
-        case WrappedMessageResponse(x) =>
-          nodeParams.db.offers.addOfferInvoice(uuid, None, None)
+          sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, remainingAttempts, sendPaymentConfig)
+        case WrappedMessageResponse(_) =>
+          replyTo ! NoInvoice
           Behaviors.stopped
       })
   }
 
-  def waitForPaymentId(nodeParams: NodeParams,
-                       uuid: UUID,
-                       invoice: Bolt12Invoice): Behavior[Command] = {
+  def waitForPaymentId(replyTo: typed.ActorRef[Result]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedPaymentId(paymentId) =>
-        nodeParams.db.offers.addOfferInvoice(uuid, Some(invoice), Some(paymentId))
+        replyTo ! Paying(paymentId)
         Behaviors.stopped
     }
   }

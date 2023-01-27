@@ -68,8 +68,6 @@ case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
 case class SendOnionMessageResponsePayload(encodedReplyPath: Option[String], replyPath: Option[Sphinx.RouteBlinding.BlindedRoute], unknownTlvs: Map[String, ByteVector])
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
-
-case class PayOfferResponse(invoiceRequest: Option[InvoiceRequest], payerKey: Option[PrivateKey], invoice: Option[Bolt12Invoice], paymentId: Option[UUID], outgoingPayment: Seq[OutgoingPayment])
 // @formatter:on
 
 object SignedMessage {
@@ -168,8 +166,6 @@ trait Eclair {
   def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 
   def payOffer(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
-
-  def payOfferStatus(id: Either[UUID, Offer])(implicit timeout: Timeout): Future[Seq[PayOfferResponse]]
 
   def stop(): Future[Unit]
 }
@@ -611,22 +607,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.paymentInitiator))
     offerPayment.ask((ref: typed.ActorRef[OfferPayment.Result]) => OfferPayment.PayOffer(ref, offer, amount, quantity, sendPaymentConfig)).flatMap {
       case f: OfferPayment.Failure => Future.failed(f)
-      case OfferPayment.Processing(uuid) => Future.successful(uuid)
+      case OfferPayment.Paying(uuid) => Future.successful(uuid)
     }
-  }
-
-  override def payOfferStatus(id: Either[UUID, Offer])(implicit timeout: Timeout): Future[Seq[PayOfferResponse]] = {
-    Future {
-      id match {
-        case Left(uuid) => appKit.nodeParams.db.offers.getAttemptToPayOffer(uuid).toSeq
-        case Right(offer) => appKit.nodeParams.db.offers.getAttemptsToPayOffer(offer)
-      }
-    }.flatMap(attempts => Future.sequence(attempts.map(payOfferAttempt => {
-      payOfferAttempt.paymentId_opt match {
-        case Some(paymentId) => sentInfo(Left(paymentId)).map(outgoingPayments => PayOfferResponse(Some(payOfferAttempt.request), Some(payOfferAttempt.payerKey), payOfferAttempt.invoice, Some(paymentId), outgoingPayments))
-        case None => Future.successful(PayOfferResponse(Some(payOfferAttempt.request), Some(payOfferAttempt.payerKey), payOfferAttempt.invoice, None, Nil))
-      }
-    })))
   }
 
   override def stop(): Future[Unit] = {
