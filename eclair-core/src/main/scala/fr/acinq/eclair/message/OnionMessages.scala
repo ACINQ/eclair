@@ -62,8 +62,7 @@ object OnionMessages {
         val (nextNodeId, nextBlinding) = RouteBlindingEncryptedDataCodecs.decode(originKey.get, route.blindingKey, route.blindedNodes.head.encryptedPayload) match {
           case Left(invalidData) => throw new Exception(invalidData.toString)
           case Right(decoded) =>
-            (decoded.tlvs.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId,
-              decoded.tlvs.get[RouteBlindingEncryptedDataTlv.NextBlinding].map(_.blinding).getOrElse(decoded.nextBlinding))
+            (decoded.tlvs.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId, decoded.nextBlinding)
         }
         Sphinx.RouteBlinding.BlindedRoute(nextNodeId, nextBlinding, route.blindedNodes.tail)
       case Recipient(nodeId, pathId, padding) =>

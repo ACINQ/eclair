@@ -82,6 +82,8 @@ class MessageIntegrationSpec extends IntegrationSpec {
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
 
     val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodes("A").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId)), Recipient(nodes("B").nodeParams.nodeId, None)).get
+    assert(blindedRoute.introductionNodeId == nodes("A").nodeParams.nodeId)
+
     alice.sendOnionMessage(Nil, Right(blindedRoute), None, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
@@ -154,7 +156,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(r.finalPayload.records.unknown.toSet == Set(GenericTlv(UInt64(113), hex"010203"), GenericTlv(UInt64(117), hex"0102")))
+    assert(r.finalPayload.records.unknown == Set(GenericTlv(UInt64(113), hex"010203"), GenericTlv(UInt64(117), hex"0102")))
   }
 
   test("send very large message with hop") {
@@ -171,7 +173,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(r.finalPayload.records.unknown.toSet == Set(GenericTlv(UInt64(135), bytes)))
+    assert(r.finalPayload.records.unknown == Set(GenericTlv(UInt64(135), bytes)))
   }
 
   test("send too large message with hop") {
@@ -280,7 +282,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(r.finalPayload.records.unknown.toSet == Set(GenericTlv(UInt64(113), hex"010203"), GenericTlv(UInt64(117), hex"0102")))
+    assert(r.finalPayload.records.unknown == Set(GenericTlv(UInt64(113), hex"010203"), GenericTlv(UInt64(117), hex"0102")))
   }
 
   test("channel relay with no-relay") {
@@ -358,7 +360,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.finalPayload.pathId_opt.isEmpty)
-    assert(r.finalPayload.records.unknown.toSet == Set(GenericTlv(UInt64(115), hex"")))
+    assert(r.finalPayload.records.unknown == Set(GenericTlv(UInt64(115), hex"")))
   }
 
 }
