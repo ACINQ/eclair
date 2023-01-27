@@ -211,6 +211,17 @@ private[channel] object ChannelCodecs4 {
 
     val spentMapCodec: Codec[Map[OutPoint, Transaction]] = mapCodec(outPointCodec, txCodec)
 
+    private val fundingParamsCodec: Codec[InteractiveTxParams] = (
+      ("channelId" | bytes32) ::
+        ("isInitiator" | bool8) ::
+        ("localAmount" | satoshi) ::
+        ("remoteAmount" | satoshi) ::
+        ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
+        ("lockTime" | uint32) ::
+        ("dustLimit" | satoshi) ::
+        ("targetFeerate" | feeratePerKw) ::
+        ("requireConfirmedInputs" | (("forLocal" | bool8) :: ("forRemote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
+
     private val remoteTxAddInputCodec: Codec[RemoteTxAddInput] = (
       ("serialId" | uint64) ::
         ("outPoint" | outPointCodec) ::
@@ -244,7 +255,8 @@ private[channel] object ChannelCodecs4 {
 
     private val dualFundedUnconfirmedFundingTxCodec: Codec[DualFundedUnconfirmedFundingTx] = (
       ("sharedTx" | signedSharedTransactionCodec) ::
-        ("createdAt" | blockHeight)).as[DualFundedUnconfirmedFundingTx]
+        ("createdAt" | blockHeight) ::
+        ("fundingParams" | fundingParamsCodec)).as[DualFundedUnconfirmedFundingTx]
 
     val fundingTxStatusCodec: Codec[LocalFundingStatus] = discriminated[LocalFundingStatus].by(uint8)
       .typecase(0x01, optional(bool8, txCodec).as[SingleFundedUnconfirmedFundingTx])
@@ -289,17 +301,6 @@ private[channel] object ChannelCodecs4 {
         ("remoteCommit" | remoteCommitCodec) ::
         ("nextRemoteCommit_opt" | optional(bool8, remoteCommitCodec))
       ).as[Commitment]
-
-    private val fundingParamsCodec: Codec[InteractiveTxParams] = (
-      ("channelId" | bytes32) ::
-        ("isInitiator" | bool8) ::
-        ("localAmount" | satoshi) ::
-        ("remoteAmount" | satoshi) ::
-        ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
-        ("lockTime" | uint32) ::
-        ("dustLimit" | satoshi) ::
-        ("targetFeerate" | feeratePerKw) ::
-        ("requireConfirmedInputs" | (("forLocal" | bool8) :: ("forRemote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
 
     val metaCommitmentsCodec: Codec[MetaCommitments] = (
       ("params" | paramsCodec) ::
@@ -352,7 +353,6 @@ private[channel] object ChannelCodecs4 {
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_02_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("metaCommitments" | metaCommitmentsCodec) ::
-        ("fundingParams" | fundingParamsCodec) ::
         ("localPushAmount" | millisatoshi) ::
         ("remotePushAmount" | millisatoshi) ::
         ("waitingSince" | blockHeight) ::

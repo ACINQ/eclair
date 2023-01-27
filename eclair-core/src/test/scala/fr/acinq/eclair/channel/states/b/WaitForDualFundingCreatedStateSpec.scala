@@ -101,8 +101,8 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(bobData.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding))
-    assert(bobData.latestFundingTx.isInstanceOf[PartiallySignedSharedTransaction])
-    val fundingTxId = bobData.latestFundingTx.asInstanceOf[PartiallySignedSharedTransaction].txId
+    assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
+    val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].txId
     assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
 
     // Alice receives Bob's signatures and sends her own signatures.
@@ -113,8 +113,8 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(aliceData.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding))
-    assert(aliceData.latestFundingTx.isInstanceOf[FullySignedSharedTransaction])
-    assert(aliceData.latestFundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
+    assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
+    assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
 
   test("complete interactive-tx protocol (zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -147,8 +147,8 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(bobData.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding))
-    assert(bobData.latestFundingTx.isInstanceOf[PartiallySignedSharedTransaction])
-    val fundingTxId = bobData.latestFundingTx.asInstanceOf[PartiallySignedSharedTransaction].tx.buildUnsignedTx().txid
+    assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
+    val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].tx.buildUnsignedTx().txid
     assert(bob2blockchain.expectMsgType[WatchPublished].txId == fundingTxId)
     bob2blockchain.expectNoMessage(100 millis)
 
@@ -160,8 +160,8 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(aliceData.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding))
-    assert(aliceData.latestFundingTx.isInstanceOf[FullySignedSharedTransaction])
-    assert(aliceData.latestFundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
+    assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
+    assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
 
   test("complete interactive-tx protocol (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
