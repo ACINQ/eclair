@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
@@ -319,7 +320,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
   }
 
   private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
-  private val openChannelInterceptor = context.spawnAnonymous(OpenChannelInterceptor(context.self.toTyped, nodeParams, wallet, pendingChannelsRateLimiter))
 
   onTransition {
     case _ -> (DISCONNECTED | CONNECTED) => reconnectionTask ! Peer.Transition(stateData, nextStateData)
@@ -381,6 +381,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
     val msg = Warning(unknownChannelId, "unknown channel")
     self ! Peer.OutgoingMessage(msg, peerConnection)
   }
+
+  // resume the openChannelInterceptor in case of failure, we always want the open channel request to succeed or fail
+  private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
 
   def handleOpenChannel(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], d: ConnectedData): Unit = {
     open match {
