@@ -302,6 +302,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
         stay()
 
+      case Event(RelayUnknownMessage(unknownMsg: UnknownMessage), d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
+        logMessage(unknownMsg, "OUT")
+        d.peerConnection forward unknownMsg
+        stay()
+
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
         stay()
@@ -569,6 +574,8 @@ object Peer {
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
 
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
+
+  case class RelayUnknownMessage(unknownMessage: UnknownMessage)
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {

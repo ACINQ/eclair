@@ -20,7 +20,7 @@ import akka.actor.Status.Failure
 import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Status}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
@@ -656,6 +656,15 @@ class PeerSpec extends FixtureSpec {
     val probe = TestProbe()
     peer ! RelayOnionMessage(messageId, msg, Some(probe.ref.toTyped))
     probe.expectMsg(MessageRelay.Disconnected(messageId))
+  }
+
+  test("send UnknownMessage to peer if tag registered by a plugin") { f =>
+    import f._
+    val probe = TestProbe()
+    val unknownMessage = UnknownMessage(60003, ByteVector32.One)
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    probe.send(peer, Peer.RelayUnknownMessage(unknownMessage))
+    peerConnection.expectMsgType[UnknownMessage]
   }
 }
 

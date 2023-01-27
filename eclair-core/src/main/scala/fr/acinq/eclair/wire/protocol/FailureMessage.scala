@@ -24,7 +24,7 @@ import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelFlagsCodec, 
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, UInt64}
 import scodec.bits.ByteVector
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, Err}
 
 /**
  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
@@ -94,7 +94,10 @@ object FailureMessageCodecs {
   val NODE = 0x2000
   val UPDATE = 0x1000
 
-  val channelUpdateCodecWithType = meteredLightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
+  val channelUpdateCodecWithType = meteredLightningMessageCodec.narrow[ChannelUpdate]({
+    case f: ChannelUpdate => Attempt.successful(f)
+    case _ => Attempt.failure(Err("not a ChanelUpdate message"))
+  }, g => g)
 
   // NB: for historical reasons some implementations were including/omitting the message type (258 for ChannelUpdate)
   // this codec supports both versions for decoding, and will encode with the message type
