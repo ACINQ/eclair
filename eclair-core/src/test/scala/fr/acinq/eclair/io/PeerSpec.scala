@@ -91,16 +91,16 @@ class PeerSpec extends FixtureSpec {
       }
     }
 
-    object FakeLimiter extends Actor {
+    object MockLimiter extends Actor {
       def receive: Receive = {
         case msg: PendingChannelsRateLimiter.AddOrRejectChannel => msg.replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
       }
     }
-    val fakeLimiter = system.actorOf(Props(FakeLimiter)).ref
+    val mockLimiter = system.actorOf(Props(MockLimiter)).ref
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, fakeLimiter))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, mockLimiter))
 
-    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, fakeLimiter)
+    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, mockLimiter)
   }
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
