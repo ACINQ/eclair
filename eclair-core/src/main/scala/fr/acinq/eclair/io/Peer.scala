@@ -319,7 +319,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
   }
 
   private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
-  private val openChannelInterceptor = context.spawn(OpenChannelInterceptor(context.self.toTyped, nodeParams, wallet, pendingChannelsRateLimiter), "open-channel-interceptor")
+  private val openChannelInterceptor = context.spawnAnonymous(OpenChannelInterceptor(context.self.toTyped, nodeParams, wallet, pendingChannelsRateLimiter))
 
   onTransition {
     case _ -> (DISCONNECTED | CONNECTED) => reconnectionTask ! Peer.Transition(stateData, nextStateData)
