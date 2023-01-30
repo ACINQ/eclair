@@ -28,7 +28,6 @@ import scodec.{Attempt, DecodeResult}
 
 import scala.annotation.tailrec
 import scala.concurrent.duration.FiniteDuration
-import scala.util.Try
 
 object OnionMessages {
 
@@ -42,34 +41,54 @@ object OnionMessages {
   case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None) extends Destination
   // @formatter:on
 
-  def buildRoute(blindingSecret: PrivateKey,
-                 intermediateNodes: Seq[IntermediateNode],
-                 destination: Destination): Sphinx.RouteBlinding.BlindedRoute = {
-    val last = destination match {
-      case Recipient(nodeId, _, _) => OutgoingNodeId(nodeId) :: Nil
-      case BlindedPath(Sphinx.RouteBlinding.BlindedRoute(nodeId, blindingKey, _)) => OutgoingNodeId(nodeId) :: NextBlinding(blindingKey) :: Nil
-    }
-    val intermediatePayloads = if (intermediateNodes.isEmpty) {
+  private def buildIntermediatePayloads(intermediateNodes: Seq[IntermediateNode], nextTlvs: Set[RouteBlindingEncryptedDataTlv]): Seq[ByteVector] = {
+    if (intermediateNodes.isEmpty) {
       Nil
     } else {
-      (intermediateNodes.tail.map(node => Set(OutgoingNodeId(node.nodeId))) :+ last)
+      (intermediateNodes.tail.map(node => Set(OutgoingNodeId(node.nodeId))) :+ nextTlvs)
         .zip(intermediateNodes).map { case (tlvs, hop) => hop.padding.map(Padding).toSet[RouteBlindingEncryptedDataTlv] ++ tlvs }
         .map(tlvs => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs)).require.bytes)
     }
+  }
+
+  def buildRoute(blindingSecret: PrivateKey,
+                 intermediateNodes: Seq[IntermediateNode],
+                 recipient: Recipient): Sphinx.RouteBlinding.BlindedRoute = {
+    val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, Set(OutgoingNodeId(recipient.nodeId)))
+    val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(recipient.padding.map(Padding), recipient.pathId.map(PathId)).flatten
+    val lastPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs)).require.bytes
+    Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ recipient.nodeId, intermediatePayloads :+ lastPayload).route
+  }
+
+  private def buildRouteFrom(originKey: PrivateKey,
+                             blindingSecret: PrivateKey,
+                             intermediateNodes: Seq[IntermediateNode],
+                             destination: Destination): Option[Sphinx.RouteBlinding.BlindedRoute] = {
     destination match {
-      case Recipient(nodeId, pathId, padding) =>
-        val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(padding.map(Padding), pathId.map(PathId)).flatten
-        val lastPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs)).require.bytes
-        Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload).route
-      case BlindedPath(route) =>
-        if (intermediateNodes.isEmpty) {
-          route
-        } else {
-          val routePrefix = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads).route
-          Sphinx.RouteBlinding.BlindedRoute(routePrefix.introductionNodeId, routePrefix.blindingKey, routePrefix.blindedNodes ++ route.blindedNodes)
+      case recipient: Recipient => Some(buildRoute(blindingSecret, intermediateNodes, recipient))
+      case BlindedPath(route) if route.introductionNodeId == originKey.publicKey =>
+        RouteBlindingEncryptedDataCodecs.decode(originKey, route.blindingKey, route.blindedNodes.head.encryptedPayload) match {
+          case Left(_) => None
+          case Right(decoded) =>
+            decoded.tlvs.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId] match {
+              case None => None
+              case Some(RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId)) =>
+                Some(Sphinx.RouteBlinding.BlindedRoute(nextNodeId, decoded.nextBlinding, route.blindedNodes.tail))
+            }
         }
+      case BlindedPath(route) if intermediateNodes.isEmpty => Some(route)
+      case BlindedPath(route) =>
+        val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, Set(OutgoingNodeId(route.introductionNodeId), NextBlinding(route.blindingKey)))
+        val routePrefix = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads).route
+        Some(Sphinx.RouteBlinding.BlindedRoute(routePrefix.introductionNodeId, routePrefix.blindingKey, routePrefix.blindedNodes ++ route.blindedNodes))
     }
   }
+
+  // @formatter:off
+  sealed trait BuildMessageError
+  case class MessageTooLarge(payloadSize: Long) extends BuildMessageError
+  case class InvalidDestination(destination: Destination) extends BuildMessageError
+  // @formatter:on
 
   /**
    * Builds an encrypted onion containing a message that should be relayed to the destination.
@@ -81,28 +100,32 @@ object OnionMessages {
    * @param content           List of TLVs to send to the recipient of the message
    * @return The node id to send the onion to and the onion containing the message
    */
-  def buildMessage(sessionKey: PrivateKey,
+  def buildMessage(nodeKey: PrivateKey,
+                   sessionKey: PrivateKey,
                    blindingSecret: PrivateKey,
                    intermediateNodes: Seq[IntermediateNode],
                    destination: Destination,
-                   content: TlvStream[OnionMessagePayloadTlv]): Try[(PublicKey, OnionMessage)] = Try{
-    val route = buildRoute(blindingSecret, intermediateNodes, destination)
-    val lastPayload = MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(content.records + EncryptedData(route.encryptedPayloads.last), content.unknown)).require.bytes
-    val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(EncryptedData(encTlv))).require.bytes) :+ lastPayload
-    val payloadSize = payloads.map(_.length + Sphinx.MacLength).sum
-    val packetSize = if (payloadSize <= 1300) {
-      1300
-    } else if (payloadSize <= 32768) {
-      32768
-    } else if (payloadSize > 65432) {
-      // A payload of size 65432 corresponds to a total lightning message size of 65535.
-      throw new Exception(s"Message is too large: payloadSize=$payloadSize")
-    } else {
-      payloadSize.toInt
+                   content: TlvStream[OnionMessagePayloadTlv]): Either[BuildMessageError, (PublicKey, OnionMessage)] = {
+    buildRouteFrom(nodeKey, blindingSecret, intermediateNodes, destination) match {
+      case None => Left(InvalidDestination(destination))
+      case Some(route) =>
+        val lastPayload = MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(content.records + EncryptedData(route.encryptedPayloads.last), content.unknown)).require.bytes
+        val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(EncryptedData(encTlv))).require.bytes) :+ lastPayload
+        val payloadSize = payloads.map(_.length + Sphinx.MacLength).sum
+        val packetSize = if (payloadSize <= 1300) {
+          1300
+        } else if (payloadSize <= 32768) {
+          32768
+        } else if (payloadSize > 65432) {
+          // A payload of size 65432 corresponds to a total lightning message size of 65535.
+          return Left(MessageTooLarge(payloadSize))
+        } else {
+          payloadSize.toInt
+        }
+        // Since we are setting the packet size based on the payload, the onion creation should never fail (hence the `.get`).
+        val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None).get
+        Right((route.introductionNodeId, OnionMessage(route.blindingKey, packet)))
     }
-    // Since we are setting the packet size based on the payload, the onion creation should never fail (hence the `.get`).
-    val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None).get
-    (route.introductionNodeId, OnionMessage(route.blindingKey, packet))
   }
 
   // @formatter:off

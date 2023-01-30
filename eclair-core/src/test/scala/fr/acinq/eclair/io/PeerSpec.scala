@@ -642,7 +642,7 @@ class PeerSpec extends FixtureSpec {
   test("reply to relay request") { f =>
     import f._
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
-    val Success((_, msg)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
+    val Right((_, msg)) = buildMessage(nodeParams.privateKey, randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
     val messageId = randomBytes32()
     val probe = TestProbe()
     peer ! RelayOnionMessage(messageId, msg, Some(probe.ref.toTyped))
@@ -651,7 +651,7 @@ class PeerSpec extends FixtureSpec {
 
   test("reply to relay request disconnected") { f =>
     import f._
-    val Success((_, msg)) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
+    val Right((_, msg)) = buildMessage(nodeParams.privateKey, randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
     val messageId = randomBytes32()
     val probe = TestProbe()
     peer ! RelayOnionMessage(messageId, msg, Some(probe.ref.toTyped))

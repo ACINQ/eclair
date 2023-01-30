@@ -22,14 +22,13 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.{MessageRelay, Switchboard}
-import fr.acinq.eclair.message.OnionMessages.{Destination, ReceiveMessage}
+import fr.acinq.eclair.message.OnionMessages.Destination
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{randomBytes32, randomKey}
+import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
-import scala.util.{Failure, Success}
 
 object Postman {
   // @formatter:off
@@ -62,9 +61,9 @@ object Postman {
   case class MessageFailed(reason: String) extends MessageStatus
   // @formatter:on
 
-  def apply(switchboard: ActorRef[Switchboard.RelayMessage]): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, switchboard: ActorRef[Switchboard.RelayMessage]): Behavior[Command] = {
     Behaviors.setup(context => {
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ReceiveMessage](r => WrappedMessage(r.finalPayload)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[OnionMessages.ReceiveMessage](r => WrappedMessage(r.finalPayload)))
 
       val relayMessageStatusAdapter = context.messageAdapter[MessageRelay.Status](SendingStatus)
 
@@ -94,14 +93,15 @@ object Postman {
             OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop)
           })
           OnionMessages.buildMessage(
+            nodeParams.privateKey,
             randomKey(),
             randomKey(),
             intermediateNodes.map(OnionMessages.IntermediateNode(_)),
             destination,
             TlvStream(replyRoute.map(OnionMessagePayloadTlv.ReplyPath).toSet ++ messageContent.records, messageContent.unknown)) match {
-            case Failure(f) =>
-              replyTo ! MessageFailed(f.getMessage)
-            case Success((nextNodeId, message)) =>
+            case Left(failure) =>
+              replyTo ! MessageFailed(failure.toString)
+            case Right((nextNodeId, message)) =>
               if (replyPath.isEmpty) { // not expecting reply
                 sendStatusTo += (messageId -> replyTo)
               } else { // expecting reply
