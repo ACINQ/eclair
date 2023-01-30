@@ -70,7 +70,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject channel open if timeout waiting for plugin to respond") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), temporaryChannelId, openChannel.fundingSatoshis, openChannel.channelFlags, openChannel.channelType_opt, connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived]
@@ -80,7 +80,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("continue channel open if pending channels rate limiter and interceptor plugin accept it") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), temporaryChannelId, openChannel.fundingSatoshis, openChannel.channelFlags, openChannel.channelType_opt, connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(temporaryChannelId, defaultParams)
@@ -98,7 +98,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     // no open channel interceptor plugin registered
     val wallet = new DummyOnChainWallet()
     val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, TestConstants.Alice.nodeParams, wallet, pendingChannelsRateLimiter.ref, 10 millis))
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), temporaryChannelId, openChannel.fundingSatoshis, openChannel.channelFlags, openChannel.channelType_opt, connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectNoMessage(10 millis)
@@ -108,7 +108,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if rejected by the plugin") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), temporaryChannelId, openChannel.fundingSatoshis, openChannel.channelFlags, openChannel.channelType_opt, connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! RejectOpenChannel(temporaryChannelId, Error(temporaryChannelId, "rejected"))
@@ -118,7 +118,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if pending channels rate limit reached") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), temporaryChannelId, openChannel.fundingSatoshis, openChannel.channelFlags, openChannel.channelType_opt, connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.ChannelRateLimited
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rate limit reached"))
@@ -127,16 +127,16 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if concurrent request in progress") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), temporaryChannelId, openChannel.fundingSatoshis, openChannel.channelFlags, openChannel.channelType_opt, connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
 
     // waiting for rate limiter to respond to the first request, do not accept any other requests
-    openChannelInterceptor ! openChannelNonInitiator.copy(temporaryChannelId = ByteVector32.One)
+    openChannelInterceptor ! openChannelNonInitiator.copy(open = Left(openChannel.copy(temporaryChannelId = ByteVector32.One)))
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].channelId == ByteVector32.One)
 
     // waiting for plugin to respond to the first request, do not accept any other requests
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-    openChannelInterceptor ! openChannelNonInitiator.copy(temporaryChannelId = ByteVector32.One)
+    openChannelInterceptor ! openChannelNonInitiator.copy(open = Left(openChannel.copy(temporaryChannelId = ByteVector32.One)))
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].channelId == ByteVector32.One)
 
     // original request accepted after plugin accepts it

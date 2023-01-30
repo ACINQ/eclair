@@ -160,7 +160,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None =>
-            handleOpenChannel(Left(open), d)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
             stay()
           case Some(_) =>
             log.warning("ignoring open_channel with duplicate temporaryChannelId={}", open.temporaryChannelId)
@@ -170,7 +170,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
-            handleOpenChannel(Right(open), d)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
             stay()
           case None =>
             log.info("rejecting open_channel2: dual funding is not supported")
@@ -384,15 +384,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
 
   // resume the openChannelInterceptor in case of failure, we always want the open channel request to succeed or fail
   private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
-
-  def handleOpenChannel(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], d: ConnectedData): Unit = {
-    open match {
-      case Left(o) =>
-        openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, open, o.temporaryChannelId, o.fundingSatoshis, o.channelFlags, o.channelType_opt, d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
-      case Right(o) =>
-        openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, open, o.temporaryChannelId, o.fundingAmount, o.channelFlags, o.channelType_opt, d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
-    }
-  }
 
   def stopPeer(): State = {
     log.info("removing peer from db")

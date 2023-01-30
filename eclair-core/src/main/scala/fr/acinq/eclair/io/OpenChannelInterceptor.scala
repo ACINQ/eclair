@@ -76,7 +76,12 @@ object OpenChannelInterceptor {
   sealed trait Command
 
   sealed trait WaitForRequestCommands extends Command
-  case class OpenChannelNonInitiator(remoteNodeId: PublicKey, open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], temporaryChannelId: ByteVector32, fundingAmount: Satoshi, channelFlags: ChannelFlags, channelType_opt: Option[ChannelType], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], peerConnection: ActorRef[Any]) extends WaitForRequestCommands
+  case class OpenChannelNonInitiator(remoteNodeId: PublicKey, open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], peerConnection: ActorRef[Any]) extends WaitForRequestCommands {
+    val temporaryChannelId: ByteVector32 = open.fold(_.temporaryChannelId, _.temporaryChannelId)
+    val fundingAmount: Satoshi = open.fold(_.fundingSatoshis, _.fundingAmount)
+    val channelFlags: ChannelFlags = open.fold(_.channelFlags, _.channelFlags)
+    val channelType_opt: Option[ChannelType] = open.fold(_.channelType_opt, _.channelType_opt)
+  }
   case class OpenChannelInitiator(replyTo: ActorRef[Any], remoteNodeId: PublicKey, open: Peer.OpenChannel, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], peerConnection: ActorRef[Any]) extends WaitForRequestCommands
 
   private sealed trait CheckRateLimitsCommands extends Command
@@ -218,7 +223,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       timers.startSingleTimer(PluginTimeout, pluginTimeout)
       val pluginResponseAdapter = context.messageAdapter[InterceptOpenChannelResponse](PluginOpenChannelResponse)
       val defaultParams = DefaultParams(localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs)
-      plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, nonInitiator, nonInitiator.temporaryChannelId, defaultParams)
+      plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, nonInitiator, defaultParams)
       receiveCommandMessage[QueryPluginCommands](context, "queryPlugin") {
         case PluginOpenChannelResponse(pluginResponse: AcceptOpenChannel) =>
           val localParams1 = updateLocalParams(localParams, pluginResponse.defaultParams)
