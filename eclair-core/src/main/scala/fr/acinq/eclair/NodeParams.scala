@@ -84,10 +84,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogThreshold: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration],
-                      channelOpenerWhitelist: Set[PublicKey],
-                      maxPendingChannelsPerPeer: Int,
-                      maxTotalPendingChannelsPrivateNodes: Int) {
+                      purgeInvoicesInterval: Option[FiniteDuration]) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -448,9 +445,9 @@ object NodeParams extends Logging {
     val asyncPaymentHoldTimeoutBlocks = config.getInt("relay.async-payments.hold-timeout-blocks")
     require(asyncPaymentHoldTimeoutBlocks >= (asyncPaymentCancelSafetyBeforeTimeoutBlocks + expiryDelta).toInt, "relay.async-payments.hold-timeout-blocks must not be less than relay.async-payments.cancel-safety-before-timeout-blocks + channel.expiry-delta-blocks; otherwise it will have no effect")
 
-    val channelOpenerWhitelist: Set[PublicKey] = config.getStringList("channel-opener-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
-    val maxPendingChannelsPerPeer = config.getInt("max-pending-channels-per-peer")
-    val maxTotalPendingChannelsPrivateNodes = config.getInt("max-total-pending-channels-private-nodes")
+    val channelOpenerWhitelist: Set[PublicKey] = config.getStringList("channel.channel-open-limits.channel-opener-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+    val maxPendingChannelsPerPeer = config.getInt("channel.channel-open-limits.max-pending-channels-per-peer")
+    val maxTotalPendingChannelsPrivateNodes = config.getInt("channel.channel-open-limits.max-total-pending-channels-private-nodes")
 
     NodeParams(
       nodeKeyManager = nodeKeyManager,
@@ -488,7 +485,10 @@ object NodeParams extends Logging {
         maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
         unhandledExceptionStrategy = unhandledExceptionStrategy,
         revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS),
-        requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding")
+        requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding"),
+        channelOpenerWhitelist = channelOpenerWhitelist,
+        maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
+        maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
@@ -566,10 +566,7 @@ object NodeParams extends Logging {
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval,
-      channelOpenerWhitelist = channelOpenerWhitelist,
-      maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
-      maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes
+      purgeInvoicesInterval = purgeInvoicesInterval
     )
   }
 }

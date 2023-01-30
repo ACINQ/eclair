@@ -126,6 +126,9 @@ object TestConstants {
         minFundingPrivateSatoshis = 900 sat,
         maxFundingSatoshis = 16777215 sat,
         requireConfirmedInputsForDualFunding = false,
+        channelOpenerWhitelist = Set.empty,
+        maxPendingChannelsPerPeer = 99,
+        maxTotalPendingChannelsPrivateNodes = 99
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
@@ -208,10 +211,7 @@ object TestConstants {
         relayPolicy = RelayAll,
         timeout = 1 minute
       ),
-      purgeInvoicesInterval = None,
-      channelOpenerWhitelist = Set.empty,
-      maxPendingChannelsPerPeer = 99,
-      maxTotalPendingChannelsPrivateNodes = 99
+      purgeInvoicesInterval = None
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -278,6 +278,9 @@ object TestConstants {
         minFundingPrivateSatoshis = 900 sat,
         maxFundingSatoshis = 16777215 sat,
         requireConfirmedInputsForDualFunding = false,
+        channelOpenerWhitelist = Set.empty,
+        maxPendingChannelsPerPeer = 99,
+        maxTotalPendingChannelsPrivateNodes = 99
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
@@ -360,10 +363,7 @@ object TestConstants {
         relayPolicy = RelayAll,
         timeout = 1 minute
       ),
-      purgeInvoicesInterval = None,
-      channelOpenerWhitelist = Set.empty,
-      maxPendingChannelsPerPeer = 99,
-      maxTotalPendingChannelsPrivateNodes = 99
+      purgeInvoicesInterval = None
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

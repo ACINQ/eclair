@@ -41,7 +41,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
 
   override protected def withFixture(test: OneArgTest): Outcome = {
     val router = TestProbe[Any]()
-    val nodeParams = TestConstants.Alice.nodeParams.copy(maxPendingChannelsPerPeer = 1, maxTotalPendingChannelsPrivateNodes = 2)
+    val nodeParams = TestConstants.Alice.nodeParams.copy(channelConf = TestConstants.Alice.nodeParams.channelConf.copy(maxPendingChannelsPerPeer = 1, maxTotalPendingChannelsPrivateNodes = 2))
     val probe = TestProbe[PendingChannelsRateLimiter.Response]()
 
     withFixture(test.toNoArgTest(FixtureParam(router, nodeParams, probe)))
@@ -64,7 +64,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   test("accept channel open if remote node id on channel opener white list") { f =>
     import f._
 
-    val nodeParams = TestConstants.Alice.nodeParams.copy(channelOpenerWhitelist = Set(remoteNodeId))
+    val nodeParams = TestConstants.Alice.nodeParams.copy(channelConf = TestConstants.Alice.nodeParams.channelConf.copy(channelOpenerWhitelist = Set(remoteNodeId)))
     val whiteLitLimiter = spawnPendingChannelsRateLimiter(nodeParams, router, Seq())
 
     whiteLitLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, temporaryChannelId)
