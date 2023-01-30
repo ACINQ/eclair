@@ -64,7 +64,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
 
     val replyPath = finalPayload.replyPath_opt.get
-    val Success((_, reply)) = buildMessage(recipientKey, randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
+    val Right((_, reply)) = buildMessage(recipientKey, randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val ReceiveMessage(replyPayload) = OnionMessages.process(ourKey, reply)
 
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
@@ -107,7 +107,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     messageRecipient.expectMessage(NoReply)
 
     val replyPath = finalPayload.replyPath_opt.get
-    val Success((_, reply)) = buildMessage(recipientKey, randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
+    val Right((_, reply)) = buildMessage(recipientKey, randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val ReceiveMessage(replyPayload) = OnionMessages.process(ourKey, reply)
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
 
@@ -137,7 +137,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val recipientKey = randomKey()
 
-    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None)).get
+    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None))
     postman ! SendMessage(Nil, BlindedPath(blindedRoute), None, TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]

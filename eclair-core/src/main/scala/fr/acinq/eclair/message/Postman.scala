@@ -29,7 +29,6 @@ import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
-import scala.util.{Failure, Success}
 
 object Postman {
   // @formatter:off
@@ -91,7 +90,7 @@ object Postman {
           val replyRoute = replyPath.map(replyHops => {
             val intermediateHops = replyHops.dropRight(1).map(OnionMessages.IntermediateNode(_))
             val lastHop = OnionMessages.Recipient(replyHops.last, Some(messageId))
-            OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop).get
+            OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop)
           })
           OnionMessages.buildMessage(
             nodeParams.privateKey,
@@ -100,9 +99,9 @@ object Postman {
             intermediateNodes.map(OnionMessages.IntermediateNode(_)),
             destination,
             TlvStream(replyRoute.map(OnionMessagePayloadTlv.ReplyPath).toSet ++ messageContent.records, messageContent.unknown)) match {
-            case Failure(f) =>
-              replyTo ! MessageFailed(f.getMessage)
-            case Success((nextNodeId, message)) =>
+            case Left(failure) =>
+              replyTo ! MessageFailed(failure.toString)
+            case Right((nextNodeId, message)) =>
               if (replyPath.isEmpty) { // not expecting reply
                 sendStatusTo += (messageId -> replyTo)
               } else { // expecting reply

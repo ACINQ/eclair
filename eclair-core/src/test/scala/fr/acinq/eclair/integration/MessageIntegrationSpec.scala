@@ -81,7 +81,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
 
-    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodes("A").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId)), Recipient(nodes("B").nodeParams.nodeId, None)).get
+    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodes("A").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId)), Recipient(nodes("B").nodeParams.nodeId, None))
     assert(blindedRoute.introductionNodeId == nodes("A").nodeParams.nodeId)
 
     alice.sendOnionMessage(Nil, Right(blindedRoute), None, ByteVector.empty).pipeTo(probe.ref)
