@@ -132,12 +132,12 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     messageRecipient.expectNoMessage()
   }
 
-  test("send to route that starts at ourselves") {f =>
+  test("send to route that starts at ourselves") { f =>
     import f._
 
     val recipientKey = randomKey()
 
-    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None)).get
+    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None))
     postman ! SendMessage(Nil, BlindedPath(blindedRoute), None, TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), messageRecipient.ref, 100 millis)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, _) = switchboard.expectMessageType[RelayMessage]
