@@ -36,6 +36,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   val remoteNodeId: Crypto.PublicKey = PrivateKey(ByteVector32.One).publicKey
   val temporaryChannelId: ByteVector32 = ByteVector32.Zeroes
   val bobAnnouncement: NodeAnnouncement = announcement(TestConstants.Bob.nodeParams.nodeId)
+  val channelId: ByteVector32 = ByteVector32.One
 
   def announcement(nodeId: PublicKey): NodeAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", NodeAddress.fromParts("1.2.3.4", 42000).get :: Nil)
 
@@ -43,8 +44,11 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     val router = TestProbe[Any]()
     val nodeParams = TestConstants.Alice.nodeParams.copy(channelConf = TestConstants.Alice.nodeParams.channelConf.copy(maxPendingChannelsPerPeer = 1, maxTotalPendingChannelsPrivateNodes = 2))
     val probe = TestProbe[PendingChannelsRateLimiter.Response]()
+    val limiter = spawnPendingChannelsRateLimiter(nodeParams, router, Seq())
+    val eventListener = TestProbe[ChannelEvent]("event-listener")
+    system.eventStream ! Subscribe(eventListener.ref)
 
-    withFixture(test.toNoArgTest(FixtureParam(router, nodeParams, probe)))
+    withFixture(test.toNoArgTest(FixtureParam(router, nodeParams, probe, limiter, eventListener)))
   }
 
   def spawnPendingChannelsRateLimiter(nodeParams: NodeParams, router: TestProbe[Any], pendingChannelIds: Seq[ByteVector32]): ActorRef[PendingChannelsRateLimiter.Command] = {
@@ -59,15 +63,15 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, BlockHeight(0), None, Left(FundingCreated(channelId, ByteVector32.Zeroes, 3, randomBytes64())))
   }
 
-  case class FixtureParam(router: TestProbe[Any], nodeParams: NodeParams, probe: TestProbe[PendingChannelsRateLimiter.Response])
+  case class FixtureParam(router: TestProbe[Any], nodeParams: NodeParams, probe: TestProbe[PendingChannelsRateLimiter.Response], limiter: ActorRef[PendingChannelsRateLimiter.Command], eventListener: TestProbe[ChannelEvent])
 
   test("accept channel open if remote node id on channel opener white list") { f =>
     import f._
 
     val nodeParams = TestConstants.Alice.nodeParams.copy(channelConf = TestConstants.Alice.nodeParams.channelConf.copy(channelOpenerWhitelist = Set(remoteNodeId)))
-    val whiteLitLimiter = spawnPendingChannelsRateLimiter(nodeParams, router, Seq())
+    val whiteListLimiter = spawnPendingChannelsRateLimiter(nodeParams, router, Seq())
 
-    whiteLitLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, temporaryChannelId)
+    whiteListLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, temporaryChannelId)
     router.expectNoMessage(10 millis)
     probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
   }
@@ -152,14 +156,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
   }
 
-  test("after channel id change and removal, remote node is below rate limit") { f =>
+  test("after channel id change and channel is opened, remote node is below rate limit") { f =>
     import f._
-
-    val channel = TestProbe[Any]()
-    val channelId = randomBytes32()
-    val limiter = spawnPendingChannelsRateLimiter(nodeParams, router, Seq())
-    val eventListener = TestProbe[ChannelEvent]("event-listener")
-    system.eventStream ! Subscribe(eventListener.ref)
 
     // accept one channel from a public node
     limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, bobAnnouncement.nodeId, temporaryChannelId)
@@ -167,7 +165,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
 
     // change temporary channel id
-    system.eventStream ! Publish(ChannelIdAssigned(channel.ref.toClassic, bobAnnouncement.nodeId, temporaryChannelId, channelId))
+    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, bobAnnouncement.nodeId, temporaryChannelId, channelId))
     eventListener.expectMessageType[ChannelIdAssigned]
 
     // reject new channel from same node id until under rate limit
@@ -176,7 +174,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
 
     // remove new channel id
-    system.eventStream ! Publish(ChannelOpened(channel.ref.toClassic, bobAnnouncement.nodeId, channelId))
+    system.eventStream ! Publish(ChannelOpened(TestProbe[Any]().ref.toClassic, bobAnnouncement.nodeId, channelId))
     eventListener.expectMessageType[ChannelOpened]
 
     // accept new channel from same node id
@@ -185,14 +183,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
   }
 
-  test("after channel id change and removal, private nodes are below rate limit") { f =>
+  test("after channel id change and channel open, private nodes are below rate limit") { f =>
     import f._
-
-    val channel = TestProbe[Any]()
-    val channelId = randomBytes32()
-    val limiter = spawnPendingChannelsRateLimiter(nodeParams, router, Seq())
-    val eventListener = TestProbe[ChannelEvent]("event-listener")
-    system.eventStream ! Subscribe(eventListener.ref)
 
     // accept two channels from private node
     limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, bobAnnouncement.nodeId, temporaryChannelId)
@@ -203,7 +195,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
 
     // change temporary channel id from private node
-    system.eventStream ! Publish(ChannelIdAssigned(channel.ref.toClassic, bobAnnouncement.nodeId, temporaryChannelId, channelId))
+    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, bobAnnouncement.nodeId, temporaryChannelId, channelId))
     eventListener.expectMessageType[ChannelIdAssigned]
 
     // reject new channel from private node (over rate limit)
@@ -212,7 +204,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
 
     // remove channel from private node
-    system.eventStream ! Publish(ChannelOpened(channel.ref.toClassic, bobAnnouncement.nodeId, channelId))
+    system.eventStream ! Publish(ChannelOpened(TestProbe[Any]().ref.toClassic, bobAnnouncement.nodeId, channelId))
     eventListener.expectMessageType[ChannelOpened]
 
     // accept new channel from private node
