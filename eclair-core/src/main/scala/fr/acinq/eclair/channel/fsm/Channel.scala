@@ -241,6 +241,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         // NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
           log.info("we have nothing at stake, going straight to CLOSED")
+          context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, closing.channelId))
           goto(CLOSED) using closing
         case closing: DATA_CLOSING =>
           val isInitiator = closing.metaCommitments.params.localParams.isInitiator
@@ -1211,7 +1212,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
       // then let's see if any of the possible close scenarios can be considered done
       val closingType_opt = Closing.isClosed(d1, Some(tx))
-      // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay() (note that we don't store the state)
+      // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay()
       closingType_opt match {
         case Some(closingType) =>
           log.info(s"channel closed (type=${closingType_opt.map(c => EventType.Closed(c).label).getOrElse("UnknownYet")})")
@@ -1625,6 +1626,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
       if (nextState == CLOSED) {
+        stateData match {
+          case _: TransientChannelData => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
+          case _: DATA_WAIT_FOR_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_CHANNEL_READY => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
+          case _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_DUAL_FUNDING_READY => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
+          case _ => ()
+        }
         // channel is closed, scheduling this actor for self destruction
         context.system.scheduler.scheduleOnce(1 minute, self, Symbol("shutdown"))
       }

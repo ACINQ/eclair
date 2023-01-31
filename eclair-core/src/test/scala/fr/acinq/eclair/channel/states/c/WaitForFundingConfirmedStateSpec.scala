@@ -55,6 +55,10 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     within(30 seconds) {
       val listener = TestProbe()
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+      alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
+      alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelClosed])
+      bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
+      bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelClosed])
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(pushMsat), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
@@ -165,6 +169,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val badOutputScript = fundingTx.txOut.head.copy(publicKeyScript = Script.write(multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputScript))
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, badFundingTx)
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -174,6 +179,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val badOutputAmount = fundingTx.txOut.head.copy(amount = 1234567.sat)
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputAmount))
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, badFundingTx)
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -181,6 +187,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
     alice ! BITCOIN_FUNDING_PUBLISH_FAILED
     alice2bob.expectMsgType[Error]
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -188,6 +195,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
     alice ! BITCOIN_FUNDING_TIMEOUT
     alice2bob.expectMsgType[Error]
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -195,6 +203,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
     bob ! BITCOIN_FUNDING_TIMEOUT
     bob2alice.expectMsgType[Error]
+    listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -217,6 +226,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val initialState = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
     bob ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
     bob2alice.expectMsgType[Error]
+    listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -255,6 +265,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
     bob ! WatchTxConfirmedTriggered(BlockHeight(42), 1, tx)
+    listener.expectMsgType[ChannelClosed]
     awaitCond(bob.stateName == CLOSED)
   }
 

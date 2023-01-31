@@ -50,10 +50,14 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionPublished])
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionConfirmed])
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ShortChannelIdAssigned])
+    alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelAborted])
+    alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelClosed])
     val bobListener = TestProbe()
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionPublished])
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionConfirmed])
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ShortChannelIdAssigned])
+    bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
+    bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelClosed])
 
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags.Private
@@ -418,6 +422,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -432,6 +437,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -441,6 +447,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(timeoutBlock))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMessage(100 millis)
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -452,6 +459,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(timeoutBlock))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMessage(100 millis)
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -693,7 +701,9 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
     bob ! WatchTxConfirmedTriggered(BlockHeight(42), 1, commitTx)
+    bobListener.expectMsgType[TransactionConfirmed]
     awaitCond(bob.stateName == CLOSED)
+    bobListener.expectMsgType[ChannelClosed]
   }
 
   test("recv CMD_CLOSE", Tag(ChannelStateTestsTags.DualFunding)) { f =>
