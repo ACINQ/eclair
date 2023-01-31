@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTrans
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, RealShortChannelId, ToMilliSatoshiConversion, UInt64}
+import fr.acinq.eclair.{Features, ToMilliSatoshiConversion, UInt64}
 
 /**
  * Created by t-bast on 19/04/2022.
@@ -555,15 +555,16 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
-      acceptDualFundingTx(d, w.tx, RealScidStatus.Unknown) match {
-        case Some((d1, channelReady)) => goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending channelReady
+      handleDualFundingPublished(w, d) match {
+        case Some((d1, channelReady)) =>
+          blockchain ! WatchFundingConfirmed(self, w.tx.txid, nodeParams.channelConf.minDepthBlocks)
+          goto(WAIT_FOR_DUAL_FUNDING_READY) using d1 storing() sending channelReady
         case None => stay()
       }
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.blockHeight, w.txIndex, w.tx.txid)
-      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
-      acceptDualFundingTx(d, w.tx, realScidStatus) match {
+      handleDualFundingConfirmed(w, d) match {
         case Some((d1, channelReady)) =>
           val toSend = d.rbfStatus match {
             case RbfStatus.RbfInProgress(txBuilder) =>

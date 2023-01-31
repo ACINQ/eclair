@@ -490,6 +490,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
     assert(aliceChannelReady.alias_opt.contains(scids.localAlias))
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
     assert(alice2blockchain.expectMsgType[WatchFundingDeeplyBuried].txId == fundingTx.txid)
     awaitCond(alice.stateName == NORMAL)
   }

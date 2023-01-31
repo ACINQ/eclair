@@ -959,6 +959,34 @@ case class MetaCommitments(params: Params,
     commitments.forall(_.commitInput.redeemScript == fundingScript)
   }
 
+  def updateLocalFundingStatus(txid: ByteVector32, status: LocalFundingStatus)(implicit log: LoggingAdapter): Option[MetaCommitments] = {
+    val metaCommitments1 = copy(commitments = commitments.map {
+      case c if c.fundingTxId == txid =>
+        log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for funding txid=$txid")
+        c.copy(localFundingStatus = status)
+      case c => c
+    })
+    if (metaCommitments1 != this) {
+      Some(metaCommitments1)
+    } else {
+      // An unknown funding tx has been confirmed, this should never happen. Note that this isn't a case of
+      // ERR_INFORMATION_LEAK, because here we receive a response from the watcher from a WatchConfirmed that we put
+      // ourselves and somehow forgot.
+      log.error(s"internal error: funding txid=$txid doesn't match any of our funding txs")
+      None
+    }
+  }
+
+  /**
+   * Current (pre-splice) implementation prune initial commitments. There can be several of them with RBF, but they all
+   * double-spend each other and can be pruned once one of them confirms.
+   */
+  def pruneCommitments(): MetaCommitments = {
+    commitments.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx]) match {
+      case Some(confirmed) => copy(commitments = confirmed +: Nil)
+      case None => this
+    }
+  }
 }
 
 object MetaCommitments {

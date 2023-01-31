@@ -419,6 +419,9 @@ object LocalFundingStatus {
   case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams) extends UnconfirmedFundingTx {
     override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
   }
+  case class PublishedFundingTx(tx: Transaction) extends UnconfirmedFundingTx {
+    override val signedTx_opt: Option[Transaction] = Some(tx)
+  }
   case class ConfirmedFundingTx(tx: Transaction) extends LocalFundingStatus {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }

@@ -1062,7 +1062,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_CLOSING) => handleFundingTimeout(d)
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_CLOSING) =>
-      pruneCommitments(d.metaCommitments, w.tx) match {
+      d.metaCommitments
+        .updateLocalFundingStatus(w.tx.txid, LocalFundingStatus.ConfirmedFundingTx(w.tx))
+        .map(_.pruneCommitments()) match {
         case Some(metaCommitments) =>
           if (d.metaCommitments.latest.fundingTxId == w.tx.txid) {
             // The best funding tx candidate has been confirmed, alternative commitments have been pruned
@@ -1588,7 +1590,26 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     // peer doesn't cancel the timer
     case Event(TickChannelOpenTimeout, _) => stay()
 
-    // we declare WatchFundingSpentTriggered handlers here because they apply to variants of each state in OFFLINE/SYNCING
+    // we declare WatchFunding*Triggered handlers here because they apply to variants of each state in OFFLINE/SYNCING
+
+    case Event(w: WatchFundingConfirmedTriggered, d: PersistentChannelData) if d.metaCommitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.PublishedFundingTx] =>
+      d.metaCommitments.updateLocalFundingStatus(w.tx.txid, LocalFundingStatus.ConfirmedFundingTx(w.tx)) match {
+        case Some(metaCommitments) =>
+          log.info(s"zero-conf funding txid=${w.tx.txid} has been confirmed")
+          val d1 = d match {
+            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments)
+            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments)
+            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments)
+            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments)
+            case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments)
+            case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments)
+            case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments)
+            case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments)
+            case _: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
+          }
+          stay() using d1
+        case None => stay()
+      }
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
       // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
