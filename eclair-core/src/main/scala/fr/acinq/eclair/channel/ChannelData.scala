@@ -416,7 +416,7 @@ object LocalFundingStatus {
   sealed trait UnconfirmedFundingTx extends LocalFundingStatus
   /** In single-funding, fundees only know the funding txid */
   case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx
-  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight) extends UnconfirmedFundingTx {
+  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams) extends UnconfirmedFundingTx {
     override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
   }
   case class ConfirmedFundingTx(tx: Transaction) extends LocalFundingStatus {
@@ -505,16 +505,15 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
                                                     deferred: Option[ChannelReady]) extends TransientChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments: MetaCommitments,
-                                                      fundingParams: InteractiveTxParams,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfStatus: RbfStatus,
                                                       deferred: Option[ChannelReady]) extends PersistentChannelData {
-  def latestFundingTx: SignedSharedTransaction = metaCommitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx
-  def previousFundingTxs: Seq[SignedSharedTransaction] = metaCommitments.commitments.map(_.localFundingStatus).collect { case DualFundedUnconfirmedFundingTx(sharedTx, _) if sharedTx.txId != latestFundingTx.txId => sharedTx }
-  def allFundingTxs: Seq[SignedSharedTransaction] = latestFundingTx +: previousFundingTxs
+  def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = metaCommitments.commitments.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
+  def latestFundingTx: DualFundedUnconfirmedFundingTx = metaCommitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
+  def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments: MetaCommitments,
                                                   shortIds: ShortIds) extends PersistentChannelData

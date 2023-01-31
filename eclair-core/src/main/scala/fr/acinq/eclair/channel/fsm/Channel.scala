@@ -316,9 +316,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
         case funding: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
           // we make sure that the funding tx with the highest feerate has been published
-          publishFundingTx(funding.fundingParams, funding.latestFundingTx)
+          publishFundingTx(funding.latestFundingTx)
           // we watch confirmation of all funding candidates, and once one of them confirms we will watch spending txs
-          funding.allFundingTxs.foreach(tx => blockchain ! WatchFundingConfirmed(self, tx.txId, nodeParams.channelConf.minDepthBlocks))
+          funding.allFundingTxs.map(_.sharedTx).foreach(tx => blockchain ! WatchFundingConfirmed(self, tx.txId, nodeParams.channelConf.minDepthBlocks))
           goto(OFFLINE) using funding
 
         case _ =>
@@ -1331,7 +1331,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      val minDepth_opt = Helpers.Funding.minDepthDualFunding(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, d.fundingParams)
+      val minDepth_opt = Helpers.Funding.minDepthDualFunding(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, d.latestFundingTx.fundingParams)
       val minDepth = minDepth_opt.getOrElse {
         val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
         // If we are in state WAIT_FOR_DUAL_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
@@ -1340,7 +1340,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         defaultMinDepth.toLong
       }
       d.metaCommitments.commitments.foreach(commitment => blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, minDepth))
-      goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.latestFundingTx.localSigs
+      goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.latestFundingTx.sharedTx.localSigs
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
       log.debug("re-sending channelReady")
