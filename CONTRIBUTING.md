@@ -89,6 +89,12 @@ mark the comment as resolved: let the reviewer verify your commit, they will mar
 resolved if they agree with the fix. This makes it easier for reviewers to check that all their
 comments have been addressed.
 
+Rebasing a pull request while it is being reviewed makes it hard for reviewers to see what changed
+since their last review. Whenever possible, you should avoid rebasing and should only append new
+commits to the pull request. But you will have to rebase if your pull request conflicts with the
+master branch. When that happens, do not add new changes inside the rebased commits (except to fix
+conflicts of course): new changes should be added by additional commits after the rebase.
+
 It's recommended to take great care in writing tests and ensuring the entire test suite has a
 stable successful outcome; eclair uses continuous integration techniques and having a stable build
 helps the reviewers with their job.
