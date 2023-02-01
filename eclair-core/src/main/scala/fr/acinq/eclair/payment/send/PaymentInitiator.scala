@@ -184,8 +184,12 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
 
     case GetPayment(id) =>
       val pending_opt = id match {
-        case Left(paymentId) => pending.get(paymentId).map(pp => (paymentId, pp))
-        case Right(paymentHash) => pending.collectFirst { case (paymentId, pp) if pp.paymentHash == paymentHash => (paymentId, pp) }
+        case PaymentIdentifier.PaymentUUID(paymentId) => pending.get(paymentId).map(pp => (paymentId, pp))
+        case PaymentIdentifier.PaymentHash(paymentHash) => pending.collectFirst { case (paymentId, pp) if pp.paymentHash == paymentHash => (paymentId, pp) }
+        case PaymentIdentifier.OfferId(offerId) => pending.collectFirst {
+          case (paymentId, pp@PendingPaymentToNode(_, SendPaymentToNode(_, _, invoice: Bolt12Invoice, _, _, _, _, _, _))) if invoice.invoiceRequest.offer.offerId == offerId =>
+            (paymentId, pp)
+        }
       }
       pending_opt match {
         case Some((paymentId, pp)) => sender() ! PaymentIsPending(paymentId, pp.paymentHash, pp)
@@ -217,6 +221,15 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
   }
 
 }
+
+// @formatter:off
+sealed trait PaymentIdentifier
+object PaymentIdentifier {
+  case class PaymentUUID(uuid: UUID) extends PaymentIdentifier
+  case class PaymentHash(hash: ByteVector32) extends PaymentIdentifier
+  case class OfferId(id: ByteVector32) extends PaymentIdentifier
+}
+// @formatter:on
 
 object PaymentInitiator {
 
@@ -252,9 +265,9 @@ object PaymentInitiator {
   // @formatter:on
 
   // @formatter:off
-  case class GetPayment(id: Either[UUID, ByteVector32])
+  case class GetPayment(id: PaymentIdentifier)
   sealed trait GetPaymentResponse
-  case class NoPendingPayment(id: Either[UUID, ByteVector32]) extends GetPaymentResponse
+  case class NoPendingPayment(id: PaymentIdentifier) extends GetPaymentResponse
   case class PaymentIsPending(paymentId: UUID, paymentHash: ByteVector32, pending: PendingPayment) extends GetPaymentResponse
   // @formatter:on
 

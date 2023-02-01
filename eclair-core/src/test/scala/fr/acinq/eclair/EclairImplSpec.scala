@@ -34,6 +34,7 @@ import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
+import fr.acinq.eclair.payment.send.PaymentIdentifier
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed}
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
@@ -576,22 +577,22 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     // A first payment has been sent out and is currently pending.
     val pendingPayment1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32(), "test", 500 msat, 750 msat, randomKey().publicKey, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending)
     kit.nodeParams.db.payments.addOutgoingPayment(pendingPayment1)
-    eclair.sentInfo(Left(pendingPayment1.parentId)).pipeTo(sender.ref)
+    eclair.sentInfo(PaymentIdentifier.PaymentUUID(pendingPayment1.parentId)).pipeTo(sender.ref)
     sender.expectMsg(Seq(pendingPayment1))
-    eclair.sentInfo(Right(pendingPayment1.paymentHash)).pipeTo(sender.ref)
+    eclair.sentInfo(PaymentIdentifier.PaymentHash(pendingPayment1.paymentHash)).pipeTo(sender.ref)
     sender.expectMsg(Seq(pendingPayment1))
 
     // Payments must be queried by parentId, not child paymentId.
-    eclair.sentInfo(Left(pendingPayment1.id)).pipeTo(sender.ref)
-    paymentInitiator.expectMsg(GetPayment(Left(pendingPayment1.id)))
-    paymentInitiator.reply(NoPendingPayment(Left(pendingPayment1.id)))
+    eclair.sentInfo(PaymentIdentifier.PaymentUUID(pendingPayment1.id)).pipeTo(sender.ref)
+    paymentInitiator.expectMsg(GetPayment(PaymentIdentifier.PaymentUUID(pendingPayment1.id)))
+    paymentInitiator.reply(NoPendingPayment(PaymentIdentifier.PaymentUUID(pendingPayment1.id)))
     sender.expectMsg(Nil)
 
     // A second payment is pending in the payment initiator, but doesn't have a corresponding DB entry yet.
     val pendingPaymentId = UUID.randomUUID()
     val spontaneousPayment = SendSpontaneousPayment(600 msat, randomKey().publicKey, randomBytes32(), 5, routeParams = null)
-    eclair.sentInfo(Right(spontaneousPayment.paymentHash)).pipeTo(sender.ref)
-    paymentInitiator.expectMsg(GetPayment(Right(spontaneousPayment.paymentHash)))
+    eclair.sentInfo(PaymentIdentifier.PaymentHash(spontaneousPayment.paymentHash)).pipeTo(sender.ref)
+    paymentInitiator.expectMsg(GetPayment(PaymentIdentifier.PaymentHash(spontaneousPayment.paymentHash)))
     paymentInitiator.reply(PaymentIsPending(pendingPaymentId, spontaneousPayment.paymentHash, PendingSpontaneousPayment(ActorRef.noSender, spontaneousPayment)))
     val pendingPayment2 = sender.expectMsgType[Seq[OutgoingPayment]]
     assert(pendingPayment2.length == 1)
@@ -605,14 +606,14 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val failedPayment = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, spontaneousPayment.paymentHash, "test", 700 msat, 900 msat, randomKey().publicKey, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Failed(Nil, failedAt))
     kit.nodeParams.db.payments.addOutgoingPayment(failedPayment.copy(status = OutgoingPaymentStatus.Pending))
     kit.nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(failedPayment.id, failedPayment.paymentHash, Nil, failedAt))
-    eclair.sentInfo(Left(failedPayment.parentId)).pipeTo(sender.ref)
-    paymentInitiator.expectMsg(GetPayment(Left(failedPayment.parentId)))
-    paymentInitiator.reply(NoPendingPayment(Left(failedPayment.parentId)))
+    eclair.sentInfo(PaymentIdentifier.PaymentUUID(failedPayment.parentId)).pipeTo(sender.ref)
+    paymentInitiator.expectMsg(GetPayment(PaymentIdentifier.PaymentUUID(failedPayment.parentId)))
+    paymentInitiator.reply(NoPendingPayment(PaymentIdentifier.PaymentUUID(failedPayment.parentId)))
     sender.expectMsg(Seq(failedPayment))
 
     // The failed payment is currently being retried.
-    eclair.sentInfo(Left(failedPayment.parentId)).pipeTo(sender.ref)
-    paymentInitiator.expectMsg(GetPayment(Left(failedPayment.parentId)))
+    eclair.sentInfo(PaymentIdentifier.PaymentUUID(failedPayment.parentId)).pipeTo(sender.ref)
+    paymentInitiator.expectMsg(GetPayment(PaymentIdentifier.PaymentUUID(failedPayment.parentId)))
     paymentInitiator.reply(PaymentIsPending(failedPayment.parentId, spontaneousPayment.paymentHash, PendingSpontaneousPayment(ActorRef.noSender, spontaneousPayment)))
     val pendingPayment3 = sender.expectMsgType[Seq[OutgoingPayment]]
     assert(pendingPayment3.length == 2)

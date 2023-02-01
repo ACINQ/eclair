@@ -22,6 +22,7 @@ import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.send.PaymentIdentifier
 import fr.acinq.eclair.router.Router.{PredefinedChannelRoute, PredefinedNodeRoute}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, randomBytes32}
 
@@ -78,9 +79,11 @@ trait Payment {
 
   val getSentInfo: Route = postRequest("getsentinfo") { implicit t =>
     formFields("id".as[UUID]) { id =>
-      complete(eclairApi.sentInfo(Left(id)))
+      complete(eclairApi.sentInfo(PaymentIdentifier.PaymentUUID(id)))
     } ~ formFields(paymentHashFormParam) { paymentHash =>
-      complete(eclairApi.sentInfo(Right(paymentHash)))
+      complete(eclairApi.sentInfo(PaymentIdentifier.PaymentHash(paymentHash)))
+    } ~ formFields(offerFormParam) { offer =>
+      complete(eclairApi.sentInfo(PaymentIdentifier.OfferId(offer.offerId)))
     }
   }
 

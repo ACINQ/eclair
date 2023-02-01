@@ -187,9 +187,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, c, Upstream.Local(payment.paymentId), Some(invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false))
     payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(initiator, Left(route), ClearRecipient(invoice, finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1), Set.empty)))
 
-    sender.send(initiator, GetPayment(Left(payment.paymentId)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(payment.paymentId)))
     sender.expectMsg(PaymentIsPending(payment.paymentId, invoice.paymentHash, PendingPaymentToRoute(sender.ref, request)))
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(payment.paymentId, invoice.paymentHash, PendingPaymentToRoute(sender.ref, request)))
 
     val pf = PaymentFailed(payment.paymentId, invoice.paymentHash, Nil)
@@ -197,8 +197,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(pf)
     eventListener.expectNoMessage(100 millis)
 
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
-    sender.expectMsg(NoPendingPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
   }
 
   test("forward single-part payment when multi-part deactivated", Tag(Tags.DisableMPP)) { f =>
@@ -212,9 +212,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, c, Upstream.Local(id), Some(invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true))
     payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(initiator, ClearRecipient(invoice, finalAmount, req.finalExpiry(nodeParams), Set.empty), 1, nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
 
-    sender.send(initiator, GetPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
     val pf = PaymentFailed(id, invoice.paymentHash, Nil)
@@ -222,8 +222,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(pf)
     eventListener.expectNoMessage(100 millis)
 
-    sender.send(initiator, GetPayment(Left(id)))
-    sender.expectMsg(NoPendingPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentUUID(id)))
   }
 
   test("forward multi-part payment") { f =>
@@ -235,9 +235,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, c, Upstream.Local(id), Some(invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true))
     multiPartPayFsm.expectMsg(SendMultiPartPayment(initiator, ClearRecipient(invoice, finalAmount + 100.msat, req.finalExpiry(nodeParams), Set.empty), 1, nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
 
-    sender.send(initiator, GetPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
     val ps = PaymentSent(id, invoice.paymentHash, randomBytes32(), finalAmount, priv_c.publicKey, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None)))
@@ -245,8 +245,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(ps)
     eventListener.expectNoMessage(100 millis)
 
-    sender.send(initiator, GetPayment(Left(id)))
-    sender.expectMsg(NoPendingPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentUUID(id)))
   }
 
   test("forward multi-part payment with randomized final expiry", Tag(Tags.RandomizeFinalExpiry)) { f =>
@@ -279,9 +279,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.recipient.totalAmount == finalAmount)
     assert(msg.recipient.expiry == req.finalExpiry(nodeParams))
 
-    sender.send(initiator, GetPayment(Left(payment.paymentId)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(payment.paymentId)))
     sender.expectMsg(PaymentIsPending(payment.paymentId, invoice.paymentHash, PendingPaymentToRoute(sender.ref, req)))
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(payment.paymentId, invoice.paymentHash, PendingPaymentToRoute(sender.ref, req)))
 
     val pf = PaymentFailed(payment.paymentId, invoice.paymentHash, Nil)
@@ -289,8 +289,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(pf)
     eventListener.expectNoMessage(100 millis)
 
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
-    sender.expectMsg(NoPendingPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
   }
 
   def createBolt12Invoice(features: Features[Bolt12Feature], payerKey: PrivateKey): Bolt12Invoice = {
@@ -317,9 +317,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(payment.recipient.expiry == req.finalExpiry(nodeParams))
     assert(payment.recipient.isInstanceOf[BlindedRecipient])
 
-    sender.send(initiator, GetPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
     val pf = PaymentFailed(id, invoice.paymentHash, Nil)
@@ -327,8 +327,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(pf)
     eventListener.expectNoMessage(100 millis)
 
-    sender.send(initiator, GetPayment(Left(id)))
-    sender.expectMsg(NoPendingPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentUUID(id)))
   }
 
   test("forward multi-part blinded payment") { f =>
@@ -346,9 +346,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(payment.recipient.expiry == req.finalExpiry(nodeParams))
     assert(payment.recipient.isInstanceOf[BlindedRecipient])
 
-    sender.send(initiator, GetPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
     val ps = PaymentSent(id, invoice.paymentHash, paymentPreimage, finalAmount, invoice.nodeId, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None)))
@@ -356,8 +356,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectMsg(ps)
     eventListener.expectNoMessage(100 millis)
 
-    sender.send(initiator, GetPayment(Left(id)))
-    sender.expectMsg(NoPendingPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentUUID(id)))
   }
 
   test("reject blinded payment when route blinding deactivated", Tag(Tags.DisableRouteBlinding)) { f =>
@@ -381,9 +381,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val id = sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsgType[SendPaymentConfig]
 
-    sender.send(initiator, GetPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingTrampolinePayment(sender.ref, Nil, req)))
-    sender.send(initiator, GetPayment(Right(invoice.paymentHash)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingTrampolinePayment(sender.ref, Nil, req)))
 
     val msg = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
@@ -453,7 +453,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg1.recipient.totalAmount == finalAmount)
     assert(msg1.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
 
-    sender.send(initiator, GetPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
     sender.expectMsgType[PaymentIsPending]
 
     // Simulate a failure which should trigger a retry.
@@ -471,8 +471,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.expectNoMessage(100 millis)
     eventListener.expectNoMessage(100 millis)
 
-    sender.send(initiator, GetPayment(Left(id)))
-    sender.expectMsg(NoPendingPayment(Left(id)))
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentUUID(id)))
   }
 
   test("retry trampoline payment and fail") { f =>

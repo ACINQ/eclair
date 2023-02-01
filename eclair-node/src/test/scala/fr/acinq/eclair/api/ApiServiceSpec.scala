@@ -42,6 +42,7 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.ChannelBalance
+import fr.acinq.eclair.payment.send.PaymentIdentifier
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{HopRelayParams, PredefinedNodeRoute}
@@ -880,7 +881,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val pending = UUID.randomUUID()
-    eclair.sentInfo(Left(pending))(any) returns Future.successful(Seq(defaultPayment))
+    eclair.sentInfo(PaymentIdentifier.PaymentUUID(pending))(any) returns Future.successful(Seq(defaultPayment))
     val mockService = new MockService(eclair)
 
     Post("/getsentinfo", FormData("id" -> pending.toString).toEntity) ~>
@@ -891,7 +892,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("sent-pending", response)
-        eclair.sentInfo(Left(pending))(any[Timeout]).wasCalled(once)
+        eclair.sentInfo(PaymentIdentifier.PaymentUUID(pending))(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -899,7 +900,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val failed = UUID.randomUUID()
-    eclair.sentInfo(Left(failed))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Failed(Nil, TimestampMilli(1633439543777L)))))
+    eclair.sentInfo(PaymentIdentifier.PaymentUUID(failed))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Failed(Nil, TimestampMilli(1633439543777L)))))
     val mockService = new MockService(eclair)
 
     Post("/getsentinfo", FormData("id" -> failed.toString).toEntity) ~>
@@ -910,7 +911,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("sent-failed", response)
-        eclair.sentInfo(Left(failed))(any[Timeout]).wasCalled(once)
+        eclair.sentInfo(PaymentIdentifier.PaymentUUID(failed))(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -918,7 +919,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val sent = UUID.randomUUID()
-    eclair.sentInfo(Left(sent))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Succeeded(ByteVector32.One, 5 msat, Nil, TimestampMilli(1633439543777L)))))
+    eclair.sentInfo(PaymentIdentifier.PaymentUUID(sent))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Succeeded(ByteVector32.One, 5 msat, Nil, TimestampMilli(1633439543777L)))))
     val mockService = new MockService(eclair)
 
     Post("/getsentinfo", FormData("id" -> sent.toString).toEntity) ~>
@@ -929,7 +930,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("sent-success", response)
-        eclair.sentInfo(Left(sent))(any[Timeout]).wasCalled(once)
+        eclair.sentInfo(PaymentIdentifier.PaymentUUID(sent))(any[Timeout]).wasCalled(once)
       }
   }
 
