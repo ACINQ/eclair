@@ -36,31 +36,27 @@ import java.util.UUID
 import scala.util.Random
 
 object OfferPayment {
-  sealed trait Result
+  sealed trait Failure
 
-  sealed trait Failure extends Exception with Result
+  case class UnsupportedFeatures(features: Features[InvoiceFeature]) extends Failure
 
-  case class UnsupportedFeatures(features: Features[InvoiceFeature]) extends Exception(s"Unsupported features: $features") with Failure
+  case class UnsupportedChains(chains: Seq[ByteVector32]) extends Failure
 
-  case class UnsupportedChains(chains: Seq[ByteVector32]) extends Exception(s"Unsupported chains: ${chains.mkString(",")}") with Failure
+  case class ExpiredOffer(expiryDate: TimestampSecond) extends Failure
 
-  case class ExpiredOffer(expiryDate: TimestampSecond) extends Exception(s"expired since $expiryDate") with Failure
+  case class QuantityTooHigh(quantityMax: Long) extends Failure
 
-  case class QuantityTooHigh(quantityMax: Long) extends Exception(s"Maximum quantity is $quantityMax") with Failure
+  case class AmountInsufficient(amountNeeded: MilliSatoshi) extends Failure
 
-  case class AmountInsufficient(amountNeeded: MilliSatoshi) extends Exception(s"Paying this offer requires at least $amountNeeded") with Failure
+  case class InvalidSignature(signature: ByteVector64) extends Failure
 
-  case class InvalidSignature(signature: ByteVector64) extends Exception(s"Invalid signature: ${signature.toHex}") with Failure
+  case object NoInvoice extends Failure
 
-  case object NoInvoice extends Exception(s"Could not fetch invoice") with Failure
-
-  case class InvalidInvoice(tlvs: TlvStream[OfferTypes.InvoiceTlv]) extends Exception(s"Received invalid invoice: $tlvs") with Failure
-
-  case class Paying(uuid: UUID) extends Result
+  case class InvalidInvoice(tlvs: TlvStream[OfferTypes.InvoiceTlv]) extends Failure
 
   sealed trait Command
 
-  case class PayOffer(replyTo: typed.ActorRef[Result],
+  case class PayOffer(replyTo: ActorRef,
                       offer: Offer,
                       amount: MilliSatoshi,
                       quantity: Long,
@@ -68,26 +64,10 @@ object OfferPayment {
 
   case class WrappedMessageResponse(response: OnionMessageResponse) extends Command
 
-  case class WrappedPaymentId(paymentId: UUID) extends Command
-
-  case class WrappedPreimageReceived(preimageReceived: PreimageReceived) extends Command
-
-  case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
-
-  case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
-
   case class SendPaymentConfig(externalId_opt: Option[String],
                                maxAttempts: Int,
-                               routeParams: RouteParams)
-
-  def paymentResultWrapper(x: Any): Command = {
-    x match {
-      case paymentId: UUID => WrappedPaymentId(paymentId)
-      case preimageReceived: PreimageReceived => WrappedPreimageReceived(preimageReceived)
-      case paymentSent: PaymentSent => WrappedPaymentSent(paymentSent)
-      case paymentFailed: PaymentFailed => WrappedPaymentFailed(paymentFailed)
-    }
-  }
+                               routeParams: RouteParams,
+                               blocking: Boolean)
 
   def apply(nodeParams: NodeParams,
             postman: typed.ActorRef[Postman.Command],
@@ -126,7 +106,7 @@ object OfferPayment {
                          context: ActorContext[Command],
                          request: InvoiceRequest,
                          payerKey: PrivateKey,
-                         replyTo: typed.ActorRef[Result],
+                         replyTo: ActorRef,
                          remainingAttempts: Int,
                          sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
     val destination = request.offer.contactInfo match {
@@ -148,7 +128,7 @@ object OfferPayment {
                      paymentInitiator: ActorRef,
                      request: InvoiceRequest,
                      payerKey: PrivateKey,
-                     replyTo: typed.ActorRef[Result],
+                     replyTo: ActorRef,
                      remainingAttempts: Int,
                      sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
     Behaviors.setup(context =>
@@ -158,8 +138,8 @@ object OfferPayment {
           Bolt12Invoice.validate(tlvs) match {
             case Right(invoice) if invoice.isValidFor(request) =>
               val recipientAmount = invoice.amount
-              paymentInitiator ! SendPaymentToNode(context.messageAdapter(paymentResultWrapper).toClassic, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey))
-              waitForPaymentId(replyTo)
+              paymentInitiator ! SendPaymentToNode(replyTo, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
+              Behaviors.stopped
             case _ =>
               replyTo ! InvalidInvoice(tlvs)
               Behaviors.stopped
@@ -171,14 +151,6 @@ object OfferPayment {
           replyTo ! NoInvoice
           Behaviors.stopped
       })
-  }
-
-  def waitForPaymentId(replyTo: typed.ActorRef[Result]): Behavior[Command] = {
-    Behaviors.receiveMessagePartial {
-      case WrappedPaymentId(paymentId) =>
-        replyTo ! Paying(paymentId)
-        Behaviors.stopped
-    }
   }
 }
 
