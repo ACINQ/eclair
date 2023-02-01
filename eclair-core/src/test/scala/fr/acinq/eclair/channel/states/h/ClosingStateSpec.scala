@@ -45,7 +45,7 @@ import scala.concurrent.duration._
 
 class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, alice2relayer: TestProbe, bob2relayer: TestProbe, channelUpdateListener: TestProbe, txListener: TestProbe, bobCommitTxs: List[CommitTxAndRemoteSig])
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, alice2relayer: TestProbe, bob2relayer: TestProbe, channelUpdateListener: TestProbe, txListener: TestProbe, eventListener: TestProbe, bobCommitTxs: List[CommitTxAndRemoteSig])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -61,6 +61,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Hence the WAIT_FOR_FUNDING_CONFIRMED->CLOSING or NORMAL->CLOSING transition will occur in the individual tests.
 
     val unconfirmedFundingTx = test.tags.contains("funding_unconfirmed")
+    val txListener = TestProbe()
     val eventListener = TestProbe()
 
     if (unconfirmedFundingTx) {
@@ -90,19 +91,21 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
         awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
         awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        alice.underlying.system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-        alice.underlying.system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
-        bob.underlying.system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-        bob.underlying.system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, alice2relayer, bob2relayer, channelUpdateListener, eventListener, Nil)))
+        alice.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionPublished])
+        alice.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionConfirmed])
+        alice.underlying.system.eventStream.subscribe(eventListener.ref, classOf[ChannelAborted])
+        bob.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionPublished])
+        bob.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionConfirmed])
+        bob.underlying.system.eventStream.subscribe(eventListener.ref, classOf[ChannelAborted])
+        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, alice2relayer, bob2relayer, channelUpdateListener, txListener, eventListener, Nil)))
       }
     } else {
       within(30 seconds) {
         reachNormal(setup, test.tags)
-        alice.underlying.system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-        alice.underlying.system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
-        bob.underlying.system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
-        bob.underlying.system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+        alice.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionPublished])
+        alice.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionConfirmed])
+        bob.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionPublished])
+        bob.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionConfirmed])
         val bobCommitTxs: List[CommitTxAndRemoteSig] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
           val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
           crossSign(alice, bob, alice2bob, bob2alice)
@@ -120,7 +123,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
         awaitCond(alice.stateName == NORMAL)
         awaitCond(bob.stateName == NORMAL)
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, alice2relayer, bob2relayer, channelUpdateListener, eventListener, bobCommitTxs)))
+        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, alice2relayer, bob2relayer, channelUpdateListener, txListener, eventListener, bobCommitTxs)))
       }
     }
   }
@@ -132,6 +135,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsgType[PublishTx]
     alice2blockchain.expectMsgType[PublishTx] // claim-main-delayed
+    eventListener.expectMsgType[ChannelAborted]
 
     // test starts here
     alice ! BITCOIN_FUNDING_PUBLISH_FAILED
@@ -146,6 +150,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsgType[PublishTx]
     alice2blockchain.expectMsgType[PublishTx] // claim-main-delayed
+    eventListener.expectMsgType[ChannelAborted]
 
     // test starts here
     alice ! BITCOIN_FUNDING_TIMEOUT
@@ -164,6 +169,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[PublishTx] // claim-main-delayed
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commitment
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
+    eventListener.expectMsgType[ChannelAborted]
 
     // test starts here
     alice ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), TimestampSecond.now())
@@ -183,6 +189,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[PublishTx] // claim-main-delayed
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commitment
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
+    eventListener.expectMsgType[ChannelAborted]
 
     // test starts here
     alice ! GetTxWithMetaResponse(fundingTx.txid, None, TimestampSecond.now())
@@ -202,6 +209,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2blockchain.expectMsgType[PublishTx] // claim-main-delayed
     bob2blockchain.expectMsgType[WatchTxConfirmed] // commitment
     bob2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
+    eventListener.expectMsgType[ChannelAborted]
 
     // test starts here
     bob ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), TimestampSecond.now())
@@ -221,6 +229,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2blockchain.expectMsgType[PublishTx] // claim-main-delayed
     bob2blockchain.expectMsgType[WatchTxConfirmed] // commitment
     bob2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
+    eventListener.expectMsgType[ChannelAborted]
 
     // test starts here
     bob ! GetTxWithMetaResponse(fundingTx.txid, None, TimestampSecond.now())
@@ -240,6 +249,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2blockchain.expectMsgType[PublishTx] // claim-main-delayed
     bob2blockchain.expectMsgType[WatchTxConfirmed] // commitment
     bob2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
+    eventListener.expectMsgType[ChannelAborted]
 
     // test starts here
     bob.setState(stateData = bob.stateData.asInstanceOf[DATA_CLOSING].copy(waitingSince = bob.underlyingActor.nodeParams.currentBlockHeight - Channel.FUNDING_TIMEOUT_FUNDEE - 1))
