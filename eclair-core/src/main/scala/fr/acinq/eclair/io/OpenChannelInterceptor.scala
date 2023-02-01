@@ -41,35 +41,10 @@ import scala.reflect.ClassTag
  * configuring local parameters for all open channel requests. It only handles one channel request at a time.
  * If a concurrent request comes while still evaluating a previous one, the later request is immediately rejected.
  *
- * This simplifies the state machine and ensures that we do not introduce subtle race conditions when checking limits,
- * since some of the conditions will be asynchronous (e.g. asking the router whether the node is public or private).
- *
- * When initiator (peer.OpenChannel):
- *  - verify synchronous conditions against eclair.conf
- *  - create LocalParams from nodeParams
- *  - send SpawnChannelInitiator to parent Peer
- *
- * When non-initiator (protocol.OpenChannel, protocol.OpenDualFundedChannel):
- *  - verify synchronous conditions against eclair.conf
- *  - if the peer is not whitelisted to ignore rate-limits:
- *    - ask the PendingChannelsRateLimiter if we should allow the channel
- *    - if the rate limit is reached, reply to parent Peer with `OutgoingMessage(Error)`
- *  - create LocalParams from nodeParams
- *  - if a channel interceptor plugin is registered, ask it whether to allow the channel request:
- *    - if the plugin rejects the request, reply to parent Peer with `OutgoingMessage(Error)`
- *    - if the plugin doesn't respond in time, reply to parent Peer with `OutgoingMessage(Error)`
- *    - if the plugin allows the request, update LocalParams with the plugin's response
- *  - accept the channel, reply to parent Peer with `SpawnChannelNonInitiator`
- *
  * Note: If the remote peer disconnects before the plugin fails or continues the non-initiator flow, according to the
  * Lightning spec the flow should be canceled. Therefore any response sent by this actor with a different `peerConnection`
  * should be ignored and not forwarded to the remote peer.
- *
- * Note: We have a timeout that will reject the non-initiator flow if the plugin does not respond. We do not fully
- * trust plugins to be correctly implemented; we need to respond to our peer even if the plugin fails to tell us what
- * to do.
  */
-
 object OpenChannelInterceptor {
 
   // @formatter:off
