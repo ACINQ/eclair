@@ -116,6 +116,8 @@ object InteractiveTxBuilder {
     val fundingAmount: Satoshi = localAmount + remoteAmount
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
+    // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
+    val serialIdParity = if (isInitiator) 0 else 1
   }
 
   // @formatter:off
