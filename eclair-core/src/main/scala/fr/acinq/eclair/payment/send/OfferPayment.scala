@@ -158,7 +158,7 @@ object OfferPayment {
           Bolt12Invoice.validate(tlvs) match {
             case Right(invoice) if invoice.isValidFor(request) =>
               val recipientAmount = invoice.amount
-              paymentInitiator ! SendPaymentToNode(context.messageAdapter(paymentResultWrapper).toClassic, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams)
+              paymentInitiator ! SendPaymentToNode(context.messageAdapter(paymentResultWrapper).toClassic, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey))
               waitForPaymentId(replyTo)
             case _ =>
               replyTo ! InvalidInvoice(tlvs)

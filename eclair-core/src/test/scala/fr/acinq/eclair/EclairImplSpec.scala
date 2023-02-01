@@ -574,7 +574,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
 
     // A first payment has been sent out and is currently pending.
-    val pendingPayment1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32(), "test", 500 msat, 750 msat, randomKey().publicKey, TimestampMilli.now(), None, OutgoingPaymentStatus.Pending)
+    val pendingPayment1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32(), "test", 500 msat, 750 msat, randomKey().publicKey, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending)
     kit.nodeParams.db.payments.addOutgoingPayment(pendingPayment1)
     eclair.sentInfo(Left(pendingPayment1.parentId)).pipeTo(sender.ref)
     sender.expectMsg(Seq(pendingPayment1))
@@ -602,7 +602,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // A third payment is fully settled in the DB and not being retried.
     val failedAt = TimestampMilli.now()
-    val failedPayment = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, spontaneousPayment.paymentHash, "test", 700 msat, 900 msat, randomKey().publicKey, TimestampMilli.now(), None, OutgoingPaymentStatus.Failed(Nil, failedAt))
+    val failedPayment = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, spontaneousPayment.paymentHash, "test", 700 msat, 900 msat, randomKey().publicKey, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Failed(Nil, failedAt))
     kit.nodeParams.db.payments.addOutgoingPayment(failedPayment.copy(status = OutgoingPaymentStatus.Pending))
     kit.nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(failedPayment.id, failedPayment.paymentHash, Nil, failedAt))
     eclair.sentInfo(Left(failedPayment.parentId)).pipeTo(sender.ref)

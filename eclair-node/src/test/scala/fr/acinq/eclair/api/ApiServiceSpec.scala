@@ -877,7 +877,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   }
 
   test("'getsentinfo' 1") {
-    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, OutgoingPaymentStatus.Pending)
+    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val pending = UUID.randomUUID()
     eclair.sentInfo(Left(pending))(any) returns Future.successful(Seq(defaultPayment))
@@ -896,7 +896,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   }
 
   test("'getsentinfo' 2") {
-    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, OutgoingPaymentStatus.Pending)
+    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val failed = UUID.randomUUID()
     eclair.sentInfo(Left(failed))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Failed(Nil, TimestampMilli(1633439543777L)))))
@@ -915,7 +915,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   }
 
   test("'getsentinfo' 3") {
-    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, OutgoingPaymentStatus.Pending)
+    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, TimestampMilli(1633439429123L), None, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val sent = UUID.randomUUID()
     eclair.sentInfo(Left(sent))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Succeeded(ByteVector32.One, 5 msat, Nil, TimestampMilli(1633439543777L)))))

@@ -20,7 +20,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs, migrationCheck}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
+import fr.acinq.eclair.db.PaymentsDb._
 import fr.acinq.eclair.db.jdbc.JdbcUtils.{setVersion, using}
 import fr.acinq.eclair.db.pg.PgPaymentsDb
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
@@ -28,7 +30,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, NodeHop}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, TlvStream, UnknownNextPeer}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, Paginated, ShortChannelId, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, Paginated, ShortChannelId, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
@@ -80,7 +82,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         assert(db.getIncomingPayment(paymentHash1).isEmpty)
 
         // add a few rows
-        val ps1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, paymentHash1, PaymentType.Standard, 12345 msat, 12345 msat, alice, 1000 unixms, None, OutgoingPaymentStatus.Pending)
+        val ps1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, paymentHash1, PaymentType.Standard, 12345 msat, 12345 msat, alice, 1000 unixms, None, None, OutgoingPaymentStatus.Pending)
         val i1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(500 msat), paymentHash1, davePriv, Left("Some invoice"), CltvExpiryDelta(18), expirySeconds = None, timestamp = 1 unixsec)
         val pr1 = IncomingStandardPayment(i1, preimage1, PaymentType.Standard, i1.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(550 msat, 1100 unixms))
 
@@ -101,9 +103,9 @@ class PaymentsDbSpec extends AnyFunSuite {
     val id1 = UUID.randomUUID()
     val id2 = UUID.randomUUID()
     val id3 = UUID.randomUUID()
-    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, PrivateKey(ByteVector32.One).publicKey, 1000 unixms, None, OutgoingPaymentStatus.Pending)
-    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32(), PaymentType.Standard, 1105 msat, 1105 msat, PrivateKey(ByteVector32.One).publicKey, 1010 unixms, None, OutgoingPaymentStatus.Failed(Nil, 1050 unixms))
-    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, PrivateKey(ByteVector32.One).publicKey, 1040 unixms, None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, 1060 unixms))
+    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, PrivateKey(ByteVector32.One).publicKey, 1000 unixms, None, None, OutgoingPaymentStatus.Pending)
+    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32(), PaymentType.Standard, 1105 msat, 1105 msat, PrivateKey(ByteVector32.One).publicKey, 1010 unixms, None, None, OutgoingPaymentStatus.Failed(Nil, 1050 unixms))
+    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, PrivateKey(ByteVector32.One).publicKey, 1040 unixms, None, None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, 1060 unixms))
     val i1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash1, davePriv, Left("Some invoice"), CltvExpiryDelta(18), expirySeconds = None, timestamp = 1 unixsec)
     val pr1 = IncomingStandardPayment(i1, preimage1, PaymentType.Standard, i1.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(12345678 msat, 1090 unixms))
     val i2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash2, carolPriv, Left("Another invoice"), CltvExpiryDelta(18), expirySeconds = Some(30), timestamp = 1 unixsec)
@@ -194,9 +196,9 @@ class PaymentsDbSpec extends AnyFunSuite {
         val pr3 = IncomingStandardPayment(i3, preimage3, PaymentType.Standard, i3.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending)
         db.addIncomingPayment(i3, pr3.paymentPreimage)
 
-        val ps4 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("1"), randomBytes32(), PaymentType.Standard, 123 msat, 123 msat, alice, 1100 unixms, Some(i3), OutgoingPaymentStatus.Pending)
-        val ps5 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("2"), randomBytes32(), PaymentType.Standard, 456 msat, 456 msat, bob, 1150 unixms, Some(i2), OutgoingPaymentStatus.Succeeded(preimage1, 42 msat, Nil, 1180 unixms))
-        val ps6 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("3"), randomBytes32(), PaymentType.Standard, 789 msat, 789 msat, bob, 1250 unixms, None, OutgoingPaymentStatus.Failed(Nil, 1300 unixms))
+        val ps4 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("1"), randomBytes32(), PaymentType.Standard, 123 msat, 123 msat, alice, 1100 unixms, Some(i3), None, OutgoingPaymentStatus.Pending)
+        val ps5 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("2"), randomBytes32(), PaymentType.Standard, 456 msat, 456 msat, bob, 1150 unixms, Some(i2), None, OutgoingPaymentStatus.Succeeded(preimage1, 42 msat, Nil, 1180 unixms))
+        val ps6 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("3"), randomBytes32(), PaymentType.Standard, 789 msat, 789 msat, bob, 1250 unixms, None, None, OutgoingPaymentStatus.Failed(Nil, 1300 unixms))
         db.addOutgoingPayment(ps4)
         db.addOutgoingPayment(ps5.copy(status = OutgoingPaymentStatus.Pending))
         db.updateOutgoingPayment(PaymentSent(ps5.parentId, ps5.paymentHash, preimage1, ps5.amount, ps5.recipientNodeId, Seq(PaymentSent.PartialPayment(ps5.id, ps5.amount, 42 msat, randomBytes32(), None, 1180 unixms))))
@@ -216,9 +218,9 @@ class PaymentsDbSpec extends AnyFunSuite {
     val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
     val parentId = UUID.randomUUID()
     val invoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(2834 msat), paymentHash1, bobPriv, Left("invoice #1"), CltvExpiryDelta(18), expirySeconds = Some(30))
-    val ps1 = OutgoingPayment(id1, id1, Some("42"), randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, alice, 1000 unixms, None, OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.REMOTE, "no candy for you", List(HopSummary(hop_ab), HopSummary(hop_bc)), Some(bob))), 1020 unixms))
-    val ps2 = OutgoingPayment(id2, parentId, Some("42"), paymentHash1, PaymentType.Standard, 1105 msat, 1105 msat, bob, 1010 unixms, Some(invoice1), OutgoingPaymentStatus.Pending)
-    val ps3 = OutgoingPayment(id3, parentId, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, bob, 1040 unixms, None, OutgoingPaymentStatus.Succeeded(preimage1, 10 msat, Seq(HopSummary(hop_ab), HopSummary(hop_bc)), 1060 unixms))
+    val ps1 = OutgoingPayment(id1, id1, Some("42"), randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, alice, 1000 unixms, None, None, OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.REMOTE, "no candy for you", List(HopSummary(hop_ab), HopSummary(hop_bc)), Some(bob))), 1020 unixms))
+    val ps2 = OutgoingPayment(id2, parentId, Some("42"), paymentHash1, PaymentType.Standard, 1105 msat, 1105 msat, bob, 1010 unixms, Some(invoice1), None, OutgoingPaymentStatus.Pending)
+    val ps3 = OutgoingPayment(id3, parentId, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, bob, 1040 unixms, None, None, OutgoingPaymentStatus.Succeeded(preimage1, 10 msat, Seq(HopSummary(hop_ab), HopSummary(hop_bc)), 1060 unixms))
 
     migrationCheck(
       dbs = dbs,
@@ -347,6 +349,76 @@ class PaymentsDbSpec extends AnyFunSuite {
     )
   }
 
+  test("migrate sqlite payments db v5 -> current") {
+    val dbs = TestSqliteDatabases()
+    val pending = {
+      val amount = 123456 msat
+      val payerKey = randomKey()
+      val recipientKey = randomKey()
+      val preimage = randomBytes32()
+      val invoice = createBolt12Invoice(amount, payerKey, recipientKey, preimage)
+      OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, invoice.paymentHash, PaymentType.Blinded, amount, amount, recipientKey.publicKey, invoice.createdAt.toTimestampMilli, Some(invoice), None, OutgoingPaymentStatus.Pending)
+    }
+    val paid = {
+      val amount = 789123456 msat
+      val payerKey = randomKey()
+      val recipientKey = randomKey()
+      val preimage = randomBytes32()
+      val invoice = createBolt12Invoice(amount, payerKey, recipientKey, preimage)
+      OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, invoice.paymentHash, PaymentType.Blinded, amount, amount, recipientKey.publicKey, invoice.createdAt.toTimestampMilli, Some(invoice), None, OutgoingPaymentStatus.Succeeded(preimage, 123 msat, Nil, 300.unixsec.toTimestampMilli))
+    }
+
+    migrationCheck(
+      dbs = dbs,
+      initializeTables = connection => {
+        using(connection.createStatement()) { statement =>
+          statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage BLOB NOT NULL, path_ids BLOB, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
+          statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER, recipient_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
+          statement.executeUpdate("CREATE INDEX sent_parent_id_idx ON sent_payments(parent_id)")
+          statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON sent_payments(payment_hash)")
+          statement.executeUpdate("CREATE INDEX sent_created_idx ON sent_payments(created_at)")
+          statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
+          setVersion(statement, "payments", 5)
+        }
+        using(connection.prepareStatement("INSERT INTO sent_payments (id, parent_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+          statement.setString(1, pending.id.toString)
+          statement.setString(2, pending.parentId.toString)
+          statement.setBytes(3, pending.paymentHash.toArray)
+          statement.setString(4, pending.paymentType)
+          statement.setLong(5, pending.amount.toLong)
+          statement.setLong(6, pending.recipientAmount.toLong)
+          statement.setBytes(7, pending.recipientNodeId.value.toArray)
+          statement.setLong(8, pending.createdAt.toLong)
+          statement.setString(9, pending.invoice.get.toString)
+          statement.executeUpdate()
+        }
+        using(connection.prepareStatement("INSERT INTO sent_payments (id, parent_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request, completed_at, payment_preimage, fees_msat, payment_route) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+          statement.setString(1, paid.id.toString)
+          statement.setString(2, paid.parentId.toString)
+          statement.setBytes(3, paid.paymentHash.toArray)
+          statement.setString(4, paid.paymentType)
+          statement.setLong(5, paid.amount.toLong)
+          statement.setLong(6, paid.recipientAmount.toLong)
+          statement.setBytes(7, paid.recipientNodeId.value.toArray)
+          statement.setLong(8, paid.createdAt.toLong)
+          statement.setString(9, paid.invoice.get.toString)
+          statement.setLong(10, paid.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].completedAt.toLong)
+          statement.setBytes(11, paid.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].paymentPreimage.toArray)
+          statement.setLong(12, paid.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid.toLong)
+          statement.setBytes(13, encodeRoute(paid.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].route.toList))
+          statement.executeUpdate()
+        }
+      },
+      dbName = "payments",
+      targetVersion = SqlitePaymentsDb.CURRENT_VERSION,
+      postCheck = _ => {
+        val db = dbs.db.payments
+        assert(db.listOutgoingPayments(pending.paymentHash) == Seq(pending))
+        assert(db.listOutgoingPayments(paid.paymentHash) == Seq(paid))
+      }
+    )
+  }
+
   test("migrate postgres payments db v4 -> current") {
     val dbs = TestPgDatabases()
 
@@ -354,9 +426,9 @@ class PaymentsDbSpec extends AnyFunSuite {
     val id1 = UUID.randomUUID()
     val id2 = UUID.randomUUID()
     val id3 = UUID.randomUUID()
-    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2021-01-01T10:15:30.00Z").toEpochMilli), None, OutgoingPaymentStatus.Pending)
-    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32(), PaymentType.Standard, 1105 msat, 1105 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2020-05-14T13:47:21.00Z").toEpochMilli), None, OutgoingPaymentStatus.Failed(Nil, TimestampMilli(Instant.parse("2021-05-15T04:12:40.00Z").toEpochMilli)))
-    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2021-01-28T09:12:05.00Z").toEpochMilli), None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, TimestampMilli.now()))
+    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2021-01-01T10:15:30.00Z").toEpochMilli), None, None, OutgoingPaymentStatus.Pending)
+    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32(), PaymentType.Standard, 1105 msat, 1105 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2020-05-14T13:47:21.00Z").toEpochMilli), None, None, OutgoingPaymentStatus.Failed(Nil, TimestampMilli(Instant.parse("2021-05-15T04:12:40.00Z").toEpochMilli)))
+    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2021-01-28T09:12:05.00Z").toEpochMilli), None, None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, TimestampMilli.now()))
     val i1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash1, davePriv, Left("Some invoice"), CltvExpiryDelta(18), expirySeconds = None, timestamp = TimestampSecond.now())
     val pr1 = IncomingStandardPayment(i1, preimage1, PaymentType.Standard, i1.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(12345678 msat, TimestampMilli.now()))
     val i2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash2, carolPriv, Left("Another invoice"), CltvExpiryDelta(18), expirySeconds = Some(24 * 3600), timestamp = TimestampSecond(Instant.parse("2020-12-30T10:00:55.00Z").getEpochSecond))
@@ -502,6 +574,78 @@ class PaymentsDbSpec extends AnyFunSuite {
     )
   }
 
+  test("migrate postgres payments db v7 -> current") {
+    val dbs = TestPgDatabases()
+    val pending = {
+      val amount = 123456 msat
+      val payerKey = randomKey()
+      val recipientKey = randomKey()
+      val preimage = randomBytes32()
+      val invoice = createBolt12Invoice(amount, payerKey, recipientKey, preimage)
+      OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, invoice.paymentHash, PaymentType.Blinded, amount, amount, recipientKey.publicKey, invoice.createdAt.toTimestampMilli, Some(invoice), None, OutgoingPaymentStatus.Pending)
+    }
+    val paid = {
+      val amount = 789123456 msat
+      val payerKey = randomKey()
+      val recipientKey = randomKey()
+      val preimage = randomBytes32()
+      val invoice = createBolt12Invoice(amount, payerKey, recipientKey, preimage)
+      OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, invoice.paymentHash, PaymentType.Blinded, amount, amount, recipientKey.publicKey, invoice.createdAt.toTimestampMilli, Some(invoice), None, OutgoingPaymentStatus.Succeeded(preimage, 123 msat, Nil, 300.unixsec.toTimestampMilli))
+    }
+
+    migrationCheck(
+      dbs = dbs,
+      initializeTables = connection => {
+        using(connection.createStatement()) { statement =>
+          statement.executeUpdate("CREATE SCHEMA payments")
+          statement.executeUpdate("CREATE TABLE payments.received (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT NOT NULL, path_ids BYTEA, payment_request TEXT NOT NULL, received_msat BIGINT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, expire_at TIMESTAMP WITH TIME ZONE NOT NULL, received_at TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE TABLE payments.sent (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, payment_preimage TEXT, payment_type TEXT NOT NULL, amount_msat BIGINT NOT NULL, fees_msat BIGINT, recipient_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, payment_request TEXT, payment_route BYTEA, failures BYTEA, created_at TIMESTAMP WITH TIME ZONE NOT NULL, completed_at TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE INDEX sent_parent_id_idx ON payments.sent(parent_id)")
+          statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON payments.sent(payment_hash)")
+          statement.executeUpdate("CREATE INDEX sent_created_idx ON payments.sent(created_at)")
+          statement.executeUpdate("CREATE INDEX received_created_idx ON payments.received(created_at)")
+          setVersion(statement, "payments", 7)
+        }
+        using(connection.prepareStatement("INSERT INTO payments.sent (id, parent_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+          statement.setString(1, pending.id.toString)
+          statement.setString(2, pending.parentId.toString)
+          statement.setString(3, pending.paymentHash.toHex)
+          statement.setString(4, pending.paymentType)
+          statement.setLong(5, pending.amount.toLong)
+          statement.setLong(6, pending.recipientAmount.toLong)
+          statement.setString(7, pending.recipientNodeId.value.toHex)
+          statement.setTimestamp(8, pending.createdAt.toSqlTimestamp)
+          statement.setString(9, pending.invoice.get.toString)
+          statement.executeUpdate()
+        }
+        using(connection.prepareStatement("INSERT INTO payments.sent (id, parent_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request, completed_at, payment_preimage, fees_msat, payment_route) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+          statement.setString(1, paid.id.toString)
+          statement.setString(2, paid.parentId.toString)
+          statement.setString(3, paid.paymentHash.toHex)
+          statement.setString(4, paid.paymentType)
+          statement.setLong(5, paid.amount.toLong)
+          statement.setLong(6, paid.recipientAmount.toLong)
+          statement.setString(7, paid.recipientNodeId.value.toHex)
+          statement.setTimestamp(8, paid.createdAt.toSqlTimestamp)
+          statement.setString(9, paid.invoice.get.toString)
+          statement.setTimestamp(10, paid.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].completedAt.toSqlTimestamp)
+          statement.setString(11, paid.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].paymentPreimage.toHex)
+          statement.setLong(12, paid.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid.toLong)
+          statement.setBytes(13, encodeRoute(paid.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].route.toList))
+
+          statement.executeUpdate()
+        }
+      },
+      dbName = PgPaymentsDb.DB_NAME,
+      targetVersion = PgPaymentsDb.CURRENT_VERSION,
+      postCheck = _ => {
+        val db = dbs.db.payments
+        assert(db.listOutgoingPayments(pending.paymentHash) == Seq(pending))
+        assert(db.listOutgoingPayments(paid.paymentHash) == Seq(paid))
+      }
+    )
+  }
+
   test("add/retrieve/update/remove incoming payments") {
     forAllDbs { dbs =>
       val db = dbs.payments
@@ -599,17 +743,21 @@ class PaymentsDbSpec extends AnyFunSuite {
 
       val parentId = UUID.randomUUID()
       val i1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(123 msat), paymentHash1, davePriv, Left("Some invoice"), CltvExpiryDelta(18), expirySeconds = None, timestamp = 0 unixsec)
-      val s1 = OutgoingPayment(UUID.randomUUID(), parentId, None, paymentHash1, PaymentType.Standard, 123 msat, 600 msat, dave, 100 unixms, Some(i1), OutgoingPaymentStatus.Pending)
-      val s2 = OutgoingPayment(UUID.randomUUID(), parentId, Some("1"), paymentHash1, PaymentType.SwapOut, 456 msat, 600 msat, dave, 200 unixms, None, OutgoingPaymentStatus.Pending)
+      val payerKey = randomKey()
+      val i2 = createBolt12Invoice(789 msat, payerKey, carolPriv, randomBytes32())
+      val s1 = OutgoingPayment(UUID.randomUUID(), parentId, None, paymentHash1, PaymentType.Standard, 123 msat, 600 msat, dave, 100 unixms, Some(i1), None, OutgoingPaymentStatus.Pending)
+      val s2 = OutgoingPayment(UUID.randomUUID(), parentId, Some("1"), paymentHash1, PaymentType.SwapOut, 456 msat, 600 msat, dave, 200 unixms, None, None, OutgoingPaymentStatus.Pending)
+      val b1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, i2.paymentHash, PaymentType.Blinded, 789 msat, 789 msat, carol, 300 unixms, Some(i2), Some(payerKey), OutgoingPaymentStatus.Pending)
 
       assert(db.listOutgoingPayments(0 unixms, TimestampMilli.now()).isEmpty)
       db.addOutgoingPayment(s1)
       db.addOutgoingPayment(s2)
+      db.addOutgoingPayment(b1)
 
       // can't add an outgoing payment in non-pending state
       assertThrows[IllegalArgumentException](db.addOutgoingPayment(s1.copy(status = OutgoingPaymentStatus.Succeeded(randomBytes32(), 0 msat, Nil, 110 unixms))))
 
-      assert(db.listOutgoingPayments(1 unixms, 300 unixms).toList == Seq(s1, s2))
+      assert(db.listOutgoingPayments(1 unixms, 350 unixms).toList == Seq(s1, s2, b1))
       assert(db.listOutgoingPayments(1 unixms, 150 unixms).toList == Seq(s1))
       assert(db.listOutgoingPayments(150 unixms, 250 unixms).toList == Seq(s2))
       assert(db.getOutgoingPayment(s1.id).contains(s1))
@@ -618,6 +766,8 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.listOutgoingPayments(s1.id) == Nil)
       assert(db.listOutgoingPayments(parentId) == Seq(s1, s2))
       assert(db.listOutgoingPayments(ByteVector32.Zeroes) == Nil)
+      assert(db.listOutgoingPayments(i2.paymentHash) == Seq(b1))
+      assert(db.listOutgoingPaymentsToOffer(i2.invoiceRequest.offer.offerId) == Seq(b1))
 
       val s3 = s2.copy(id = UUID.randomUUID(), amount = 789 msat, createdAt = 300 unixms)
       val s4 = s2.copy(id = UUID.randomUUID(), paymentType = PaymentType.Standard, createdAt = 301 unixms)
@@ -659,4 +809,11 @@ object PaymentsDbSpec {
   val hop_bc = NodeHop(bob, carol, CltvExpiryDelta(14), 1 msat)
   val (preimage1, preimage2, preimage3, preimage4) = (randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32())
   val (paymentHash1, paymentHash2, paymentHash3, paymentHash4) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3), Crypto.sha256(preimage4))
+
+  def createBolt12Invoice(amount: MilliSatoshi, payerKey: PrivateKey, recipientKey: PrivateKey, preimage: ByteVector32): Bolt12Invoice = {
+    val offer = Offer(Some(amount), "some offer", recipientKey.publicKey, Features.empty, Block.TestnetGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, 789 msat, 1, Features.empty, payerKey, Block.TestnetGenesisBlock.hash)
+    val dummyRoute = PaymentBlindedRoute(RouteBlinding.create(randomKey(), Seq(randomKey().publicKey), Seq(randomBytes(100))).route, PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 0 msat, Features.empty))
+    Bolt12Invoice(invoiceRequest, preimage, recipientKey, 1 hour, Features.empty, Seq(dummyRoute))
+  }
 }
