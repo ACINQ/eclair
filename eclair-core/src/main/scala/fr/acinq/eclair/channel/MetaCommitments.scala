@@ -965,14 +965,26 @@ case class MetaCommitments(params: Params,
         log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for funding txid=$txid")
         c.copy(localFundingStatus = status)
       case c => c
+    }).pruneCommitments()
+    if (metaCommitments1 != this) {
+      Some(metaCommitments1)
+    } else {
+      log.error(s"funding txid=$txid doesn't match any of our funding txs")
+      None
+    }
+  }
+
+  def updateRemoteFundingStatus(txid: ByteVector32)(implicit log: LoggingAdapter): Option[MetaCommitments] = {
+    val metaCommitments1 = copy(commitments = commitments.map {
+      case c if c.fundingTxId == txid =>
+        log.info(s"setting remoteFundingStatus=${RemoteFundingStatus.Locked.getClass.getSimpleName} for funding txid=$txid")
+        c.copy(remoteFundingStatus = RemoteFundingStatus.Locked)
+      case c => c
     })
     if (metaCommitments1 != this) {
       Some(metaCommitments1)
     } else {
-      // An unknown funding tx has been confirmed, this should never happen. Note that this isn't a case of
-      // ERR_INFORMATION_LEAK, because here we receive a response from the watcher from a WatchConfirmed that we put
-      // ourselves and somehow forgot.
-      log.error(s"internal error: funding txid=$txid doesn't match any of our funding txs")
+      log.error(s"funding txid=$txid doesn't match any of our funding txs")
       None
     }
   }
@@ -981,10 +993,18 @@ case class MetaCommitments(params: Params,
    * Current (pre-splice) implementation prune initial commitments. There can be several of them with RBF, but they all
    * double-spend each other and can be pruned once one of them confirms.
    */
-  def pruneCommitments(): MetaCommitments = {
-    commitments.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx]) match {
-      case Some(confirmed) => copy(commitments = confirmed +: Nil)
-      case None => this
+  def pruneCommitments()(implicit log: LoggingAdapter): MetaCommitments = {
+    commitments
+      .filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
+      .lastOption match {
+      case Some(lastConfirmed) =>
+        // we can prune all other commitments with the same or lower funding index
+        val pruned = commitments.filter(c => c.fundingTxId != lastConfirmed.fundingTxId)
+        val commitments1 = commitments diff pruned
+        pruned.foreach(c => log.info("pruning commitment fundingTxid={}", c.fundingTxId))
+        copy(commitments = commitments1)
+      case _ =>
+        this
     }
   }
 }

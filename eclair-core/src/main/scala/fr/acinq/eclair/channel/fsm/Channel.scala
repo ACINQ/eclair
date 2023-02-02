@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Helpers.Syncing.SyncResult
-import fr.acinq.eclair.channel.Helpers.{Closing, Syncing, getRelayFees, scidForChannelUpdate}
+import fr.acinq.eclair.channel.Helpers._
 import fr.acinq.eclair.channel.MetaCommitments.PostRevocationAction
 import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
@@ -237,6 +237,42 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       log.debug("restoring channel")
       context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data))
       txPublisher ! SetChannelId(remoteNodeId, data.channelId)
+
+      // we watch all unconfirmed funding txs, whatever our state is
+      // (there can be multiple funding txs due to rbf, and they can be unconfirmed in any state due to zero-conf)
+      data.metaCommitments.commitments.foreach { commitment =>
+        commitment.localFundingStatus match {
+          case LocalFundingStatus.UnknownFundingTx =>
+            // Legacy single-funded channels. The funding tx may or may not be confirmed, a watch-confirmed will be set
+            // at reconnection if necessary
+            watchFundingTx(commitment)
+          case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
+            // A watch-confirmed will be set at reconnection if necessary 
+            watchFundingTx(commitment)
+          case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
+            val fundingMinDepth_opt = Funding.minDepthDualFunding(nodeParams.channelConf, data.metaCommitments.params.localParams.initFeatures, fundingTx.fundingParams)
+            val fundingMinDepth = fundingMinDepth_opt.getOrElse {
+              val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
+              // If we are in state WAIT_FOR_DUAL_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
+              // have skipped this state. Maybe the computation method was changed and eclair was restarted?
+              // TODO: put minDepth once and for all in DualFundedUnconfirmedFundingTx instead?
+              log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
+              defaultMinDepth.toLong
+            }
+            blockchain ! WatchFundingConfirmed(self, fundingTx.sharedTx.txId, fundingMinDepth)
+          case fundingTx: LocalFundingStatus.PublishedFundingTx =>
+            // those are zero-conf channels, the min-depth isn't critical, we use the default
+            val fundingMinDepth = nodeParams.channelConf.minDepthBlocks.toLong
+            blockchain ! WatchFundingConfirmed(self, fundingTx.tx.txid, fundingMinDepth)
+          case _: LocalFundingStatus.ConfirmedFundingTx =>
+            if (!data.isInstanceOf[DATA_CLOSING]) {
+              // the CLOSING state is handled differently, because the funding tx may already have been permanently spent
+              // in all other states, we watch the funding tx
+              watchFundingTx(commitment)
+            }
+        }
+      }
+
       data match {
         // NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
@@ -266,11 +302,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             case None =>
               // in all other cases we need to be ready for any type of closing
               watchFundingTx(data.metaCommitments.latest.commitment, closing.spendingTxs.map(_.txid).toSet)
-              if (closing.metaCommitments.commitments.size > 1) {
-                // If we have more than one commitment, some of them must be unconfirmed: we watch all of them to be
-                // able to prune obsolete ones.
-                closing.metaCommitments.commitments.foreach(c => blockchain ! WatchFundingConfirmed(self, c.fundingTxId, nodeParams.channelConf.minDepthBlocks))
-              }
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isInitiator))
               closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.metaCommitments.latest))
               closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing.metaCommitments.latest))
@@ -291,7 +322,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           goto(CLOSING) using closing
 
         case normal: DATA_NORMAL =>
-          watchFundingTx(data.metaCommitments.latest.commitment)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.shortIds, remoteNodeId))
 
           // we check the configuration because the values for channel_update may have changed while eclair was down
@@ -310,7 +340,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           goto(OFFLINE) using normal
 
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-          watchFundingTx(funding.metaCommitments.latest.commitment)
           // we make sure that the funding tx has been published
           blockchain ! GetTxWithMeta(self, funding.metaCommitments.latest.fundingTxId)
           goto(OFFLINE) using funding
@@ -318,12 +347,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case funding: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
           // we make sure that the funding tx with the highest feerate has been published
           publishFundingTx(funding.latestFundingTx)
-          // we watch confirmation of all funding candidates, and once one of them confirms we will watch spending txs
-          funding.allFundingTxs.map(_.sharedTx).foreach(tx => blockchain ! WatchFundingConfirmed(self, tx.txId, nodeParams.channelConf.minDepthBlocks))
           goto(OFFLINE) using funding
 
         case _ =>
-          watchFundingTx(data.metaCommitments.latest.commitment)
           goto(OFFLINE) using data
       }
   })
@@ -1062,9 +1088,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_CLOSING) => handleFundingTimeout(d)
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_CLOSING) =>
-      d.metaCommitments
-        .updateLocalFundingStatus(w.tx.txid, LocalFundingStatus.ConfirmedFundingTx(w.tx))
-        .map(_.pruneCommitments()) match {
+      d.metaCommitments.updateLocalFundingStatus(w.tx.txid, LocalFundingStatus.ConfirmedFundingTx(w.tx)) match {
         case Some(metaCommitments) =>
           if (d.metaCommitments.latest.fundingTxId == w.tx.txid) {
             // The best funding tx candidate has been confirmed, alternative commitments have been pruned
@@ -1125,6 +1149,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         // counterparty may attempt to spend a revoked commit tx at any time
         handleRemoteSpentOther(tx, d)
       } else {
+        log.warning(s"unrecognized tx=${tx.txid}")
         // this was for another commitments
         stay()
       }
@@ -1306,11 +1331,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
-    case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingConfirmedOffline(w, d)
-
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
-    case Event(_: WatchFundingConfirmedTriggered, _) => stay()
-
     case Event(_: WatchFundingDeeplyBuriedTriggered, _) => stay()
   })
 
@@ -1334,15 +1355,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      val minDepth_opt = Helpers.Funding.minDepthDualFunding(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, d.latestFundingTx.fundingParams)
-      val minDepth = minDepth_opt.getOrElse {
-        val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
-        // If we are in state WAIT_FOR_DUAL_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
-        // have skipped this state. Maybe the computation method was changed and eclair was restarted?
-        log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
-        defaultMinDepth.toLong
-      }
-      d.metaCommitments.commitments.foreach(commitment => blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, minDepth))
       goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.latestFundingTx.sharedTx.localSigs
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
@@ -1497,11 +1509,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
-    case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingConfirmedOffline(w, d)
-
     // just ignore this, we will put a new watch when we reconnect, and we'll be notified again
-    case Event(_: WatchFundingConfirmedTriggered, _) => stay()
-
     case Event(_: WatchFundingDeeplyBuriedTriggered, _) => stay()
 
     case Event(e: Error, d: PersistentChannelData) => handleRemoteError(e, d)
@@ -1590,25 +1598,46 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     // peer doesn't cancel the timer
     case Event(TickChannelOpenTimeout, _) => stay()
 
-    // we declare WatchFunding*Triggered handlers here because they apply to variants of each state in OFFLINE/SYNCING
-
-    case Event(w: WatchFundingConfirmedTriggered, d: PersistentChannelData) if d.metaCommitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.PublishedFundingTx] =>
-      d.metaCommitments.updateLocalFundingStatus(w.tx.txid, LocalFundingStatus.ConfirmedFundingTx(w.tx)) match {
-        case Some(metaCommitments) =>
-          log.info(s"zero-conf funding txid=${w.tx.txid} has been confirmed")
+    case Event(w: WatchPublishedTriggered, d: PersistentChannelData) =>
+      val fundingStatus = LocalFundingStatus.PublishedFundingTx(w.tx)
+      d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
+        case Some(metaCommitments1) =>
+          log.info(s"zero-conf funding txid=${w.tx.txid} has been published")
           val d1 = d match {
-            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments)
-            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments)
-            case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments)
-            case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments)
-            case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments)
-            case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments)
-            case _: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
+            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
           }
-          stay() using d1
-        case None => stay()
+          blockchain ! WatchFundingConfirmed(self, w.tx.txid, nodeParams.channelConf.minDepthBlocks)
+          stay() using d1 storing()
+        case None =>
+          stay()
+      }
+
+    case Event(w: WatchFundingConfirmedTriggered, d: PersistentChannelData) =>
+      acceptFundingTxConfirmed(w, d) match {
+        case Some(metaCommitments1) =>
+          log.info(s"funding txid=${w.tx.txid} has been confirmed")
+          val d1 = d match {
+            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
+            case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
+          }
+          stay() using d1 storing()
+        case None =>
+          stay()
       }
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>

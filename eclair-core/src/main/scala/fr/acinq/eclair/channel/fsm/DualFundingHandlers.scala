@@ -17,16 +17,16 @@
 package fr.acinq.eclair.channel.fsm
 
 import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
+import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmedTriggered, WatchPublishedTriggered}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, PublishedFundingTx}
+import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
-import fr.acinq.eclair.wire.protocol.{ChannelReady, Error}
-import fr.acinq.eclair.{NotificationsLogger, RealShortChannelId}
+import fr.acinq.eclair.wire.protocol.Error
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
@@ -60,60 +60,20 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
-  private def acceptDualFundingTx(d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, fundingTx: Transaction, fundingStatus: LocalFundingStatus, realScidStatus: RealScidStatus): Option[(DATA_WAIT_FOR_DUAL_FUNDING_READY, ChannelReady)] = {
-    d.metaCommitments
-      .updateLocalFundingStatus(fundingTx.txid, fundingStatus)
-      .map(_.pruneCommitments())
-      .map { metaCommitments =>
-        // We can forget other funding attempts now that one of the funding txs is confirmed.
-        val otherFundingTxs = d.metaCommitments.commitments // note how we use the unpruned original commitments
-          .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
-          .filter(_.txId != fundingTx.txid)
-        rollbackDualFundingTxs(otherFundingTxs)
-
-        // after pruning, there is only one commitments
-        watchFundingTx(metaCommitments.commitments.head)
-
-        val shortIds = createShortIds(d.channelId, realScidStatus)
-        val channelReady = createChannelReady(shortIds, metaCommitments.params)
-
-        (DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments, shortIds), channelReady)
-      }
-  }
-
-  def handleDualFundingPublished(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Option[(DATA_WAIT_FOR_DUAL_FUNDING_READY, ChannelReady)] = {
-    val fundingStatus = PublishedFundingTx(w.tx)
-    val realScidStatus = RealScidStatus.Unknown
-    d.deferred.foreach(self ! _)
-    acceptDualFundingTx(d, w.tx, fundingStatus, realScidStatus)
-  }
-
-  def handleDualFundingConfirmed(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Option[(DATA_WAIT_FOR_DUAL_FUNDING_READY, ChannelReady)] = {
+  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): Option[MetaCommitments] = {
+    log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.tx.txid, w.blockHeight, w.txIndex)
     val fundingStatus = ConfirmedFundingTx(w.tx)
-    val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-    d.deferred.foreach(self ! _)
-    acceptDualFundingTx(d, w.tx, fundingStatus, realScidStatus)
-  }
-
-  /**
-   * If one of the funding txs confirms while we are disconnected, we need to put a watch on its output, because our
-   * counterparty could force-close using a previous commitment. We can also rollback and forget deprecated funding
-   * transactions immediately.
-   */
-  def handleDualFundingConfirmedOffline(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
-    val fundingStatus = ConfirmedFundingTx(w.tx)
-    val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
-    context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-    // TODO: shows how we could factor with the online case, will be done in next commit
-    acceptDualFundingTx(d, w.tx, fundingStatus, realScidStatus).map(_._1.metaCommitments) match {
-      case Some(metaCommitments) =>
-        if (d.previousFundingTxs.nonEmpty) {
-          log.info(s"funding txid={} was confirmed in state disconnected, cleaning up {} alternative txs", w.tx.txid, d.metaCommitments.commitments.size - 1)
-        }
-        stay() using d.copy(metaCommitments = metaCommitments) storing()
-      case None =>
-        stay()
+    d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map { metaCommitments1 =>
+      // first of all, we watch the funding tx that is now confirmed
+      val commitments = metaCommitments1.commitments.find(_.fundingTxId == w.tx.txid).get // TODO: rework this
+      watchFundingTx(commitments)
+      // we can forget all other transactions, they have been double spent by the tx that just confirmed
+      val otherFundingTxs = d.metaCommitments.commitments // note how we use the unpruned original commitments
+        .filter(c => c.fundingTxId != commitments.fundingTxId)
+        .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
+      rollbackDualFundingTxs(otherFundingTxs)
+      metaCommitments1
     }
   }
 
