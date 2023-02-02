@@ -717,7 +717,6 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       aliceRbf ! Start(alice2bob.ref)
       bobRbf ! Start(bob2alice.ref)
 
-
       // Alice --- tx_add_input --> Bob
       val inputA2 = fwdRbf.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
@@ -834,7 +833,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(targetFeerate < rbfFeerate)
       val txA2 = succeeded.sharedTx.asInstanceOf[FullySignedSharedTransaction]
       assert(rbfFeerate * 0.9 <= txA2.feerate && txA2.feerate <= rbfFeerate * 1.25)
-      Seq(inputA1, inputA2).foreach(i => assert(Set(inputA3, inputA4, inputA5).contains(i)))
+      val previousInputs = Set(inputA1, inputA2).map(i => toOutPoint(i))
+      val newInputs = Set(inputA3, inputA4, inputA5).map(i => toOutPoint(i))
+      assert(previousInputs.subsetOf(newInputs))
       assert(txA1.signedTx.txid != txA2.signedTx.txid)
       assert(txA1.signedTx.txIn.length + 1 == txA2.signedTx.txIn.length)
       assert(txA1.tx.fees < txA2.tx.fees)
@@ -900,11 +901,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       bobRbf ! Start(bob2alice.ref)
 
       // Alice --- tx_add_input --> Bob
-      assert(fwdRbf.forwardAlice2Bob[TxAddInput] == inputA1)
+      val inputA1b = fwdRbf.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_add_input --- Bob
-      assert(fwdRbf.forwardBob2Alice[TxAddInput] == inputB)
+      val inputBb = fwdRbf.forwardBob2Alice[TxAddInput]
       // Alice --- tx_add_input --> Bob
-      assert(fwdRbf.forwardAlice2Bob[TxAddInput] == inputA2)
+      val inputA2b = fwdRbf.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
       fwdRbf.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_output --> Bob
@@ -927,6 +928,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val succeeded = alice2bob.expectMsgType[Succeeded]
       val rbfFeerate = succeeded.fundingParams.targetFeerate
       assert(rbfFeerate == FeeratePerKw(7500 sat))
+      assert(inputB == inputBb)
+      assert(Set(inputA1, inputA2).map(i => toOutPoint(i)) == Set(inputA1b, inputA2b).map(i => toOutPoint(i)))
       val txA2 = succeeded.sharedTx.asInstanceOf[FullySignedSharedTransaction]
       assert(rbfFeerate * 0.75 <= txA2.feerate && txA2.feerate <= rbfFeerate * 1.25)
       assert(txA1.signedTx.txIn.map(_.outPoint).toSet == txA2.signedTx.txIn.map(_.outPoint).toSet)

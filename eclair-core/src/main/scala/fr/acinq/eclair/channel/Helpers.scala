@@ -223,7 +223,7 @@ object Helpers {
     }
 
     // BOLT #2: Channel funding limits
-    if (accept.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) return Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount, 0 sat, nodeParams.channelConf.maxFundingSatoshis))
+    if (accept.fundingAmount > nodeParams.channelConf.maxFundingSatoshis || accept.fundingAmount < 0.sat) return Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount, 0 sat, nodeParams.channelConf.maxFundingSatoshis))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (accept.pushAmount > accept.fundingAmount) return Left(InvalidPushAmount(accept.temporaryChannelId, accept.pushAmount, accept.fundingAmount.toMilliSatoshi))

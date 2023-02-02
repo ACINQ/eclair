@@ -28,7 +28,7 @@ import fr.acinq.eclair.{Logs, UInt64}
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Random, Success}
 
 /**
  * Created by t-bast on 05/01/2023.
@@ -95,17 +95,8 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
   }
 
   def start(): Behavior[Command] = {
-    val toFund = if (fundingParams.isInitiator) {
-      // If we're the initiator, we need to pay the fees of the common fields of the transaction, even if we don't want
-      // to contribute to the shared output. We create a non-zero amount here to ensure that bitcoind will fund the
-      // fees for the shared output (because it would otherwise reject a txOut with an amount of zero).
-      fundingParams.localAmount.max(fundingParams.dustLimit)
-    } else {
-      fundingParams.localAmount
-    }
-    require(toFund >= 0.sat, "funding amount cannot be negative")
-    log.debug("contributing {} to interactive-tx construction", toFund)
-    if (toFund == 0.sat) {
+    log.debug("contributing {} to interactive-tx construction", fundingParams.localAmount)
+    if (fundingParams.localAmount == 0.sat && !fundingParams.isInitiator) {
       // We're not the initiator and we don't want to contribute to the funding transaction.
       replyTo ! FundingContributions(Nil, Nil)
       Behaviors.stopped
@@ -114,7 +105,8 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       // spend one input of each previous tx, but it's simpler and less error-prone this way. It also ensures that in
       // most cases, we won't need to add new inputs and will simply lower the change amount.
       val previousInputs = previousTransactions.flatMap(_.tx.localInputs).distinctBy(_.serialId)
-      val dummyTx = Transaction(2, previousInputs.map(i => TxIn(toOutPoint(i), ByteVector.empty, i.sequence)), Seq(TxOut(toFund, fundingParams.fundingPubkeyScript)), fundingParams.lockTime)
+      // Note that if the funding amount is smaller than the dust limit, bitcoind will reject the funding attempt.
+      val dummyTx = Transaction(2, previousInputs.map(i => TxIn(toOutPoint(i), ByteVector.empty, i.sequence)), Seq(TxOut(fundingParams.localAmount, fundingParams.fundingPubkeyScript)), fundingParams.lockTime)
       fund(dummyTx, previousInputs, Set.empty)
     }
   }
@@ -167,17 +159,9 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         } else {
           val changeOutput_opt = otherOutputs.headOption.map(txOut => TxAddOutput(fundingParams.channelId, UInt64(0), txOut.amount, txOut.publicKeyScript))
           val outputs = if (fundingParams.isInitiator) {
-            val initiatorChangeOutput = changeOutput_opt match {
-              case Some(changeOutput) if fundingParams.localAmount == 0.sat =>
-                // If the initiator doesn't want to contribute, we should cancel the dummy amount artificially added previously.
-                val dummyFundingAmount = fundingOutputs.head.amount
-                Seq(changeOutput.copy(amount = changeOutput.amount + dummyFundingAmount))
-              case Some(changeOutput) => Seq(changeOutput)
-              case None => Nil
-            }
             // The initiator is responsible for adding the shared output.
             val fundingOutput = TxAddOutput(fundingParams.channelId, UInt64(0), fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)
-            fundingOutput +: initiatorChangeOutput
+            fundingOutput +: changeOutput_opt.toSeq
           } else {
             // The protocol only requires the non-initiator to pay the fees for its inputs and outputs, discounting the
             // common fields (shared output, version, nLockTime, etc). By using bitcoind's fundrawtransaction we are
@@ -193,10 +177,9 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
             }
           }
           log.debug("added {} inputs and {} outputs to interactive tx", inputDetails.usableInputs.length, outputs.length)
-          // The initiator's serial IDs must use even values and the non-initiator odd values.
-          val serialIdParity = if (fundingParams.isInitiator) 0 else 1
-          val txAddInputs = inputDetails.usableInputs.zipWithIndex.map { case (input, i) => input.copy(serialId = UInt64(2 * i + serialIdParity)) }
-          val txAddOutputs = outputs.zipWithIndex.map { case (output, i) => output.copy(serialId = UInt64(2 * (i + txAddInputs.length) + serialIdParity)) }
+          // We randomize the order of inputs and outputs.
+          val txAddInputs = Random.shuffle(inputDetails.usableInputs).zipWithIndex.map { case (input, i) => input.copy(serialId = UInt64(2 * i + fundingParams.serialIdParity)) }
+          val txAddOutputs = Random.shuffle(outputs).zipWithIndex.map { case (output, i) => output.copy(serialId = UInt64(2 * (i + txAddInputs.length) + fundingParams.serialIdParity)) }
           val result = FundingContributions(txAddInputs, txAddOutputs)
           // We unlock the unusable inputs (if any) as they can be used outside of interactive-tx sessions.
           sendResultAndStop(result, unusableInputs.map(_.outpoint))
