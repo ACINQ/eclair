@@ -95,7 +95,6 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
   }
 
   def start(): Behavior[Command] = {
-    require(fundingParams.localAmount >= 0.sat, "funding amount cannot be negative")
     log.debug("contributing {} to interactive-tx construction", fundingParams.localAmount)
     if (fundingParams.localAmount == 0.sat && !fundingParams.isInitiator) {
       // We're not the initiator and we don't want to contribute to the funding transaction.

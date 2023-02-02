@@ -113,6 +113,7 @@ object InteractiveTxBuilder {
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
                                  requireConfirmedInputs: RequireConfirmedInputs) {
+    require(localAmount >= 0.sat && remoteAmount >= 0.sat, "funding amount cannot be negative")
     val fundingAmount: Satoshi = localAmount + remoteAmount
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
