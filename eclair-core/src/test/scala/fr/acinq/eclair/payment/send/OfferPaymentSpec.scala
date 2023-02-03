@@ -25,9 +25,9 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.message.OnionMessages.Recipient
 import fr.acinq.eclair.message.Postman
-import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
 import fr.acinq.eclair.payment.send.OfferPayment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
@@ -37,7 +37,6 @@ import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
 
-import java.util.UUID
 import scala.concurrent.duration.DurationInt
 
 class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {

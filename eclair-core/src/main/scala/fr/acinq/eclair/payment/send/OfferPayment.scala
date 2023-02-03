@@ -19,8 +19,8 @@ package fr.acinq.eclair.payment.send
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.Bolt12Invoice
@@ -29,8 +29,6 @@ import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.{OfferTypes, OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, TimestampSecond, randomKey}
-
-import scala.util.Random
 
 object OfferPayment {
   sealed trait Failure
@@ -93,8 +91,6 @@ object OfferPayment {
       })
   }
 
-  val rand = new Random
-
   def sendInvoiceRequest(nodeParams: NodeParams,
                          postman: typed.ActorRef[Postman.Command],
                          paymentInitiator: ActorRef,
@@ -102,11 +98,11 @@ object OfferPayment {
                          request: InvoiceRequest,
                          payerKey: PrivateKey,
                          replyTo: ActorRef,
-                         remainingAttempts: Int,
+                         attemptNumber: Int,
                          sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
     val destination = request.offer.contactInfo match {
       case Left(blindedRoutes) =>
-        val blindedRoute = blindedRoutes(rand.nextInt(blindedRoutes.length))
+        val blindedRoute = blindedRoutes(attemptNumber % blindedRoutes.length)
         OnionMessages.BlindedPath(blindedRoute)
       case Right(nodeId) =>
         OnionMessages.Recipient(nodeId, None, None)
@@ -115,7 +111,7 @@ object OfferPayment {
     val intermediateNodes = Nil
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
     postman ! SendMessage(intermediateNodes, destination, Some((nodeParams.nodeId +: intermediateNodes).reverse), messageContent, context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
-    waitForInvoice(nodeParams, postman, paymentInitiator, request, payerKey, replyTo, remainingAttempts - 1, sendPaymentConfig)
+    waitForInvoice(nodeParams, postman, paymentInitiator, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
   }
 
   def waitForInvoice(nodeParams: NodeParams,
@@ -124,7 +120,7 @@ object OfferPayment {
                      request: InvoiceRequest,
                      payerKey: PrivateKey,
                      replyTo: ActorRef,
-                     remainingAttempts: Int,
+                     attemptNumber: Int,
                      sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
     Behaviors.setup(context =>
       Behaviors.receiveMessagePartial {
@@ -139,9 +135,9 @@ object OfferPayment {
               replyTo ! InvalidInvoice(tlvs)
               Behaviors.stopped
           }
-        case WrappedMessageResponse(_) if remainingAttempts > 0 =>
+        case WrappedMessageResponse(_) if attemptNumber < nodeParams.onionMessageConfig.maxAttempts =>
           // We didn't get an invoice, let's retry.
-          sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, remainingAttempts, sendPaymentConfig)
+          sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber, sendPaymentConfig)
         case WrappedMessageResponse(_) =>
           replyTo ! NoInvoice
           Behaviors.stopped
