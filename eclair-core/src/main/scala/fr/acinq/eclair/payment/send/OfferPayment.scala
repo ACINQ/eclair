@@ -45,7 +45,9 @@ object OfferPayment {
 
   case object NoInvoice extends Failure
 
-  case class InvalidInvoice(tlvs: TlvStream[OfferTypes.InvoiceTlv]) extends Failure
+  case class InvalidInvoice(tlvs: TlvStream[OfferTypes.InvoiceTlv], request: InvoiceRequest, message: String) extends Failure {
+    override def toString: String = s"Invalid invoice: $message, invoice request: $request, received invoice: $tlvs"
+  }
 
   sealed trait Command
 
@@ -86,7 +88,7 @@ object OfferPayment {
           } else {
             val payerKey = randomKey()
             val request = InvoiceRequest(offer, amount, quantity, nodeParams.features.bolt12Features(), payerKey, nodeParams.chainHash)
-            sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, nodeParams.onionMessageConfig.maxAttempts, sendPaymentConfig)
+            sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, 0, sendPaymentConfig)
           }
       })
   }
@@ -127,12 +129,18 @@ object OfferPayment {
         case WrappedMessageResponse(Postman.Response(payload)) if payload.records.get[OnionMessagePayloadTlv.Invoice].nonEmpty =>
           val tlvs = payload.records.get[OnionMessagePayloadTlv.Invoice].get.tlvs
           Bolt12Invoice.validate(tlvs) match {
-            case Right(invoice) if invoice.isValidFor(request) =>
-              val recipientAmount = invoice.amount
-              paymentInitiator ! SendPaymentToNode(replyTo, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
-              Behaviors.stopped
-            case _ =>
-              replyTo ! InvalidInvoice(tlvs)
+            case Right(invoice) =>
+              invoice.validateFor(request) match {
+                case Left(reason) =>
+                  replyTo ! InvalidInvoice(tlvs, request, reason)
+                  Behaviors.stopped
+                case Right(()) =>
+                  val recipientAmount = invoice.amount
+                  paymentInitiator ! SendPaymentToNode(replyTo, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
+                  Behaviors.stopped
+              }
+            case Left(invalidTlvs) =>
+              replyTo ! InvalidInvoice(tlvs, request, invalidTlvs.toString)
               Behaviors.stopped
           }
         case WrappedMessageResponse(_) if attemptNumber < nodeParams.onionMessageConfig.maxAttempts =>
